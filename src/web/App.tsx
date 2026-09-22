@@ -232,14 +232,14 @@ function HistoryView({ machine, space }: { machine: string; space?: string }) {
 function SpaceDetail({
   machine: liveMachine,
   space: liveSpace,
-  initialPane = "",
+  selection,
   onAuthError,
   onPaneSelection,
   showClose = true,
 }: {
   machine: MachineView;
   space: Space;
-  initialPane?: string;
+  selection: { pane?: string } | null;
   onAuthError: () => void;
   onPaneSelection?: (pane: string) => void;
   showClose?: boolean;
@@ -270,7 +270,7 @@ function SpaceDetail({
       sheet.style.removeProperty("--eagle-viewport-top");
     };
   }, []);
-  const [paneId, setPaneId] = useState(initialPane);
+  const [paneId, setPaneId] = useState(selection?.pane ?? "");
   const paneSelectionHandler = useRef(onPaneSelection);
   paneSelectionHandler.current = onPaneSelection;
   const selectLivePane = useCallback((id: string) => {
@@ -280,11 +280,11 @@ function SpaceDetail({
   const [history, setHistory] = useState(false);
   const [realtime, setRealtime] = useState(true);
   useEffect(() => {
-    if (!initialPane) return;
-    setPaneId(initialPane);
+    if (!selection?.pane) return;
+    setPaneId(selection.pane);
     setRealtime(true);
     setHistory(false);
-  }, [initialPane]);
+  }, [selection]);
   const current = useCurrentTaskSnapshot(
     liveMachine,
     liveSpace,
@@ -1015,7 +1015,7 @@ export function App() {
                   key={`${detailMachine.id}:${detailSpace.id}`}
                   machine={detailMachine}
                   space={detailSpace}
-                  initialPane={selection?.pane}
+                  selection={selection}
                   onAuthError={expire}
                   showClose={false}
                   onPaneSelection={(pane) =>

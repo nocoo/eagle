@@ -327,6 +327,45 @@ for (const theme of ["dark", "light"] as const) {
   });
 }
 
+for (const view of ["当前任务", "Space 历史"]) {
+  test(`the selected snapshot card reopens realtime from ${view}`, async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "Desktop snapshot surface");
+    const source = await fixture(page);
+    await page.route("**/api/v1/history?*", (route) =>
+      route.fulfill({ json: { entries: [], nextCursor: null } }),
+    );
+    await page.route("**/api/v1/hourly-reports?*", (route) =>
+      route.fulfill({ json: { entries: [], nextCursor: null } }),
+    );
+    await page.goto("/?machine=one");
+    await page
+      .getByRole("button", { name: "查看 Build Workspace", exact: true })
+      .click();
+    const card = page.getByRole("button", {
+      name: "打开实时终端 w1:p1",
+      exact: true,
+    });
+    await expect(card).toHaveAttribute("aria-pressed", "true");
+    const input = page.getByLabel("发送到当前 Pane");
+    await expect(input).toBeEnabled();
+    await input.fill("discarded when leaving realtime");
+    await page.getByRole("button", { name: view, exact: true }).click();
+    await expect(page.locator(".live-space")).toHaveCount(0);
+    await expect.poll(source.closed).toBe(1);
+    await card.click();
+    await expect(page.locator(".live-space")).toBeVisible();
+    await expect(
+      page.getByRole("combobox", { name: "当前终端" }),
+    ).toContainText("w1:p1");
+    await expect(input).toHaveValue("");
+    await expect.poll(source.opened).toBe(2);
+    expect(source.inputs()).toBe(0);
+  });
+}
+
 test("mobile workspace tabs switch in place and never carry drafts into another workspace", async ({
   page,
   isMobile,
