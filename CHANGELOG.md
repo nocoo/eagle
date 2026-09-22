@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.1 — 2026-09-22
+
+- Refresh current-task snapshots on entry and align task details for compact reading.
+- Use machine-first navigation, fold workspace tabs, and place responsive machine snapshots below tasks.
+- Return to realtime when selecting the same pane from Current Tasks or History.
+- Preserve the main terminal layout during isolated realtime verification.
+- Keep the website, standalone Agent and installation guides synchronized at v0.7.1.
+
 ## v0.7.0 — 2026-09-22
 
 - Preserve safe terminal colors and emphasis through redaction, negotiate bounded styled frames, and offer persistent terminal palettes.

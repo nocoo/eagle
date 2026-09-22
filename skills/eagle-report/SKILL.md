@@ -3,12 +3,12 @@ name: eagle-report
 description: Connect a machine to Eagle and continuously report all Herdr Panes through a deterministic daemon and an agent-neutral semantic Manager. Use for machine onboarding, live Pane summaries, UTC hourly semantic history and reporting recovery.
 ---
 
-Install `@nocoo/eagle-agent@0.7.0` with Node 24+ and Herdr. Reuse the machine’s existing management Agent for semantics; Hermes Agent is recommended, not required:
+Install `@nocoo/eagle-agent@0.7.1` with Node 24+ and Herdr. Reuse the machine’s existing management Agent for semantics; Hermes Agent is recommended, not required:
 
 ```sh
-npm install -g @nocoo/eagle-agent@0.7.0 --registry=https://registry.npmjs.org
+npm install -g @nocoo/eagle-agent@0.7.1 --registry=https://registry.npmjs.org
 # If npm is unreachable, prefer Tencent Cloud:
-npm install -g @nocoo/eagle-agent@0.7.0 --registry=https://mirrors.cloud.tencent.com/npm/
+npm install -g @nocoo/eagle-agent@0.7.1 --registry=https://mirrors.cloud.tencent.com/npm/
 eagle-agent --version
 ```
 

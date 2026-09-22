@@ -41,20 +41,20 @@ Codex 适配器仅提取最终回复和生命周期事件，不采集推理与�
 
 打开 [Eagle](https://eagle.hexly.ai)，通过 Access 登录，在 **Connect** 添加机器，将生成的接入提示词交给该机器上的 管理 Agent（推荐 Hermes，也支持其他 Agent）。
 
-采集器需要 Node.js 24+、npm 与 Herdr 0.9.1+；实时输入当前要求 Herdr 0.9.1 的协议 22。可从 npm 独立安装，无须克隆 Eagle 仓库。网站与 Agent 统一使用 v0.7.0：
+采集器需要 Node.js 24+、npm 与 Herdr 0.9.1+；实时输入当前要求 Herdr 0.9.1 的协议 22。可从 npm 独立安装，无须克隆 Eagle 仓库。网站与 Agent 统一使用 v0.7.1：
 
 ```sh
-npm install -g @nocoo/eagle-agent@0.7.0 --registry=https://registry.npmjs.org
+npm install -g @nocoo/eagle-agent@0.7.1 --registry=https://registry.npmjs.org
 eagle-agent --version
 ```
 
 若 npm 下载失败，改用腾讯云镜像，二选一即可：
 
 ```sh
-npm install -g @nocoo/eagle-agent@0.7.0 --registry=https://mirrors.cloud.tencent.com/npm/
+npm install -g @nocoo/eagle-agent@0.7.1 --registry=https://mirrors.cloud.tencent.com/npm/
 ```
 
-预期版本为 `0.7.0`。命令仅为本次安装指定源，不修改全局 npm 源；镜像可能延迟同步，遇到 `404` / `ETARGET` 时稍后重试，保持固定版本。按照[安装与配置说明](agent/README.md)保存接入凭据后运行：
+预期版本为 `0.7.1`。命令仅为本次安装指定源，不修改全局 npm 源；镜像可能延迟同步，遇到 `404` / `ETARGET` 时稍后重试，保持固定版本。按照[安装与配置说明](agent/README.md)保存接入凭据后运行：
 
 ```sh
 eagle-agent once

@@ -129,7 +129,7 @@ Use absolute executable paths and a PATH containing Herdr, as with `watch`. Defa
 
 Installing a new npm version updates the executable; it does not create or start a realtime service. Each machine needs its own `realtime-watch` process. An existing `watch` or `manager-watch` process does not provide the realtime connection.
 
-1. Verify `eagle-agent --version` reports 0.7.0. Herdr must be running; native input currently requires Herdr 0.9.1 / protocol 22.
+1. Verify `eagle-agent --version` reports 0.7.1. Herdr must be running; native input currently requires Herdr 0.9.1 / protocol 22.
 2. Reuse the existing collector's secure configuration, including its machine ID, token and ingestion URL. The default is `~/.config/eagle/agent.json`; preserve an existing custom `EAGLE_CONFIG` path. There are no additional realtime fields to add to that file.
 3. If no realtime service is running, test `eagle-agent realtime-watch` in the foreground. For a custom config, use `EAGLE_CONFIG=/absolute/path/agent.json eagle-agent realtime-watch`. If authentication fails, correct that existing configuration; do not create a replacement machine or discard Manager state.
 4. Stop the foreground test before enabling a separate user service with launchd on macOS or systemd on Linux. Use absolute executable paths and the same configuration/PATH as the working collector so the service can find Node and Herdr. Give it its own label/unit and preserve the collector and Manager services. If a realtime service already exists, restart that service after upgrading instead of adding a duplicate.

@@ -40,20 +40,20 @@ Realtime mode separately transmits redacted current terminal screens. Screen tex
 
 Open [Eagle](https://eagle.hexly.ai), sign in through Access, add a machine in **Connect**, and give its generated onboarding prompt to the existing management Agent (Hermes recommended; alternatives supported) on that machine.
 
-The collector requires Node.js 24+, npm and Herdr 0.9.1+; realtime input currently requires Herdr 0.9.1 protocol 22. Install it independently from npm without cloning Eagle. The website and Agent share release v0.7.0:
+The collector requires Node.js 24+, npm and Herdr 0.9.1+; realtime input currently requires Herdr 0.9.1 protocol 22. Install it independently from npm without cloning Eagle. The website and Agent share release v0.7.1:
 
 ```sh
-npm install -g @nocoo/eagle-agent@0.7.0 --registry=https://registry.npmjs.org
+npm install -g @nocoo/eagle-agent@0.7.1 --registry=https://registry.npmjs.org
 eagle-agent --version
 ```
 
 If npm downloads fail, use the Tencent Cloud mirror instead. Choose one installation command:
 
 ```sh
-npm install -g @nocoo/eagle-agent@0.7.0 --registry=https://mirrors.cloud.tencent.com/npm/
+npm install -g @nocoo/eagle-agent@0.7.1 --registry=https://mirrors.cloud.tencent.com/npm/
 ```
 
-The expected version is `0.7.0`. These commands select a registry for this installation only, without changing the global npm registry. Mirrors may lag (`404` / `ETARGET`); retry later and keep the pinned version. Save onboarding credentials following the [installation and configuration guide](../agent/README.md), then run:
+The expected version is `0.7.1`. These commands select a registry for this installation only, without changing the global npm registry. Mirrors may lag (`404` / `ETARGET`); retry later and keep the pinned version. Save onboarding credentials following the [installation and configuration guide](../agent/README.md), then run:
 
 ```sh
 eagle-agent once
