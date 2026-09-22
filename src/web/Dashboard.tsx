@@ -319,6 +319,7 @@ export function Topology({
   compact = false,
   selectedPane,
   summaries = [],
+  paneActionLabel = "证据",
 }: {
   space: Space;
   at: string;
@@ -326,6 +327,7 @@ export function Topology({
   compact?: boolean;
   selectedPane?: string;
   summaries?: MachineView["summaries"];
+  paneActionLabel?: string;
 }) {
   return (
     <div className={`topology ${compact ? "topology-compact" : ""}`}>
@@ -364,7 +366,7 @@ export function Topology({
                       selectedPane ? pane.id === selectedPane : undefined
                     }
                     onClick={() => onPane?.(pane)}
-                    aria-label={`${pane.agent || "终端"} ${pane.id} 证据`}
+                    aria-label={`${pane.agent || "终端"} ${pane.id} ${paneActionLabel}`}
                   >
                     <span className="pane-header">
                       <span className="agent-light" />

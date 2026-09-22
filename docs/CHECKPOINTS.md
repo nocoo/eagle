@@ -1,5 +1,19 @@
 # 用户视角检查点
 
+## 2026-09-22 — Current task navigation and snapshot freshness
+
+- Current tasks match realtime sheet/header geometry; cards open their exact
+  realtime pane/tab, and missing targets cannot silently control another pane.
+- Entry/manual refresh reads and freezes the latest uploaded overview. Snapshot
+  and read times, lag/error messages, canceled-read protection and Access expiry
+  remain explicit; no new collection, Manager, schema or storage is introduced.
+- Regressions cover desktop/mobile geometry, navigation, frozen data, refresh
+  failures, canceled responses and authorization expiry. Public-branch TypeScript,
+  lint/build and 98 browser tests pass. Unit/API: 112/113 pass; the unchanged
+  upstream environment-proxy fixture times out on Node 24.13.0 (CONNECT support
+  is absent). No test was excluded, and the full gate is not claimed green.
+  No deployment or real terminal input is part of this contribution.
+
 ## 2026-09-22 — Default input control requested on opening realtime
 
 - User superseded the earlier read-only default: a fresh realtime view now

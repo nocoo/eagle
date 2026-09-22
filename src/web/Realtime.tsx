@@ -40,9 +40,15 @@ import { useTimezone } from "./Timezone.tsx";
 export function Realtime({
   machineId,
   spaceId,
+  initialPane = "",
+  onPaneChange,
+  onObservedAt,
 }: {
   machineId: string;
   spaceId: string;
+  initialPane?: string;
+  onPaneChange?: (paneId: string) => void;
+  onObservedAt?: (observedAt: string) => void;
 }) {
   const { time, zone } = useTimezone();
   const appearance = useTerminalTheme();
@@ -56,7 +62,7 @@ export function Realtime({
   const [busy, setBusy] = useState(false);
   const [topology, setTopology] = useState<LiveTopology | null>(null);
   const [frames, setFrames] = useState<Record<string, LiveFrame>>({});
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState(initialPane);
   const [draft, setDraft] = useState({ target: "", text: "" });
   const [authority, setAuthority] = useState("");
   const [receipt, setReceipt] = useState("");
@@ -157,6 +163,7 @@ export function Realtime({
             ),
           )
         ) {
+          onObservedAt?.(m.observedAt);
           setFrames((old) =>
             old[m.paneId]?.revision > m.revision
               ? old
@@ -230,9 +237,13 @@ export function Realtime({
       window.removeEventListener("pagehide", leave);
       window.removeEventListener("pageshow", visibility);
     };
-  }, [machineId, spaceId, attempt]);
+  }, [machineId, spaceId, attempt, onObservedAt]);
   const panes = topology?.tabs.flatMap((t) => t.panes) ?? [];
-  const pane = panes.find((p) => p.id === selected) ?? panes[0];
+  const pane =
+    panes.find((p) => p.id === selected) ?? (!selected ? panes[0] : undefined);
+  useEffect(() => {
+    if (pane) onPaneChange?.(pane.id);
+  }, [pane?.id, onPaneChange]);
   const tab = topology?.tabs.find((t) =>
     t.panes.some((p) => p.id === pane?.id),
   );
@@ -441,7 +452,13 @@ export function Realtime({
         ) : (
           <div className="live-empty">
             <TerminalSquare size={32} />
-            <p>{online ? "等待 Herdr 终端画面…" : "等待本机实时服务"}</p>
+            <p>
+              {online && topology && selected && !pane
+                ? "所选终端不在当前实时布局中，请重新选择。"
+                : online
+                  ? "等待 Herdr 终端画面…"
+                  : "等待本机实时服务"}
+            </p>
             <span>连接建立后，终端会显示在这里。</span>
           </div>
         )}

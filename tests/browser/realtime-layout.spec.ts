@@ -33,7 +33,7 @@ async function openWorkspace(
       JSON.stringify({
         type: "frame",
         ...sub,
-        paneId: "p",
+        paneId: "w1:p1",
         terminalId: "terminal",
         revision: 1,
         text,
@@ -53,7 +53,7 @@ async function openWorkspace(
             name: "Build",
             panes: [
               {
-                id: "p",
+                id: "w1:p1",
                 terminalId: "terminal",
                 title:
                   "sample-repository-with-a-very-long-terminal-target-name",

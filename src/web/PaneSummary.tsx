@@ -22,10 +22,12 @@ export function PaneSummaryView({
   machine,
   space,
   pane,
+  at,
 }: {
   machine: MachineView;
   space: Space;
   pane: Pane;
+  at?: string;
 }) {
   const { time } = useTimezone();
   const latest = machine.summaries?.find(
@@ -42,7 +44,7 @@ export function PaneSummaryView({
         latest,
         pane,
         machine.manager?.lastSeen,
-        new Date().toISOString(),
+        at ?? new Date().toISOString(),
         machine.report.capturedAt,
         space.availability,
       )
@@ -262,10 +264,8 @@ function HourTimeline({ query }: { query: string }) {
       }
     }
     void refresh();
-    const timer = setInterval(() => void refresh(), 15000);
     return () => {
       controller.abort();
-      clearInterval(timer);
     };
   }, [query]);
   async function older() {

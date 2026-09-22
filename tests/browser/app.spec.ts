@@ -902,7 +902,7 @@ test("Connect rename actions keep a single text line and leave room for the inpu
   }
 });
 
-test("Pane semantic summary and timeline survive refresh, and stale manager never appears current", async ({
+test("Pane summary stays frozen until explicit refresh then exposes a disconnected manager", async ({
   page,
 }) => {
   const now = new Date().toISOString();
@@ -990,8 +990,10 @@ test("Pane semantic summary and timeline survive refresh, and stale manager neve
   await panel.evaluate((node) => node.setAttribute("data-continuity", "same"));
   disconnected = true;
   await page.waitForTimeout(6000);
-  await expect(panel).toContainText("Manager 断连");
+  await expect(panel).toContainText("语义在线");
   await expect(panel).toHaveAttribute("data-continuity", "same");
+  await page.getByRole("button", { name: "刷新当前任务", exact: true }).click();
+  await expect(panel).toContainText("Manager 断连");
   await expect(panel).not.toContainText("已验证完成");
   expect(
     await page.evaluate(

@@ -57,7 +57,34 @@ frames. New viewers request `format=styled-text-v1`; viewers without that option
 receive the original plain frame shape, even when another viewer uses colors.
 There are no new dependencies, persistent terminal archives or input permissions.
 
-The Basalt workspace sheet overlays the dashboard and widens for realtime mode. Pick a tab and a target pane in the controls above the black terminal canvas. Desktop retains the selected tab's pane layout; mobile shows the selected pane. Terminal output scrolls internally while the composer remains visible, including when the visual viewport shrinks for the keyboard. Enter submits the draft; switching targets clears the draft and releases input control. Reduced-motion preferences disable the sheet motion.
+The Basalt workspace sheet overlays the dashboard. **当前任务** and realtime use
+the same sheet size and compact header, so switching between them does not resize
+the panel. Pick a tab and target pane above the terminal canvas. Desktop retains
+the selected tab's pane layout; mobile shows the selected pane. Output scrolls
+internally while the composer remains visible, including with the on-screen
+keyboard. Enter submits the draft; switching targets clears the draft and releases
+control. Reduced-motion preferences disable the sheet motion.
+
+### Current task snapshots and navigation
+
+Clicking a task/Pane card opens realtime at the matching pane and its parent tab,
+including cards on the dashboard. Returning to **当前任务** preserves the selected
+pane. A missing realtime target stays unavailable rather than silently selecting
+and requesting control of a different terminal.
+
+Opening **当前任务** reads the latest already-uploaded overview once and freezes
+its task facts and semantic summary. **刷新** explicitly reads again; background
+dashboard polling and the former semantic-hour timer do not replace this view.
+Leaving cancels pending reads. Failed refreshes retain and label the previous
+snapshot; an expired Access session clears the protected view.
+
+The panel displays the collection and read times, and warns if collection predates
+the last observed realtime frame. This is not a new collection trigger: the normal
+collector can lag terminal frames (typically a 30-second cadence plus collection
+and upload time), and Codex task titles can still be conversation titles. Semantic
+summaries depend on independently configured Manager updates. This UI change does
+not claim raw-screen/task-summary equality, collect additional prompts/transcripts,
+start a Manager, or persist realtime frames.
 
 **设置 → 显示时区** controls all structured timestamps, calendar dates and hourly filters. It defaults to UTC+08:00 and stores only the fixed UTC offset in this browser; it does not follow daylight-saving changes or modify source timestamps/UTC archive boundaries. Half-hour and quarter-hour offsets show the corresponding local archive minutes. A blocked browser store keeps the preference in memory and reports that it cannot persist.
 

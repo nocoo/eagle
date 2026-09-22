@@ -152,10 +152,9 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.locator(".live-pane pre").first()).toContainText(
       "line 179",
     );
-    if (!isMobile)
-      await expect
-        .poll(async () => (await sheet.boundingBox())?.width ?? 0)
-        .toBeGreaterThan((before?.width ?? 0) + 100);
+    await expect
+      .poll(async () => (await sheet.boundingBox())?.width ?? 0)
+      .toBe(before?.width);
     const composer = page.getByLabel("发送到当前 Pane", { exact: true });
     await expect(composer).toBeInViewport({ ratio: 1 });
     await expect(

@@ -60,6 +60,7 @@ import type {
 import { AuthError, api } from "./api.ts";
 import { FamilyActions, Mark, SidebarAccount } from "./Brand.tsx";
 import { Connect } from "./Connect.tsx";
+import { useCurrentTaskSnapshot } from "./CurrentTaskSnapshot.ts";
 import {
   Dashboard,
   DashboardSkeleton,
@@ -220,13 +221,15 @@ function HistoryView({ machine, space }: { machine: string; space?: string }) {
 }
 
 function SpaceDetail({
-  machine,
-  space,
+  machine: liveMachine,
+  space: liveSpace,
   initialPane = "",
+  onAuthError,
 }: {
   machine: MachineView;
   space: Space;
   initialPane?: string;
+  onAuthError: () => void;
 }) {
   const { time, zone } = useTimezone();
   const header = useRef<HTMLElement | null>(null);
@@ -257,9 +260,29 @@ function SpaceDetail({
   const [paneId, setPaneId] = useState(initialPane);
   const [history, setHistory] = useState(false);
   const [realtime, setRealtime] = useState(true);
-  const panes = space.tabs.flatMap((t) => t.panes);
-  const pane = panes.find((p) => p.id === paneId) ?? panes[0];
+  const current = useCurrentTaskSnapshot(
+    liveMachine,
+    liveSpace,
+    !history && !realtime,
+    onAuthError,
+  );
+  const machine = realtime || history ? liveMachine : current.machine;
+  const space = realtime || history ? liveSpace : (current.space ?? liveSpace);
+  const panes =
+    !realtime && !history && !current.space
+      ? []
+      : space.tabs.flatMap((t) => t.panes);
+  const pane =
+    panes.find((p) => p.id === paneId) ?? (!paneId ? panes[0] : undefined);
   const assessment = pane ? assessPane(pane, machine.report.capturedAt) : null;
+  const lastRealtimeAt = useRef<string | undefined>(undefined);
+  const observeRealtime = useCallback((at: string) => {
+    if (
+      !lastRealtimeAt.current ||
+      Date.parse(at) > Date.parse(lastRealtimeAt.current)
+    )
+      lastRealtimeAt.current = at;
+  }, []);
   return (
     <>
       <header ref={header} className="space-detail-header">
@@ -330,33 +353,97 @@ function SpaceDetail({
       </header>
       <div
         className={
-          realtime ? "space-detail-body space-detail-live" : "space-detail-body"
+          realtime
+            ? "space-detail-body space-detail-live"
+            : history
+              ? "space-detail-body"
+              : "space-detail-body space-detail-current"
         }
       >
         {realtime ? (
-          <Realtime machineId={machine.id} spaceId={space.id} />
+          <Realtime
+            machineId={machine.id}
+            spaceId={space.id}
+            initialPane={paneId}
+            onPaneChange={setPaneId}
+            onObservedAt={observeRealtime}
+          />
         ) : history ? (
           <HistoryView machine={machine.id} space={space.id} />
         ) : (
           <>
-            <SectionRule title="终端布局" hint="选择 Pane 查看任务与证据">
-              <LayerCard className="space-topology-card">
-                <Topology
-                  space={space}
-                  at={machine.report.capturedAt}
-                  summaries={machine.summaries}
-                  onPane={(p) => setPaneId(p.id)}
-                  selectedPane={pane?.id}
-                />
-              </LayerCard>
-            </SectionRule>
-            {pane && assessment && (
+            <LayerCard
+              className="current-task-snapshot"
+              aria-label="当前任务快照"
+            >
+              <div>
+                <p>
+                  快照采集{" "}
+                  <time dateTime={machine.report.capturedAt}>
+                    {time(machine.report.capturedAt)} {zone}
+                  </time>
+                </p>
+                <p className="text-xs text-basalt-muted-foreground">
+                  仅打开或手动刷新时更新，不持续刷新任务内容。
+                  {current.readAt && ` 本次读取 ${time(current.readAt)}`}
+                </p>
+                {lastRealtimeAt.current &&
+                  Date.parse(machine.report.capturedAt) <
+                    Date.parse(lastRealtimeAt.current) && (
+                    <p className="text-xs text-basalt-muted-foreground">
+                      快照早于最近实时画面，可能尚未包含新任务；任务摘要并非终端逐帧内容。
+                    </p>
+                  )}
+                {space.availability === "unavailable" && (
+                  <p role="status">工作区当前不可用，展示最后采集快照。</p>
+                )}
+                {(current.busy || current.error) && (
+                  <p role="status">
+                    {current.busy ? "正在读取最新已上报快照…" : current.error}
+                  </p>
+                )}
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={current.busy}
+                onClick={current.refresh}
+                aria-label="刷新当前任务"
+              >
+                <RefreshCw size={14} />
+                刷新
+              </Button>
+            </LayerCard>
+            {current.space ? (
+              <SectionRule title="终端布局" hint="点击卡片打开对应实时终端">
+                <LayerCard className="space-topology-card">
+                  <Topology
+                    space={space}
+                    at={machine.report.capturedAt}
+                    summaries={machine.summaries}
+                    onPane={(p) => {
+                      setPaneId(p.id);
+                      setRealtime(true);
+                    }}
+                    paneActionLabel="实时终端"
+                    selectedPane={pane?.id}
+                  />
+                </LayerCard>
+              </SectionRule>
+            ) : (
+              <p role="status">该机器或工作区已不在最新快照中。</p>
+            )}
+            {current.space && !pane && paneId && (
+              <p role="status">所选终端尚未出现在采集快照中；请稍后刷新。</p>
+            )}
+            {pane && assessment && (current.readAt || current.error) && (
               <>
                 <PaneSummaryView
-                  key={`${space.id}/${pane.id}`}
+                  key={`${space.id}/${pane.id}/${current.generation}`}
                   machine={machine}
                   space={space}
                   pane={pane}
+                  at={current.readAt}
                 />
                 <SectionRule title={`${pane.agent || "终端"} · ${pane.id}`}>
                   <LayerCard>
@@ -878,6 +965,7 @@ export function App() {
                 machine={detailMachine}
                 space={detailSpace}
                 initialPane={selection?.pane}
+                onAuthError={expire}
               />
             ) : (
               <>
