@@ -41,12 +41,14 @@ export function Realtime({
   machineId,
   spaceId,
   initialPane = "",
+  selectedPane,
   onPaneChange,
   onObservedAt,
 }: {
   machineId: string;
   spaceId: string;
   initialPane?: string;
+  selectedPane?: string;
   onPaneChange?: (paneId: string) => void;
   onObservedAt?: (observedAt: string) => void;
 }) {
@@ -62,7 +64,12 @@ export function Realtime({
   const [busy, setBusy] = useState(false);
   const [topology, setTopology] = useState<LiveTopology | null>(null);
   const [frames, setFrames] = useState<Record<string, LiveFrame>>({});
-  const [selected, setSelected] = useState(initialPane);
+  const [localSelected, setLocalSelected] = useState(initialPane);
+  const selected = selectedPane ?? localSelected;
+  const setSelected = (id: string) => {
+    setLocalSelected(id);
+    onPaneChange?.(id);
+  };
   const [draft, setDraft] = useState({ target: "", text: "" });
   const [authority, setAuthority] = useState("");
   const [receipt, setReceipt] = useState("");

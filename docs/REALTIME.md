@@ -1,5 +1,34 @@
 # Space realtime mode
 
+The default `/` entry selects the first available machine in sidebar order; an
+explicit machine link is preserved. Machine navigation appears first. The global
+fleet remains available at `/overview`, including after refresh/back/forward.
+
+On desktop (1024px and wider), opening a workspace uses an opaque full-window
+split surface. The left side starts with an on-entry/manual-refresh workspace
+snapshot, with one or two task-card columns according to available width. Below
+the tasks, a machine snapshot reuses existing CPU, memory, disk, uptime and TCP
+port observations from the same frozen report. Missing/stale readings stay
+explicit; this view neither collects more data nor claims continuous sampling.
+The former separate machine-name/status panel is removed. The right side retains
+the realtime/task/history controls. Cards target the exact live terminal.
+
+Workspace tabs at the top switch in place. Tabs that do not fit fold into
+**更多**, while the selected workspace stays visible. The picker searches all
+workspaces by name or ID. Below 768px it replaces the tab row with the current
+workspace name and a searchable dropdown; screens below 1024px retain one detail
+column. Arrow keys/Home/End navigate desktop tabs and picker results, and Escape
+closes only the picker. Selecting another workspace closes the previous realtime
+subscription and clears drafts; selecting the current item, opening/closing the
+picker or resizing does not. Back returns to the machine and close returns to
+the previous page.
+
+Fleet statistics use available, fresh snapshots. A `working` lifecycle hint can
+fill the activity gap before native execution evidence arrives, but is explicitly
+not completion verification. Failure/waiting evidence keeps priority; stale
+machines and unavailable workspaces remain unverified. `done` alone still cannot
+certify completion.
+
 Open a machine and a Space; **实时模式** opens by default and requests input control once. Eagle mirrors the current terminal text and tab/pane layout. Only the browser granted control by the server can send input; other browsers can watch. Select a pane, send text with or without Enter, or use the common key buttons. The local Herdr client remains able to operate concurrently. Terminal snapshots support SGR colors (16/256/RGB), bold, dim, italic, underline and inverse. Mouse reporting, pixel graphics and arbitrary PTY resize are not implemented.
 
 Output follows the bottom on first display, target switch/replacement and while

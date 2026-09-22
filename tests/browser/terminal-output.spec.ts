@@ -67,7 +67,7 @@ async function openTerminal(page: Page) {
     topology();
     ws.onMessage(() => {});
   });
-  await page.goto("/");
+  await page.goto("/overview");
   await page.getByRole("button", { name: "打开机器 Mac One" }).click();
   await page.getByRole("button", { name: "查看 Eagle", exact: true }).click();
   await page.getByRole("button", { name: "实时模式", exact: true }).click();

@@ -82,7 +82,7 @@ async function openWorkspace(
     });
     ws.onClose(() => closed++);
   });
-  await page.goto("/");
+  await page.goto("/overview");
   await page.getByRole("button", { name: "打开机器 Mac One" }).click();
   await page.getByRole("button", { name: "查看 Eagle", exact: true }).click();
   return {

@@ -74,8 +74,17 @@ import { PaneSummaryView } from "./PaneSummary.tsx";
 import { Realtime } from "./Realtime.tsx";
 import { Settings } from "./Settings.tsx";
 import { useTimezone } from "./Timezone.tsx";
+import { WorkspaceShell } from "./WorkspaceShell.tsx";
 
 declare const __APP_VERSION__: string;
+function machineFromRoute(): string | null {
+  const params = new URLSearchParams(location.search);
+  return params.has("machine")
+    ? params.get("machine")
+    : location.pathname === "/"
+      ? null
+      : "";
+}
 function AccessGate() {
   return (
     <main className="access-gate">
@@ -225,11 +234,15 @@ function SpaceDetail({
   space: liveSpace,
   initialPane = "",
   onAuthError,
+  onPaneSelection,
+  showClose = true,
 }: {
   machine: MachineView;
   space: Space;
   initialPane?: string;
   onAuthError: () => void;
+  onPaneSelection?: (pane: string) => void;
+  showClose?: boolean;
 }) {
   const { time, zone } = useTimezone();
   const header = useRef<HTMLElement | null>(null);
@@ -258,8 +271,20 @@ function SpaceDetail({
     };
   }, []);
   const [paneId, setPaneId] = useState(initialPane);
+  const paneSelectionHandler = useRef(onPaneSelection);
+  paneSelectionHandler.current = onPaneSelection;
+  const selectLivePane = useCallback((id: string) => {
+    setPaneId(id);
+    paneSelectionHandler.current?.(id);
+  }, []);
   const [history, setHistory] = useState(false);
   const [realtime, setRealtime] = useState(true);
+  useEffect(() => {
+    if (!initialPane) return;
+    setPaneId(initialPane);
+    setRealtime(true);
+    setHistory(false);
+  }, [initialPane]);
   const current = useCurrentTaskSnapshot(
     liveMachine,
     liveSpace,
@@ -286,17 +311,19 @@ function SpaceDetail({
   return (
     <>
       <header ref={header} className="space-detail-header">
-        <div className="space-detail-eyebrow">
-          <span>
-            <Layers3 size={13} /> 工作区{" "}
-            <span className="mono">{space.id}</span>
-          </span>
-          <SheetClose asChild>
-            <Button size="icon" variant="outline" aria-label="关闭工作区">
-              <X size={17} />
-            </Button>
-          </SheetClose>
-        </div>
+        {showClose && (
+          <div className="space-detail-eyebrow">
+            <span>
+              <Layers3 size={13} /> 工作区{" "}
+              <span className="mono">{space.id}</span>
+            </span>
+            <SheetClose asChild>
+              <Button size="icon" variant="outline" aria-label="关闭工作区">
+                <X size={17} />
+              </Button>
+            </SheetClose>
+          </div>
+        )}
         <SheetTitle className="space-detail-title">{space.name}</SheetTitle>
         <SheetDescription className="space-detail-description">
           {space.objective || "目标待补充"}
@@ -365,7 +392,8 @@ function SpaceDetail({
             machineId={machine.id}
             spaceId={space.id}
             initialPane={paneId}
-            onPaneChange={setPaneId}
+            selectedPane={paneId}
+            onPaneChange={selectLivePane}
             onObservedAt={observeRealtime}
           />
         ) : history ? (
@@ -511,9 +539,7 @@ export function App() {
   const [auth, setAuth] = useState(false);
   const [boot, setBoot] = useState(true);
   const [error, setError] = useState("");
-  const [machineId, setMachineId] = useState(
-    () => new URLSearchParams(location.search).get("machine") || "",
-  );
+  const [machineId, setMachineId] = useState<string | null>(machineFromRoute);
   const [page, setPage] = useState<
     "overview" | "history" | "connect" | "settings"
   >(() =>
@@ -531,15 +557,23 @@ export function App() {
     space: string;
     pane?: string;
   } | null>(null);
+  const activeMachineId = machineId ?? data?.machines[0]?.id ?? "";
   const [mobile, setMobile] = useState(
     () => matchMedia("(max-width: 767px)").matches,
   );
   const [collapsed, setCollapsed] = useState(mobile);
   const [syncing, setSyncing] = useState(false);
   const fetching = useRef(false);
+  useEffect(() => {
+    if (machineId !== null || page !== "overview" || !data?.machines.length)
+      return;
+    const id = data.machines[0].id;
+    setMachineId(id);
+    history.replaceState(null, "", `/?machine=${encodeURIComponent(id)}`);
+  }, [data, machineId, page]);
   useLayoutEffect(() => {
     document.getElementById("eagle-content")?.scrollTo(0, 0);
-  }, [page, machineId]);
+  }, [page, activeMachineId]);
   const expire = useCallback(() => {
     setAuth(false);
     setData(null);
@@ -577,7 +611,7 @@ export function App() {
               ? "history"
               : "overview",
       );
-      setMachineId(new URLSearchParams(location.search).get("machine") || "");
+      setMachineId(machineFromRoute());
       setSearch("");
     };
     window.addEventListener("popstate", back);
@@ -609,9 +643,9 @@ export function App() {
   if (!boot && !auth && !error) return <AccessGate />;
   const machines = data?.machines ?? [];
   const now = clock;
-  const selectedMachine = machines.find((m) => m.id === machineId);
-  const shown = machineId
-    ? machines.filter((m) => m.id === machineId)
+  const selectedMachine = machines.find((m) => m.id === activeMachineId);
+  const shown = activeMachineId
+    ? machines.filter((m) => m.id === activeMachineId)
     : machines;
   const detailMachine = machines.find((m) => m.id === selection?.machine);
   const detailSpace = detailMachine?.report.spaces.find(
@@ -619,7 +653,7 @@ export function App() {
   );
   const navigate = (
     next: "overview" | "history" | "connect" | "settings",
-    id = machineId,
+    id = activeMachineId,
   ) => {
     setSelection(null);
     setPage(next);
@@ -628,7 +662,7 @@ export function App() {
     history.pushState(
       null,
       "",
-      `${next === "overview" ? "/" : `/${next}`}${id && (next === "overview" || next === "history") ? `?machine=${encodeURIComponent(id)}` : ""}`,
+      `${next === "overview" ? (id ? "/" : "/overview") : `/${next}`}${id && (next === "overview" || next === "history") ? `?machine=${encodeURIComponent(id)}` : ""}`,
     );
     if (mobile) setCollapsed(true);
   };
@@ -712,14 +746,60 @@ export function App() {
           )}
           <SidebarNav aria-label="工作台导航">
             {(!collapsed || mobile) && (
-              <SidebarPartition>工作态势</SidebarPartition>
+              <SidebarPartition>机器 · {machines.length}</SidebarPartition>
             )}
             <div
               className={`flex flex-col gap-0.5 ${collapsed && !mobile ? "items-center" : "px-3"}`}
             >
+              {machines.map((m) => {
+                const connection = machineConnection(m, now);
+                const label = {
+                  online: "在线",
+                  stale: "采集过期",
+                  offline: "离线 · 心跳过期",
+                }[connection];
+                return (
+                  <Tooltip key={m.id}>
+                    <TooltipTrigger asChild>
+                      <NavItem
+                        aria-label={m.name}
+                        aria-description={label}
+                        className="machine-nav-item"
+                        data-compact={collapsed && !mobile}
+                        active={activeMachineId === m.id && page === "overview"}
+                        onClick={() => navigate("overview", m.id)}
+                      >
+                        <Monitor
+                          className="h-4 w-4 shrink-0"
+                          strokeWidth={1.5}
+                          aria-hidden="true"
+                        />
+                        {(!collapsed || mobile) && (
+                          <span className="truncate">{m.name}</span>
+                        )}
+                        <span
+                          className="machine-status-dot"
+                          data-status={connection}
+                          aria-hidden="true"
+                        />
+                      </NavItem>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>
+                      {m.name} · {label}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+            {(!collapsed || mobile) && (
+              <SidebarPartition className="mt-6">工作态势</SidebarPartition>
+            )}
+            <div
+              className={`flex flex-col gap-0.5 ${collapsed && !mobile ? "items-center mt-6" : "px-3"}`}
+            >
               <NavItem
                 aria-label="全局总览"
-                active={page === "overview" && !machineId}
+                active={page === "overview" && !activeMachineId}
                 onClick={() => navigate("overview", "")}
               >
                 <LayoutDashboard
@@ -752,54 +832,6 @@ export function App() {
                 <SettingsIcon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                 {(!collapsed || mobile) && "设置"}
               </NavItem>
-            </div>
-            {(!collapsed || mobile) && (
-              <SidebarPartition className="mt-6">
-                机器 · {machines.length}
-              </SidebarPartition>
-            )}
-            <div
-              className={`flex flex-col gap-0.5 ${collapsed && !mobile ? "items-center mt-6" : "px-3"}`}
-            >
-              {machines.map((m) => {
-                const connection = machineConnection(m, now);
-                const label = {
-                  online: "在线",
-                  stale: "采集过期",
-                  offline: "离线 · 心跳过期",
-                }[connection];
-                return (
-                  <Tooltip key={m.id}>
-                    <TooltipTrigger asChild>
-                      <NavItem
-                        aria-label={m.name}
-                        aria-description={label}
-                        className="machine-nav-item"
-                        data-compact={collapsed && !mobile}
-                        active={machineId === m.id && page === "overview"}
-                        onClick={() => navigate("overview", m.id)}
-                      >
-                        <Monitor
-                          className="h-4 w-4 shrink-0"
-                          strokeWidth={1.5}
-                          aria-hidden="true"
-                        />
-                        {(!collapsed || mobile) && (
-                          <span className="truncate">{m.name}</span>
-                        )}
-                        <span
-                          className="machine-status-dot"
-                          data-status={connection}
-                          aria-hidden="true"
-                        />
-                      </NavItem>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" sideOffset={8}>
-                      {m.name} · {label}
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              })}
             </div>
           </SidebarNav>
           <SidebarFooter
@@ -863,7 +895,7 @@ export function App() {
                       </span>
                     ) : page === "connect" ? (
                       "连接机器，管理凭证，把接入交给 Agent。"
-                    ) : machineId ? (
+                    ) : activeMachineId ? (
                       "机器资源、工作空间与任务证据。"
                     ) : (
                       "全部机器的工作分布与资源概况。"
@@ -907,7 +939,7 @@ export function App() {
                 )}
                 {!compactMachine && page !== "settings" && syncCaption}
                 {page === "overview" &&
-                  !machineId &&
+                  !activeMachineId &&
                   !!data?.pendingMachines?.length && (
                     <LayerCard>
                       <p className="text-sm text-basalt-muted-foreground">
@@ -927,16 +959,16 @@ export function App() {
                     onAuthError={expire}
                   />
                 ) : page === "history" ? (
-                  <HistoryView machine={machineId} />
+                  <HistoryView machine={activeMachineId} />
                 ) : (
                   <Dashboard
-                    key={machineId || "fleet"}
+                    key={activeMachineId || "fleet"}
                     machines={shown}
                     now={now}
                     search={search}
                     onSearch={setSearch}
                     onMachine={
-                      !machineId
+                      !activeMachineId
                         ? (id) => {
                             setSearch("");
                             navigate("overview", id);
@@ -960,13 +992,44 @@ export function App() {
         >
           <SheetContent side="right" className="space-sheet">
             {detailMachine && detailSpace ? (
-              <SpaceDetail
-                key={`${detailMachine.id}:${detailSpace.id}`}
+              <WorkspaceShell
                 machine={detailMachine}
                 space={detailSpace}
-                initialPane={selection?.pane}
+                selectedPane={selection?.pane}
+                onPane={(pane) =>
+                  setSelection((previous) =>
+                    previous &&
+                    previous.machine === detailMachine.id &&
+                    previous.space === detailSpace.id
+                      ? { ...previous, pane }
+                      : previous,
+                  )
+                }
+                onWorkspace={(space) =>
+                  setSelection({ machine: detailMachine.id, space })
+                }
+                onBack={() => navigate("overview", detailMachine.id)}
                 onAuthError={expire}
-              />
+              >
+                <SpaceDetail
+                  key={`${detailMachine.id}:${detailSpace.id}`}
+                  machine={detailMachine}
+                  space={detailSpace}
+                  initialPane={selection?.pane}
+                  onAuthError={expire}
+                  showClose={false}
+                  onPaneSelection={(pane) =>
+                    setSelection((previous) =>
+                      previous &&
+                      previous.machine === detailMachine.id &&
+                      previous.space === detailSpace.id &&
+                      previous.pane !== pane
+                        ? { ...previous, pane }
+                        : previous,
+                    )
+                  }
+                />
+              </WorkspaceShell>
             ) : (
               <>
                 <SheetTitle>Space 已关闭</SheetTitle>

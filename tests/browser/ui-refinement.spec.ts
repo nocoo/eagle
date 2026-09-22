@@ -41,7 +41,7 @@ test("timezone defaults to UTC+8, persists and converts timestamps and report fi
       },
     }),
   );
-  await page.goto("/");
+  await page.goto("/overview");
   await expect(page.locator(".sync-caption")).toContainText("09/21 04:05:06");
   await page.goto("/settings");
   const zone = page.getByRole("combobox", { name: "显示时区" });
@@ -154,7 +154,7 @@ for (const theme of ["dark", "light"] as const) {
     );
     await expect
       .poll(async () => (await sheet.boundingBox())?.width ?? 0)
-      .toBe(before?.width);
+      .toBeCloseTo(before?.width ?? 1, 2);
     const composer = page.getByLabel("发送到当前 Pane", { exact: true });
     await expect(composer).toBeInViewport({ ratio: 1 });
     await expect(

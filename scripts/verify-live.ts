@@ -53,7 +53,7 @@ try {
       },
     ]);
   }
-  await page.goto(origin);
+  await page.goto(`${origin}/overview`);
   await expect(page.getByLabel("访问令牌")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "当前态势" })).toBeVisible();
   const response = await context.request.get(`${origin}/api/v1/overview`);

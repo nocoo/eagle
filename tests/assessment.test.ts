@@ -7,6 +7,18 @@ import {
 } from "../src/shared/assessment.ts";
 import { evidence, NOW, report } from "./fixtures.ts";
 
+test("a working hint supplies activity when native execution evidence has not arrived", () => {
+  const pane = report().spaces[0].tabs[0].panes[0];
+  pane.hint = "working";
+  pane.evidence = [evidence("process", "unknown")];
+  const assessment = assessPane(pane, NOW);
+  assert.equal(assessment.state, "active");
+  assert.match(assessment.reason, /Herdr/);
+  assert.match(assessment.reason, /未验证|待核对/);
+  pane.evidence.push(evidence("test", "failure"));
+  assert.equal(assessPane(pane, NOW).state, "attention");
+});
+
 for (const hint of ["done", "idle", "blocked"] as const) {
   test(`a ${hint} pane is not a task conclusion`, () => {
     const pane = report().spaces[0].tabs[0].panes[0];

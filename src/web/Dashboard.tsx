@@ -156,12 +156,14 @@ export function MachineStatus({
   );
 }
 
-function MachineResources({
+export function MachineResources({
   machine,
   now,
+  snapshot = false,
 }: {
   machine: MachineView;
   now: string;
+  snapshot?: boolean;
 }) {
   const { time } = useTimezone();
   const telemetry = machine.report.machine.telemetry;
@@ -178,13 +180,15 @@ function MachineResources({
         <p className="text-xs text-basalt-muted-foreground">尚未上报机器资源</p>
       ) : (
         <LayerCard className="p-3">
-          <div className="resource-heading">
-            <span>
-              <Server size={14} />
-              机器资源
-            </span>
-            <span>{stale ? "等待更新" : "实时采样"}</span>
-          </div>
+          {!snapshot && (
+            <div className="resource-heading">
+              <span>
+                <Server size={14} />
+                机器资源
+              </span>
+              <span>{stale ? "等待更新" : "实时采样"}</span>
+            </div>
+          )}
           {stale && (
             <Badge variant="secondary" className="mb-2">
               历史快照 · 等待更新

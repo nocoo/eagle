@@ -37,6 +37,14 @@ export function assessPane(
       ["goal", "process", "test", "deployment"].includes(e.kind),
   );
   if (active) return { state: "active", reason: active.summary, evidence };
+  // A fresh lifecycle hint can describe activity, never certify delivery.
+  // Machine/report freshness and unavailable Spaces are gated by the caller.
+  if (pane.hint === "working")
+    return {
+      state: "active",
+      reason: "Herdr 显示正在执行；完成情况仍未验证",
+      evidence,
+    };
   const required: Evidence["kind"][] = [
     "summary",
     "goal",

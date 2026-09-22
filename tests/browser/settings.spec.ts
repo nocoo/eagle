@@ -115,7 +115,7 @@ test("settings loads from sidebar, saves hourly cadence and explains missing AI 
       settings = { ...settings, ...route.request().postDataJSON() };
     await route.fulfill({ json: settings });
   });
-  await page.goto("/");
+  await page.goto("/overview");
   if (isMobile) await page.getByRole("button", { name: "展开导航" }).click();
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await expect(page).toHaveURL(/\/settings$/);

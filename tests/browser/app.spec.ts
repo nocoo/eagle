@@ -31,7 +31,7 @@ test("global overview summarizes the fleet and opens only the selected machine",
   await page.route("**/api/**", (route) =>
     route.fulfill({ json: { now, machines } }),
   );
-  await page.goto("/");
+  await page.goto("/overview");
   await expect(page.getByRole("region", { name: "全部机器" })).toBeVisible();
   await expect(page.getByText("2/2 台机器在线")).toBeVisible();
   await expect(page.locator(".space-card")).toHaveCount(0);
@@ -93,7 +93,7 @@ test("live overview reads only current state and keeps cards mounted through ref
       },
     });
   });
-  await page.goto("/");
+  await page.goto("/overview");
   await page.getByRole("button", { name: "打开机器 Mac One" }).click();
   const card = page.locator(".space-card").first();
   await expect(card).toBeVisible();
@@ -182,7 +182,7 @@ test("machine resources and named TCP ports show freshness and missing data hone
       },
     }),
   );
-  await page.goto("/");
+  await page.goto("/overview");
   await page.getByRole("button", { name: "打开机器 Mac One" }).click();
   const resources = page.getByRole("region", { name: "机器资源" });
   await expect(resources).toContainText("25%");
@@ -309,7 +309,7 @@ test("token-free overview, topology evidence, history and empty search", async (
       },
     });
   });
-  await page.goto("/");
+  await page.goto("/overview");
   await page.getByRole("button", { name: "打开机器 Mac One" }).click();
   await expect(page.getByLabel("访问令牌")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Space 拓扑" })).toBeVisible();
@@ -361,7 +361,7 @@ test("failed refresh clearly preserves last known data and does not imply live s
       json: { now: new Date().toISOString(), machines: [] },
     });
   });
-  await page.goto("/");
+  await page.goto("/overview");
   await expect(page.getByText("等待第一台机器接入")).toBeVisible();
   fail = true;
   await page.getByRole("button", { name: "刷新", exact: true }).click();
@@ -391,7 +391,7 @@ test("stale machine data is marked explicitly", async ({ page }) => {
       },
     }),
   );
-  await page.goto("/");
+  await page.goto("/overview");
   await page.getByRole("button", { name: "打开机器 Old Mac" }).click();
   await expect(page.getByText("心跳过期", { exact: true })).toBeVisible();
   await expect(page.getByText("历史快照 · 等待重新采集")).toBeVisible();
@@ -416,7 +416,7 @@ test("sidebar machine lights distinguish heartbeat and snapshot freshness across
   await page.route("**/api/**", (route) =>
     route.fulfill({ json: { now, machines } }),
   );
-  await page.goto("/");
+  await page.goto("/overview");
   if (isMobile) await page.getByRole("button", { name: "展开导航" }).click();
   const nav = page.getByRole("navigation", { name: "工作台导航" });
   const online = nav.getByRole("button", { name: "Online Mac", exact: true });
@@ -504,7 +504,7 @@ test("sidebar machine lights expire when overview requests fail", async ({
           },
         }),
   );
-  await page.goto("/");
+  await page.goto("/overview");
   if (isMobile) await page.getByRole("button", { name: "展开导航" }).click();
   const item = page.getByRole("button", { name: "Cached Mac", exact: true });
   await expect(item).toHaveAccessibleDescription("在线");
@@ -521,7 +521,7 @@ test("adopted eagle mark and family links work in both sidebar states", async ({
   await page.route("**/api/**", (route) =>
     route.fulfill({ json: { now: new Date().toISOString(), machines: [] } }),
   );
-  await page.goto("/");
+  await page.goto("/overview");
   await expect(page.getByText("等待第一台机器接入")).toBeVisible();
   const github = page.getByRole("link", {
     name: "Eagle GitHub 仓库（新标签页）",
@@ -601,7 +601,7 @@ test("sidebar profile shows service avatar and Access logout in expanded and col
   await page.route("**/cdn-cgi/access/logout", (route) =>
     route.fulfill({ body: "Signed out" }),
   );
-  await page.goto("/");
+  await page.goto("/overview");
   if (isMobile) await page.getByRole("button", { name: "展开导航" }).click();
   await expect(page.getByText("Li Zheng", { exact: true })).toBeVisible();
   await expect(
@@ -632,7 +632,7 @@ test("local sidebar preserves logout chrome without inventing a login session", 
       json: { name: "本地开发", email: "", avatar: null, local: true },
     }),
   );
-  await page.goto("/");
+  await page.goto("/overview");
   if (isMobile) await page.getByRole("button", { name: "展开导航" }).click();
   await expect(page.getByText("本地开发", { exact: true })).toBeVisible();
   await expect(
@@ -682,7 +682,7 @@ test("first load shows a stable skeleton and Access expiry offers SSO without a 
     await ready;
     await route.fulfill({ status: 401, json: { error: "Access required" } });
   });
-  await page.goto("/");
+  await page.goto("/overview");
   await expect(
     page.getByRole("status", { name: "正在同步工作空间" }),
   ).toBeVisible();
@@ -729,7 +729,7 @@ test("attention is shown first and reduced-motion users get no entrance animatio
           },
     }),
   );
-  await page.goto("/");
+  await page.goto("/overview");
   await page.getByRole("button", { name: "打开机器 Mac One" }).click();
   await expect(page.locator(".space-card h3").first()).toHaveText("Urgent");
   expect(

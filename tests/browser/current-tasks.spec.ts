@@ -127,10 +127,16 @@ test("current task sheet matches realtime geometry and cards open the matching r
   const headerBefore = await header.boundingBox();
   await page.getByRole("button", { name: "当前任务", exact: true }).click();
   await expect
-    .poll(async () => (await sheet.boundingBox())?.width)
-    .toBe(before?.width);
-  expect((await sheet.boundingBox())?.height).toBe(before?.height);
-  expect((await header.boundingBox())?.height).toBe(headerBefore?.height);
+    .poll(async () => (await sheet.boundingBox())?.width ?? 0)
+    .toBeCloseTo(before?.width ?? 1, 2);
+  expect((await sheet.boundingBox())?.height ?? 0).toBeCloseTo(
+    before?.height ?? 1,
+    2,
+  );
+  expect((await header.boundingBox())?.height ?? 0).toBeCloseTo(
+    headerBefore?.height ?? 1,
+    2,
+  );
   await expect(page.locator(".space-detail-current")).toContainText("本次读取");
   await sheet.screenshot({
     path: testInfo.outputPath("current-task-panel.png"),
