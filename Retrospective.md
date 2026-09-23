@@ -38,3 +38,19 @@ regression failed even though layout and terminal continuity tests passed.
 Navigation now remains in the stable workspace shell, while only Space-specific
 detail state resets. Keep navigation and its focus targets outside keyed content
 when rearranging headers; verify selection, dismissal and focus after the move.
+
+## 2026-09-23 — Status placement assertion missed during compaction
+
+The focused realtime tests passed after moving output status into the input,
+but the full browser gate found four terminal-preview assertions still expecting
+it above the input. The application matched the requested layout; the existing
+visual contract had not been updated across both suites. Updated those assertions
+to verify containment and vertical centering in both themes and viewport projects.
+For future cross-component layout changes, search all geometry assertions for the
+moved control before treating a focused suite as complete regression evidence.
+
+A subsequent run was invalidated by editing AGENTS.md while Vite browser tests
+were active. Trace timestamps showed fresh page navigation at the same second
+as that write, detaching controls in two tests and invalidating a third geometry
+snapshot. Freeze all watched repository files during browser gates, including
+documentation; finish edits before starting the server-backed run.

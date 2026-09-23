@@ -257,7 +257,18 @@ for (const theme of ["dark", "light"]) {
     const input = await page
       .getByLabel("发送到当前 Pane", { exact: true })
       .boundingBox();
-    expect(status && input && status.y < input.y).toBeTruthy();
+    expect(status && input).toBeTruthy();
+    if (status && input) {
+      expect(status.x).toBeGreaterThanOrEqual(input.x);
+      expect(status.y).toBeGreaterThanOrEqual(input.y);
+      expect(status.y + status.height).toBeLessThanOrEqual(
+        input.y + input.height,
+      );
+      expect(status.y + status.height / 2).toBeCloseTo(
+        input.y + input.height / 2,
+        0,
+      );
+    }
     await page.locator(".space-sheet").screenshot({
       path: testInfo.outputPath(`terminal-${theme}.png`),
       animations: "disabled",
