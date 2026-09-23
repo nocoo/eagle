@@ -7,10 +7,12 @@ export function RealtimeActivity({
   frame,
   online,
   connection,
+  targetDescription,
 }: {
   frame?: LiveFrame;
   online: boolean;
   connection: string;
+  targetDescription: string;
 }) {
   const [recent, setRecent] = useState(false);
   const content = frame
@@ -45,7 +47,8 @@ export function RealtimeActivity({
         </Button>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-64">
-        {message}。仅表示连接与画面变化，不代表任务完成。
+        <p>{targetDescription}</p>
+        <p>{message}。仅表示连接与画面变化，不代表任务完成。</p>
       </TooltipContent>
     </Tooltip>
   );

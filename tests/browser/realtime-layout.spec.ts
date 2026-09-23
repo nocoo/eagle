@@ -126,6 +126,80 @@ test("realtime is first and enables input by default after the control grant", a
   expect(stream.inputs()).toBe(0);
 });
 
+test("realtime status joins the title and controls use one compact row", async ({
+  page,
+  isMobile,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: isMobile ? 390 : 1600, height: 900 });
+  const stream = await openWorkspace(page);
+  const header = page.locator(".space-detail-header");
+  const status = header.getByRole("button", {
+    name: "实时连接：实时连接",
+    exact: true,
+  });
+  await expect(status).toBeVisible();
+  await expect(
+    page
+      .locator(".live-composer")
+      .getByRole("button", { name: "释放输入", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".live-toolbar")
+      .getByRole("button", { name: "释放输入", exact: true }),
+  ).toHaveCount(0);
+  if (!isMobile)
+    await expect(header.locator(".live-pane-count")).toHaveText("1 PANES");
+  const navigation = await page.locator(".live-navigation").boundingBox();
+  const actions = await page.locator(".live-actions").boundingBox();
+  if (!navigation || !actions) throw new Error("Missing realtime controls");
+  expect(Math.abs(navigation.y - actions.y)).toBeLessThan(2);
+  expect(navigation.x + navigation.width).toBeLessThanOrEqual(actions.x);
+  expect(
+    (await page.locator(".live-stage").boundingBox())?.y,
+  ).toBeLessThanOrEqual(isMobile ? 134 : 108);
+  const note = page.getByText("输入仅发送一次 · 以终端执行结果为准", {
+    exact: true,
+  });
+  if (isMobile) {
+    await expect(note).toBeHidden();
+  } else {
+    const keys = await page.locator(".live-shortcuts").boundingBox();
+    const receipt = await note.boundingBox();
+    if (!keys || !receipt) throw new Error("Missing composer footer");
+    expect(receipt.x).toBeGreaterThanOrEqual(keys.x + keys.width);
+    expect(
+      Math.abs(receipt.y + receipt.height / 2 - keys.y - keys.height / 2),
+    ).toBeLessThan(2);
+  }
+  await page.getByLabel("发送到当前 Pane").fill("keep compact draft");
+  await page.getByRole("button", { name: "工作区信息", exact: true }).click();
+  await page.getByRole("button", { name: "工作区信息", exact: true }).click();
+  await expect(page.getByLabel("发送到当前 Pane")).toHaveValue(
+    "keep compact draft",
+  );
+  stream.offline();
+  await expect(
+    header.getByRole("button", {
+      name: "实时连接：等待本机实时服务",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByLabel("发送到当前 Pane")).toBeDisabled();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+  ).toBe(false);
+  expect(stream.controls()).toBe(1);
+  expect(stream.inputs()).toBe(0);
+  await page.locator(".space-sheet").screenshot({
+    path: testInfo.outputPath("compact-workspace-controls.png"),
+    animations: "disabled",
+  });
+});
+
 test("initial input waits for online and the server grant without retrying denied control", async ({
   page,
 }) => {
@@ -195,25 +269,21 @@ test("idle Codex footer is compacted only in the displayed terminal", async ({
   expect(stream.inputs()).toBe(0);
 });
 
-test("output status is an accessible icon on the target row, including failures", async ({
+test("output status stays inside the input field, including failures", async ({
   page,
+  isMobile,
 }, testInfo) => {
   await page.clock.install();
   await page.emulateMedia({ reducedMotion: "reduce" });
   const stream = await openWorkspace(page);
   await page.getByRole("button", { name: "实时模式", exact: true }).click();
-  const row = page.locator(".live-composer-meta");
+  const row = page.locator(".live-input-field");
   const icon = row.getByRole("button", { name: /终端输出：/ });
   await expect(icon).toHaveAttribute("aria-label", "终端输出：刚有新输出");
   expect(await icon.innerText()).toBe("");
   await expect(icon).toHaveCSS("animation-name", "none");
   const geometry = await row.evaluate((el) => {
-    const nodes = [
-      el.querySelector("button"),
-      el.querySelector("label"),
-      el.querySelector("label .mono"),
-      el.querySelector(".live-control-mode"),
-    ];
+    const nodes = [el.querySelector("button"), el.querySelector("input")];
     return {
       height: el.getBoundingClientRect().height,
       centers: nodes.map((node) => {
@@ -224,11 +294,20 @@ test("output status is an accessible icon on the target row, including failures"
       overflow: el.scrollWidth > el.clientWidth,
     };
   });
-  expect(geometry.height).toBeLessThanOrEqual(26);
+  expect(geometry.height).toBeLessThanOrEqual(44);
   expect(
     Math.max(...geometry.centers) - Math.min(...geometry.centers),
   ).toBeLessThan(2);
   expect(geometry.overflow).toBe(false);
+  await expect(row.locator("input")).toHaveAttribute(
+    "aria-describedby",
+    "live-input-target",
+  );
+  if (!isMobile)
+    await expect(row.locator(".live-control-mode")).toHaveText("你正在控制");
+  expect(
+    (await page.locator(".live-composer").boundingBox())?.height,
+  ).toBeLessThanOrEqual(90);
   await page.locator(".space-sheet").screenshot({
     path: testInfo.outputPath("compact-realtime-online.png"),
     animations: "disabled",

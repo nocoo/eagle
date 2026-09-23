@@ -247,6 +247,7 @@ function SpaceDetail({
 }) {
   const { time, zone } = useTimezone();
   const header = useRef<HTMLElement | null>(null);
+  const [statusTarget, setStatusTarget] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     const viewport = window.visualViewport;
     const sheet = header.current?.closest<HTMLElement>("[role=dialog]");
@@ -312,12 +313,15 @@ function SpaceDetail({
   return (
     <>
       <header ref={header} className="space-detail-header">
-        <SheetTitle
-          className="space-detail-title"
-          title={`${space.name} · ${space.session} / ${space.id}`}
-        >
-          {space.name}
-        </SheetTitle>
+        <div className="space-detail-identity">
+          <SheetTitle
+            className="space-detail-title"
+            title={`${space.name} · ${space.session} / ${space.id}`}
+          >
+            {space.name}
+          </SheetTitle>
+          <div className="live-header-status" ref={setStatusTarget} />
+        </div>
         <SheetDescription className="sr-only">
           {space.objective || "目标待补充"}
         </SheetDescription>
@@ -373,6 +377,7 @@ function SpaceDetail({
       >
         {realtime ? (
           <Realtime
+            statusTarget={statusTarget}
             machineId={machine.id}
             spaceId={space.id}
             initialPane={paneId}

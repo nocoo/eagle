@@ -585,3 +585,18 @@ serving and the first catalogue-derived production Cron observation.
   was applied; the full release gate is not claimed green.
 - No real credential rotation, service restart, upload or production deployment
   occurred. Kept this contribution separate from the realtime UI PR.
+
+
+## 2026-09-23 19:05 +08 — compact realtime controls
+
+- Connection status and pane count now join the Space title. Terminal selection,
+  palette and connection actions occupy one toolbar; control ownership, output
+  status and sending are grouped in the bottom composer. Selected panes have a
+  stronger token-based border without a geometry change.
+- All 16 affected desktop/mobile browser checks pass, including explicit release,
+  reacquisition, replacement, reconnect and errors. Status relocation first failed
+  at the expected missing bottom control before implementation.
+- Local Vite/Worker remain available through the existing HTTPS origin. The
+  earlier stored snapshot is not fresh Herdr evidence. Actual collection,
+  authentication, D1 and public rendering will be checked during the authorized
+  v0.7.2 release; Agent remains at its published v0.7.1.

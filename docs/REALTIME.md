@@ -18,8 +18,9 @@ the center by default; narrower screens expose it on demand through the
 information button. Escape closes the narrow information panel first. On mobile
 it covers the detail area, and choosing a task returns to its terminal.
 
-One 48px desktop header combines the Space title, view selection and information
-toggle. Close belongs to the machine rail; mobile keeps navigation and view
+One 48px desktop header combines the Space title, connection status, pane count,
+view selection and information toggle. Tab/pane selection, terminal palette,
+reconnect and help share one compact toolbar below it. Close belongs to the machine rail; mobile keeps navigation and view
 controls in an 80px header above the information overlay. The panel resizes the
 desktop content or slides over narrow content in 300ms, respecting reduced
 motion. Hidden content cannot receive keyboard focus during the transition.
@@ -65,11 +66,15 @@ require manual reacquisition; uncertain inputs are never replayed. Switching to
 **当前任务** or **Space 历史** releases the realtime subscription. Opening a fresh
 realtime view makes a new default request.
 
-One compact row above the input contains an output-status icon, ellipsized target
-name, pane ID and viewing/control mode. Hover or focus the icon for its recent,
-waiting or connection-error explanation. Repeated frames/heartbeats do not renew
-the activity pulse, and reduced motion disables animation. Output activity never
-claims task completion. There is no separate visible output-status text row.
+The input field contains the output-status icon and desktop viewing/control
+label. Its accessible description and icon tooltip retain the full target name
+and pane ID, plus recent, waiting or connection-error details. Take/release
+control sits beside the input and send button. The one-shot submission hint
+aligns with shortcuts at the right; mobile hides that idle hint and secondary
+labels, while submission results and errors remain visible. Selected panes use
+a primary-color border and inset outline without changing dimensions. Repeated
+frames/heartbeats do not renew the activity pulse, and reduced motion disables
+animation. Output activity never claims task completion.
 
 Recognized trailing Codex idle chrome is compacted in the web view: remove the
 exact `› Ask Codex to do anything` placeholder and adjacent blank padding, and

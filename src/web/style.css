@@ -1875,8 +1875,15 @@
   gap: 12px;
   border-bottom: 1px solid hsl(var(--basalt-border));
 }
-.space-detail-title {
+.space-detail-identity {
+  display: flex;
+  align-items: center;
   flex: 1;
+  min-width: 0;
+  gap: 12px;
+}
+.space-detail-title {
+  flex: 0 1 auto;
   min-width: 0;
   margin: 0;
   font-size: 14px;
@@ -2020,7 +2027,7 @@
   }
 }
 .live-toolbar,
-.live-connection,
+.live-header-status,
 .live-actions,
 .live-navigation {
   display: flex;
@@ -2032,8 +2039,19 @@
 .live-toolbar {
   justify-content: space-between;
 }
-.live-connection > svg {
-  color: hsl(var(--basalt-accent-2));
+.live-connection {
+  height: 26px;
+  padding-inline: 6px;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: hsl(var(--basalt-warning));
+}
+.live-connection[data-online="true"] {
+  color: hsl(var(--basalt-muted-foreground));
+}
+.live-connection[data-online="true"] > svg {
+  color: hsl(var(--basalt-primary));
 }
 .live-actions > button {
   height: 32px;
@@ -2042,6 +2060,7 @@
   width: 32px;
 }
 .live-navigation {
+  flex: 1;
   gap: 10px;
 }
 .live-navigation > button {
@@ -2058,11 +2077,10 @@
   white-space: nowrap;
 }
 .live-pane-count {
-  margin-left: auto;
   white-space: nowrap;
-  font-size: 10px;
+  font-size: 11px;
   color: hsl(var(--basalt-muted-foreground));
-  letter-spacing: 0.1em;
+  letter-spacing: 0.04em;
 }
 .live-stage {
   flex: 1;
@@ -2084,10 +2102,15 @@
   overflow: hidden;
   border: 1px solid hsl(var(--basalt-border));
   border-radius: 10px;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  transition:
+    border-color 150ms ease,
+    outline-color 150ms ease;
 }
 .live-pane[data-selected="true"] {
-  border-color: hsl(var(--basalt-accent-2) / 0.65);
-  box-shadow: 0 0 18px hsl(var(--basalt-accent-2) / 0.06);
+  border-color: hsl(var(--basalt-primary));
+  outline-color: hsl(var(--basalt-primary));
 }
 .live-pane .live-pane-heading {
   flex: none;
@@ -2102,6 +2125,9 @@
   padding-inline: 12px;
   font-size: 11px;
 }
+.live-pane[data-selected="true"] .live-pane-heading {
+  background: hsl(var(--basalt-primary) / 0.1);
+}
 .live-pane-heading > span:first-of-type {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2113,7 +2139,7 @@
   font-size: 10px;
 }
 .live-pane[data-selected="true"] .live-pane-heading > svg {
-  color: hsl(var(--basalt-accent-2));
+  color: hsl(var(--basalt-primary));
 }
 .live-pane pre {
   flex: 1;
@@ -2197,49 +2223,29 @@
   min-width: 0;
   padding-top: 2px;
 }
-.live-composer-meta,
-.live-composer-meta > label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.live-composer-meta {
-  justify-content: space-between;
-  flex-wrap: nowrap;
-  height: 24px;
-  gap: 6px;
-  margin-bottom: 8px;
-  color: hsl(var(--basalt-muted-foreground));
-  font-size: 10px;
-}
-.live-composer-meta > label {
+.live-input-field {
+  position: relative;
   flex: 1;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.live-composer-meta > span {
-  flex: none;
-}
-.live-composer-meta .mono {
-  flex: none;
-  max-width: 30%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.live-target-name {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-.live-composer-meta > .live-control-mode {
-  white-space: nowrap;
-}
-.live-composer-meta .live-output-status {
+.live-input-field .live-output-status {
+  position: absolute;
+  z-index: 1;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
   width: 24px;
   height: 24px;
-  flex: none;
   color: hsl(var(--basalt-muted-foreground));
+}
+.live-control-mode {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: hsl(var(--basalt-muted-foreground));
+  pointer-events: none;
 }
 .live-output-status[data-state="recent"] {
   color: hsl(var(--basalt-accent-4));
@@ -2264,25 +2270,26 @@
   align-items: center;
   gap: 8px;
 }
-.live-input-row > input {
-  flex: 1;
+.live-input-field > input {
+  width: 100%;
   min-width: 0;
   height: 44px;
-  padding-left: 32px;
+  padding-inline: 36px 84px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
-}
-.live-prompt {
-  position: absolute;
-  left: 12px;
-  color: hsl(var(--basalt-accent-2));
-  pointer-events: none;
 }
 .live-input-row > button {
   height: 44px;
   flex: none;
 }
+.live-composer-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
 .live-shortcuts {
+  flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -2297,16 +2304,24 @@
   height: 26px;
   padding-inline: 8px;
   font:
-    10px ui-monospace,
+    11px ui-monospace,
     SFMono-Regular,
     Menlo,
     monospace;
 }
 .live-receipt {
+  flex: 0 1 auto;
+  max-width: 42%;
   min-height: 16px;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
   color: hsl(var(--basalt-muted-foreground));
+  text-align: right;
+}
+@media (max-width: 1023px) {
+  .live-connection-text {
+    display: none;
+  }
 }
 @media (max-width: 767px) {
   .space-detail-header {
@@ -2322,6 +2337,9 @@
     height: 1px;
     clip-path: inset(50%);
   }
+  .space-detail-identity {
+    flex: none;
+  }
   .space-mode-switch button {
     flex: 1;
     padding-inline: 6px;
@@ -2336,13 +2354,26 @@
     padding: 12px 12px max(10px, env(safe-area-inset-bottom));
     gap: 10px;
   }
-  .live-connection > svg,
   .live-pane-count {
     display: none;
   }
-  .live-connection > span {
-    font-size: 10px;
-    padding-inline: 6px;
+  .live-control-label {
+    display: none;
+  }
+  .live-input-row > .live-control-toggle {
+    width: 44px;
+    padding: 0;
+  }
+  .live-composer-footer {
+    flex-wrap: wrap;
+    gap: 0;
+  }
+  .live-receipt {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .live-receipt[data-idle="true"] {
+    display: none;
   }
   .live-actions {
     gap: 5px;
@@ -2366,8 +2397,17 @@
     padding: 12px;
     font-size: 11px;
   }
-  .live-input-row > input {
+  .live-input-field > input {
     font-size: 16px;
+    padding-right: 12px;
+  }
+  .live-control-mode {
+    display: none;
+  }
+}
+@media (max-width: 359px) {
+  .space-mode-switch button > svg {
+    display: none;
   }
 }
 @media (max-height: 620px) {
@@ -2376,8 +2416,7 @@
     padding-top: 8px;
     padding-bottom: 6px;
   }
-  .live-pane-footer,
-  .live-composer-meta {
+  .live-pane-footer {
     display: none;
   }
 }
@@ -2397,6 +2436,9 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .workspace-inspector {
+    transition: none;
+  }
+  .live-pane {
     transition: none;
   }
   .workspace-refreshing {

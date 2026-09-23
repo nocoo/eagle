@@ -1,5 +1,4 @@
 import {
-  Badge,
   Button,
   Input,
   Tooltip,
@@ -26,6 +25,7 @@ import {
   TerminalSquare,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   type LiveFrame,
   type LiveInput,
@@ -44,7 +44,9 @@ export function Realtime({
   selectedPane,
   onPaneChange,
   onObservedAt,
+  statusTarget,
 }: {
+  statusTarget: HTMLElement | null;
   machineId: string;
   spaceId: string;
   initialPane?: string;
@@ -309,6 +311,7 @@ export function Realtime({
     );
     if (value) setDraft({ target: "", text: "" });
   };
+  const targetDescription = `${pane ? `发送到 ${pane.title} · ${pane.id}` : "等待终端"} · ${control ? "你正在控制" : "观看模式"}`;
   const disabled =
     !online || !control || authority !== targetIdentity || busy || !pane;
   return (
@@ -317,12 +320,64 @@ export function Realtime({
       className="live-space"
       data-terminal-theme={appearance.resolved}
     >
+      {statusTarget &&
+        createPortal(
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="live-connection"
+                  data-online={online}
+                  aria-label={`实时连接：${connection}`}
+                >
+                  <Radio size={14} aria-hidden="true" />
+                  <span className="live-connection-text">{connection}</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{connection}</TooltipContent>
+            </Tooltip>
+            <span className="live-pane-count mono" title="当前标签页的终端数量">
+              {tab?.panes.length ?? 0} PANES
+            </span>
+          </>,
+          statusTarget,
+        )}
       <div className="live-toolbar">
-        <div className="live-connection">
-          <Radio size={15} aria-hidden="true" />
-          <Badge variant={online ? "success" : "warning"} dot>
-            {connection}
-          </Badge>
+        <div className="live-navigation">
+          <Select
+            value={tab?.id ?? ""}
+            onValueChange={(id) =>
+              setSelected(
+                topology?.tabs.find((t) => t.id === id)?.panes[0]?.id ?? "",
+              )
+            }
+          >
+            <SelectTrigger aria-label="实时标签页">
+              <SelectValue placeholder="等待标签页" />
+            </SelectTrigger>
+            <SelectContent>
+              {topology?.tabs.map((t) => (
+                <SelectItem key={t.id} value={t.id} disabled={!t.panes.length}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <ChevronRight size={13} aria-hidden="true" />
+          <Select value={pane?.id ?? ""} onValueChange={setSelected}>
+            <SelectTrigger aria-label="当前终端">
+              <SelectValue placeholder="等待终端" />
+            </SelectTrigger>
+            <SelectContent>
+              {tab?.panes.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.title} · {p.id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="live-actions">
           <Select value={appearance.theme} onValueChange={appearance.select}>
@@ -338,21 +393,6 @@ export function Realtime({
               ))}
             </SelectContent>
           </Select>
-          <Button
-            size="sm"
-            variant={control ? "default" : "secondary"}
-            disabled={!online || !pane}
-            onClick={() => {
-              initialControlRequested.current = true;
-              setAuthority(control ? "" : targetIdentity);
-              socket.current?.send(
-                JSON.stringify({ type: control ? "release" : "control" }),
-              );
-            }}
-          >
-            {control ? <Keyboard size={14} /> : <Eye size={14} />}
-            {control ? "释放输入" : "接管输入"}
-          </Button>
           <Button
             size="icon"
             variant="outline"
@@ -379,43 +419,6 @@ export function Realtime({
           配色仅在本次打开时有效
         </p>
       )}
-      <div className="live-navigation">
-        <Select
-          value={tab?.id ?? ""}
-          onValueChange={(id) =>
-            setSelected(
-              topology?.tabs.find((t) => t.id === id)?.panes[0]?.id ?? "",
-            )
-          }
-        >
-          <SelectTrigger aria-label="实时标签页">
-            <SelectValue placeholder="等待标签页" />
-          </SelectTrigger>
-          <SelectContent>
-            {topology?.tabs.map((t) => (
-              <SelectItem key={t.id} value={t.id} disabled={!t.panes.length}>
-                {t.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <ChevronRight size={13} aria-hidden="true" />
-        <Select value={pane?.id ?? ""} onValueChange={setSelected}>
-          <SelectTrigger aria-label="当前终端">
-            <SelectValue placeholder="等待终端" />
-          </SelectTrigger>
-          <SelectContent>
-            {tab?.panes.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.title} · {p.id}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <span className="live-pane-count mono">
-          {tab?.panes.length ?? 0} PANES
-        </span>
-      </div>
       <div className="live-stage">
         {tab ? (
           <section className="live-panes" aria-label={tab.name}>
@@ -477,50 +480,67 @@ export function Realtime({
           if (text) send(["enter"], text);
         }}
       >
-        <div className="live-composer-meta">
-          <RealtimeActivity
-            frame={pane ? frames[pane.id] : undefined}
-            online={online}
-            connection={connection}
-          />
-          <label htmlFor="live-input">
-            <span className="live-target-name" title={pane?.title}>
-              {pane ? `发送到 ${pane.title}` : "等待终端"}
-            </span>
-            <span className="mono" title={pane?.id}>
-              {pane?.id}
-            </span>
-          </label>
-          <span className="live-control-mode">
-            {control ? "你正在控制" : "观看模式"}
-          </span>
-        </div>
+        <span id="live-input-target" className="sr-only">
+          {targetDescription}
+        </span>
         <div className="live-input-row">
-          <span className="live-prompt mono" aria-hidden="true">
-            ❯
-          </span>
-          <Input
-            id="live-input"
-            aria-label="发送到当前 Pane"
-            value={text}
-            onChange={(e) =>
-              setDraft({ target: targetIdentity, text: e.target.value })
-            }
-            onKeyDown={(e) => {
-              if (
-                e.key === "Enter" &&
-                (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229)
-              )
-                e.preventDefault();
+          <div className="live-input-field">
+            <RealtimeActivity
+              frame={pane ? frames[pane.id] : undefined}
+              online={online}
+              connection={connection}
+              targetDescription={targetDescription}
+            />
+            <Input
+              id="live-input"
+              aria-label="发送到当前 Pane"
+              aria-describedby="live-input-target"
+              value={text}
+              onChange={(e) =>
+                setDraft({ target: targetIdentity, text: e.target.value })
+              }
+              onKeyDown={(e) => {
+                if (
+                  e.key === "Enter" &&
+                  (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229)
+                )
+                  e.preventDefault();
+              }}
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={8000}
+              disabled={disabled}
+              placeholder={
+                control
+                  ? `发送到 ${pane?.title ?? "当前终端"} · Enter 发送`
+                  : "接管输入后发送指令"
+              }
+            />
+            <span className="live-control-mode">
+              {control ? "你正在控制" : "观看模式"}
+            </span>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant={control ? "outline" : "secondary"}
+            className="live-control-toggle"
+            aria-label={control ? "释放输入" : "接管输入"}
+            title={control ? "释放输入" : "接管输入"}
+            disabled={!online || !pane}
+            onClick={() => {
+              initialControlRequested.current = true;
+              setAuthority(control ? "" : targetIdentity);
+              socket.current?.send(
+                JSON.stringify({ type: control ? "release" : "control" }),
+              );
             }}
-            autoComplete="off"
-            spellCheck={false}
-            maxLength={8000}
-            disabled={disabled}
-            placeholder={
-              control ? "输入指令，Enter 发送" : "接管输入后发送指令"
-            }
-          />
+          >
+            {control ? <Keyboard size={14} /> : <Eye size={14} />}
+            <span className="live-control-label">
+              {control ? "释放输入" : "接管输入"}
+            </span>
+          </Button>
           <Button
             type="submit"
             size="sm"
@@ -531,46 +551,52 @@ export function Realtime({
             <span>发送</span>
           </Button>
         </div>
-        <fieldset className="live-shortcuts" aria-label="终端快捷键">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={disabled || !text}
-            onClick={() => send([], text)}
-          >
-            仅发送文字
-          </Button>
-          {(
-            [
-              ["enter", "Enter"],
-              ["ctrl+c", "Ctrl+C"],
-              ["ctrl+d", "Ctrl+D"],
-              ["ctrl+l", "Ctrl+L"],
-              ["esc", "Esc"],
-              ["tab", "Tab"],
-              ["shift+tab", "Shift+Tab"],
-              ["backspace", "⌫"],
-            ] as const
-          ).map(([key, label]) => (
+        <div className="live-composer-footer">
+          <fieldset className="live-shortcuts" aria-label="终端快捷键">
             <Button
               type="button"
-              key={key}
               size="sm"
               variant="outline"
-              disabled={disabled}
-              onClick={() => send([key])}
+              disabled={disabled || !text}
+              onClick={() => send([], text)}
             >
-              {key === "enter" && <CornerDownLeft size={12} />}
-              {label}
+              仅发送文字
             </Button>
-          ))}
-        </fieldset>
-        <p role="status" className="live-receipt">
-          {busy
-            ? "等待提交结果…"
-            : receipt || "输入仅发送一次 · 以终端执行结果为准"}
-        </p>
+            {(
+              [
+                ["enter", "Enter"],
+                ["ctrl+c", "Ctrl+C"],
+                ["ctrl+d", "Ctrl+D"],
+                ["ctrl+l", "Ctrl+L"],
+                ["esc", "Esc"],
+                ["tab", "Tab"],
+                ["shift+tab", "Shift+Tab"],
+                ["backspace", "⌫"],
+              ] as const
+            ).map(([key, label]) => (
+              <Button
+                type="button"
+                key={key}
+                size="sm"
+                variant="outline"
+                disabled={disabled}
+                onClick={() => send([key])}
+              >
+                {key === "enter" && <CornerDownLeft size={12} />}
+                {label}
+              </Button>
+            ))}
+          </fieldset>
+          <p
+            role="status"
+            className="live-receipt"
+            data-idle={!busy && !receipt}
+          >
+            {busy
+              ? "等待提交结果…"
+              : receipt || "输入仅发送一次 · 以终端执行结果为准"}
+          </p>
+        </div>
       </form>
     </section>
   );
