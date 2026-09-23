@@ -990,55 +990,53 @@ export function App() {
             if (!open) setSelection(null);
           }}
         >
-          <SheetContent side="right" className="space-sheet">
-            {detailMachine && detailSpace ? (
-              <WorkspaceShell
+          {detailMachine && detailSpace ? (
+            <WorkspaceShell
+              machine={detailMachine}
+              space={detailSpace}
+              selectedPane={selection?.pane}
+              onPane={(pane) =>
+                setSelection((previous) =>
+                  previous &&
+                  previous.machine === detailMachine.id &&
+                  previous.space === detailSpace.id
+                    ? { ...previous, pane }
+                    : previous,
+                )
+              }
+              onWorkspace={(space) =>
+                setSelection({ machine: detailMachine.id, space })
+              }
+              onBack={() => navigate("overview", detailMachine.id)}
+              onAuthError={expire}
+            >
+              <SpaceDetail
+                key={`${detailMachine.id}:${detailSpace.id}`}
                 machine={detailMachine}
                 space={detailSpace}
-                selectedPane={selection?.pane}
-                onPane={(pane) =>
+                selection={selection}
+                onAuthError={expire}
+                showClose={false}
+                onPaneSelection={(pane) =>
                   setSelection((previous) =>
                     previous &&
                     previous.machine === detailMachine.id &&
-                    previous.space === detailSpace.id
+                    previous.space === detailSpace.id &&
+                    previous.pane !== pane
                       ? { ...previous, pane }
                       : previous,
                   )
                 }
-                onWorkspace={(space) =>
-                  setSelection({ machine: detailMachine.id, space })
-                }
-                onBack={() => navigate("overview", detailMachine.id)}
-                onAuthError={expire}
-              >
-                <SpaceDetail
-                  key={`${detailMachine.id}:${detailSpace.id}`}
-                  machine={detailMachine}
-                  space={detailSpace}
-                  selection={selection}
-                  onAuthError={expire}
-                  showClose={false}
-                  onPaneSelection={(pane) =>
-                    setSelection((previous) =>
-                      previous &&
-                      previous.machine === detailMachine.id &&
-                      previous.space === detailSpace.id &&
-                      previous.pane !== pane
-                        ? { ...previous, pane }
-                        : previous,
-                    )
-                  }
-                />
-              </WorkspaceShell>
-            ) : (
-              <>
-                <SheetTitle>Space 已关闭</SheetTitle>
-                <SheetDescription>
-                  可在最近历史查看之前的任务与证据。
-                </SheetDescription>
-              </>
-            )}
-          </SheetContent>
+              />
+            </WorkspaceShell>
+          ) : (
+            <SheetContent side="right" className="space-sheet">
+              <SheetTitle>Space 已关闭</SheetTitle>
+              <SheetDescription>
+                可在最近历史查看之前的任务与证据。
+              </SheetDescription>
+            </SheetContent>
+          )}
         </Sheet>
       </AppShell>
     </SidebarProvider>

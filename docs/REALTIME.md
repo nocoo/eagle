@@ -4,24 +4,32 @@ The default `/` entry selects the first available machine in sidebar order; an
 explicit machine link is preserved. Machine navigation appears first. The global
 fleet remains available at `/overview`, including after refresh/back/forward.
 
-On desktop (1024px and wider), opening a workspace uses an opaque full-window
-split surface. The left side starts with an on-entry/manual-refresh workspace
-snapshot, with one or two task-card columns according to available width. Below
-the tasks, a machine snapshot reuses existing CPU, memory, disk, uptime and TCP
-port observations from the same frozen report. Missing/stale readings stay
-explicit; this view neither collects more data nor claims continuous sampling.
-The former separate machine-name/status panel is removed. The right side retains
-the realtime/task/history controls. Cards target the exact live terminal.
+Opening a workspace uses an opaque full-window surface. At 768px and wider,
+a compact left rail lists every Space vertically, with name/ID search, pane
+counts and an independently scrolling list. Up/Down/Home/End select Spaces;
+Escape clears a nonempty search before closing the workspace. Below 768px,
+the current Space name opens a searchable picker with keyboard navigation.
 
-Workspace tabs at the top switch in place. Tabs that do not fit fold into
-**更多**, while the selected workspace stays visible. The picker searches all
-workspaces by name or ID. Below 768px it replaces the tab row with the current
-workspace name and a searchable dropdown; screens below 1024px retain one detail
-column. Arrow keys/Home/End navigate desktop tabs and picker results, and Escape
-closes only the picker. Selecting another workspace closes the previous realtime
-subscription and clears drafts; selecting the current item, opening/closing the
-picker or resizing does not. Back returns to the machine and close returns to
-the previous page.
+The center retains realtime/task/history views, tab/pane selection and input
+controls. The right information panel holds the workspace objective (a compact
+preview expands to the full text), task summaries and machine CPU, memory,
+disk, uptime and TCP port observations. At 1280px and wider it opens alongside
+the center by default; narrower screens expose it on demand through the
+information button. Escape closes the narrow information panel first. On mobile
+it covers the detail area, and choosing a task returns to its terminal.
+
+Information reads the latest reported snapshot on entry or when reopened, then
+stays frozen until manually refreshed. Missing/stale readings and refresh errors
+stay explicit; this view neither collects more data nor claims continuous
+sampling. Task cards target the exact live terminal. The information panel and
+Space list scroll independently of the terminal and input area.
+
+Selecting another workspace closes the previous realtime subscription and clears
+drafts. Selecting the current item, searching, toggling information or resizing
+does not recreate the terminal connection. Switching input targets still clears
+the previous target's draft. Back returns to the machine; close returns to the
+previous page. The information toggle restores focus when its narrow panel is
+closed with Escape.
 
 Fleet statistics use available, fresh snapshots. A `working` lifecycle hint can
 fill the activity gap before native execution evidence arrives, but is explicitly

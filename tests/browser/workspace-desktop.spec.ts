@@ -251,7 +251,7 @@ test("fleet activity includes working hints but never revives stale machines or 
 });
 
 for (const theme of ["dark", "light"] as const) {
-  test(`desktop workspace has responsive cards and in-place tabs (${theme})`, async ({
+  test(`desktop workspace has compact details and vertical navigation (${theme})`, async ({
     page,
     isMobile,
   }, testInfo) => {
@@ -278,7 +278,7 @@ for (const theme of ["dark", "light"] as const) {
         .evaluate(
           (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
         );
-    await expect.poll(columns).toBe(2);
+    await expect.poll(columns).toBe(1);
     const sheet = page.locator(".space-sheet");
     expect((await sheet.boundingBox())?.width).toBeCloseTo(1600, 1);
     await sheet.evaluate((el) => el.setAttribute("data-continuity", "same"));
@@ -309,7 +309,7 @@ for (const theme of ["dark", "light"] as const) {
       animations: "disabled",
     });
     await page.setViewportSize({ width: 1200, height: 900 });
-    await expect.poll(columns).toBe(1);
+    await expect(left).toHaveCount(0);
     const connections = source.opened();
     await page.setViewportSize({ width: 900, height: 900 });
     await expect(left).toHaveCount(0);
@@ -382,6 +382,12 @@ test("mobile workspace tabs switch in place and never carry drafts into another 
   await input.fill("local draft, never sent");
   const picker = page.getByRole("button", { name: "选择工作区" });
   await expect(picker).toContainText("Build Workspace");
+  expect(
+    await picker
+      .locator("span")
+      .first()
+      .evaluate((element) => element.getBoundingClientRect().width),
+  ).toBeGreaterThan(100);
   await picker.click();
   await page
     .getByRole("button", { name: "切换到 Build Workspace", exact: true })
@@ -413,74 +419,56 @@ test("mobile workspace tabs switch in place and never carry drafts into another 
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("many workspace tabs fold, search and resize without reconnecting", async ({
+test("vertical spaces stay searchable and keyboard accessible without losing terminal drafts", async ({
   page,
   isMobile,
 }, testInfo) => {
-  test.skip(isMobile, "Desktop overflow surface");
-  await page.setViewportSize({ width: 1200, height: 900 });
+  test.skip(isMobile, "Desktop navigation");
+  await page.setViewportSize({ width: 1600, height: 900 });
   const source = await fixture(page, false, 20);
-  await page.goto("/?machine=one");
+  await page.goto("/");
   await page
     .getByRole("button", { name: "查看 Build Workspace", exact: true })
     .click();
-  const more = page.getByRole("button", { name: /^更多工作区/ });
-  await expect(more).toBeVisible();
+  const navigation = page.getByRole("tablist", { name: "切换工作区" });
+  await expect(navigation).toHaveAttribute("aria-orientation", "vertical");
+  await expect(navigation.getByRole("tab")).toHaveCount(20);
+  const search = page.getByRole("textbox", { name: "搜索工作区" });
   const input = page.getByLabel("发送到当前 Pane");
   await expect(input).toBeEnabled();
   await input.fill("keep this draft");
-  await more.click();
-  const search = page.getByRole("textbox", { name: "搜索工作区" });
-  await expect(search).toBeFocused();
   await search.fill("missing workspace");
   await expect(page.getByText("没有匹配的工作区")).toBeVisible();
   await search.press("Escape");
-  await expect(search).toHaveCount(0);
-  await expect(more).toBeFocused();
+  await expect(search).toHaveValue("");
+  await expect(page.getByRole("dialog")).toBeVisible();
   await expect(input).toHaveValue("keep this draft");
-  await more.click();
   await search.fill("default:w20");
   await search.dispatchEvent("keydown", { key: "Enter", isComposing: true });
   expect(source.opened()).toBe(1);
-  await page
-    .locator(".workspace-picker")
-    .screenshot({ path: testInfo.outputPath("workspace-overflow.png") });
   await search.press("ArrowDown");
-  await expect(
-    page.getByRole("button", { name: "切换到 Workspace 20", exact: true }),
-  ).toBeFocused();
-  await page.keyboard.press("Enter");
   const active = page.getByRole("tab", { name: "Workspace 20", exact: true });
-  await expect(active).toHaveAttribute("aria-selected", "true");
   await expect(active).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(active).toHaveAttribute("aria-selected", "true");
   await expect(input).toHaveValue("");
   await expect.poll(source.closed).toBe(1);
   await expect.poll(source.opened).toBe(2);
-  await input.fill("survives resizing");
-  for (const width of [900, 390, 1600]) {
-    await page.setViewportSize({ width, height: 900 });
-    if (width === 390) {
-      await expect(
-        page.getByRole("button", { name: "选择工作区" }),
-      ).toContainText("Workspace 20");
-    } else await expect(active).toBeVisible();
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-    ).toBe(true);
-    const bar = page.locator(".workspace-window-bar");
-    expect(await bar.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
-      true,
-    );
-  }
-  await expect(input).toHaveValue("survives resizing");
-  expect(source.opened()).toBe(2);
-  expect(source.inputs()).toBe(0);
+  await search.fill("");
+  await active.focus();
   await active.press("Home");
   await expect(
     page.getByRole("tab", { name: "Build Workspace", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowDown");
+  await expect(
+    page.getByRole("tab", { name: "Review Workspace", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page.locator(".space-sheet").screenshot({
+    path: testInfo.outputPath("workspace-navigation.png"),
+    animations: "disabled",
+  });
+  expect(source.inputs()).toBe(0);
 });
 
 test("one workspace needs no desktop overflow", async ({ page, isMobile }) => {
@@ -518,41 +506,73 @@ test("machine snapshot keeps missing and historical resource states explicit", a
   await expect(resources).not.toContainText("实时采样");
 });
 
-test("growing the desktop can unfold every tab without recreating realtime", async ({
+test("workspace information can be tucked away and reopened without reconnecting", async ({
   page,
   isMobile,
 }) => {
-  test.skip(isMobile, "Desktop overflow surface");
-  await page.setViewportSize({ width: 900, height: 900 });
-  const source = await fixture(page, false, 6);
+  test.skip(isMobile, "Desktop geometry and responsive transitions");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 1600, height: 900 });
+  const source = await fixture(page, false, 20);
   await page.goto("/");
   await page
     .getByRole("button", { name: "查看 Build Workspace", exact: true })
     .click();
-  const more = page.getByRole("button", { name: /^更多工作区/ });
-  await more.click();
-  await page
-    .getByRole("button", { name: "切换到 Workspace 6", exact: true })
-    .click();
-  await expect.poll(source.opened).toBe(2);
-  await more.click();
-  await page.setViewportSize({ width: 1600, height: 900 });
-  await expect(more).toHaveCount(0);
-  await expect(page.getByRole("textbox", { name: "搜索工作区" })).toHaveCount(
-    0,
-  );
-  await expect(
-    page.getByRole("tablist", { name: "切换工作区" }).getByRole("tab"),
-  ).toHaveCount(6);
-  await expect(
-    page.getByRole("tab", { name: "Workspace 6", exact: true }),
-  ).toHaveAttribute("aria-selected", "true");
-  await page.setViewportSize({ width: 900, height: 900 });
-  await more.click();
-  await expect(page.getByRole("textbox", { name: "搜索工作区" })).toHaveValue(
-    "",
-  );
-  expect(source.opened()).toBe(2);
+  const nav = page.locator(".workspace-rail");
+  const main = page.locator(".workspace-detail");
+  const info = page.getByRole("region", { name: "工作区快照" });
+  await expect(info).toBeVisible();
+  const n = await nav.boundingBox(),
+    m = await main.boundingBox(),
+    i = await info.boundingBox();
+  if (!n || !m || !i) throw new Error("Missing workspace regions");
+  expect(n.x + n.width).toBeLessThanOrEqual(m.x + 1);
+  expect(m.x + m.width).toBeLessThanOrEqual(i.x + 1);
+  expect(m.width).toBeGreaterThan(1050);
+  const card = await info.locator(".workspace-task-card").first().boundingBox();
+  expect(card?.height).toBeLessThan(145);
+  const input = page.getByLabel("发送到当前 Pane");
+  await expect(input).toBeEnabled();
+  await input.fill("survives layout changes");
+  const toggle = page.getByRole("button", { name: "工作区信息", exact: true });
+  await toggle.click();
+  await expect(info).toHaveCount(0);
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.click();
+  await expect(info).toBeVisible();
+  for (const width of [1200, 900, 390, 1600]) {
+    await page.setViewportSize({ width, height: 900 });
+    if (width < 1280) {
+      await expect(info).toHaveCount(0);
+      await toggle.click();
+      await expect(info).toBeVisible();
+      await expect(
+        info.getByRole("region", { name: "机器快照", exact: true }),
+      ).toBeVisible();
+      if (width === 390) {
+        await expect(input).toHaveValue("survives layout changes");
+        await info
+          .getByRole("button", { name: "打开实时终端 w1:p3", exact: true })
+          .click();
+        await expect(info).toHaveCount(0);
+        await expect(
+          page.getByRole("combobox", { name: "当前终端" }),
+        ).toContainText("w1:p3");
+        await toggle.click();
+      }
+      await page.keyboard.press("Escape");
+      await expect(info).toHaveCount(0);
+      await expect(toggle).toBeFocused();
+      await expect(page.getByRole("dialog")).toBeVisible();
+    }
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  }
+  await expect(input).toHaveValue("");
+  expect(source.opened()).toBe(1);
   expect(source.inputs()).toBe(0);
 });
 

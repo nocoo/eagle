@@ -1,5 +1,32 @@
 # 用户视角检查点
 
+## 2026-09-23 — Vertical workspace navigation, local implementation
+
+- Replaced horizontal Space overflow with a searchable vertical rail and moved
+  compact task/machine snapshots to an optional right information panel. The
+  central realtime/task/history views retain their existing data and controls.
+- New browser checks first failed against the old layout. Navigation, keyboard
+  selection, resize, draft retention, connection continuity and returning from
+  mobile information to the selected terminal now pass. Full browser run:
+  115 passed, 11 existing opposite-viewport cases skipped. `npm run check` passes
+  all 114 unit/API tests, strict TypeScript, lint and build. Lint retains four
+  pre-existing informational suggestions; build retains the chunk-size warning.
+- Actual local Vite/Worker rendering was inspected in dark/light at 1600px and
+  dark at 1280/1024/390px. The main workspace measures 1103px at 1600px, with no
+  document overflow or page errors. Loopback authentication and persisted local
+  overview reads work; reported collection is still September 22 data. No new
+  Herdr collection, ingestion, D1 write or remote verification is claimed. The
+  visual browser blocked realtime sockets and sent no terminal input.
+- Screenshot inspection found the mobile picker name clipped by an overly broad
+  icon-button selector despite passing text assertions. A visible-width
+  regression reproduced the zero-width label; the narrowed selector fixes it.
+  Final full browser verification again passes 115 cases with 11 viewport skips;
+  typecheck/build and check-only lint on all changed source files also pass.
+  The existing stale-pane status inconsistency in current-task topology remains
+  outside this layout change. No deployment or public verification was performed.
+  Evidence is in `.local/workspace-layout-20260923/` and `.local/workspace-*.log`.
+
+
 ## 2026-09-22 — Workspace overflow and machine snapshot placement
 
 - Reproduced missing desktop overflow, mobile picker and machine snapshot in
