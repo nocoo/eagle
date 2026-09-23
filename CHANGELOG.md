@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.2 — 2026-09-23
+
+- Place Space navigation in a searchable vertical rail, with a compact mobile picker and preserved keyboard/focus behavior.
+- Consolidate workspace headers, connection status and terminal controls; group take/release input beside the bottom composer and send action.
+- Animate the collapsible information panel, show capture age counting upward, and retain exact timestamps and snapshot details in tooltips.
+- Strengthen selected-pane borders and improve mobile terminal space while preserving submission feedback and errors.
+- Allow independent website releases. The published Agent and onboarding remain at v0.7.1; no npm package is published for this release.
+
 ## v0.7.1 — 2026-09-22
 
 - Refresh current-task snapshots on entry and align task details for compact reading.

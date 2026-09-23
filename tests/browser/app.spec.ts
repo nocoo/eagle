@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import pkg from "../../package.json" with { type: "json" };
+import pkg from "../../agent/package.json" with { type: "json" };
 import { report, telemetry } from "../fixtures.ts";
 
 // Workspace sheets now open realtime by default. Keep these task/overview

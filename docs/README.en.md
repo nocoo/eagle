@@ -40,7 +40,7 @@ Realtime mode separately transmits redacted current terminal screens. Screen tex
 
 Open [Eagle](https://eagle.hexly.ai), sign in through Access, add a machine in **Connect**, and give its generated onboarding prompt to the existing management Agent (Hermes recommended; alternatives supported) on that machine.
 
-The collector requires Node.js 24+, npm and Herdr 0.9.1+; realtime input currently requires Herdr 0.9.1 protocol 22. Install it independently from npm without cloning Eagle. The website and Agent share release v0.7.1:
+The collector requires Node.js 24+, npm and Herdr 0.9.1+; realtime input currently requires Herdr 0.9.1 protocol 22. Install it independently from npm without cloning Eagle. Website releases are independent; install the published Agent v0.7.1:
 
 ```sh
 npm install -g @nocoo/eagle-agent@0.7.1 --registry=https://registry.npmjs.org

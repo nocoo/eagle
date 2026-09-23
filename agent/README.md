@@ -6,7 +6,7 @@ Read-only Herdr inventory, task evidence, machine resources and named TCP port c
 
 Check `node --version`, `npm --version` and `herdr --version` first. Install Node.js 24+ from https://nodejs.org/en/download if needed, and have Herdr installed and running. No Eagle repository checkout, TypeScript compiler or npm login is required to install this public package.
 
-Install Agent v0.7.1 from npm. The Agent and Eagle website share the same release version:
+Install Agent v0.7.1 from npm. Website releases are independent; this is the published Agent version:
 
 ```sh
 npm install -g @nocoo/eagle-agent@0.7.1 --registry=https://registry.npmjs.org

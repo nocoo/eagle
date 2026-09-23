@@ -600,3 +600,21 @@ serving and the first catalogue-derived production Cron observation.
   earlier stored snapshot is not fresh Herdr evidence. Actual collection,
   authentication, D1 and public rendering will be checked during the authorized
   v0.7.2 release; Agent remains at its published v0.7.1.
+
+
+## 2026-09-23 19:12 +08 — v0.7.2 release gates
+
+- All 115 unit/API/package checks pass, including isolated Agent installation
+  and independent website/Agent versions. TypeScript, check-only lint and build
+  pass; the four existing informational lint suggestions and bundle-size
+  advisory remain. Final browser run: 121 passed, 11 viewport-specific skips.
+- Real local collection at 19:07 +08 verified 19 Spaces / 26 Panes, idempotent
+  ingestion, DO revision, stable automatic updates, unchanged D1 history and
+  desktop/mobile rendering. At 19:08, the published v0.7.1 Agent bridge returned
+  isolated shell output in 2,527 ms and released all four browser subscriptions.
+- Root website/Worker version is v0.7.2. Agent behavior/protocol is unchanged;
+  Agent runtime and onboarding now derive from its own v0.7.1 manifest. Public
+  mirror metadata confirms v0.7.1 exists. No npm publication is planned.
+- No production migrations are pending. The remaining release steps are push,
+  exact-revision CI, matching deployment, public live/realtime verification and
+  the GitHub tag/release.

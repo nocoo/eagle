@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import agent from "../agent/package.json" with { type: "json" };
 import { onboardingPrompt, type Registration } from "../src/shared/connect.ts";
 
 const machine: Registration = {
@@ -74,4 +75,18 @@ test("same-origin rotation restarts only existing services using the selected co
     /重启使用该配置且已启用的 watch、manager-watch、realtime-watch 服务/,
   );
   assert.match(rotation, /不要因此启动尚未启用的可选服务/);
+});
+
+test("onboarding pins the published Agent independently of website releases", () => {
+  const prompt = onboardingPrompt(
+    machine,
+    "fixture-token",
+    "https://ingest.example.test",
+    [],
+  );
+  assert(
+    prompt.includes(`npm install -g @nocoo/eagle-agent@${agent.version} `),
+  );
+  assert(prompt.includes(`eagle-agent --version（应输出 ${agent.version}）`));
+  assert.doesNotMatch(prompt, /与 Eagle 网站版本一致/);
 });

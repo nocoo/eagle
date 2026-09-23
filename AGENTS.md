@@ -6,10 +6,15 @@ Durable Objects/D1 and a standalone Node Agent. Human overview: [README.md](READ
 ## Scope and sources
 
 Maintain project instructions only in this root AGENTS.md; do not create a
-CLAUDE.md alias or copy. Root `package.json` owns the release version. Keep
-`agent/package.json`, the root lockfile and installation docs synchronized;
-runtime/onboarding versions derive from the root manifest. The package test
-must verify the published manifest and installed CLI match it.
+CLAUDE.md alias or copy. Root `package.json` owns the website/Worker release
+version; keep its lockfile synchronized. `agent/package.json` owns the independent
+Agent version; CLI output, onboarding and Agent installation docs derive from it.
+Website-only releases may keep the currently published Agent version and skip npm
+publication when Agent behavior, dependencies and protocol requirements are
+unchanged. Changes to those require an Agent version bump and publication before
+onboarding uses it.
+Package tests must verify the packed manifest and installed CLI match the Agent
+manifest, while website health/UI versions match the root manifest.
 
 - [Agent contract](docs/AGENT.md), [real-time protocol](docs/REALTIME.md),
   [hourly reports](docs/HOURLY-REPORTS.md) describe product behavior.

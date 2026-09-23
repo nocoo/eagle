@@ -41,7 +41,7 @@ Codex 适配器仅提取最终回复和生命周期事件，不采集推理与�
 
 打开 [Eagle](https://eagle.hexly.ai)，通过 Access 登录，在 **Connect** 添加机器，将生成的接入提示词交给该机器上的 管理 Agent（推荐 Hermes，也支持其他 Agent）。
 
-采集器需要 Node.js 24+、npm 与 Herdr 0.9.1+；实时输入当前要求 Herdr 0.9.1 的协议 22。可从 npm 独立安装，无须克隆 Eagle 仓库。网站与 Agent 统一使用 v0.7.1：
+采集器需要 Node.js 24+、npm 与 Herdr 0.9.1+；实时输入当前要求 Herdr 0.9.1 的协议 22。可从 npm 独立安装，无须克隆 Eagle 仓库。网站可独立发布；当前 Agent 固定使用已发布的 v0.7.1：
 
 ```sh
 npm install -g @nocoo/eagle-agent@0.7.1 --registry=https://registry.npmjs.org
