@@ -28,3 +28,13 @@ zero-width label. Restricting the rule to icon buttons restores the picker.
 Text-presence assertions alone do not prove a label is readable; changed compact
 controls need rendered geometry and screenshot inspection alongside interaction
 checks. These defects were caught locally before committing or publishing.
+
+## 2026-09-23 — Compact header remounted the mobile Space picker
+
+Consolidating workspace headers initially placed the mobile navigation inside
+SpaceDetail, which is keyed by Space identity. Selecting another Space remounted
+the popover trigger before Radix could restore focus. The existing mobile picker
+regression failed even though layout and terminal continuity tests passed.
+Navigation now remains in the stable workspace shell, while only Space-specific
+detail state resets. Keep navigation and its focus targets outside keyed content
+when rearranging headers; verify selection, dismissal and focus after the move.

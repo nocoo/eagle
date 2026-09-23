@@ -5,13 +5,19 @@ import {
   CollapsibleTrigger,
   SheetClose,
   SheetContent,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@nocoo/basalt";
 import {
   ArrowLeft,
+  Clock3,
   Layers3,
   Monitor,
-  PanelRight,
+  PanelRightClose,
+  PanelRightOpen,
   RefreshCw,
+  Target,
   TerminalSquare,
   X,
 } from "lucide-react";
@@ -22,6 +28,51 @@ import { useCurrentTaskSnapshot } from "./CurrentTaskSnapshot.ts";
 import { MachineResources, machineConnection, Status } from "./Dashboard.tsx";
 import { useTimezone } from "./Timezone.tsx";
 import { WorkspaceNavigation } from "./WorkspaceNavigation.tsx";
+
+function SnapshotAge({
+  capturedAt,
+  enabled,
+}: {
+  capturedAt: string;
+  enabled: boolean;
+}) {
+  const { time, zone } = useTimezone();
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!enabled) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [enabled, capturedAt]);
+  const seconds = Math.floor((now - Date.parse(capturedAt)) / 1000);
+  const elapsed = [
+    seconds >= 3600 && `${Math.floor(seconds / 3600)} 小时`,
+    seconds >= 60 && `${Math.floor(seconds / 60) % 60} 分`,
+    `${seconds % 60} 秒`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="ghost" size="sm" className="workspace-snapshot-time">
+          <Clock3 size={13} />
+          <time dateTime={capturedAt}>
+            {Number.isFinite(seconds) && seconds >= 0
+              ? `采集于 ${elapsed}前`
+              : "采集时间异常"}
+          </time>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        <p>
+          {time(capturedAt)} {zone}
+        </p>
+        <p>打开时读取 · 手动刷新 · 非实时内容</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 function WorkspaceSnapshot({
   machine,
@@ -39,7 +90,6 @@ function WorkspaceSnapshot({
   enabled: boolean;
 }) {
   const current = useCurrentTaskSnapshot(machine, space, enabled, onAuthError);
-  const { time, zone } = useTimezone();
   const view = current.space;
   const connection = machineConnection(
     current.machine,
@@ -57,7 +107,7 @@ function WorkspaceSnapshot({
       <div className="workspace-snapshot-heading">
         <div>
           <h2>
-            任务快照 <span>{cards.length}</span>
+            <Layers3 size={14} /> 任务快照 <span>{cards.length}</span>
           </h2>
         </div>
         <Button
@@ -67,11 +117,23 @@ function WorkspaceSnapshot({
           aria-label="刷新工作区快照"
           onClick={current.refresh}
         >
-          <RefreshCw size={15} />
+          <RefreshCw
+            size={15}
+            className={current.busy ? "workspace-refreshing" : undefined}
+          />
         </Button>
       </div>
+      <SnapshotAge
+        capturedAt={current.machine.report.capturedAt}
+        enabled={enabled}
+      />
       <Collapsible className="workspace-objective">
-        <CollapsibleTrigger>工作区目标</CollapsibleTrigger>
+        <CollapsibleTrigger>
+          <span className="workspace-objective-label">
+            <Target size={13} />
+            工作区目标
+          </span>
+        </CollapsibleTrigger>
         <p className="workspace-objective-preview">
           {view?.objective || "等待工作区目标"}
         </p>
@@ -79,14 +141,6 @@ function WorkspaceSnapshot({
           {view?.objective || "等待工作区目标"}
         </CollapsibleContent>
       </Collapsible>
-      <p className="workspace-snapshot-time">
-        采集{" "}
-        <time dateTime={current.machine.report.capturedAt}>
-          {time(current.machine.report.capturedAt)} {zone}
-        </time>
-        <br />
-        打开时读取 · 手动刷新 · 非实时内容
-      </p>
       {(current.busy || current.error) && (
         <p className="workspace-snapshot-notice" role="status">
           {current.busy ? "正在读取最新已上报快照…" : current.error}
@@ -145,12 +199,24 @@ function WorkspaceSnapshot({
       <section className="workspace-machine-snapshot" aria-label="机器快照">
         <div className="workspace-snapshot-heading">
           <div>
-            <h2>机器快照</h2>
+            <h2>
+              <Monitor size={14} />
+              机器快照
+            </h2>
           </div>
         </div>
         <p className="workspace-machine-meta">
           {current.machine.name} · {current.machine.report.machine.platform} ·{" "}
           {current.machine.report.spaces.length} 个工作区
+        </p>
+        <p
+          className="workspace-context"
+          title={`${space.session} / ${space.id}`}
+        >
+          <TerminalSquare size={12} />
+          <span>
+            {space.session} / {space.id}
+          </span>
         </p>
         <MachineResources
           machine={current.machine}
@@ -179,7 +245,7 @@ export function WorkspaceShell({
   onWorkspace: (id: string) => void;
   onBack: () => void;
   onAuthError: () => void;
-  children: ReactNode;
+  children: (chrome: { actions: ReactNode; obscured: boolean }) => ReactNode;
 }) {
   const panelId = useId();
   const infoId = useId();
@@ -230,6 +296,37 @@ export function WorkspaceShell({
       <ArrowLeft size={16} />
     </Button>
   );
+  const close = (
+    <SheetClose asChild>
+      <Button
+        size="icon"
+        variant="ghost"
+        aria-label="关闭工作区"
+        title="关闭工作区"
+      >
+        <X size={16} />
+      </Button>
+    </SheetClose>
+  );
+  const actions = (
+    <Button
+      ref={toggle}
+      size="icon"
+      variant="ghost"
+      className="workspace-information-toggle"
+      aria-label="工作区信息"
+      title={showInformation ? "收起工作区信息" : "展开工作区信息"}
+      aria-expanded={showInformation}
+      aria-controls={infoId}
+      onClick={() => setInformation(!showInformation)}
+    >
+      {showInformation ? (
+        <PanelRightClose size={16} />
+      ) : (
+        <PanelRightOpen size={16} />
+      )}
+    </Button>
+  );
   return (
     <SheetContent
       side="right"
@@ -262,74 +359,54 @@ export function WorkspaceShell({
             <div className="workspace-rail-header">
               {back}
               <span title={machine.name}>{machine.name}</span>
+              {close}
             </div>
             {navigation}
           </aside>
         )}
-        <div className="workspace-window-bar">
-          {mobile ? (
-            <>
-              {back}
-              {navigation}
-            </>
-          ) : (
-            <span className="workspace-context">
-              <Monitor size={14} strokeWidth={1.5} />
-              <span>{space.session}</span>
-              <span>/</span>
-              <span className="mono">{space.id}</span>
-            </span>
-          )}
-          <div className="workspace-window-actions">
-            <Button
-              ref={toggle}
-              size="icon"
-              variant={showInformation ? "secondary" : "ghost"}
-              aria-label="工作区信息"
-              title="任务与机器信息"
-              aria-expanded={showInformation}
-              aria-controls={infoId}
-              onClick={() => setInformation(!showInformation)}
-            >
-              <PanelRight size={16} />
-            </Button>
-            <SheetClose asChild>
-              <Button size="icon" variant="ghost" aria-label="关闭工作区">
-                <X size={17} />
-              </Button>
-            </SheetClose>
+        {mobile && (
+          <div className="workspace-mobile-navigation">
+            {back}
+            {navigation}
+            {close}
           </div>
-        </div>
+        )}
         <section
           id={panelId}
           role={mobile ? "region" : "tabpanel"}
           aria-label={space.name}
           className="workspace-columns"
         >
-          <div className="workspace-detail" inert={mobile && showInformation}>
-            {children}
+          <div className="workspace-detail">
+            {children({
+              actions,
+              obscured: mobile && showInformation,
+            })}
           </div>
           <aside
             id={infoId}
             className="workspace-inspector"
-            hidden={!showInformation}
+            aria-hidden={!showInformation}
+            inert={!showInformation}
             aria-label="工作区信息"
           >
-            <WorkspaceSnapshot
-              key={`${machine.id}/${space.id}`}
-              machine={machine}
-              space={space}
-              selectedPane={selectedPane}
-              onPane={(id) => {
-                onPane(id);
-                if (!wide) {
-                  setInformation(false);
-                  toggle.current?.focus();
-                }
-              }}
-              onAuthError={onAuthError}
-              enabled={showInformation}
-            />
+            <div className="workspace-inspector-content">
+              <WorkspaceSnapshot
+                key={`${machine.id}/${space.id}`}
+                machine={machine}
+                space={space}
+                selectedPane={selectedPane}
+                onPane={(id) => {
+                  onPane(id);
+                  if (!wide) {
+                    setInformation(false);
+                    toggle.current?.focus();
+                  }
+                }}
+                onAuthError={onAuthError}
+                enabled={showInformation}
+              />
+            </div>
           </aside>
         </section>
       </div>

@@ -531,6 +531,9 @@ test("workspace information can be tucked away and reopened without reconnecting
   expect(m.width).toBeGreaterThan(1050);
   const card = await info.locator(".workspace-task-card").first().boundingBox();
   expect(card?.height).toBeLessThan(145);
+  const body = await page.locator(".space-detail-body").boundingBox();
+  expect(body?.y).toBeLessThanOrEqual(48);
+  await expect(nav.getByRole("button", { name: "关闭工作区" })).toBeVisible();
   const input = page.getByLabel("发送到当前 Pane");
   await expect(input).toBeEnabled();
   await input.fill("survives layout changes");
@@ -572,6 +575,102 @@ test("workspace information can be tucked away and reopened without reconnecting
     ).toBe(true);
   }
   await expect(input).toHaveValue("");
+  expect(source.opened()).toBe(1);
+  expect(source.inputs()).toBe(0);
+});
+
+test("information panel animates without replacing the terminal", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.setViewportSize({ width: 1600, height: 900 });
+  const source = await fixture(page);
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "查看 Build Workspace", exact: true })
+    .click();
+  const input = page.getByLabel("发送到当前 Pane");
+  await expect(input).toBeEnabled();
+  await input.fill("keep this draft");
+  const toggle = page.getByRole("button", { name: "工作区信息", exact: true });
+  const inspector = page.locator(".workspace-inspector");
+  for (const width of [1600, 900, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    if ((await toggle.getAttribute("aria-expanded")) === "false")
+      await toggle.click();
+    await expect(inspector).toBeVisible();
+    await inspector.evaluate(async (el) => {
+      await Promise.all(el.getAnimations().map((a) => a.finished));
+    });
+    const frames = await toggle.evaluate(async (el) => {
+      (el as HTMLButtonElement).click();
+      await new Promise(requestAnimationFrame);
+      const panel = document.querySelector<HTMLElement>(".workspace-inspector");
+      if (!panel) throw new Error("Missing inspector");
+      const animations = panel.getAnimations();
+      for (const animation of animations) {
+        animation.pause();
+        animation.currentTime = 120;
+      }
+      const box = panel.getBoundingClientRect();
+      const result = { count: animations.length, width: box.width, x: box.x };
+      for (const animation of animations) animation.finish();
+      return result;
+    });
+    expect(frames.count).toBeGreaterThan(0);
+    if (width >= 1280) {
+      expect(frames.width).toBeGreaterThan(0);
+      expect(frames.width).toBeLessThan(288);
+    } else {
+      expect(frames.x).toBeGreaterThan(width - (width < 768 ? width : 288));
+      expect(frames.x).toBeLessThan(width);
+    }
+    await expect(page.getByRole("region", { name: "工作区快照" })).toHaveCount(
+      0,
+    );
+    await expect(toggle).toBeVisible();
+    await expect(input).toHaveValue("keep this draft");
+  }
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await toggle.click();
+  expect(await inspector.evaluate((el) => el.getAnimations().length)).toBe(0);
+  expect(source.opened()).toBe(1);
+  expect(source.inputs()).toBe(0);
+});
+
+test("snapshot age counts upward without refreshing frozen content", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 1600, height: 900 });
+  const source = await fixture(page);
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "查看 Build Workspace", exact: true })
+    .click();
+  const snapshot = page.getByRole("region", { name: "工作区快照" });
+  await expect(snapshot).toHaveAttribute("aria-busy", "false");
+  const stamp = snapshot.locator(".workspace-snapshot-time time");
+  const capturedAt = await stamp.getAttribute("datetime");
+  if (!capturedAt) throw new Error("Missing capture time");
+  await page.clock.setSystemTime(new Date(Date.parse(capturedAt) + 90120000));
+  await page.clock.runFor(1000);
+  await expect(stamp).toContainText("25 小时 2 分 1 秒前");
+  await page.clock.setSystemTime(new Date(Date.parse(capturedAt) + 192000));
+  await page.clock.runFor(1000);
+  await expect(stamp).toContainText("3 分 13 秒前");
+  source.updateTitle("A newer task must stay hidden");
+  await page.clock.fastForward(2000);
+  await expect(stamp).toContainText("3 分 15 秒前");
+  await expect(snapshot).not.toContainText("A newer task must stay hidden");
+  await snapshot.getByRole("button", { name: /采集于/ }).focus();
+  await expect(page.getByRole("tooltip")).toContainText("手动刷新");
+  await expect(page.getByRole("tooltip")).toContainText("UTC+08:00");
+  await page.clock.setSystemTime(new Date(Date.parse(capturedAt) - 10000));
+  await page.clock.runFor(1000);
+  await expect(stamp).toContainText("采集时间异常");
   expect(source.opened()).toBe(1);
   expect(source.inputs()).toBe(0);
 });

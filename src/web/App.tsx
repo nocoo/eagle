@@ -6,7 +6,6 @@ import {
   DialogTitle,
   LayerCard,
   Sheet,
-  SheetClose,
   SheetContent,
   SheetDescription,
   SheetTitle,
@@ -41,9 +40,9 @@ import {
   RefreshCw,
   Settings as SettingsIcon,
   TerminalSquare,
-  X,
 } from "lucide-react";
 import {
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -235,14 +234,16 @@ function SpaceDetail({
   selection,
   onAuthError,
   onPaneSelection,
-  showClose = true,
+  actions,
+  obscured,
 }: {
   machine: MachineView;
   space: Space;
   selection: { pane?: string } | null;
   onAuthError: () => void;
   onPaneSelection?: (pane: string) => void;
-  showClose?: boolean;
+  actions: ReactNode;
+  obscured: boolean;
 }) {
   const { time, zone } = useTimezone();
   const header = useRef<HTMLElement | null>(null);
@@ -311,34 +312,15 @@ function SpaceDetail({
   return (
     <>
       <header ref={header} className="space-detail-header">
-        {showClose && (
-          <div className="space-detail-eyebrow">
-            <span>
-              <Layers3 size={13} /> 工作区{" "}
-              <span className="mono">{space.id}</span>
-            </span>
-            <SheetClose asChild>
-              <Button size="icon" variant="outline" aria-label="关闭工作区">
-                <X size={17} />
-              </Button>
-            </SheetClose>
-          </div>
-        )}
-        <SheetTitle className="space-detail-title">{space.name}</SheetTitle>
-        <SheetDescription className="space-detail-description">
+        <SheetTitle
+          className="space-detail-title"
+          title={`${space.name} · ${space.session} / ${space.id}`}
+        >
+          {space.name}
+        </SheetTitle>
+        <SheetDescription className="sr-only">
           {space.objective || "目标待补充"}
         </SheetDescription>
-        <div className="space-detail-meta">
-          <span>
-            <Monitor size={13} />
-            {machine.name}
-          </span>
-          <span>
-            <TerminalSquare size={13} />
-            {panes.length} Panes
-          </span>
-          <span className="mono">{zone}</span>
-        </div>
         <fieldset className="space-mode-switch" aria-label="工作区视图">
           <Button
             size="sm"
@@ -377,8 +359,10 @@ function SpaceDetail({
             Space 历史
           </Button>
         </fieldset>
+        {actions}
       </header>
       <div
+        inert={obscured}
         className={
           realtime
             ? "space-detail-body space-detail-live"
@@ -1010,24 +994,26 @@ export function App() {
               onBack={() => navigate("overview", detailMachine.id)}
               onAuthError={expire}
             >
-              <SpaceDetail
-                key={`${detailMachine.id}:${detailSpace.id}`}
-                machine={detailMachine}
-                space={detailSpace}
-                selection={selection}
-                onAuthError={expire}
-                showClose={false}
-                onPaneSelection={(pane) =>
-                  setSelection((previous) =>
-                    previous &&
-                    previous.machine === detailMachine.id &&
-                    previous.space === detailSpace.id &&
-                    previous.pane !== pane
-                      ? { ...previous, pane }
-                      : previous,
-                  )
-                }
-              />
+              {(chrome) => (
+                <SpaceDetail
+                  {...chrome}
+                  key={`${detailMachine.id}:${detailSpace.id}`}
+                  machine={detailMachine}
+                  space={detailSpace}
+                  selection={selection}
+                  onAuthError={expire}
+                  onPaneSelection={(pane) =>
+                    setSelection((previous) =>
+                      previous &&
+                      previous.machine === detailMachine.id &&
+                      previous.space === detailSpace.id &&
+                      previous.pane !== pane
+                        ? { ...previous, pane }
+                        : previous,
+                    )
+                  }
+                />
+              )}
             </WorkspaceShell>
           ) : (
             <SheetContent side="right" className="space-sheet">

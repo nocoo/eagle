@@ -1,5 +1,27 @@
 # 用户视角检查点
 
+## 2026-09-23 18:48 +08 — Compact workspace header and snapshot age
+
+- Desktop detail content now begins at 48px instead of approximately 121px;
+  mobile keeps an 80px combined navigation/view header. Information expands
+  smoothly without remounting terminals, and capture age counts upward each
+  second while snapshot content stays frozen until an explicit read.
+- Local HTTPS and Worker-backed overview reads succeeded. Read-only Chromium
+  screenshots used the existing local D1 report captured September 22; no fresh
+  Herdr collection, production authentication, ingestion or remote D1 write was
+  performed. Realtime was intercepted for these visual checks. Synthetic browser
+  tests verify connection/draft continuity independently.
+- All 114 unit/API tests, types, lint and build passed. The first full browser run
+  found mobile picker focus loss after moving navigation under keyed detail
+  content (118 passed, one failed, 11 viewport-specific skips). Keeping navigation
+  in the stable shell fixes the failing case; six focused tests now pass.
+- Dark/light desktop and mobile rendering have no horizontal overflow. Final
+  verification passed: 114 unit/API tests, types, lint/build and 119 browser tests
+  with 11 viewport-specific skips. Existing informational lint suggestions and
+  the bundle-size advisory remain. Local live collection remains the unverified
+  hop. Evidence is in `.local/workspace-refine-20260923/` and
+  `.local/workspace-refine-*.log`.
+
 ## 2026-09-23 — Vertical workspace navigation, local implementation
 
 - Replaced horizontal Space overflow with a searchable vertical rail and moved

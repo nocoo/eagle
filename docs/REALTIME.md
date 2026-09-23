@@ -18,11 +18,21 @@ the center by default; narrower screens expose it on demand through the
 information button. Escape closes the narrow information panel first. On mobile
 it covers the detail area, and choosing a task returns to its terminal.
 
+One 48px desktop header combines the Space title, view selection and information
+toggle. Close belongs to the machine rail; mobile keeps navigation and view
+controls in an 80px header above the information overlay. The panel resizes the
+desktop content or slides over narrow content in 300ms, respecting reduced
+motion. Hidden content cannot receive keyboard focus during the transition.
+
 Information reads the latest reported snapshot on entry or when reopened, then
 stays frozen until manually refreshed. Missing/stale readings and refresh errors
 stay explicit; this view neither collects more data nor claims continuous
 sampling. Task cards target the exact live terminal. The information panel and
 Space list scroll independently of the terminal and input area.
+Capture age counts upward every second while the panel is visible, without
+refreshing its content. Its tooltip retains the exact capture time, selected
+timezone and manual-refresh explanation; a future or invalid capture time is
+explicitly abnormal. The refresh icon spins only during a pending request.
 
 Selecting another workspace closes the previous realtime subscription and clears
 drafts. Selecting the current item, searching, toggling information or resizing
