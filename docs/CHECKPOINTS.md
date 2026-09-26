@@ -637,3 +637,22 @@ serving and the first catalogue-derived production Cron observation.
   and replacing the six-second wall-clock wait, followed by fresh complete
   gates and the authorized website-only v0.7.3 release. Live release collection,
   D1, authenticated public rendering and exact-revision CI remain pending.
+
+## 2026-09-26 08:37 +08 — website v0.7.3 verification
+
+- Isolated built-asset browser serving and explicit clocks completed the full
+  matrix in 4.8 minutes: 125 passed, 11 existing viewport-specific skips, no
+  failures or flaky retries. The previous development-server run took 8.5
+  minutes. The final v0.7.3 check passed all 115 unit/API/package checks, strict
+  types, check-only lint and build; informational lint and bundle advisories remain.
+- Real local verification at 08:30 collected 15 Spaces / 17 Panes, verified
+  authentication, idempotency, DO revisions, automatic refresh, unchanged D1
+  history and desktop/mobile rendering. The documented existing CA file is
+  required for Node's local HTTPS requests.
+- Development and browser processes were interrupted before the final browser
+  run completed. After restarting, the final browser gate passed 125 checks with
+  the same 11 skips in 1.2 minutes. This second timing reflects different machine
+  load and is not a controlled benchmark. Local realtime verification returned
+  isolated shell output in 1,269 ms, released all four subscriptions and closed
+  its temporary pane. Public live checks, deployment and exact-revision CI remain
+  pending.

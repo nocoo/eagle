@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.3 — 2026-09-26
+
+- Size realtime tab, pane and palette menus to their content while keeping long names within narrow mobile viewports.
+- Serve browser tests from an isolated production build without the development API proxy, and control time explicitly in output-status and stale-summary checks.
+- Keep the published Agent and onboarding at v0.7.1; this website-only release does not publish an npm package.
+
 ## v0.7.2 — 2026-09-23
 
 - Place Space navigation in a searchable vertical rail, with a compact mobile picker and preserved keyboard/focus behavior.
