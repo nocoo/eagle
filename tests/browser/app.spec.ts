@@ -905,6 +905,8 @@ test("Connect rename actions keep a single text line and leave room for the inpu
 test("Pane summary stays frozen until explicit refresh then exposes a disconnected manager", async ({
   page,
 }) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
   const now = new Date().toISOString();
   const value = report("semantic-browser", now);
   let disconnected = false;
@@ -989,7 +991,7 @@ test("Pane summary stays frozen until explicit refresh then exposes a disconnect
   await expect(page.getByText("此前完成协议设计")).toBeVisible();
   await panel.evaluate((node) => node.setAttribute("data-continuity", "same"));
   disconnected = true;
-  await page.waitForTimeout(6000);
+  await page.clock.fastForward(6000);
   await expect(panel).toContainText("语义在线");
   await expect(panel).toHaveAttribute("data-continuity", "same");
   await page.getByRole("button", { name: "刷新当前任务", exact: true }).click();

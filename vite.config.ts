@@ -13,12 +13,15 @@ export default defineConfig(({ mode }) => ({
     port: 7053,
     strictPort: true,
     allowedHosts: ["eagle.dev.hexly.ai"],
-    proxy: {
-      "/api": {
-        target: "http://127.0.0.1:37053",
-        changeOrigin: false,
-        ws: true,
-      },
-    },
+    proxy:
+      mode === "test"
+        ? undefined
+        : {
+            "/api": {
+              target: "http://127.0.0.1:37053",
+              changeOrigin: false,
+              ws: true,
+            },
+          },
   },
 }));

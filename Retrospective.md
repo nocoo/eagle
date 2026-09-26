@@ -68,3 +68,18 @@ The first long-label fixture exceeded the realtime protocol's 240-character
 limit, so validation rejected it before rendering. The fixture now uses that
 valid boundary. Check transport constraints before constructing visual edge cases
 so a layout regression reaches the intended UI state.
+
+## 2026-09-26 — Browser gates competed with development loading and real time
+
+The full dropdown regression run took 8.5 minutes and failed eleven existing
+cases. Traces showed 8–12 second Vite development navigations and scenarios
+exceeding 30 seconds. Two output-status checks also let the four-second activity
+window expire while measuring layout and taking screenshots.
+
+Browser checks now serve an isolated production build with no development API
+proxy and a bounded four-worker default. Time-sensitive checks pause the clock
+and advance it explicitly; the frozen-summary check no longer sleeps for six
+real seconds. The same 136-case matrix then finished in 4.8 minutes with 125
+passes and the unchanged eleven viewport-specific skips. Assertions, timeouts
+and retry policy were preserved. These are measured local runs, not a guaranteed
+cross-machine speedup.

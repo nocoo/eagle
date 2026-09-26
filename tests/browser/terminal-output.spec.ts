@@ -174,6 +174,7 @@ test("safe colors render as text, and output activity is not a running-task clai
   page,
 }) => {
   await page.clock.install();
+  await page.clock.pauseAt(new Date());
   const stream = await openTerminal(page);
   const text = "PASS <img src=x onerror=alert(1)>";
   stream.frame(text, [

@@ -274,6 +274,7 @@ test("output status stays inside the input field, including failures", async ({
   isMobile,
 }, testInfo) => {
   await page.clock.install();
+  await page.clock.pauseAt(new Date());
   await page.emulateMedia({ reducedMotion: "reduce" });
   const stream = await openWorkspace(page);
   await page.getByRole("button", { name: "实时模式", exact: true }).click();

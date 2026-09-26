@@ -94,6 +94,9 @@ Local preview: `https://eagle.dev.hexly.ai` -> Vite 7053 -> Worker 37053
 (inspector 38053). Browser tests use 27053; 17053 is reserved for API E2E.
 Daily development and test state must remain separate. Use real local
 Miniflare/D1 for API checks; never create remote test resources or seed production.
+Browser tests build into `.local/browser-dist` and serve Vite preview on 27053
+with no API proxy. Each test owns its API/WebSocket fixtures and fresh context;
+time-sensitive assertions must pause the browser clock and advance it explicitly.
 
 Public dashboard: `eagle.hexly.ai`; machine ingestion: `eagle-ingest.hexly.ai`.
 Deployment and live checks require authorization for that operation. Releases
