@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.4 — 2026-09-27
+
+- Save unsent commands per terminal in localStorage and restore drafts after refresh, navigation or disconnect; keep recognizable credentials out of the cache.
+- Preserve the last terminal screen with a retry indicator and allow uninterrupted draft editing while offline or awaiting a receipt; sending still requires a fresh connection and controller lease.
+- Replace the mobile workspace search picker with a touch-friendly select.
+- Keep machine Spaces in Herdr order, show compact three-line mobile entries with whole-card navigation, and fill the available width with resource and activity cards.
+- Keep the published Agent and onboarding at v0.7.1; this website-only release does not publish an npm package.
+
 ## v0.7.3 — 2026-09-26
 
 - Size realtime tab, pane and palette menus to their content while keeping long names within narrow mobile viewports.
