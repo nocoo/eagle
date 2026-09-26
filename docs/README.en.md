@@ -34,7 +34,7 @@ The sidebar shows the verified Access account and logout control. Avatar lookup 
 
 The Codex adapter extracts only final replies and lifecycle events, excluding reasoning and tool arguments. Other harnesses use bounded terminal excerpts and management-agent evidence. Text is redacted before spool/upload, but heuristics cannot guarantee removal of arbitrary secrets. Supply concise summaries and verification receipts instead of raw terminal dumps.
 
-Realtime mode separately transmits redacted current terminal screens. Screen text and input are never persisted in D1, DO storage or browser storage.
+Realtime mode separately transmits redacted current terminal screens. Screen text and submitted input are never persisted in D1 or DO storage. Unsent drafts are cached in browser localStorage per terminal, survive disconnects and page exits, and are cleared on submission; recognizable credentials are excluded.
 
 ## Usage
 

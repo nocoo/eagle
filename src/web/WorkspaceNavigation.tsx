@@ -1,11 +1,12 @@
 import { Button, Input } from "@nocoo/basalt";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTitle,
-  PopoverTrigger,
-} from "@nocoo/basalt/components/popover";
-import { Check, ChevronDown, Layers3, Search } from "lucide-react";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@nocoo/basalt/components/select";
+import { Layers3, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Space } from "../shared/schema.ts";
 
@@ -22,9 +23,7 @@ export function WorkspaceNavigation({
   mobile: boolean;
   onWorkspace: (id: string) => void;
 }) {
-  const search = useRef<HTMLInputElement>(null);
   const items = useRef(new Map<string, HTMLButtonElement>());
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const filtered = spaces.filter((s) =>
     `${s.name} ${s.id}`
@@ -32,7 +31,6 @@ export function WorkspaceNavigation({
       .includes(query.trim().toLocaleLowerCase()),
   );
   useEffect(() => {
-    setOpen(false);
     setQuery("");
   }, [mobile]);
   useEffect(() => {
@@ -40,17 +38,12 @@ export function WorkspaceNavigation({
       items.current.get(space.id)?.scrollIntoView({ block: "nearest" });
   }, [mobile, space.id]);
   const choose = (id: string) => {
-    if (mobile) {
-      setOpen(false);
-      setQuery("");
-    }
     if (id !== space.id) onWorkspace(id);
   };
   const searchField = (
     <div className="workspace-search">
       <Search size={14} aria-hidden="true" />
       <Input
-        ref={search}
         data-workspace-search
         size="sm"
         aria-label="搜索工作区"
@@ -59,7 +52,7 @@ export function WorkspaceNavigation({
         onChange={(event) => setQuery(event.target.value)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
-          if (event.key === "Escape" && !mobile && query) {
+          if (event.key === "Escape" && query) {
             event.preventDefault();
             event.stopPropagation();
             setQuery("");
@@ -85,20 +78,18 @@ export function WorkspaceNavigation({
             else items.current.delete(item.id);
           }}
           variant={item.id === space.id ? "secondary" : "ghost"}
-          role={mobile ? undefined : "tab"}
-          aria-controls={mobile ? undefined : panelId}
-          aria-selected={mobile ? undefined : item.id === space.id}
-          aria-pressed={mobile ? item.id === space.id : undefined}
+          role="tab"
+          aria-controls={panelId}
+          aria-selected={item.id === space.id}
           tabIndex={
-            mobile ||
             item.id === space.id ||
             (!filtered.some((s) => s.id === space.id) && index === 0)
               ? 0
               : -1
           }
-          aria-label={mobile ? `切换到 ${item.name}` : item.name}
+          aria-label={item.name}
           title={`${item.name} · ${item.id}`}
-          className={mobile ? "workspace-picker-item" : "workspace-tab"}
+          className="workspace-tab"
           onClick={() => choose(item.id)}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing) {
@@ -119,7 +110,7 @@ export function WorkspaceNavigation({
             event.preventDefault();
             const id = filtered[next].id;
             items.current.get(id)?.focus();
-            if (!mobile) choose(id);
+            choose(id);
           }}
         >
           <Layers3 size={14} strokeWidth={1.5} />
@@ -127,13 +118,9 @@ export function WorkspaceNavigation({
             <strong>{item.name}</strong>
             <small>{item.id}</small>
           </span>
-          {mobile ? (
-            item.id === space.id && <Check size={14} />
-          ) : (
-            <span className="workspace-tab-count" title="终端数量">
-              {item.tabs.reduce((count, tab) => count + tab.panes.length, 0)}
-            </span>
-          )}
+          <span className="workspace-tab-count" title="终端数量">
+            {item.tabs.reduce((count, tab) => count + tab.panes.length, 0)}
+          </span>
         </Button>
       ))}
     </>
@@ -157,42 +144,30 @@ export function WorkspaceNavigation({
       </div>
     );
   return (
-    <Popover
-      open={open}
-      onOpenChange={(value) => {
-        setQuery("");
-        setOpen(value);
-      }}
-    >
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          className="workspace-picker-trigger"
-          aria-label="选择工作区"
-          title={space.name}
-        >
-          <Layers3 size={14} />
-          <span>{space.name}</span>
-          <ChevronDown size={14} />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
+    <Select value={space.id} onValueChange={choose}>
+      <SelectTrigger
+        className="workspace-picker-trigger"
+        aria-label="选择工作区"
+        title={space.name}
+      >
+        <Layers3 size={14} />
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent
         className="workspace-picker"
         align="start"
         collisionPadding={8}
-        arrow={false}
-        aria-label="全部工作区"
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          search.current?.focus();
-        }}
       >
-        <PopoverTitle>
-          工作区 <small>{spaces.length}</small>
-        </PopoverTitle>
-        {searchField}
-        <div className="workspace-picker-results">{list}</div>
-      </PopoverContent>
-    </Popover>
+        {spaces.map((item) => (
+          <SelectItem
+            key={item.id}
+            value={item.id}
+            title={`${item.name} · ${item.id}`}
+          >
+            {item.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

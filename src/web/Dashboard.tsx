@@ -497,10 +497,13 @@ function SpaceCard({
             {space.session} <span>·</span> {panes.length} panes
           </span>
         </div>
+        <span className="space-mobile-status">
+          <Status state={actual} />
+        </span>
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0"
+          className="space-open-action h-7 w-7 shrink-0"
           onClick={() => onOpen()}
           aria-label={`查看 ${space.name}`}
         >
@@ -990,7 +993,7 @@ export function Dashboard({
                   <span className="section-index">01</span> Space 拓扑
                 </>
               }
-              hint="需关注与进行中优先 · 点击 Pane 查看总结与证据"
+              hint="按 Herdr 顺序 · 点击 Space 查看终端与任务"
               actions={
                 <Badge variant="secondary">
                   {filtered.length} / {spaces.length}
@@ -1039,15 +1042,7 @@ export function Dashboard({
               </LayerCard>
             )}
             {machines.map((machine) => {
-              const priority = {
-                attention: 0,
-                active: 1,
-                unverified: 2,
-                verified: 3,
-              };
-              const group = filtered
-                .filter((s) => s.machine.id === machine.id)
-                .sort((a, b) => priority[a.state] - priority[b.state]);
+              const group = filtered.filter((s) => s.machine.id === machine.id);
               if (!group.length && filtered.length) return null;
               return (
                 <section

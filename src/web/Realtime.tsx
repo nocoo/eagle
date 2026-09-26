@@ -32,6 +32,7 @@ import {
   LiveServerMessageSchema,
   type LiveTopology,
 } from "../shared/realtime.ts";
+import { useInputDraft } from "./InputDraft.ts";
 import { RealtimeActivity } from "./RealtimeActivity.tsx";
 import { TerminalOutput } from "./TerminalOutput.tsx";
 import { TERMINAL_THEMES, useTerminalTheme } from "./TerminalTheme.ts";
@@ -62,6 +63,8 @@ export function Realtime({
   const initialControlRequested = useRef(false);
   const [connection, setConnection] = useState("正在连接");
   const [online, setOnline] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [retrying, setRetrying] = useState(true);
   const [control, setControl] = useState(false);
   const [busy, setBusy] = useState(false);
   const [topology, setTopology] = useState<LiveTopology | null>(null);
@@ -72,7 +75,6 @@ export function Realtime({
     setLocalSelected(id);
     onPaneChange?.(id);
   };
-  const [draft, setDraft] = useState({ target: "", text: "" });
   const [authority, setAuthority] = useState("");
   const [receipt, setReceipt] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -99,18 +101,17 @@ export function Realtime({
         pending.current = null;
       }
       setOnline(false);
+      setReady(false);
       setControl(false);
       setAuthority("");
-      setDraft({ target: "", text: "" });
       setBusy(false);
-      setTopology(null);
-      setFrames({});
       current = null;
     };
     const connect = () => {
       if (disposed || document.hidden || socket.current) return;
       disconnect();
       setConnection("正在连接");
+      setRetrying(true);
       const url = new URL("/api/v1/realtime", location.origin);
       url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
       url.searchParams.set("machine", machineId);
@@ -142,22 +143,22 @@ export function Realtime({
         const m = parsed.data;
         if (m.type === "status") {
           setOnline(m.online);
-          setControl(m.control);
+          setControl(m.online && m.control);
+          if (!m.online) setAuthority("");
           setConnection(m.online ? "实时连接" : "等待本机实时服务");
         }
         if (m.type === "topology" && m.spaceId === spaceId) {
           current = m;
           setTopology(m);
+          setReady(true);
           setFrames((old) =>
             Object.fromEntries(
-              Object.entries(old).filter(
-                ([id, f]) =>
-                  f.subscriptionId === m.subscriptionId &&
-                  m.tabs.some((t) =>
-                    t.panes.some(
-                      (p) => p.id === id && p.terminalId === f.terminalId,
-                    ),
+              Object.entries(old).filter(([id, f]) =>
+                m.tabs.some((t) =>
+                  t.panes.some(
+                    (p) => p.id === id && p.terminalId === f.terminalId,
                   ),
+                ),
               ),
             ),
           );
@@ -174,6 +175,7 @@ export function Realtime({
         ) {
           onObservedAt?.(m.observedAt);
           setFrames((old) =>
+            old[m.paneId]?.subscriptionId === m.subscriptionId &&
             old[m.paneId]?.revision > m.revision
               ? old
               : { ...old, [m.paneId]: m },
@@ -203,14 +205,19 @@ export function Realtime({
       ws.onclose = (e) => {
         if (disposed || socket.current !== ws) return;
         disconnect();
+        const canRetry = ![1008, 4001, 4004, 4008].includes(e.code);
+        setRetrying(canRetry && !document.hidden);
+        if (!canRetry) setFrames({});
         setConnection(
           e.code === 4001
             ? "连接授权已过期，请重新连接"
             : e.code === 4008
               ? "实时消息异常，请重新连接"
-              : "连接已断开",
+              : canRetry
+                ? "连接已断开，正在重试…"
+                : "连接不可用，请重新连接",
         );
-        if (![1008, 4001, 4004, 4008].includes(e.code) && !document.hidden) {
+        if (canRetry && !document.hidden) {
           retry = setTimeout(connect, backoff);
           backoff = Math.min(backoff * 2, 15000);
         }
@@ -231,6 +238,7 @@ export function Realtime({
     const visibility = () => {
       if (document.hidden) {
         disconnect();
+        setRetrying(false);
         setConnection("页面在后台，实时连接已暂停");
       } else connect();
     };
@@ -257,11 +265,15 @@ export function Realtime({
     t.panes.some((p) => p.id === pane?.id),
   );
   const targetIdentity = pane ? `${pane.id}/${pane.terminalId}` : "";
-  const text = draft.target === targetIdentity ? draft.text : "";
+  const draft = useInputDraft(
+    pane
+      ? `eagle-input-draft:${JSON.stringify([machineId, spaceId, pane.id, pane.terminalId])}`
+      : "",
+  );
+  const { text } = draft;
   const previousTarget = useRef("");
   useEffect(() => {
     if (previousTarget.current && previousTarget.current !== targetIdentity) {
-      setDraft({ target: "", text: "" });
       setAuthority("");
       setControl(false);
       if (socket.current?.readyState === WebSocket.OPEN)
@@ -275,6 +287,7 @@ export function Realtime({
     if (
       initialControlRequested.current ||
       !online ||
+      !ready ||
       !targetIdentity ||
       ws?.readyState !== WebSocket.OPEN
     )
@@ -284,12 +297,13 @@ export function Realtime({
     initialControlRequested.current = true;
     setAuthority(targetIdentity);
     ws.send(JSON.stringify({ type: "control" }));
-  }, [online, targetIdentity]);
+  }, [online, ready, targetIdentity]);
   const send = (keys: LiveInput["keys"], value = "") => {
     const ws = socket.current;
     if (
       !pane ||
       !online ||
+      !ready ||
       !control ||
       authority !== targetIdentity ||
       pending.current ||
@@ -309,11 +323,16 @@ export function Realtime({
         keys,
       }),
     );
-    if (value) setDraft({ target: "", text: "" });
+    if (value) draft.update("");
   };
   const targetDescription = `${pane ? `发送到 ${pane.title} · ${pane.id}` : "等待终端"} · ${control ? "你正在控制" : "观看模式"}`;
   const disabled =
-    !online || !control || authority !== targetIdentity || busy || !pane;
+    !online ||
+    !ready ||
+    !control ||
+    authority !== targetIdentity ||
+    busy ||
+    !pane;
   return (
     <section
       aria-label="Space 实时终端"
@@ -420,6 +439,19 @@ export function Realtime({
         </p>
       )}
       <div className="live-stage">
+        {(!online || !ready) && (
+          <div className="live-reconnecting" role="status">
+            <RefreshCw
+              size={16}
+              className={retrying ? "eagle-spin" : undefined}
+              aria-hidden="true"
+            />
+            <span>
+              {connection}
+              {tab ? " · 保留上次画面，可继续编辑草稿" : ""}
+            </span>
+          </div>
+        )}
         {tab ? (
           <section className="live-panes" aria-label={tab.name}>
             {tab.panes.map((p) => (
@@ -496,9 +528,7 @@ export function Realtime({
               aria-label="发送到当前 Pane"
               aria-describedby="live-input-target"
               value={text}
-              onChange={(e) =>
-                setDraft({ target: targetIdentity, text: e.target.value })
-              }
+              onChange={(e) => draft.update(e.target.value)}
               onKeyDown={(e) => {
                 if (
                   e.key === "Enter" &&
@@ -509,11 +539,13 @@ export function Realtime({
               autoComplete="off"
               spellCheck={false}
               maxLength={8000}
-              disabled={disabled}
+              disabled={!pane}
               placeholder={
-                control
-                  ? `发送到 ${pane?.title ?? "当前终端"} · Enter 发送`
-                  : "接管输入后发送指令"
+                !online || !ready
+                  ? "连接恢复前可继续编辑草稿"
+                  : control
+                    ? `发送到 ${pane?.title ?? "当前终端"} · Enter 发送`
+                    : "可先编辑草稿，接管输入后发送"
               }
             />
             <span className="live-control-mode">
@@ -527,7 +559,7 @@ export function Realtime({
             className="live-control-toggle"
             aria-label={control ? "释放输入" : "接管输入"}
             title={control ? "释放输入" : "接管输入"}
-            disabled={!online || !pane}
+            disabled={!online || !ready || !pane}
             onClick={() => {
               initialControlRequested.current = true;
               setAuthority(control ? "" : targetIdentity);
@@ -598,6 +630,11 @@ export function Realtime({
           </p>
         </div>
       </form>
+      {draft.warning && (
+        <p className="live-theme-warning" role="status">
+          {draft.warning}
+        </p>
+      )}
     </section>
   );
 }

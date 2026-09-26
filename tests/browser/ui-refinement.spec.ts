@@ -190,7 +190,10 @@ for (const theme of ["dark", "light"] as const) {
       page.getByRole("combobox", { name: "当前终端" }),
     ).toContainText("1-0");
     await expect(composer).toBeInViewport({ ratio: 1 });
-    await expect(composer).toBeDisabled();
+    await expect(composer).toBeEnabled();
+    await expect(
+      page.getByRole("button", { name: "发送并回车" }),
+    ).toBeDisabled();
     await expect(composer).toHaveValue("");
     await page.setViewportSize({ width: isMobile ? 390 : 1280, height: 460 });
     await expect(composer).toBeInViewport({ ratio: 1 });

@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { MachineTelemetrySchema } from "../../src/shared/schema.ts";
-import { report, telemetry } from "../fixtures.ts";
+import { evidence, report, telemetry } from "../fixtures.ts";
 
 async function fixture(page: Page, empty = false, spaceCount = 2) {
   const now = new Date().toISOString();
@@ -130,6 +130,12 @@ async function fixture(page: Page, empty = false, spaceCount = 2) {
     opened: () => opened,
     closed: () => closed,
     inputs: () => inputs,
+    markSecondAttention: () => {
+      const pane = value.spaces[1].tabs[0].panes[0];
+      pane.evidence = [
+        evidence("test", "failure", { taskId: pane.task.id, observedAt: now }),
+      ];
+    },
     addMachines: () => {
       shown = machines;
     },
@@ -151,6 +157,53 @@ async function fixture(page: Page, empty = false, spaceCount = 2) {
     },
   };
 }
+
+test("machine spaces follow Herdr order with compact full-width mobile cards", async ({
+  page,
+  isMobile,
+}) => {
+  const source = await fixture(page);
+  source.markSecondAttention();
+  await page.goto("/?machine=one");
+  const cards = page.locator(".space-card");
+  await expect(cards.locator("h3")).toHaveText([
+    "Build Workspace",
+    "Review Workspace",
+  ]);
+  if (isMobile) {
+    for (const card of await cards.all()) {
+      await expect(card.locator(".space-topology")).toBeHidden();
+      await expect(card.locator(".evidence-strip")).toBeHidden();
+      expect((await card.boundingBox())?.height).toBeLessThanOrEqual(100);
+      for (const selector of ["h3", ".space-objective", ".space-summary"]) {
+        const lines = await card
+          .locator(selector)
+          .evaluate(
+            (node) =>
+              node.getBoundingClientRect().height /
+              Number.parseFloat(getComputedStyle(node).lineHeight),
+          );
+        expect(lines).toBeLessThanOrEqual(1.1);
+      }
+    }
+    const aside = page.locator(".dashboard-aside");
+    const width = (await aside.boundingBox())?.width ?? 0;
+    for (const selector of [
+      ".activity-card",
+      ".agents-card",
+      ".coverage-card",
+    ]) {
+      expect(
+        (await page.locator(selector).boundingBox())?.width,
+      ).toBeGreaterThanOrEqual(width - 2);
+    }
+    await page
+      .locator(".dashboard-content")
+      .screenshot({ path: test.info().outputPath("machine-mobile.png") });
+    await cards.first().click({ position: { x: 100, y: 50 } });
+    await expect(page.getByRole("dialog")).toBeVisible();
+  }
+});
 
 test("root selects the first machine, machines lead the sidebar, and explicit overview stays global", async ({
   page,
@@ -351,7 +404,7 @@ for (const view of ["当前任务", "Space 历史"]) {
     await expect(card).toHaveAttribute("aria-pressed", "true");
     const input = page.getByLabel("发送到当前 Pane");
     await expect(input).toBeEnabled();
-    await input.fill("discarded when leaving realtime");
+    await input.fill("preserved when leaving realtime");
     await page.getByRole("button", { name: view, exact: true }).click();
     await expect(page.locator(".live-space")).toHaveCount(0);
     await expect.poll(source.closed).toBe(1);
@@ -360,7 +413,7 @@ for (const view of ["当前任务", "Space 历史"]) {
     await expect(
       page.getByRole("combobox", { name: "当前终端" }),
     ).toContainText("w1:p1");
-    await expect(input).toHaveValue("");
+    await expect(input).toHaveValue("preserved when leaving realtime");
     await expect.poll(source.opened).toBe(2);
     expect(source.inputs()).toBe(0);
   });
@@ -380,7 +433,7 @@ test("mobile workspace tabs switch in place and never carry drafts into another 
   const input = page.getByLabel("发送到当前 Pane");
   await expect(input).toBeEnabled();
   await input.fill("local draft, never sent");
-  const picker = page.getByRole("button", { name: "选择工作区" });
+  const picker = page.getByRole("combobox", { name: "选择工作区" });
   await expect(picker).toContainText("Build Workspace");
   expect(
     await picker
@@ -390,14 +443,16 @@ test("mobile workspace tabs switch in place and never carry drafts into another 
   ).toBeGreaterThan(100);
   await picker.click();
   await page
-    .getByRole("button", { name: "切换到 Build Workspace", exact: true })
+    .getByRole("option", { name: "Build Workspace", exact: true })
     .click();
   await expect(input).toHaveValue("local draft, never sent");
   expect(source.opened()).toBe(1);
   await picker.click();
-  await page.getByRole("textbox", { name: "搜索工作区" }).fill("review");
+  await expect(page.getByRole("textbox", { name: "搜索工作区" })).toHaveCount(
+    0,
+  );
   await page
-    .getByRole("button", { name: "切换到 Review Workspace", exact: true })
+    .getByRole("option", { name: "Review Workspace", exact: true })
     .click();
   await expect(input).toHaveValue("");
   await expect(input).toBeEnabled();
@@ -675,7 +730,7 @@ test("snapshot age counts upward without refreshing frozen content", async ({
   expect(source.inputs()).toBe(0);
 });
 
-test("mobile can search a large workspace list by ID", async ({
+test("mobile selects from a scrollable workspace dropdown without search", async ({
   page,
   isMobile,
 }, testInfo) => {
@@ -685,19 +740,53 @@ test("mobile can search a large workspace list by ID", async ({
   await page
     .getByRole("button", { name: "查看 Build Workspace", exact: true })
     .click();
-  const picker = page.getByRole("button", { name: "选择工作区" });
+  const picker = page.getByRole("combobox", { name: "选择工作区" });
   await picker.click();
-  const search = page.getByRole("textbox", { name: "搜索工作区" });
-  await expect(page.getByRole("button", { name: /^切换到 / })).toHaveCount(20);
+  await expect(page.getByRole("textbox", { name: "搜索工作区" })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole("option")).toHaveCount(20);
   await page
     .locator(".workspace-picker")
     .screenshot({ path: testInfo.outputPath("workspace-picker-mobile.png") });
-  await search.fill("default:w20");
-  await page
-    .getByRole("button", { name: "切换到 Workspace 20", exact: true })
-    .click();
+  await page.getByRole("option", { name: "Workspace 20", exact: true }).click();
   await expect(picker).toContainText("Workspace 20");
   await expect(picker).toBeFocused();
   await expect.poll(source.opened).toBe(2);
+  expect(source.inputs()).toBe(0);
+});
+
+test("drafts stay isolated by machine, workspace and pane", async ({
+  page,
+}) => {
+  const source = await fixture(page);
+  const open = async (machine: string, space: string) => {
+    await page.goto(`/?machine=${machine}`);
+    await page
+      .getByRole("button", { name: `查看 ${space}`, exact: true })
+      .click();
+  };
+  const input = page.getByLabel("发送到当前 Pane");
+  await open("one", "Build Workspace");
+  await input.fill("machine one first pane");
+  await page.getByRole("combobox", { name: "当前终端" }).click();
+  await page
+    .getByRole("option", { name: "Terminal 1-2 · w1:p2", exact: true })
+    .click();
+  await expect(input).toHaveValue("");
+  await input.fill("machine one second pane");
+  await page.getByRole("combobox", { name: "当前终端" }).click();
+  await page
+    .getByRole("option", { name: "Terminal 1-1 · w1:p1", exact: true })
+    .click();
+  await expect(input).toHaveValue("machine one first pane");
+  await open("one", "Review Workspace");
+  await expect(input).toHaveValue("");
+  await input.fill("review workspace draft");
+  await open("two", "Build Workspace");
+  await expect(input).toHaveValue("");
+  await input.fill("machine two draft");
+  await open("one", "Build Workspace");
+  await expect(input).toHaveValue("machine one first pane");
   expect(source.inputs()).toBe(0);
 });

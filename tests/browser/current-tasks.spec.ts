@@ -118,6 +118,7 @@ async function workspace(page: Page, missingTarget = false) {
 
 test("current task sheet matches realtime geometry and cards open the matching realtime tab", async ({
   page,
+  isMobile,
 }, testInfo) => {
   await workspace(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -159,9 +160,15 @@ test("current task sheet matches realtime geometry and cards open the matching r
     "Review initial work",
   );
   await page.getByRole("button", { name: "关闭工作区", exact: true }).click();
-  await page
-    .getByRole("button", { name: "codex w1:p2 证据", exact: true })
-    .click();
+  if (isMobile) {
+    await page.getByRole("button", { name: "查看 Eagle", exact: true }).click();
+    await page.getByRole("combobox", { name: "实时标签页" }).click();
+    await page.getByRole("option", { name: "Review", exact: true }).click();
+  } else {
+    await page
+      .getByRole("button", { name: "codex w1:p2 证据", exact: true })
+      .click();
+  }
   await expect(
     page.getByRole("combobox", { name: "实时标签页" }),
   ).toContainText("Review");

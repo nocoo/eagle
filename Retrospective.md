@@ -83,3 +83,8 @@ real seconds. The same 136-case matrix then finished in 4.8 minutes with 125
 passes and the unchanged eleven viewport-specific skips. Assertions, timeouts
 and retry policy were preserved. These are measured local runs, not a guaranteed
 cross-machine speedup.
+
+
+## 2026-09-27 — Overbroad mobile test edit
+
+While replacing mobile search with a select, a text replacement also removed a desktop search fixture step. The focused suite exposed the resulting keyboard-focus failure; the desktop filter step was restored. Scope scripted test edits to the intended test block and inspect the diff before running the suite.

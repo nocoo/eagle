@@ -1,5 +1,11 @@
 # 用户视角检查点
 
+## 2026-09-27 — Draft resilience and mobile refinements in progress
+
+- Realtime drafts now persist per terminal and remain editable during disconnects; retained frames show a retry indicator. Mobile workspace navigation uses a search-free select.
+- All 115 unit/API/package checks, strict types, lint and build pass. Browser verification passes 135 cases with 11 existing opposite-viewport skips, including offline typing, focus retention, reload, secret exclusion, target isolation and mobile layout. Existing informational lint suggestions and bundle-size advisory remain.
+- Local HTTPS verification passed against real Herdr inventory (15 Spaces / 15 Panes), machine resources, idempotent ingestion, stable automatic refresh, durable revisions and no additional D1 history writes. Local realtime round-trip is pending. User authorized website-only Z+1 v0.7.4. Production Access login is expired and renewal awaits browser login; deployment and exact-revision CI remain pending.
+
 ## 2026-09-23 18:48 +08 — Compact workspace header and snapshot age
 
 - Desktop detail content now begins at 48px instead of approximately 121px;

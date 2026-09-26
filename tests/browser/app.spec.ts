@@ -204,7 +204,7 @@ test("machine resources and named TCP ports show freshness and missing data hone
     throw new Error("Missing dashboard regions");
   expect(resourceBox.y + resourceBox.height).toBeLessThan(pulseBox.y);
   if (isMobile) {
-    expect(resourceBox.y).toBeLessThan(cardBox.y);
+    expect(resourceBox.y).toBeGreaterThan(cardBox.y + cardBox.height);
   } else {
     expect(resourceBox.x).toBeGreaterThan(cardBox.x + cardBox.width);
     expect(cardBox.y - islandBox.y).toBeLessThan(190);
@@ -259,6 +259,10 @@ test("narrow desktop layouts keep three-pane topology controls readable", async 
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/?machine=mac-one");
     await expect(page.locator(".pane-button")).toHaveCount(3);
+    if (width < 768) {
+      await expect(page.locator(".space-topology")).toBeHidden();
+      continue;
+    }
     for (const button of await page.locator(".pane-button").all()) {
       expect((await button.boundingBox())?.width).toBeGreaterThanOrEqual(44);
       expect(
@@ -317,10 +321,14 @@ test("token-free overview, topology evidence, history and empty search", async (
   await expect(page.getByText("没有匹配的 Space")).toBeVisible();
   await page.getByRole("button", { name: "筛选全部" }).click();
   await expect(page.getByRole("heading", { name: "当前态势" })).toHaveCount(0);
-  await expect(page.getByText("待核实", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText("待核实", { exact: true }).filter({ visible: true }).first(),
+  ).toBeVisible();
   await expect(page.getByRole("heading", { name: "最近变化" })).toBeVisible();
   await expect(page.getByText("首次接入：Eagle").first()).toBeVisible();
-  for (const button of await page.locator(".evidence-strip button").all()) {
+  for (const button of await page
+    .locator(".evidence-strip button:visible")
+    .all()) {
     const box = await button.boundingBox();
     expect(box?.height).toBeGreaterThanOrEqual(28);
     expect(
@@ -693,7 +701,7 @@ test("first load shows a stable skeleton and Access expiry offers SSO without a 
   await expect(page.getByLabel("访问令牌")).toHaveCount(0);
 });
 
-test("attention is shown first and reduced-motion users get no entrance animation", async ({
+test("Herdr order is preserved and reduced-motion users get no entrance animation", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -731,7 +739,7 @@ test("attention is shown first and reduced-motion users get no entrance animatio
   );
   await page.goto("/overview");
   await page.getByRole("button", { name: "打开机器 Mac One" }).click();
-  await expect(page.locator(".space-card h3").first()).toHaveText("Urgent");
+  await expect(page.locator(".space-card h3")).toHaveText(["Eagle", "Urgent"]);
   expect(
     await page
       .locator(".space-card")

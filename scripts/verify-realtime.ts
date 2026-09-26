@@ -82,7 +82,11 @@ try {
   await pane.getByRole("button").click();
   await expect(pane).toHaveAttribute("data-selected", "true");
   // Selecting another pane releases the default lease; reacquire only for our shell.
-  if (await page.getByLabel("发送到当前 Pane", { exact: true }).isDisabled())
+  if (
+    await page
+      .getByRole("button", { name: "接管输入", exact: true })
+      .isVisible()
+  )
     await page.getByRole("button", { name: "接管输入" }).click();
   const marker = `EAGLE_REALTIME_${randomUUID().replaceAll("-", "")}`;
   // Only our newly created shell receives this harmless command. No other pane is controlled.

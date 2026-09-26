@@ -1,14 +1,17 @@
 # Space realtime mode
 
 The default `/` entry selects the first available machine in sidebar order; an
-explicit machine link is preserved. Machine navigation appears first. The global
+explicit machine link is preserved. Machine navigation appears first. Machine
+Spaces retain Herdr order. Mobile entries are fully clickable, use at most three
+text rows, and omit layout previews; resources and activity cards follow at full
+width. The global
 fleet remains available at `/overview`, including after refresh/back/forward.
 
 Opening a workspace uses an opaque full-window surface. At 768px and wider,
 a compact left rail lists every Space vertically, with name/ID search, pane
 counts and an independently scrolling list. Up/Down/Home/End select Spaces;
 Escape clears a nonempty search before closing the workspace. Below 768px,
-the current Space name opens a searchable picker with keyboard navigation.
+the current Space name opens a scrollable Basalt select without a search field.
 
 The center retains realtime/task/history views, tab/pane selection and input
 controls. The right information panel holds the workspace objective (a compact
@@ -35,10 +38,9 @@ refreshing its content. Its tooltip retains the exact capture time, selected
 timezone and manual-refresh explanation; a future or invalid capture time is
 explicitly abnormal. The refresh icon spins only during a pending request.
 
-Selecting another workspace closes the previous realtime subscription and clears
-drafts. Selecting the current item, searching, toggling information or resizing
-does not recreate the terminal connection. Switching input targets still clears
-the previous target's draft. Back returns to the machine; close returns to the
+Selecting another workspace closes the previous realtime subscription and loads
+that target’s own draft. Selecting the current item, searching, toggling information or resizing
+does not recreate the terminal connection. Drafts are isolated by machine, session-scoped Space, pane and terminal identity. Back returns to the machine; close returns to the
 previous page. The information toggle restores focus when its narrow panel is
 closed with Escape.
 
@@ -57,11 +59,11 @@ resumes following. This navigates the current visible-screen snapshot, not an
 unbounded terminal scrollback archive.
 
 Opening a workspace selects **实时模式**, the first tab. Once the bridge is online
-and a valid target exists, the view requests control once; input remains disabled
-until the server grants the single-controller lease. The request sends no text or
+and a valid target exists, the view requests control once; sending remains disabled
+until the server grants the single-controller lease. Draft editing stays available. The request sends no text or
 keys and does not attach to the terminal. A denied request is not retried
 automatically. **释放输入** opts back into viewing; **接管输入** can request control
-again explicitly. Target changes/replacements and reconnects clear drafts and
+again explicitly. Target changes/replacements and reconnects
 require manual reacquisition; uncertain inputs are never replayed. Switching to
 **当前任务** or **Space 历史** releases the realtime subscription. Opening a fresh
 realtime view makes a new default request.
@@ -86,7 +88,7 @@ The **终端配色** selector controls the screen's default foreground/backgroun
 and indexed ANSI palette: follow the webpage, dark terminal, classic black or
 light terminal. The default follows the webpage. Explicit RGB colors from the
 terminal remain unchanged. This is a viewer palette, not automatic replication
-of the native terminal's theme configuration. Only the preference is stored in
+of the native terminal's theme configuration. The preference is stored in
 browser storage; if storage is blocked, switching still works for that view.
 
 Colors are parsed on the machine into bounded, typed text runs. Redaction is
@@ -114,7 +116,7 @@ the same sheet size and compact header, so switching between them does not resiz
 the panel. Pick a tab and target pane above the terminal canvas. Desktop retains
 the selected tab's pane layout; mobile shows the selected pane. Output scrolls
 internally while the composer remains visible, including with the on-screen
-keyboard. Enter submits the draft; switching targets clears the draft and releases
+keyboard. Enter submits the draft; switching targets loads the matching draft and releases
 control. Reduced-motion preferences disable the sheet motion.
 
 ### Current task snapshots and navigation
@@ -156,7 +158,7 @@ Installing a new npm version updates the executable; it does not create or start
 2. Reuse the existing collector's secure configuration, including its machine ID, token and ingestion URL. The default is `~/.config/eagle/agent.json`; preserve an existing custom `EAGLE_CONFIG` path. There are no additional realtime fields to add to that file.
 3. If no realtime service is running, test `eagle-agent realtime-watch` in the foreground. For a custom config, use `EAGLE_CONFIG=/absolute/path/agent.json eagle-agent realtime-watch`. If authentication fails, correct that existing configuration; do not create a replacement machine or discard Manager state.
 4. Stop the foreground test before enabling a separate user service with launchd on macOS or systemd on Linux. Use absolute executable paths and the same configuration/PATH as the working collector so the service can find Node and Herdr. Give it its own label/unit and preserve the collector and Manager services. If a realtime service already exists, restart that service after upgrading instead of adding a duplicate.
-5. Reopen the Space in Eagle. `等待本机实时服务` means the machine's realtime bridge is not connected, even when ordinary snapshots are current. Once connected, the view requests input control by default. If another viewer owns control, input stays disabled; use `接管输入` after it becomes available. Use `释放输入` to remain a viewer.
+5. Reopen the Space in Eagle. `等待本机实时服务` means the machine's realtime bridge is not connected, even when ordinary snapshots are current. Once connected, the view requests input control by default. If another viewer owns control, sending stays disabled; use `接管输入` after it becomes available. Use `释放输入` to remain a viewer.
 
 ## Transport and lifecycle
 
@@ -170,9 +172,16 @@ Installing a new npm version updates the executable; it does not create or start
 
 ## Input and evidence
 
-Input requires a controller lease and a pane/terminal pair from the live topology. The bridge rechecks the Space and terminal against Herdr before writing. Only one input per browser may await acknowledgement; monotonically increasing sequences reject duplicates. A lost acknowledgement means **unknown**, and input is never automatically replayed after reconnect. After checking Space membership, the bridge binds the exact terminal ID, waits for its first full frame, rechecks membership and writes only through that bound connection. A replacement terminal cannot receive the old terminal’s input. Target changes clear drafts and control, and reconnects never replay inputs.
+A temporary disconnect preserves the last terminal screen with a retry indicator.
+The composer keeps its focus and remains editable while offline, viewing or
+waiting for a receipt. Sending and terminal shortcuts remain gated by a fresh
+connection/topology and an explicit controller lease. Authentication/protocol
+failures stop retries and clear protected screen content. Reduced motion disables
+the retry animation.
 
-Screens redact known machine credentials across line wraps and recognizable viewport-edge fragments, common token formats, assignments and private keys. Truncated PEM blocks are masked; screens also conservatively hide consecutive base64 lines when both PEM boundaries are offscreen, which can hide unrelated encoded output. Pane titles are redacted before length limits. Input containing known credentials/recognized secret patterns is rejected by the bridge. Terminal text and input are not stored in D1, DO storage/attachments, report spools, browser storage or application logs. DO attachments retain only routing, public identity, lease and sequence metadata. A “submitted” receipt means the native control channel completed submission and detach; Herdr provides no per-input PTY acknowledgement. Text and Enter are separate queue entries and can partially fail under load. Check the returned screen; a receipt never certifies command success or Agent completion.
+Input requires a controller lease and a pane/terminal pair from the live topology. The bridge rechecks the Space and terminal against Herdr before writing. Only one input per browser may await acknowledgement; monotonically increasing sequences reject duplicates. A lost acknowledgement means **unknown**, and input is never automatically replayed after reconnect. After checking Space membership, the bridge binds the exact terminal ID, waits for its first full frame, rechecks membership and writes only through that bound connection. A replacement terminal cannot receive the old terminal’s input. Target changes release control, and reconnects never replay inputs.
+
+Screens redact known machine credentials across line wraps and recognizable viewport-edge fragments, common token formats, assignments and private keys. Truncated PEM blocks are masked; screens also conservatively hide consecutive base64 lines when both PEM boundaries are offscreen, which can hide unrelated encoded output. Pane titles are redacted before length limits. Input containing known credentials/recognized secret patterns is rejected by the bridge. Terminal screens and submitted input are not stored in D1, DO storage/attachments, report spools or application logs. Terminal screens never enter browser storage. Unsent input drafts are saved synchronously to localStorage, scoped to the exact machine/Space/pane/terminal. Refreshing, leaving and returning restore that draft; submitting or manually emptying it removes its cache. Recognizable credential patterns are kept only in memory, and blocked storage is explicitly reported. Browser caching is not an input queue: nothing is sent automatically. DO attachments retain only routing, public identity, lease and sequence metadata. A “submitted” receipt means the native control channel completed submission and detach; Herdr provides no per-input PTY acknowledgement. Text and Enter are separate queue entries and can partially fail under load. Check the returned screen; a receipt never certifies command success or Agent completion.
 
 Native attach briefly controls terminal geometry and can resume a pending agent. Layout dimensions are only an estimate; attach/detach can resize the terminal and cause Herdr to reapply other tab geometry. There is no no-resize input API in protocol 22. Text uses a complete bracketed-paste message so Herdr applies the target’s paste mode; embedded escape/control bytes are rejected. Basic keys support legacy, Kitty and modifyOtherKeys modes. Direction keys are deferred because this protocol does not expose application-cursor mode. No terminal mouse/color/graphics/resize emulator is implied. Text containing newlines may execute when the target does not use bracketed paste.
 

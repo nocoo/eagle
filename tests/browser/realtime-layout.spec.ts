@@ -87,6 +87,8 @@ async function openWorkspace(
   await page.getByRole("button", { name: "查看 Eagle", exact: true }).click();
   return {
     frame,
+    disconnect: () =>
+      socket.close({ code: 4002, reason: "Renew authorization" }),
     status: (online: boolean, control: boolean) =>
       socket.send(JSON.stringify({ type: "status", online, control })),
     offline: () =>
@@ -98,6 +100,102 @@ async function openWorkspace(
     closed: () => closed,
   };
 }
+
+test("draft survives disconnect, offline edits, reload and reopening without replay", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  const stream = await openWorkspace(page);
+  const input = page.getByLabel("发送到当前 Pane");
+  const send = page.getByRole("button", { name: "发送并回车" });
+  await input.fill("unfinished instruction");
+  await input.focus();
+  stream.disconnect();
+  await expect(page.locator(".live-reconnecting")).toBeVisible();
+  await expect(page.locator(".live-reconnecting svg")).toHaveClass(
+    /eagle-spin/,
+  );
+  await expect(page.locator(".live-pane pre")).toContainText(
+    "Synthetic terminal output",
+  );
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue("unfinished instruction");
+  await input.fill("completed while offline");
+  await page
+    .locator(".space-sheet")
+    .screenshot({ path: test.info().outputPath("offline-draft.png") });
+  await input.press("Enter");
+  await expect(send).toBeDisabled();
+  expect(stream.inputs()).toBe(0);
+  await page.clock.runFor(1100);
+  await expect(page.locator(".live-reconnecting")).toHaveCount(0);
+  await expect(input).toHaveValue("completed while offline");
+  await expect(send).toBeDisabled();
+  expect(stream.controls()).toBe(1);
+  await page.getByRole("button", { name: "当前任务", exact: true }).click();
+  await page.getByRole("button", { name: "实时模式", exact: true }).click();
+  await expect(input).toHaveValue("completed while offline");
+  await page.reload();
+  await page.getByRole("button", { name: "查看 Eagle", exact: true }).click();
+  await expect(input).toHaveValue("completed while offline");
+  expect(stream.inputs()).toBe(0);
+  await send.click();
+  await expect.poll(stream.inputs).toBe(1);
+  expect(
+    await page.evaluate(() =>
+      Object.keys(localStorage).filter((key) =>
+        key.startsWith("eagle-input-draft:"),
+      ),
+    ),
+  ).toEqual([]);
+  await input.fill("next instruction while waiting for receipt");
+  await expect(input).toHaveValue("next instruction while waiting for receipt");
+  await input.fill("");
+  await page.getByRole("button", { name: "当前任务", exact: true }).click();
+  await page.getByRole("button", { name: "实时模式", exact: true }).click();
+  await expect(input).toHaveValue("");
+  expect(stream.inputs()).toBe(1);
+});
+
+test("blocked browser storage preserves editing and reports unsaved drafts", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Storage.prototype.setItem = () => {
+      throw new DOMException("Blocked", "SecurityError");
+    };
+  });
+  const stream = await openWorkspace(page);
+  const input = page.getByLabel("发送到当前 Pane");
+  await input.fill("keep editing");
+  stream.offline();
+  await input.fill("keep editing offline");
+  await expect(input).toHaveValue("keep editing offline");
+  await expect(
+    page.getByText("草稿未能保存到浏览器，关闭页面会丢失"),
+  ).toBeVisible();
+  expect(stream.inputs()).toBe(0);
+});
+
+test("recognized credentials are never cached with command drafts", async ({
+  page,
+}) => {
+  await openWorkspace(page);
+  const input = page.getByLabel("发送到当前 Pane");
+  await input.fill("ordinary draft");
+  await input.fill("export API_KEY=synthetic-test-secret");
+  await expect(input).toHaveValue("export API_KEY=synthetic-test-secret");
+  await expect(
+    page.getByText("含敏感信息的草稿仅保留在当前页面"),
+  ).toBeVisible();
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(
+    "synthetic-test-secret",
+  );
+  await page.getByRole("button", { name: "当前任务", exact: true }).click();
+  await page.getByRole("button", { name: "实时模式", exact: true }).click();
+  await expect(input).toHaveValue("");
+});
 
 test("realtime is first and enables input by default after the control grant", async ({
   page,
@@ -186,7 +284,8 @@ test("realtime status joins the title and controls use one compact row", async (
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page.getByLabel("发送到当前 Pane")).toBeDisabled();
+  await expect(page.getByLabel("发送到当前 Pane")).toBeEnabled();
+  await expect(page.getByRole("button", { name: "发送并回车" })).toBeDisabled();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth > innerWidth,
@@ -208,16 +307,19 @@ test("initial input waits for online and the server grant without retrying denie
     grantControl: false,
   });
   const input = page.getByLabel("发送到当前 Pane");
-  await expect(input).toBeDisabled();
+  await expect(input).toBeEnabled();
+  await expect(page.getByRole("button", { name: "发送并回车" })).toBeDisabled();
   expect(stream.controls()).toBe(0);
   stream.status(true, false);
   await expect.poll(stream.controls).toBe(1);
-  await expect(input).toBeDisabled();
+  await expect(input).toBeEnabled();
+  await expect(page.getByRole("button", { name: "发送并回车" })).toBeDisabled();
   stream.status(true, false);
   stream.frame("Another viewer still controls this Space");
   await expect(page.locator(".live-pane pre")).toContainText("Another viewer");
   expect(stream.controls()).toBe(1);
-  await expect(input).toBeDisabled();
+  await expect(input).toBeEnabled();
+  await expect(page.getByRole("button", { name: "发送并回车" })).toBeDisabled();
   stream.status(true, true);
   await expect(input).toBeEnabled();
   expect(stream.inputs()).toBe(0);
@@ -230,7 +332,8 @@ test("releasing default input control is respected until manual reacquisition", 
   const input = page.getByLabel("发送到当前 Pane");
   await expect(input).toBeEnabled();
   await page.getByRole("button", { name: "释放输入", exact: true }).click();
-  await expect(input).toBeDisabled();
+  await expect(input).toBeEnabled();
+  await expect(page.getByRole("button", { name: "发送并回车" })).toBeDisabled();
   stream.status(true, false);
   stream.frame("Still viewing after release");
   await expect(page.locator(".live-pane pre")).toContainText("Still viewing");

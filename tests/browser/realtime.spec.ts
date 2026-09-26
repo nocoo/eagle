@@ -205,7 +205,8 @@ test("terminal replacement clears drafts and renewable lease reconnect never rec
   assert(latest);
   latest.send(topology("replacement"));
   await expect(page.getByLabel("发送到当前 Pane")).toHaveValue("");
-  await expect(page.getByLabel("发送到当前 Pane")).toBeDisabled();
+  await expect(page.getByLabel("发送到当前 Pane")).toBeEnabled();
+  await expect(page.getByRole("button", { name: "发送并回车" })).toBeDisabled();
   await expect.poll(() => releases).toBe(1);
   expect(controls).toBe(1);
   await page.getByRole("button", { name: "接管输入" }).click();
@@ -213,8 +214,11 @@ test("terminal replacement clears drafts and renewable lease reconnect never rec
   latest.close({ code: 4002, reason: "Renew authorization" });
   await expect.poll(() => connections).toBe(2);
   await expect(page.getByRole("button", { name: "接管输入" })).toBeEnabled();
-  await expect(page.getByLabel("发送到当前 Pane")).toBeDisabled();
-  await expect(page.getByLabel("发送到当前 Pane")).toHaveValue("");
+  await expect(page.getByLabel("发送到当前 Pane")).toBeEnabled();
+  await expect(page.getByRole("button", { name: "发送并回车" })).toBeDisabled();
+  await expect(page.getByLabel("发送到当前 Pane")).toHaveValue(
+    "old-target-draft",
+  );
   expect(controls).toBe(2);
   expect(inputs).toBe(0);
 });

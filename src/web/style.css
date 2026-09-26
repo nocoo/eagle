@@ -393,6 +393,9 @@
   align-items: center;
   padding: 13px 12px 9px;
 }
+.space-mobile-status {
+  display: none;
+}
 .space-symbol {
   display: grid;
   place-items: center;
@@ -1039,6 +1042,71 @@
     font-size: 11px;
   }
 }
+@media (max-width: 767px) {
+  .machine-layout {
+    grid-template-areas: "spaces" "resources" "pulse";
+    gap: 14px;
+  }
+  .machine-layout > .dashboard-aside {
+    align-items: stretch;
+  }
+  .space-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .space-card-heading {
+    padding: 10px 12px 4px;
+  }
+  .space-symbol {
+    width: 24px;
+    height: 24px;
+  }
+  .space-mobile-status {
+    display: inline-flex;
+  }
+  .space-mobile-status > span {
+    font-size: 11px;
+  }
+  .space-card .space-meta,
+  .space-card .space-state-row,
+  .space-card .space-topology,
+  .space-card .evidence-strip {
+    display: none;
+  }
+  .space-copy {
+    padding: 0 12px 10px;
+  }
+  .space-card .space-objective,
+  .space-card .space-summary {
+    display: block;
+    height: auto;
+    min-height: 0;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 12px;
+    line-height: 18px;
+  }
+  .space-card .space-summary {
+    margin-top: 2px;
+  }
+  .space-card .space-open-action {
+    position: static;
+  }
+  .space-open-action::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+  .space-card:has(.space-open-action:focus-visible) {
+    outline: 2px solid hsl(var(--basalt-ring));
+    outline-offset: 2px;
+  }
+  .dashboard-aside .activity-summary,
+  .dashboard-aside .activity-time,
+  .resource-heading > span:last-child {
+    font-size: 11px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .eagle-enter,
   .eagle-spin,
@@ -1476,8 +1544,7 @@
   padding-left: 30px;
   font-size: 11px;
 }
-.workspace-tabs,
-.workspace-picker-results {
+.workspace-tabs {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1490,8 +1557,7 @@
   gap: 2px;
   padding: 2px;
 }
-.workspace-tab,
-.workspace-picker-item {
+.workspace-tab {
   position: relative;
   flex: none;
   width: 100%;
@@ -1512,8 +1578,7 @@
   border-radius: 2px;
   background: hsl(var(--basalt-primary));
 }
-.workspace-tab > svg,
-.workspace-picker-item > svg {
+.workspace-tab > svg {
   flex: none;
   color: hsl(var(--basalt-muted-foreground));
 }
@@ -1549,8 +1614,7 @@
   min-width: 18px;
   text-align: right;
 }
-.workspace-tabs > p,
-.workspace-picker-results > p {
+.workspace-tabs > p {
   padding: 16px 8px;
   color: hsl(var(--basalt-muted-foreground));
   font-size: 12px;
@@ -1572,16 +1636,12 @@
   text-align: left;
 }
 .workspace-picker {
-  width: min(360px, calc(100vw - 24px));
-  max-height: min(480px, var(--radix-popover-content-available-height));
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  width: min(360px, calc(100vw - 16px));
+  max-height: min(480px, var(--radix-select-content-available-height));
 }
-.workspace-picker small {
-  font-size: 11px;
-  color: hsl(var(--basalt-muted-foreground));
-  font-weight: 400;
+.workspace-picker [role="option"] {
+  min-height: 44px;
+  font-size: 14px;
 }
 .workspace-columns {
   grid-area: content;
@@ -2089,9 +2149,29 @@
   letter-spacing: 0.04em;
 }
 .live-stage {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+.live-reconnecting {
+  position: absolute;
+  z-index: 2;
+  inset: 8px 8px auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid hsl(var(--basalt-border));
+  border-radius: calc(var(--basalt-radius) - 2px);
+  background: hsl(var(--basalt-background) / 0.95);
+  color: hsl(var(--basalt-muted-foreground));
+  font-size: 12px;
+  pointer-events: none;
+}
+.live-reconnecting > svg {
+  flex: none;
 }
 .live-panes {
   display: grid;
