@@ -357,7 +357,7 @@ export function Realtime({
             <SelectTrigger aria-label="实时标签页">
               <SelectValue placeholder="等待标签页" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="live-select-content" collisionPadding={8}>
               {topology?.tabs.map((t) => (
                 <SelectItem key={t.id} value={t.id} disabled={!t.panes.length}>
                   {t.name}
@@ -370,7 +370,7 @@ export function Realtime({
             <SelectTrigger aria-label="当前终端">
               <SelectValue placeholder="等待终端" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="live-select-content" collisionPadding={8}>
               {tab?.panes.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {p.title} · {p.id}
@@ -385,7 +385,7 @@ export function Realtime({
               <Palette size={14} aria-hidden="true" />
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="live-select-content" collisionPadding={8}>
               {Object.entries(TERMINAL_THEMES).map(([value, label]) => (
                 <SelectItem key={value} value={value}>
                   {label}

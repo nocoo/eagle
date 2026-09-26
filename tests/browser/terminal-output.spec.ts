@@ -1,7 +1,7 @@
 import { expect, type Page, test, type WebSocketRoute } from "@playwright/test";
 import { report } from "../fixtures.ts";
 
-async function openTerminal(page: Page) {
+async function openTerminal(page: Page, names = { tab: "Build", pane: "CLI" }) {
   const now = new Date().toISOString();
   await page.route("**/api/**", (route) =>
     route.fulfill({
@@ -32,12 +32,12 @@ async function openTerminal(page: Page) {
         tabs: [
           {
             id: "tab",
-            name: "Build",
+            name: names.tab,
             panes: [
               {
                 id: "pane",
                 terminalId,
-                title: "CLI",
+                title: names.pane,
                 rect: { x: 0, y: 0, width: 1, height: 1 },
               },
             ],
@@ -91,6 +91,51 @@ const distance = (page: Page) =>
   page
     .locator(".live-pane pre")
     .evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+
+for (const longName of [false, true]) {
+  test(`realtime dropdowns keep ${longName ? "long" : "short"} labels readable within the viewport`, async ({
+    page,
+    isMobile,
+  }) => {
+    const name = longName ? "LongTerminalName".repeat(15) : "开发任务";
+    const width = isMobile ? 320 : 1280;
+    await page.setViewportSize({ width, height: 844 });
+    await openTerminal(page, { tab: name, pane: name });
+    for (const label of ["实时标签页", "当前终端", "终端配色"]) {
+      await page.getByRole("combobox", { name: label }).click();
+      const list = page.getByRole("listbox");
+      await expect(list).toBeVisible();
+      const layout = await list.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        return {
+          left: box.left,
+          right: box.right,
+          options: [...el.querySelectorAll('[role="option"]')].map((option) => {
+            const range = document.createRange();
+            const text = option.querySelector("span");
+            if (!text) throw new Error("Missing option label");
+            range.selectNodeContents(text);
+            const rects = [...range.getClientRects()];
+            return {
+              lines: new Set(rects.map((rect) => Math.round(rect.top))).size,
+              left: Math.min(...rects.map((rect) => rect.left)),
+              right: Math.max(...rects.map((rect) => rect.right)),
+            };
+          }),
+        };
+      });
+      expect(layout.left).toBeGreaterThanOrEqual(0);
+      expect(layout.right).toBeLessThanOrEqual(width);
+      for (const option of layout.options) {
+        if (!longName || label === "终端配色") expect(option.lines).toBe(1);
+        expect(option.left).toBeGreaterThanOrEqual(layout.left);
+        expect(option.right).toBeLessThanOrEqual(layout.right);
+      }
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("combobox", { name: label })).toBeFocused();
+    }
+  });
+}
 
 test("terminal output follows the bottom, pauses for history, and resumes explicitly", async ({
   page,

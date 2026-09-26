@@ -618,3 +618,22 @@ serving and the first catalogue-derived production Cron observation.
 - No production migrations are pending. The remaining release steps are push,
   exact-revision CI, matching deployment, public live/realtime verification and
   the GitHub tag/release.
+
+## 2026-09-26 08:22 +08 — mobile dropdowns and browser gate investigation
+
+- Realtime tab, pane and palette popups now size to content within the available
+  viewport. All four new short/long-label browser checks passed; `npm run check`
+  passed 115 tests, strict types, lint and build.
+- Local Vite/Worker are running on 7053/37053; the HTTPS development origin and
+  local authentication return 200. At 390px, the real development page renders
+  the palette popup at 110px with four single-line options. Stored collection is
+  still the September 23 snapshot of 19 Spaces. No new Herdr collection or local
+  D1 verification has been performed; the local realtime bridge is disconnected.
+- The complete browser run took 8.5 minutes: 114 passed, 11 existing
+  viewport-specific skips and 11 failures. Traces show 8–12 second development
+  page loads, 30-second scenario timeouts and output-activity assertions expiring
+  while screenshots are captured. No assertions or timeouts have been relaxed.
+- The next step is isolated built-asset browser serving, deterministic clocks
+  and replacing the six-second wall-clock wait, followed by fresh complete
+  gates and the authorized website-only v0.7.3 release. Live release collection,
+  D1, authenticated public rendering and exact-revision CI remain pending.

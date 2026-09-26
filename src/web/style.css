@@ -2007,6 +2007,12 @@
   --terminal-color-14: #006b94;
   --terminal-color-15: #202227;
 }
+.live-select-content {
+  width: max-content;
+  min-width: var(--radix-select-trigger-width);
+  max-width: var(--radix-select-content-available-width);
+  overflow-wrap: anywhere;
+}
 .live-actions > .live-theme-select[aria-label] {
   width: 142px;
   gap: 6px;

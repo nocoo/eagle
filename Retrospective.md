@@ -54,3 +54,17 @@ were active. Trace timestamps showed fresh page navigation at the same second
 as that write, detaching controls in two tests and invalidating a third geometry
 snapshot. Freeze all watched repository files during browser gates, including
 documentation; finish edits before starting the server-backed run.
+
+## 2026-09-26 — Compact Select triggers constrained their popups
+
+The mobile terminal-theme trigger was reduced to 32px without overriding
+Basalt's trigger-sized SelectContent. Its four-character labels wrapped into
+four lines, while the adjacent tab and pane selectors also cramped their labels.
+Selection tests passed because they checked behavior rather than readability.
+Realtime popups now size to their content within the available viewport; browser
+regressions check line counts, text containment and focus restoration.
+
+The first long-label fixture exceeded the realtime protocol's 240-character
+limit, so validation rejected it before rendering. The fixture now uses that
+valid boundary. Check transport constraints before constructing visual edge cases
+so a layout regression reaches the intended UI state.
