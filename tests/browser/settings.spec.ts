@@ -212,6 +212,13 @@ test("daily history shows 24 compact hour rows, preserves expansion and paginate
   });
   await expect(card).toContainText("120 次采集");
   await expect(card).toContainText("23:59");
+  if ((page.viewportSize()?.width ?? 1000) < 600) {
+    const bounds = await card.boundingBox();
+    const action = await card
+      .getByRole("button", { name: "展开报告" })
+      .boundingBox();
+    expect((action?.y ?? 0) - (bounds?.y ?? 0)).toBeLessThan(40);
+  }
   await card.getByRole("button", { name: "展开报告" }).click();
   await expect(card.locator(".daily-hour")).toHaveCount(24);
   await expect(card).toContainText("09:00");
@@ -273,7 +280,7 @@ test("daily failures show a manual retry and refresh the persisted result", asyn
   const state = page.getByRole("region", { name: "报告生成状态" });
   await expect(state).toContainText("格式或长度校验失败");
   await state.getByRole("button", { name: "重试日报" }).click();
-  await expect(state).toContainText("已生成");
+  await expect(state).toHaveCount(0);
   await expect(state.getByRole("button", { name: "重试日报" })).toHaveCount(0);
 });
 

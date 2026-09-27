@@ -16,20 +16,33 @@ function ReportCard({ report }: { report: DailyReport }) {
       role="article"
       aria-label={`${report.machineName} ${report.date} 日报`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
-          <Badge variant="purple">AI 日报</Badge>
-          <span className="font-medium">{report.machineName}</span>
-          <time dateTime={report.date}>{report.date}</time>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2 text-sm">
+          <Badge variant="purple" className="hidden shrink-0 sm:inline-flex">
+            AI 日报
+          </Badge>
+          <span
+            className="min-w-0 truncate font-medium"
+            title={report.machineName}
+          >
+            {report.machineName}
+          </span>
+          <time className="shrink-0 text-xs" dateTime={report.date}>
+            {report.date}
+          </time>
         </div>
         <Button
           size="sm"
           variant="outline"
+          className="h-8 w-8 shrink-0 px-0 sm:w-auto sm:px-3"
+          aria-label={expanded ? "收起报告" : "展开报告"}
           aria-expanded={expanded}
           onClick={() => setExpanded((v) => !v)}
         >
           <ChevronDown size={14} className={expanded ? "rotate-180" : ""} />
-          {expanded ? "收起报告" : "展开报告"}
+          <span className="hidden sm:inline">
+            {expanded ? "收起报告" : "展开报告"}
+          </span>
         </Button>
       </div>
       <p className="mt-2 text-sm leading-relaxed break-words">
@@ -111,6 +124,7 @@ export function DailyHistory({ machine }: { machine: string }) {
     { seq: number; report: DailyReport }[]
   >([]);
   const [jobs, setJobs] = useState<DailyJobView[]>([]);
+  const pendingJobs = jobs.filter((job) => job.status !== "complete");
   const [cursor, setCursor] = useState<string | null>(null);
   const [date, setDate] = useState("");
   const [loading, setLoading] = useState(true);
@@ -257,10 +271,10 @@ export function DailyHistory({ machine }: { machine: string }) {
             </Button>
           </div>
         </div>
-        {jobs.length > 0 && (
+        {pendingJobs.length > 0 && (
           <LayerCard role="region" aria-label="报告生成状态">
             <ul className="max-h-48 divide-y divide-basalt-border overflow-y-auto">
-              {jobs.map((job) => (
+              {pendingJobs.map((job) => (
                 <li
                   key={`${job.machineId}:${job.date}`}
                   className="flex flex-wrap items-center gap-2 py-1 text-xs"
