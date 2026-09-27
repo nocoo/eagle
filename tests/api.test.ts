@@ -13,14 +13,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { after, before, test } from "node:test";
+import { serialize } from "node:v8";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import NativeWebSocket from "ws";
 import {
-  REPORT_SECTIONS,
-  TEMPLATE_VERSION,
-  utcHour,
-} from "../src/shared/hourly.ts";
+  type DailyReport,
+  dailyCutoff,
+  dailyStart,
+  dueDate,
+} from "../src/shared/daily.ts";
 import { viewerAuthorized } from "../src/worker/auth.ts";
 import { report, telemetry } from "./fixtures.ts";
 
@@ -32,11 +34,9 @@ let viewer: string;
 let signingKey: CryptoKey;
 let profileAvailable = true;
 let aiCalls = 0;
-let aiFailure = false;
 let aiHold: Promise<void> | undefined;
 let aiHoldMatch: string | undefined;
-let aiFailFinal = false;
-let aiVerbose = false;
+let aiInvalid = false;
 let aiRequests: string[] | undefined;
 const issuer = "https://nocoo.cloudflareaccess.com";
 const audience =
@@ -103,21 +103,33 @@ before(async () => {
               "Bearer isolated-ai-test-secret",
             );
             assert.equal(request.headers.get("x-api-key"), null);
-            const prompt = JSON.stringify(await request.json());
+            const body = (await request.json()) as {
+              messages: { content: string }[];
+            };
+            const prompt = body.messages.map((m) => m.content).join("\n");
             assert(!prompt.includes("isolated-ai-test-secret"));
             aiRequests?.push(prompt);
-            const evidenceId = prompt
-              .slice(prompt.lastIndexOf("以下是待分析的数据材料"))
-              .match(/\b[FS]\d+\b/)?.[0];
             if (!aiHoldMatch || prompt.includes(aiHoldMatch)) await aiHold;
-            if (
-              aiFailure ||
-              (aiFailFinal && prompt.includes("输入阶段：最终小时报告"))
-            )
-              return new Response(
-                "Upstream failed with isolated-ai-test-secret",
-                { status: 500 },
-              );
+            const hours = prompt.includes("DATA_JSON:")
+              ? (JSON.parse(
+                  prompt.split("DATA_JSON:")[1].split("\n上次")[0],
+                ) as { hour: number; records: { id: string }[] }[])
+              : [];
+            const content = hours.length
+              ? JSON.stringify({
+                  overview: aiInvalid
+                    ? "长".repeat(161)
+                    : "今日任务持续推进，生产部署尚无验证证据。",
+                  hours: hours.map((h) => ({
+                    hour: h.hour,
+                    summary: h.records.length
+                      ? "任务推进，部署仍待核实。"
+                      : "无采集数据。",
+                    evidenceIds: h.records.slice(0, 1).map((r) => r.id),
+                  })),
+                  nextSteps: ["核对生产部署。"],
+                })
+              : "连接成功。";
             return Response.json({
               id: "completion",
               object: "chat.completion",
@@ -129,15 +141,7 @@ before(async () => {
                   finish_reason: "stop",
                   message: {
                     role: "assistant",
-                    content: JSON.stringify({
-                      ...Object.fromEntries(
-                        Object.keys(REPORT_SECTIONS).map((k) => [
-                          k,
-                          `${"本小时任务持续推进，生产部署尚无验证证据。".repeat(aiVerbose && k === "workspaces" && prompt.includes("输入阶段：分块整理") ? 450 : 1)}${evidenceId ? `[${evidenceId}]` : ""}`,
-                        ]),
-                      ),
-                      evidenceIds: evidenceId ? [evidenceId] : [],
-                    }),
+                    content,
                   },
                 },
               ],
@@ -201,6 +205,12 @@ before(async () => {
   );
   await db.exec(
     readFileSync("migrations/0003_hourly_reports.sql", "utf8").replace(
+      /\n/g,
+      " ",
+    ),
+  );
+  await db.exec(
+    readFileSync("migrations/0004_daily_reports.sql", "utf8").replace(
       /\n/g,
       " ",
     ),
@@ -348,22 +358,22 @@ function request(path: string, body?: unknown, bearer = token) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
-test("AI settings require viewer auth, reject invalid keys, and unconfigured hourly runs skip", async () => {
+test("AI settings require viewer auth, reject invalid keys, and unconfigured daily runs skip", async () => {
   assert.equal((await request("/api/v1/settings")).status, 401);
   const initial = await request("/api/v1/settings", undefined, viewer);
   assert.equal(initial.status, 200);
   const settings = (await initial.json()) as {
-    intervalHours: number;
+    schedule: string;
     hasApiKey: boolean;
   };
-  assert.equal(settings.intervalHours, 1);
+  assert.equal(settings.schedule, "23:59");
   assert.equal(settings.hasApiKey, false);
   assert.equal(
     (await request("/api/v1/settings", { apiKey: { invalid: true } }, viewer))
       .status,
     400,
   );
-  const skipped = await request("/api/v1/hourly-reports/run", {}, viewer);
+  const skipped = await request("/api/v1/daily-reports/run", {}, viewer);
   assert.equal(skipped.status, 200);
   assert.deepEqual(await skipped.json(), {
     skipped: "ai_not_configured",
@@ -485,7 +495,7 @@ test("AI keys save encrypted from the UI, survive eviction, stay private, and bi
   );
   const retained = await request(
     "/api/v1/settings",
-    { intervalHours: 2, apiKey: "" },
+    { enabled: true, apiKey: "" },
     viewer,
   );
   assert.equal(
@@ -529,11 +539,7 @@ test("AI keys save encrypted from the UI, survive eviction, stay private, and bi
     ((await cleared.json()) as { hasApiKey: boolean }).hasApiKey,
     false,
   );
-  await request(
-    "/api/v1/settings",
-    { provider: "", model: "", intervalHours: 1 },
-    viewer,
-  );
+  await request("/api/v1/settings", { provider: "", model: "" }, viewer);
 });
 
 test("fail-closed auth, machine scoping, versions, body limits and no token persistence", async () => {
@@ -1527,711 +1533,6 @@ test("retention cannot evict a live task interpretation in favor of delayed hist
   assert.equal(own.summaries[0].sequence, 7);
 });
 
-test("hourly AI reports are leased, durable, idempotent and retry D1 without another model call", async () => {
-  const configuration = {
-    provider: "custom",
-    model: "test-model",
-    baseURL: "https://api.ai.example/v1",
-    sdkType: "openai",
-    authType: "bearer",
-    enabled: true,
-    intervalHours: 1,
-  };
-  assert.equal(
-    (
-      await request(
-        "/api/v1/settings",
-        { ...configuration, apiKey: "isolated-ai-test-secret" },
-        viewer,
-      )
-    ).status,
-    200,
-  );
-  const partial = await request(
-    "/api/v1/settings",
-    { intervalHours: 2 },
-    viewer,
-  );
-  assert.equal(
-    ((await partial.json()) as { provider: string }).provider,
-    "custom",
-  );
-  await request("/api/v1/settings", { intervalHours: 1 }, viewer);
-  const hour = utcHour(Date.now() - 2 * 3600000);
-  const first = report(
-    "hour-start",
-    new Date(Date.parse(hour) + 60000).toISOString(),
-  );
-  assert.equal((await request("/api/v1/reports", first)).status, 201);
-  assert.equal((await request("/api/v1/reports", first)).status, 200);
-  const own = (await (await request("/api/v1/agent-state")).json()) as {
-    manager?: { id: string; sequence: number };
-  };
-  const semantic = await request("/api/v1/summaries", {
-    protocolVersion: 1,
-    machineId: "mac-one",
-    managerId: own.manager?.id ?? "manager",
-    sequence: (own.manager?.sequence ?? 0) + 1,
-    sentAt: new Date().toISOString(),
-    checks: [],
-    updates: [
-      {
-        spaceId: "default:w1",
-        paneId: "w1:p1",
-        taskId: "hour-task",
-        basis: [],
-        observedAt: new Date(Date.parse(hour) + 15 * 60000).toISOString(),
-        summary: {
-          task: "小时报告接入",
-          phase: "verify",
-          progress: "已完成接口检查",
-          outcomes: [],
-          blocker: null,
-          nextStep: "核对生产证据",
-          rationale: "管理 Agent 原生最终消息",
-          evidenceRefs: [],
-        },
-      },
-    ],
-  });
-  assert.equal(semantic.status, 201);
-  const params = { machine: "mac-one", hour };
-  const calls = aiCalls;
-  let release = () => {};
-  aiHold = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const running = request("/api/v1/hourly-reports/run", params, viewer);
-  const deadline = Date.now() + 5000;
-  while (aiCalls === calls && Date.now() < deadline)
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  if (aiCalls === calls)
-    assert.fail(JSON.stringify(await (await running).json()));
-  assert.equal(aiCalls, calls + 1);
-  const concurrent = await request(
-    "/api/v1/hourly-reports/run",
-    params,
-    viewer,
-  );
-  assert.equal(
-    ((await concurrent.json()) as { results: { skipped: string }[] }).results[0]
-      .skipped,
-    "in_progress",
-  );
-  release();
-  aiHold = undefined;
-  const result = await running;
-  assert.equal(
-    ((await result.json()) as { results: { generated: boolean }[] }).results[0]
-      .generated,
-    true,
-  );
-  const duplicate = await request("/api/v1/hourly-reports/run", params, viewer);
-  assert.equal(
-    ((await duplicate.json()) as { results: { skipped: string }[] }).results[0]
-      .skipped,
-    "unchanged",
-  );
-  assert.equal(aiCalls, calls + 1);
-  const versionStorage = await mf.unsafeGetDurableObjectStorage(
-    "eagle",
-    "MachineState",
-    { name: "mac-one" },
-  );
-  // A template update must not rewrite already archived reports.
-  await versionStorage.exec(
-    `UPDATE hourly_jobs SET completed_version=replace(completed_version,'${TEMPLATE_VERSION}:','eagle-hourly-zh-v4:') WHERE hour='${hour}'`,
-  );
-  const upgraded = await request("/api/v1/hourly-reports/run", params, viewer);
-  assert.equal(
-    ((await upgraded.json()) as { results: { skipped: string }[] }).results[0]
-      .skipped,
-    "unchanged",
-  );
-  assert.equal(aiCalls, calls + 1);
-  const versionDuplicate = await request(
-    "/api/v1/hourly-reports/run",
-    params,
-    viewer,
-  );
-  assert.equal(
-    ((await versionDuplicate.json()) as { results: { skipped: string }[] })
-      .results[0].skipped,
-    "unchanged",
-  );
-  const later = report(
-    "hour-late",
-    new Date(Date.parse(hour) + 58 * 60000).toISOString(),
-  );
-  later.spaces[0].tabs[0].panes = [];
-  await request("/api/v1/reports", later);
-  aiFailure = true;
-  const failed = await request("/api/v1/hourly-reports/run", params, viewer);
-  assert.equal(
-    ((await failed.json()) as { results: { error: string }[] }).results[0]
-      .error,
-    "generation_failed",
-  );
-  aiFailure = false;
-  const db = await mf.getD1Database("DB");
-  await db.exec(
-    "ALTER TABLE machine_hour_reports RENAME TO saved_hour_reports",
-  );
-  const writeFailed = await request(
-    "/api/v1/hourly-reports/run",
-    params,
-    viewer,
-  );
-  assert.equal(
-    ((await writeFailed.json()) as { results: { error: string }[] }).results[0]
-      .error,
-    "generation_failed",
-  );
-  await db.exec(
-    "ALTER TABLE saved_hour_reports RENAME TO machine_hour_reports",
-  );
-  const beforeRetry = aiCalls;
-  const retried = await request("/api/v1/hourly-reports/run", params, viewer);
-  assert.equal(
-    ((await retried.json()) as { results: { generated: boolean }[] }).results[0]
-      .generated,
-    true,
-  );
-  assert.equal(
-    aiCalls,
-    beforeRetry,
-    "D1 retry reuses durable generated result",
-  );
-  await mf.unsafeEvictDurableObject("eagle", "MachineState", {
-    name: "mac-one",
-  });
-  const history = await request(
-    `/api/v1/hourly-reports?machine=mac-one&hour=${encodeURIComponent(hour)}`,
-    undefined,
-    viewer,
-  );
-  assert.equal(history.status, 200);
-  const serialized = await history.text();
-  assert(!serialized.includes("isolated-ai-test-secret"));
-  const entries = JSON.parse(serialized).entries;
-  assert.equal(entries.length, 1);
-  assert.equal(entries[0].report.hour, hour);
-  assert.equal(entries[0].report.snapshots, 2);
-  assert.equal(entries[0].report.semanticRecords, 1);
-  assert.match(
-    entries[0].report.content.executiveSummary,
-    /^本小时任务持续推进，生产部署尚无验证证据。\[F\d+\]$/,
-  );
-  assert.equal(
-    (
-      await request(
-        "/api/v1/settings",
-        { model: "isolated-ai-test-secret" },
-        viewer,
-      )
-    ).status,
-    400,
-  );
-  for (const offset of [3, 1, 2]) {
-    const bucket = utcHour(Date.now() - offset * 3600000);
-    await db
-      .prepare(
-        "INSERT INTO machine_hour_reports(machine_id,hour,generated_at,input_hash,payload) VALUES(?,?,?,?,?)",
-      )
-      .bind(
-        "pagination",
-        bucket,
-        new Date().toISOString(),
-        "test",
-        JSON.stringify({ ...entries[0].report, hour: bucket }),
-      )
-      .run();
-  }
-  const page1 = (await (
-    await request(
-      "/api/v1/hourly-reports?machine=pagination&limit=1",
-      undefined,
-      viewer,
-    )
-  ).json()) as { entries: { report: { hour: string } }[]; nextCursor: string };
-  assert.equal(page1.entries[0].report.hour, utcHour(Date.now() - 3600000));
-  const page2 = (await (
-    await request(
-      `/api/v1/hourly-reports?machine=pagination&limit=1&before=${encodeURIComponent(page1.nextCursor)}`,
-      undefined,
-      viewer,
-    )
-  ).json()) as typeof page1;
-  assert.equal(page2.entries[0].report.hour, utcHour(Date.now() - 2 * 3600000));
-  // A generated result survives expiry of its raw inputs while D1 is unavailable.
-  const expiredHour = utcHour(Date.now() - 49 * 3600000);
-  const cached = { ...entries[0].report, hour: expiredHour, snapshots: 120 };
-  const storage = await mf.unsafeGetDurableObjectStorage(
-    "eagle",
-    "MachineState",
-    { name: "mac-one" },
-  );
-  await storage.exec(
-    `INSERT INTO hourly_jobs(hour,version,expires,pending) VALUES('${expiredHour}','expired-input',0,'${JSON.stringify(cached).replaceAll("'", "''")}')`,
-  );
-  await request("/api/v1/settings", { intervalHours: 2 }, viewer);
-  const tick = Math.floor(Date.now() / 7200000) * 7200000 + 3600000 + 300000;
-  const catchupHour = utcHour(tick - 2 * 3600000);
-  const catchup = report(
-    "cron-catchup",
-    new Date(Date.parse(catchupHour) + 60000).toISOString(),
-  );
-  await request("/api/v1/reports", catchup);
-  const cron = await mf.dispatchFetch(
-    `http://eagle.test/cdn-cgi/local/scheduled?cron=5+*+*+*+*&time=${tick}`,
-  );
-  assert.equal(cron.status, 200, await cron.text());
-  const archived = await db
-    .prepare(
-      "SELECT payload FROM machine_hour_reports WHERE machine_id='mac-one' AND hour=?",
-    )
-    .bind(expiredHour)
-    .first<{ payload: string }>();
-  assert(archived);
-  assert.equal(JSON.parse(archived.payload).snapshots, 120);
-  assert(
-    await db
-      .prepare(
-        "SELECT seq FROM machine_hour_reports WHERE machine_id='mac-one' AND hour=?",
-      )
-      .bind(catchupHour)
-      .first(),
-  );
-  const chunkHour = utcHour(Date.now() - 4 * 3600000);
-  const large = report(
-    "chunked-hour",
-    new Date(Date.parse(chunkHour) + 60000).toISOString(),
-  );
-  const pane = large.spaces[0].tabs[0].panes[0];
-  large.spaces[0].tabs[0].panes = [0, 1].map((n) => ({
-    ...pane,
-    id: `chunk-pane-${n}`,
-    evidence: Array.from({ length: 30 }, (_, i) => ({
-      kind: "summary" as const,
-      status: "unknown" as const,
-      source: `native:${n}:${i}`,
-      observedAt: large.capturedAt,
-      taskId: pane.task.id,
-      summary: `检查记录${n}:${i}。${"实现仍在核验，部署没有完成证明。".repeat(100)}`,
-    })),
-  }));
-  assert.equal((await request("/api/v1/reports", large)).status, 201);
-  const beforeChunks = aiCalls;
-  const reduced = await request(
-    "/api/v1/hourly-reports/run",
-    { machine: "mac-one", hour: chunkHour },
-    viewer,
-  );
-  assert.equal(
-    ((await reduced.json()) as { results: { generated: boolean }[] }).results[0]
-      .generated,
-    true,
-  );
-  assert(
-    aiCalls > beforeChunks + 1,
-    "Large hours validate partial templates before final reduction",
-  );
-});
-
-async function hourlyMachine(id: string) {
-  await request(
-    "/api/v1/settings",
-    {
-      provider: "custom",
-      model: "test-model",
-      baseURL: "https://api.ai.example/v1",
-      sdkType: "openai",
-      authType: "bearer",
-      enabled: true,
-      intervalHours: 1,
-      apiKey: "isolated-ai-test-secret",
-    },
-    viewer,
-  );
-  const created = await request("/api/v1/machines", { id, name: id }, viewer);
-  assert.equal(created.status, 201);
-  return ((await created.json()) as { token: string }).token;
-}
-
-function largeHourReport(
-  id: string,
-  machine: string,
-  hour: string,
-  minute = 1,
-) {
-  const value = report(
-    id,
-    new Date(Date.parse(hour) + minute * 60000).toISOString(),
-  );
-  value.machine.id = machine;
-  const pane = value.spaces[0].tabs[0].panes[0];
-  value.spaces[0].tabs[0].panes = [0, 1].map((n) => ({
-    ...pane,
-    id: `pane-${n}`,
-    evidence: Array.from({ length: 30 }, (_, i) => ({
-      kind: "summary" as const,
-      status: "unknown" as const,
-      source: `native:${n}:${i}`,
-      observedAt: value.capturedAt,
-      taskId: pane.task.id,
-      summary: `${id}:${n}:${i} ${"Unverified evidence. ".repeat(90)}`,
-    })),
-  }));
-  return value;
-}
-
-test("hourly checkpoints survive eviction and a failed final synthesis without repeating validated chunks", async () => {
-  const machine = "hourly-resume";
-  const credential = await hourlyMachine(machine);
-  const hour = utcHour(Date.now() - 6 * 3600000);
-  assert.equal(
-    (
-      await request(
-        "/api/v1/reports",
-        largeHourReport("resume-input", machine, hour),
-        credential,
-      )
-    ).status,
-    201,
-  );
-  aiFailFinal = true;
-  try {
-    const failed = await request(
-      "/api/v1/hourly-reports/run",
-      { machine, hour },
-      viewer,
-    );
-    assert.equal(
-      ((await failed.json()) as { results: { error: string }[] }).results[0]
-        .error,
-      "generation_failed",
-    );
-  } finally {
-    aiFailFinal = false;
-  }
-  await mf.unsafeEvictDurableObject("eagle", "MachineState", { name: machine });
-  const calls = aiCalls;
-  const retried = await request(
-    "/api/v1/hourly-reports/run",
-    { machine, hour },
-    viewer,
-  );
-  assert.equal(
-    ((await retried.json()) as { results: { generated: boolean }[] }).results[0]
-      .generated,
-    true,
-  );
-  assert.equal(
-    aiCalls - calls,
-    1,
-    "Only the failed final synthesis may call the model again",
-  );
-});
-
-test("hourly generation handles more than 32 chunks and bounds recursive reduction prompts", async () => {
-  const machine = "hourly-large";
-  const credential = await hourlyMachine(machine);
-  const hour = utcHour(Date.now() - 7 * 3600000);
-  for (let i = 0; i < 16; i++) {
-    const value = largeHourReport(`large-${i}`, machine, hour, i + 1);
-    assert.equal(
-      (await request("/api/v1/reports", value, credential)).status,
-      201,
-    );
-  }
-  aiVerbose = true;
-  aiRequests = [];
-  try {
-    const result = await request(
-      "/api/v1/hourly-reports/run",
-      { machine, hour },
-      viewer,
-    );
-    assert.equal(
-      ((await result.json()) as { results: { generated: boolean }[] })
-        .results[0].generated,
-      true,
-    );
-    assert(aiRequests.length > 32);
-    assert(
-      aiRequests.every((prompt) => prompt.length < 190000),
-      "Every reduction must fit a bounded prompt",
-    );
-    const db = await mf.getD1Database("DB");
-    const payload = await db
-      .prepare(
-        "SELECT payload FROM machine_hour_reports WHERE machine_id=? AND hour=?",
-      )
-      .bind(machine, hour)
-      .first<string>("payload");
-    assert(payload);
-    assert.equal(JSON.parse(payload).snapshots, 16);
-  } finally {
-    aiVerbose = false;
-    aiRequests = undefined;
-  }
-});
-
-test("hourly scheduling gives recent work priority and a free worker continues past a slow hour", async () => {
-  const machine = "hourly-fair";
-  const credential = await hourlyMachine(machine);
-  const hours = [4, 3, 2].map((n) => utcHour(Date.now() - n * 3600000));
-  for (const [i, hour] of hours.entries()) {
-    const value = report(
-      `fair-${i}`,
-      new Date(Date.parse(hour) + 60000).toISOString(),
-    );
-    value.machine.id = machine;
-    assert.equal(
-      (await request("/api/v1/reports", value, credential)).status,
-      201,
-    );
-  }
-  let release = () => {};
-  aiHold = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  aiHoldMatch = hours[2];
-  aiRequests = [];
-  const running = request("/api/v1/hourly-reports/run", { machine }, viewer);
-  try {
-    const deadline = Date.now() + 3000;
-    while (aiRequests.length < 3 && Date.now() < deadline)
-      await new Promise((r) => setTimeout(r, 10));
-    assert.equal(
-      aiRequests.length,
-      3,
-      "The free worker must start the third hour before the slow one finishes",
-    );
-    assert(
-      aiRequests[0].includes(hours[2]),
-      "Unattempted recent hours run before old backlog",
-    );
-  } finally {
-    release();
-    aiHold = undefined;
-    aiHoldMatch = undefined;
-    aiRequests = undefined;
-    await running;
-  }
-});
-
-test("hourly late input invalidates in-flight checkpoints and cannot be archived as a completed hour", async () => {
-  const machine = "hourly-changing";
-  const credential = await hourlyMachine(machine);
-  const hour = utcHour(Date.now() - 8 * 3600000);
-  const value = report(
-    "changing-first",
-    new Date(Date.parse(hour) + 60000).toISOString(),
-  );
-  value.machine.id = machine;
-  await request("/api/v1/reports", value, credential);
-  let release = () => {};
-  aiHold = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const calls = aiCalls;
-  const running = request(
-    "/api/v1/hourly-reports/run",
-    { machine, hour },
-    viewer,
-  );
-  try {
-    const deadline = Date.now() + 3000;
-    while (aiCalls === calls && Date.now() < deadline)
-      await new Promise((r) => setTimeout(r, 10));
-    assert.equal(aiCalls, calls + 1);
-    await request(
-      "/api/v1/reports",
-      {
-        ...value,
-        reportId: "changing-late",
-        capturedAt: new Date(Date.parse(hour) + 2 * 60000).toISOString(),
-      },
-      credential,
-    );
-  } finally {
-    release();
-    aiHold = undefined;
-  }
-  const result = (await (await running).json()) as {
-    results: { skipped?: string }[];
-  };
-  assert.equal(result.results[0].skipped, "input_changed");
-  const db = await mf.getD1Database("DB");
-  assert.equal(
-    await db
-      .prepare("SELECT count(*) n FROM machine_hour_reports WHERE machine_id=?")
-      .bind(machine)
-      .first("n"),
-    0,
-  );
-  const retry = await request(
-    "/api/v1/hourly-reports/run",
-    { machine, hour },
-    viewer,
-  );
-  assert.equal(
-    ((await retry.json()) as { results: { generated: boolean }[] }).results[0]
-      .generated,
-    true,
-  );
-});
-
-test("hourly failures expose retry state, back off unchanged failures and keep fresh hours runnable", async () => {
-  const machine = "hourly-retry";
-  const credential = await hourlyMachine(machine);
-  const hour = utcHour(Date.now() - 3 * 3600000);
-  const value = report(
-    "retry-first",
-    new Date(Date.parse(hour) + 60000).toISOString(),
-  );
-  value.machine.id = machine;
-  await request("/api/v1/reports", value, credential);
-  aiFailure = true;
-  try {
-    await request("/api/v1/hourly-reports/run", { machine, hour }, viewer);
-  } finally {
-    aiFailure = false;
-  }
-  const status = async () => {
-    const response = await request(
-      `/api/v1/hourly-reports?machine=${machine}`,
-      undefined,
-      viewer,
-    );
-    const text = await response.text();
-    assert(!text.includes("isolated-ai-test-secret"));
-    return JSON.parse(text) as {
-      jobs: import("../src/shared/hourly.ts").HourlyJob[];
-    };
-  };
-  const first = (await status()).jobs.find((job) => job.hour === hour);
-  assert(first);
-  assert.equal(first.status, "retrying");
-  assert.equal(first.attempts, 1);
-  assert.equal(first.stage, "model_final");
-  assert(first.retryAt > Date.now());
-  const calls = aiCalls;
-  await request("/api/v1/hourly-reports/run", { machine }, viewer);
-  assert.equal(aiCalls, calls, "Automatic runs respect persisted retry delay");
-  const recent = utcHour(Date.now() - 2 * 3600000);
-  await request(
-    "/api/v1/reports",
-    {
-      ...value,
-      reportId: "retry-recent",
-      capturedAt: new Date(Date.parse(recent) + 60000).toISOString(),
-    },
-    credential,
-  );
-  const fresh = (await (
-    await request("/api/v1/hourly-reports/run", { machine }, viewer)
-  ).json()) as { results: { generated: boolean; hour: string }[] };
-  assert.deepEqual(
-    fresh.results.map((result) => [result.hour, result.generated]),
-    [[recent, true]],
-  );
-  await request("/api/v1/hourly-reports/run", { machine, hour }, viewer);
-  const completed = (await status()).jobs.find((job) => job.hour === hour);
-  assert.equal(completed?.status, "complete");
-  assert.equal(completed.attempts, 2);
-  assert.equal(completed.error, null);
-  assert(completed.lastSuccessAt);
-});
-
-test("hourly deterministic input rejection stays visible and does not monopolize automatic retries", async () => {
-  const machine = "hourly-blocked";
-  const credential = await hourlyMachine(machine);
-  const hour = utcHour(Date.now() - 4 * 3600000);
-  const value = report(
-    "oversized-inventory",
-    new Date(Date.parse(hour) + 60000).toISOString(),
-  );
-  value.machine.id = machine;
-  value.spaces = Array.from({ length: 200 }, (_, i) => ({
-    id: `space-${i}`,
-    name: "Large space",
-    session: "default",
-    objective: "x".repeat(1000),
-    tabs: [],
-  }));
-  assert.equal(
-    (await request("/api/v1/reports", value, credential)).status,
-    201,
-  );
-  const calls = aiCalls;
-  await request("/api/v1/hourly-reports/run", { machine }, viewer);
-  await mf.unsafeEvictDurableObject("eagle", "MachineState", { name: machine });
-  await request("/api/v1/hourly-reports/run", { machine }, viewer);
-  const state = (await (
-    await request(
-      `/api/v1/hourly-reports?machine=${machine}`,
-      undefined,
-      viewer,
-    )
-  ).json()) as { jobs: import("../src/shared/hourly.ts").HourlyJob[] };
-  const job = state.jobs.find((job) => job.hour === hour);
-  assert.equal(job?.status, "blocked");
-  assert.equal(job.attempts, 1);
-  assert.equal(job.error, "input_too_large");
-  assert.equal(aiCalls, calls);
-});
-
-test("hourly obsolete leases cannot write checkpoints or clear the replacement lease", async () => {
-  const machine = "hourly-lease";
-  const credential = await hourlyMachine(machine);
-  const hour = utcHour(Date.now() - 5 * 3600000);
-  const value = report(
-    "lease-first",
-    new Date(Date.parse(hour) + 60000).toISOString(),
-  );
-  value.machine.id = machine;
-  await request("/api/v1/reports", value, credential);
-  let release = () => {};
-  aiHold = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const calls = aiCalls;
-  const running = request(
-    "/api/v1/hourly-reports/run",
-    { machine, hour },
-    viewer,
-  );
-  const storage = await mf.unsafeGetDurableObjectStorage(
-    "eagle",
-    "MachineState",
-    { name: machine },
-  );
-  try {
-    const deadline = Date.now() + 3000;
-    while (aiCalls === calls && Date.now() < deadline)
-      await new Promise((r) => setTimeout(r, 10));
-    assert.equal(aiCalls, calls + 1);
-    await storage.exec(
-      `UPDATE hourly_jobs SET lease='replacement' WHERE hour='${hour}'`,
-    );
-  } finally {
-    release();
-    aiHold = undefined;
-  }
-  const result = (await (await running).json()) as {
-    results: { skipped: string }[];
-  };
-  assert.equal(result.results[0].skipped, "lease_lost");
-  const state = await storage.exec("SELECT lease FROM hourly_jobs");
-  assert.match(JSON.stringify(state), /replacement/);
-  const parts = await storage.exec(
-    "SELECT step FROM hourly_steps WHERE step<>'state'",
-  );
-  assert(!JSON.stringify(parts).includes('"final"'));
-});
-
 test("realtime bridge rejects missing or mismatched configured machine identity", async () => {
   const statuses: number[] = [];
   for (const machine of [undefined, "mac-two"]) {
@@ -2701,26 +2002,113 @@ test("abrupt viewer termination promptly removes its last subscription", async (
   }
 });
 
-test("discarded hours retain raw input, cancel in-flight work and stay discarded after late input", async () => {
-  const machine = "hourly-discard";
-  const credential = await hourlyMachine(machine);
-  const hour = utcHour(Date.now() - 5 * 3600000);
-  const value = largeHourReport("discard-first", machine, hour, 1);
-  await request("/api/v1/reports", value, credential);
-  const params = { machine, hours: [hour] };
+async function dailyMachine(id: string) {
+  await request(
+    "/api/v1/settings",
+    {
+      provider: "custom",
+      model: "test-model",
+      baseURL: "https://api.ai.example/v1",
+      sdkType: "openai",
+      authType: "bearer",
+      enabled: true,
+      apiKey: "isolated-ai-test-secret",
+    },
+    viewer,
+  );
+  const created = await request("/api/v1/machines", { id, name: id }, viewer);
+  assert.equal(created.status, 201);
+  return ((await created.json()) as { token: string }).token;
+}
+const reportDate = () => dueDate(Date.now());
+function dailySnapshot(id: string, machine: string, hour = 9) {
+  const value = report(
+    id,
+    new Date(
+      Date.parse(dailyStart(reportDate())) + hour * 3600000 + 60000,
+    ).toISOString(),
+  );
+  value.machine.id = machine;
+  return value;
+}
+async function dailyResult(machine: string, date = reportDate()) {
+  const response = await request(
+    "/api/v1/daily-reports/run",
+    { machine, date },
+    viewer,
+  );
+  assert.equal(response.status, 200, await response.clone().text());
+  return (await response.json()) as {
+    results: {
+      generated?: boolean;
+      skipped?: string;
+      error?: string;
+      category?: string;
+    }[];
+  };
+}
+async function dailyHistory(machine: string) {
+  const response = await request(
+    `/api/v1/daily-reports?machine=${machine}`,
+    undefined,
+    viewer,
+  );
+  assert.equal(response.status, 200);
+  const text = await response.text();
+  assert(!text.includes("isolated-ai-test-secret"));
+  return JSON.parse(text) as {
+    entries: { report: DailyReport }[];
+    jobs: { status: string; error: string; date: string; attempts: number }[];
+    nextCursor: string | null;
+  };
+}
+async function waitForAi(calls: number) {
+  const deadline = Date.now() + 5000;
+  while (aiCalls === calls && Date.now() < deadline)
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(aiCalls, calls + 1);
+}
+
+test("daily reports preserve hour groups, exclude the final minute, lease and archive idempotently", async () => {
+  const machine = "daily-idempotent";
+  const credential = await dailyMachine(machine);
+  for (const hour of [0, 9, 23]) {
+    const value = dailySnapshot(`daily-${hour}`, machine, hour);
+    assert.equal(
+      (await request("/api/v1/reports", value, credential)).status,
+      201,
+    );
+    assert.equal(
+      (await request("/api/v1/reports", value, credential)).status,
+      200,
+    );
+  }
+  const outside = dailySnapshot("daily-outside", machine);
+  outside.capturedAt = new Date(
+    Date.parse(dailyCutoff(reportDate())) + 30000,
+  ).toISOString();
+  await request("/api/v1/reports", outside, credential);
   assert.equal(
-    (await request("/api/v1/hourly-reports/discard", params, credential))
+    (await request("/api/v1/daily-reports/run", { machine }, credential))
       .status,
     401,
   );
   assert.equal(
-    (
-      await request(
-        "/api/v1/hourly-reports/discard",
-        { machine, hours: [utcHour(Date.now())] },
-        viewer,
-      )
-    ).status,
+    (await request("/api/v1/daily-reports", undefined, credential)).status,
+    401,
+  );
+  assert.equal(
+    (await request("/api/v1/hourly-reports", undefined, viewer)).status,
+    404,
+  );
+  for (const date of ["2026-02-30", "2099-01-01", "invalid"])
+    assert.equal(
+      (await request("/api/v1/daily-reports/run", { machine, date }, viewer))
+        .status,
+      400,
+    );
+  assert.equal(
+    (await request("/api/v1/daily-reports/run", [], viewer)).status,
     400,
   );
   let release = () => {};
@@ -2728,82 +2116,431 @@ test("discarded hours retain raw input, cancel in-flight work and stay discarded
     release = resolve;
   });
   const calls = aiCalls;
-  const running = request(
-    "/api/v1/hourly-reports/run",
-    { machine, hour },
-    viewer,
-  );
+  const running = dailyResult(machine);
   try {
-    const deadline = Date.now() + 3000;
-    while (aiCalls === calls && Date.now() < deadline)
-      await new Promise((r) => setTimeout(r, 10));
-    const response = await request(
-      "/api/v1/hourly-reports/discard",
-      params,
-      viewer,
+    await waitForAi(calls);
+    assert.equal(
+      (await dailyResult(machine)).results[0].skipped,
+      "in_progress",
     );
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), {
-      results: [{ hour, discarded: true }],
-    });
   } finally {
     release();
     aiHold = undefined;
-    await running;
+  }
+  assert.equal((await running).results[0].generated, true);
+  assert.equal((await dailyResult(machine)).results[0].skipped, "unchanged");
+  assert.equal(aiCalls, calls + 1);
+  await mf.unsafeEvictDurableObject("eagle", "MachineState", { name: machine });
+  const history = await dailyHistory(machine);
+  assert.equal(history.entries.length, 1);
+  const value = history.entries[0].report;
+  assert.equal(value.date, reportDate());
+  assert.equal(value.timezone, "Asia/Shanghai");
+  assert.equal(value.cutoff, dailyCutoff(reportDate()));
+  assert.equal(value.snapshots, 3);
+  assert.equal(value.content.hours.length, 24);
+  assert.deepEqual(
+    value.coverage.filter((h) => h.snapshots).map((h) => h.hour),
+    [0, 9, 23],
+  );
+  assert.equal(value.content.hours[1].summary, "无采集数据。");
+  assert.equal(history.jobs[0].status, "complete");
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "MachineState",
+    { name: machine },
+  );
+  const tables = await storage.exec(
+    "SELECT name FROM sqlite_master WHERE type='table'",
+  );
+  assert(!JSON.stringify(tables).includes('"hourly_jobs"'));
+  assert(!JSON.stringify(tables).includes('"hourly_steps"'));
+  const raw = await storage.exec("SELECT count(*) n FROM hourly_facts");
+  assert.equal(raw[0].n, 4);
+});
+
+test("daily archive failures reuse the saved final after eviction and raw expiry", async () => {
+  const machine = "daily-archive";
+  const credential = await dailyMachine(machine);
+  await request(
+    "/api/v1/reports",
+    dailySnapshot("archive-input", machine),
+    credential,
+  );
+  const db = await mf.getD1Database("DB");
+  await db.exec(
+    "ALTER TABLE machine_daily_reports RENAME TO saved_daily_reports",
+  );
+  try {
+    assert.equal(
+      (await dailyResult(machine)).results[0].category,
+      "archive_unavailable",
+    );
+  } finally {
+    await db.exec(
+      "ALTER TABLE saved_daily_reports RENAME TO machine_daily_reports",
+    );
   }
   const storage = await mf.unsafeGetDurableObjectStorage(
     "eagle",
     "MachineState",
     { name: machine },
   );
-  const raw = await storage.exec(
-    `SELECT count(*) AS n FROM hourly_facts WHERE hour='${hour}'`,
-  );
-  assert(Number(raw[0].n) > 0);
+  await storage.exec("DELETE FROM hourly_facts");
+  await mf.unsafeEvictDurableObject("eagle", "MachineState", { name: machine });
+  const calls = aiCalls;
+  assert.equal((await dailyResult(machine)).results[0].generated, true);
+  assert.equal(aiCalls, calls);
+  assert.equal((await dailyHistory(machine)).entries[0].report.snapshots, 1);
+});
+
+test("invalid daily output is bounded to two calls and duplicates never poll a failed day", async () => {
+  const machine = "daily-failed";
+  const credential = await dailyMachine(machine);
   await request(
     "/api/v1/reports",
-    largeHourReport("discard-late", machine, hour, 2),
+    dailySnapshot("failed-input", machine),
     credential,
   );
-  await mf.unsafeEvictDurableObject("eagle", "MachineState", { name: machine });
-  const skipped = await request(
-    "/api/v1/hourly-reports/run",
-    { machine, hour },
-    viewer,
+  const calls = aiCalls;
+  aiInvalid = true;
+  try {
+    assert.equal(
+      (await dailyResult(machine)).results[0].category,
+      "invalid_output",
+    );
+  } finally {
+    aiInvalid = false;
+  }
+  assert.equal(aiCalls, calls + 2);
+  const history = await dailyHistory(machine);
+  assert.equal(history.entries.length, 0);
+  assert.equal(history.jobs[0].status, "failed");
+  assert.equal(history.jobs[0].error, "invalid_output");
+  const cron = await mf.dispatchFetch(
+    `http://eagle.test/cdn-cgi/local/scheduled?cron=59+15+*+*+*&time=${Date.parse(dailyCutoff(reportDate()))}`,
   );
-  assert.equal(
-    ((await skipped.json()) as { results: { skipped: string }[] }).results[0]
-      .skipped,
-    "discarded",
+  assert.equal(cron.status, 200, await cron.text());
+  assert.equal((await dailyHistory(machine)).jobs[0].attempts, 1);
+  const retryCalls = aiCalls;
+  assert.equal((await dailyResult(machine)).results[0].generated, true);
+  assert.equal(aiCalls, retryCalls + 1);
+  assert.equal((await dailyHistory(machine)).jobs[0].attempts, 2);
+});
+
+test("daily large input uses one bounded prompt and exposes per-hour sampling", async () => {
+  const machine = "daily-large";
+  const credential = await dailyMachine(machine);
+  for (let hour = 0; hour < 24; hour++) {
+    const value = dailySnapshot(`large-${hour}`, machine, hour);
+    value.spaces[0].tabs[0].panes[0].evidence = Array.from(
+      { length: 30 },
+      (_, i) => ({
+        kind: "summary",
+        status: "unknown",
+        source: `native:${i}`,
+        observedAt: value.capturedAt,
+        taskId: "task-1",
+        summary: "未经验证的原始材料。".repeat(180),
+      }),
+    );
+    assert.equal(
+      (await request("/api/v1/reports", value, credential)).status,
+      201,
+    );
+  }
+  aiRequests = [];
+  try {
+    assert.equal((await dailyResult(machine)).results[0].generated, true);
+    assert.equal(aiRequests.length, 1);
+    assert(aiRequests[0].length < 110000);
+    const saved = (await dailyHistory(machine)).entries[0].report;
+    assert.equal(saved.snapshots, 24);
+    assert(
+      saved.coverage.every(
+        (h) => h.omittedRecords > 0 && h.excerptedRecords > 0,
+      ),
+    );
+  } finally {
+    aiRequests = undefined;
+  }
+});
+
+test("daily late input cannot archive an outdated report and manual retry includes it", async () => {
+  const machine = "daily-changing";
+  const credential = await dailyMachine(machine);
+  await request(
+    "/api/v1/reports",
+    dailySnapshot("changing-first", machine),
+    credential,
   );
-  const history = await request(
-    `/api/v1/hourly-reports?machine=${machine}`,
+  let release = () => {};
+  aiHold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const calls = aiCalls;
+  const running = dailyResult(machine);
+  try {
+    await waitForAi(calls);
+    await request(
+      "/api/v1/reports",
+      dailySnapshot("changing-second", machine, 10),
+      credential,
+    );
+  } finally {
+    release();
+    aiHold = undefined;
+  }
+  assert.equal((await running).results[0].skipped, "input_changed");
+  assert.equal((await dailyHistory(machine)).entries.length, 0);
+  assert.equal((await dailyResult(machine)).results[0].generated, true);
+  assert.equal((await dailyHistory(machine)).entries[0].report.snapshots, 2);
+});
+
+test("daily obsolete leases cannot archive or clear a replacement lease", async () => {
+  const machine = "daily-lease";
+  const credential = await dailyMachine(machine);
+  await request(
+    "/api/v1/reports",
+    dailySnapshot("lease-input", machine),
+    credential,
+  );
+  let release = () => {};
+  aiHold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const calls = aiCalls;
+  const running = dailyResult(machine);
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "MachineState",
+    { name: machine },
+  );
+  try {
+    await waitForAi(calls);
+    await storage.exec(
+      "UPDATE daily_jobs SET payload=json_set(payload,'$.lease','replacement')",
+    );
+  } finally {
+    release();
+    aiHold = undefined;
+  }
+  assert.equal((await running).results[0].skipped, "lease_lost");
+  assert.equal((await dailyHistory(machine)).entries.length, 0);
+  assert.match(
+    JSON.stringify(await storage.exec("SELECT payload FROM daily_jobs")),
+    /replacement/,
+  );
+});
+
+test("daily archives paginate by date and reject invalid cursors and methods", async () => {
+  const db = await mf.getD1Database("DB");
+  const report = (await dailyHistory("daily-idempotent")).entries[0].report;
+  for (const date of ["2026-09-01", "2026-09-03", "2026-09-02"])
+    await db
+      .prepare(
+        "INSERT INTO machine_daily_reports(machine_id,date,generated_at,input_hash,payload) VALUES(?,?,?,?,?)",
+      )
+      .bind(
+        "pagination",
+        date,
+        report.generatedAt,
+        "test",
+        JSON.stringify({ ...report, date }),
+      )
+      .run();
+  const first = await request(
+    "/api/v1/daily-reports?machine=pagination&limit=1",
     undefined,
     viewer,
   );
-  const data = (await history.json()) as {
-    entries: unknown[];
-    jobs: { status: string }[];
+  const page = (await first.json()) as {
+    entries: { report: DailyReport }[];
+    nextCursor: string;
   };
-  assert.equal(data.entries.length, 0);
-  assert.equal(data.jobs[0].status, "discarded");
-  const completed = utcHour(Date.now() - 4 * 3600000);
+  assert.equal(page.entries[0].report.date, "2026-09-03");
+  const second = await request(
+    `/api/v1/daily-reports?machine=pagination&limit=1&before=${encodeURIComponent(page.nextCursor)}`,
+    undefined,
+    viewer,
+  );
+  assert.equal(
+    ((await second.json()) as typeof page).entries[0].report.date,
+    "2026-09-02",
+  );
+  for (const query of [
+    "date=2026-02-30",
+    "before=garbage",
+    "before=2026-09-02%7C0",
+  ])
+    assert.equal(
+      (await request(`/api/v1/daily-reports?${query}`, undefined, viewer))
+        .status,
+      400,
+    );
+  assert.equal(
+    (await request("/api/v1/daily-reports", {}, viewer)).status,
+    405,
+  );
+  assert.equal(
+    (await request("/api/v1/daily-reports/run", undefined, viewer)).status,
+    405,
+  );
+});
+
+test("daily cutover preserves the configured provider and encrypted key while removing cadence", async () => {
+  const settings = {
+    provider: "custom",
+    model: "test-model",
+    baseURL: "https://api.ai.example/v1",
+    sdkType: "openai",
+    authType: "bearer",
+    enabled: true,
+  };
   await request(
-    "/api/v1/reports",
-    largeHourReport("discard-complete", machine, completed, 1),
+    "/api/v1/settings",
+    { ...settings, apiKey: "isolated-ai-test-secret" },
+    viewer,
+  );
+  await mf.dispose();
+  let edited = 0;
+  try {
+    for (const file of readdirSync(testStorage, { recursive: true })
+      .map(String)
+      .filter((file) => file.endsWith(".sqlite"))) {
+      const db = new DatabaseSync(join(testStorage, file));
+      try {
+        if (
+          !db
+            .prepare("SELECT name FROM sqlite_master WHERE name='_cf_KV'")
+            .get()
+        )
+          continue;
+        if (
+          !db.prepare("SELECT key FROM _cf_KV WHERE key='daily-settings'").get()
+        )
+          continue;
+        db.prepare(
+          "UPDATE _cf_KV SET key='hourly-settings',value=? WHERE key='daily-settings'",
+        ).run(serialize({ ...settings, intervalHours: 2 }));
+        edited++;
+      } finally {
+        db.close();
+      }
+    }
+  } finally {
+    mf = new Miniflare(options);
+  }
+  assert.equal(edited, 1);
+  const response = await request("/api/v1/settings", undefined, viewer);
+  assert.equal(response.status, 200);
+  const value = (await response.json()) as Record<string, unknown>;
+  assert.equal(value.hasApiKey, true);
+  assert.equal(value.model, "test-model");
+  assert.equal(value.intervalHours, undefined);
+  assert.equal(value.schedule, "23:59");
+  assert.equal(
+    (
+      (await (await request("/api/v1/settings/test", {}, viewer)).json()) as {
+        success: boolean;
+      }
+    ).success,
+    true,
+  );
+});
+
+test("daily reports include semantic-only hours with their original observation time", async () => {
+  const machine = "daily-semantic";
+  const credential = await dailyMachine(machine);
+  const value = dailySnapshot("semantic-input", machine, 3);
+  await request("/api/v1/reports", value, credential);
+  const response = await request(
+    "/api/v1/summaries",
+    {
+      protocolVersion: 1,
+      machineId: machine,
+      managerId: "daily-manager",
+      sequence: 1,
+      sentAt: new Date().toISOString(),
+      checks: [],
+      updates: [
+        {
+          spaceId: "default:w1",
+          paneId: "w1:p1",
+          taskId: "semantic-task",
+          basis: [],
+          observedAt: value.capturedAt,
+          summary: {
+            task: "日报验证",
+            phase: "verify",
+            progress: "接口已验证，部署待确认",
+            outcomes: [],
+            blocker: null,
+            nextStep: "验证部署",
+            rationale: "管理器报告",
+            evidenceRefs: [],
+          },
+        },
+      ],
+    },
     credential,
   );
-  await request(
-    "/api/v1/hourly-reports/run",
-    { machine, hour: completed },
-    viewer,
+  assert.equal(response.status, 201, await response.clone().text());
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "MachineState",
+    { name: machine },
   );
-  const preserved = await request(
-    "/api/v1/hourly-reports/discard",
-    { machine, hours: [completed] },
-    viewer,
-  );
-  assert.deepEqual(await preserved.json(), {
-    results: [{ hour: completed, skipped: "has_report" }],
+  await storage.exec("DELETE FROM hourly_facts");
+  assert.equal((await dailyResult(machine)).results[0].generated, true);
+  const saved = (await dailyHistory(machine)).entries[0].report;
+  assert.equal(saved.snapshots, 0);
+  assert.equal(saved.semanticRecords, 1);
+  assert.equal(saved.coverage[3].firstObservedAt, value.capturedAt);
+  assert.equal(saved.coverage[3].semanticRecords, 1);
+  assert.match(saved.content.hours[3].evidenceIds[0], /^H03-S\d+$/);
+});
+
+test("one daily cron serves separate machines without a slow model blocking the fleet or duplicate generation", async () => {
+  const machines = ["daily-cron-slow", "daily-cron-fast", "daily-cron-next"];
+  for (const machine of machines) {
+    const credential = await dailyMachine(machine);
+    await request(
+      "/api/v1/reports",
+      dailySnapshot(`${machine}-input`, machine),
+      credential,
+    );
+  }
+  let release = () => {};
+  aiHold = new Promise<void>((resolve) => {
+    release = resolve;
   });
+  aiHoldMatch = "daily-cron-slow";
+  const cronUrl = `http://eagle.test/cdn-cgi/local/scheduled?cron=59+15+*+*+*&time=${Date.parse(dailyCutoff(reportDate()))}`;
+  const running = mf.dispatchFetch(cronUrl);
+  try {
+    const deadline = Date.now() + 5000;
+    while (
+      (await dailyHistory("daily-cron-next")).entries.length === 0 &&
+      Date.now() < deadline
+    )
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal((await dailyHistory("daily-cron-next")).entries.length, 1);
+    assert.equal((await dailyHistory("daily-cron-slow")).entries.length, 0);
+  } finally {
+    release();
+    aiHold = undefined;
+    aiHoldMatch = undefined;
+  }
+  const response = await running;
+  assert.equal(response.status, 200, await response.text());
+  for (const machine of machines)
+    assert.equal(
+      (await dailyHistory(machine)).entries[0].report.date,
+      reportDate(),
+    );
+  const calls = aiCalls;
+  const duplicate = await mf.dispatchFetch(cronUrl);
+  assert.equal(duplicate.status, 200, await duplicate.text());
+  assert.equal(aiCalls, calls);
 });

@@ -680,3 +680,31 @@ serving and the first catalogue-derived production Cron observation.
   No new Herdr collection, production authentication, ingestion or D1 writes were
   performed. The stale snapshot stays explicitly marked. This UI change has not
   been deployed; validation is complete for its atomic commit.
+
+## 2026-09-27 15:13 +08 — daily report cutover in progress
+
+- Replaced hourly generation with one Beijing 23:59 schedule, one bounded daily
+  model prompt per machine, strict 24-hour output and persisted manual retry.
+- All 36 local Miniflare/D1 API tests pass, including duplicate uploads, exclusive
+  leases, final-minute exclusion, late-input rejection and archive-only recovery.
+  Twelve targeted desktop/mobile browser tests pass for daily settings/history,
+  date filtering, expansion continuity and manual retry. Complete gates pending.
+- No new real Herdr collection, production authentication, D1 mutation or release
+  has occurred. The production service still runs v0.7.5 hourly generation.
+  Next: finish documentation, run full gates and real local verification, then
+  perform the authorized v0.8.0 cutover and verify actual model generation.
+
+## 2026-09-27 15:24 +08 — daily report verification
+
+- The completed implementation passes 116 unit/API/package tests, strict types,
+  check-only lint (zero warnings/errors; four existing informational suggestions)
+  and build. The full browser matrix passes 145 with 11 existing viewport skips.
+- Real local verification collected 16 Spaces / 17 Panes, confirmed authenticated
+  idempotent ingestion, DO state, existing D1 history and desktop/mobile rendering.
+  The daily verifier confirmed preserved AI settings, non-secret responses and
+  the new archive API/UI; no local daily report had been generated.
+- The credential cutover test now restarts isolated Miniflare from an actual old
+  settings record and verifies the existing encrypted key still calls its model.
+  Semantic-only coverage and duplicate daily Cron/fleet fairness are covered.
+- Production migration, first real daily model result and v0.8.0 publication are
+  next. Access verification is being prepared; production has not been changed.

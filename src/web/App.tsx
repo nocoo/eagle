@@ -60,6 +60,7 @@ import { AuthError, api } from "./api.ts";
 import { FamilyActions, Mark, SidebarAccount } from "./Brand.tsx";
 import { Connect } from "./Connect.tsx";
 import { useCurrentTaskSnapshot } from "./CurrentTaskSnapshot.ts";
+import { DailyHistory } from "./DailyHistory.tsx";
 import {
   Dashboard,
   DashboardSkeleton,
@@ -68,7 +69,6 @@ import {
   Status,
   Topology,
 } from "./Dashboard.tsx";
-import { HourlyHistory } from "./HourlyHistory.tsx";
 import { PaneSummaryView } from "./PaneSummary.tsx";
 import { Realtime } from "./Realtime.tsx";
 import { Settings } from "./Settings.tsx";
@@ -152,10 +152,10 @@ function HistoryView({ machine, space }: { machine: string; space?: string }) {
   }, [load]);
   return (
     <div className="space-y-4">
-      <HourlyHistory machine={machine} />
+      <DailyHistory machine={machine} />
       <div className="flex items-center justify-between">
         <p className="text-sm text-basalt-muted-foreground">
-          历史归档已暂停（旧版原始快照）；新的 AI 小时报告显示在上方。
+          历史归档已暂停（旧版原始快照）；新的 AI 日报显示在上方。
         </p>
         <Button
           size="sm"
@@ -881,7 +881,7 @@ export function App() {
                   title={title}
                   description={
                     page === "settings" ? (
-                      "显示时区、AI 连接与小时报告。"
+                      "显示时区、AI 连接与日报。"
                     ) : compactMachine && selectedMachine ? (
                       <span className="machine-subtitle">
                         <MachineStatus machine={selectedMachine} now={now} />

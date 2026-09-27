@@ -49,7 +49,7 @@ The largest contributor at 08:00 is **631 distinct visible-terminal summaries**,
 
 The same failure predates this reboot. Retained MBP hours on September 20 at 10:00, 11:00, 12:00 and 13:00 have 36, 55, 36 and 35 chunks; Mac Studio's September 20 06:00 input has 34.
 
-Code: [input partitioning and size guard](../src/worker/hourly.ts), [hour compaction](../src/shared/hourly.ts).
+Code: [input partitioning and size guard](https://github.com/nocoo/eagle/blob/1a1baa6969549d02930014b7a0188661145f02f3/src/worker/hourly.ts), [hour compaction](https://github.com/nocoo/eagle/blob/1a1baa6969549d02930014b7a0188661145f02f3/src/shared/hourly.ts).
 
 ## Confirmed scheduling and retry constraints
 
@@ -61,7 +61,7 @@ These constraints make old expensive hours consume the budget needed for newer h
 
 Comparing retained input counts with archived reports suggests that the missing two-chunk MBP 16:00 hour is behind several oversized hours and the 31-/32-chunk morning hours. This ordering is **inferred**, not a direct read of `hourly_jobs`. The exact attempt history of each missing hour is not available from the captured evidence.
 
-Code: [pending hours and job state](../src/worker/machine.ts), [sequential generation and shared scheduler budget](../src/worker/hourly.ts).
+Code: [pending hours and job state](../src/worker/machine.ts), [sequential generation and shared scheduler budget](https://github.com/nocoo/eagle/blob/1a1baa6969549d02930014b7a0188661145f02f3/src/worker/hourly.ts).
 
 ## Isolated model replay
 
@@ -118,7 +118,7 @@ This investigation did not deploy application changes, alter production settings
 
 The follow-up implementation retains raw inputs and all non-terminal facts/semantic records, while projecting the first/latest weak terminal screen per task/source/status for the model. A read-only production projection check reduced MBP 08:00 from 44 chunks to 24 (2,049,814 to 1,080,015 characters) and 07:00 from 31 to 21. The original snapshot/semantic counts and evidence IDs remain unchanged; screen sampling is disclosed in template v4.
 
-Validated chunks, recursive reductions and final synthesis now have durable input/model fingerprints and lease checks. Every five-minute tick resumes eligible work with two independent hour workers, two-minute hour turns, a four-minute run budget and persisted retry backoff. Late input cannot certify an obsolete generation. Pending/error/progress state is included in authenticated history queries and displayed beside archived reports. Full behavior and verification are in [HOURLY-REPORTS.md](HOURLY-REPORTS.md).
+Validated chunks, recursive reductions and final synthesis now have durable input/model fingerprints and lease checks. Every five-minute tick resumes eligible work with two independent hour workers, two-minute hour turns, a four-minute run budget and persisted retry backoff. Late input cannot certify an obsolete generation. Pending/error/progress state is included in authenticated history queries and displayed beside archived reports. Full behavior and verification are in [HOURLY-REPORTS.md](https://github.com/nocoo/eagle/blob/300ca885c7412fef94b6b3b4df004c571e6fce55/docs/HOURLY-REPORTS.md).
 
 Pre-release validation passed the isolated eviction/resume, oversized-hour, reduction, fairness, late-input, backoff and stale-lease regressions. Release/deployment and real archive recovery require separate post-release evidence; these implementation checks alone do not establish that historical gaps have been filled.
 

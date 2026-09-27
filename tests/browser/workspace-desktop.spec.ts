@@ -390,7 +390,7 @@ for (const view of ["当前任务", "Space 历史"]) {
     await page.route("**/api/v1/history?*", (route) =>
       route.fulfill({ json: { entries: [], nextCursor: null } }),
     );
-    await page.route("**/api/v1/hourly-reports?*", (route) =>
+    await page.route("**/api/v1/daily-reports?*", (route) =>
       route.fulfill({ json: { entries: [], nextCursor: null } }),
     );
     await page.goto("/?machine=one");

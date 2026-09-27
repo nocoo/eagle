@@ -1,5 +1,6 @@
 # 小时报告 dev eval — 2026-09-19～20
 
+Historical evaluation of the retired hourly pipeline; the referenced scripts belong to that release. Current behavior is documented in [daily reports](DAILY-REPORTS.md).
 本次使用用户在 dev 设置页保存的真实 AI 配置（custom / auto），保留原配置与密钥。仅改进 dev 模板，不发布生产。评测复用正式 `completeReport` 生成流程与 `parseHourlyReport` 校验器；不是模拟模型返回值。
 
 ## 样例与判据

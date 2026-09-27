@@ -17,7 +17,7 @@ Package tests must verify the packed manifest and installed CLI match the Agent
 manifest, while website health/UI versions match the root manifest.
 
 - [Agent contract](docs/AGENT.md), [real-time protocol](docs/REALTIME.md),
-  [hourly reports](docs/HOURLY-REPORTS.md) describe product behavior.
+  [daily reports](docs/DAILY-REPORTS.md) describe product behavior.
 - `.github/workflows/check.yml`, `package.json`, `tests/`, TypeScript/Biome and
   Playwright configs describe current enforcement, not guaranteed passing runs.
 - [Deployment](docs/DEPLOYMENT.md) owns operational setup and live verification.

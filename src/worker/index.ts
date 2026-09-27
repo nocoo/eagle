@@ -3,12 +3,12 @@ import { version } from "../../package.json";
 import { changesBetween } from "../shared/assessment.ts";
 import { MachineInput, MachineName } from "../shared/connect.ts";
 import {
-  type HourlySettings,
-  HourlySettingsSchema,
-  REPORT_SECTIONS,
+  type DailySettings,
+  DailySettingsSchema,
+  dailyCutoff,
   TEMPLATE_VERSION,
-  validHour,
-} from "../shared/hourly.ts";
+  validDate,
+} from "../shared/daily.ts";
 import {
   HeartbeatSchema,
   type Report,
@@ -33,7 +33,7 @@ export { MachineDirectory } from "./directory.ts";
 export { MachineState } from "./machine.ts";
 
 import { withAiKey } from "./ai-secret.ts";
-import { aiConfig, aiReady, runHourly, testAi } from "./hourly.ts";
+import { aiConfig, aiReady, runDaily, testAi } from "./daily.ts";
 import { withProfile } from "./profile.ts";
 
 class HttpError extends Error {
@@ -104,7 +104,7 @@ async function noSecrets(value: string, env: Env) {
   if (containsCredential(value, await withAiKey(env)))
     throw new HttpError(400, "Credential found in report");
 }
-function settingsInput(input: unknown, previous: HourlySettings) {
+function settingsInput(input: unknown, previous: DailySettings) {
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new HttpError(400, "Invalid AI settings");
   const { apiKey, ...fields } = input as Record<string, unknown>;
@@ -116,7 +116,7 @@ function settingsInput(input: unknown, previous: HourlySettings) {
       /\s/.test(apiKey.trim()))
   )
     throw new HttpError(400, "Invalid API key");
-  const parsed = HourlySettingsSchema.safeParse({ ...previous, ...fields });
+  const parsed = DailySettingsSchema.safeParse({ ...previous, ...fields });
   if (!parsed.success) throw new HttpError(400, "Invalid AI settings");
   try {
     if (parsed.data.provider) aiConfig(parsed.data, "validation-placeholder");
@@ -293,9 +293,10 @@ async function route(request: Request, env: Env): Promise<Response> {
       semanticStore: "durable-objects",
       semanticProtocolVersion: 1,
       semanticHours: "UTC",
-      hourlyReports: {
+      dailyReports: {
         available: true,
-        defaultIntervalHours: 1,
+        timezone: "Asia/Shanghai",
+        schedule: "23:59",
         templateVersion: TEMPLATE_VERSION,
       },
     });
@@ -371,7 +372,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (!viewer) throw new HttpError(401, "Sign in required");
   if (path === "/api/v1/settings") {
     const directory = env.DIRECTORY.getByName("fleet");
-    let settings: HourlySettings = await directory.settings();
+    let settings: DailySettings = await directory.settings();
     if (request.method === "POST") {
       const input = settingsInput(await body(request), settings);
       await noSecrets(JSON.stringify(input.settings), env);
@@ -393,7 +394,8 @@ async function route(request: Request, env: Env): Promise<Response> {
       hasApiKey: !!configuredEnv.AI_API_KEY,
       configured: aiReady(settings, configuredEnv),
       templateVersion: TEMPLATE_VERSION,
-      sections: REPORT_SECTIONS,
+      timezone: "Asia/Shanghai",
+      schedule: "23:59",
     });
   }
   if (path === "/api/v1/settings/test" && request.method === "POST") {
@@ -404,62 +406,33 @@ async function route(request: Request, env: Env): Promise<Response> {
       configuredEnv.AI_API_KEY = input.apiKey ?? "";
     return json(await testAi(input.settings, configuredEnv));
   }
-  if (path === "/api/v1/hourly-reports/discard" && request.method === "POST") {
+  if (path === "/api/v1/daily-reports/run") {
+    if (request.method !== "POST")
+      throw new HttpError(405, "Method not allowed");
     const input = await body(request);
     if (
       !input ||
       typeof input !== "object" ||
-      Object.keys(input).some((key) => !["machine", "hours"].includes(key)) ||
-      typeof input.machine !== "string" ||
-      !Array.isArray(input.hours) ||
-      input.hours.length < 1 ||
-      input.hours.length > 48 ||
-      input.hours.some(
-        (hour: unknown) =>
-          typeof hour !== "string" ||
-          !validHour(hour) ||
-          Date.parse(hour) + 3600000 > Date.now() - 300000 ||
-          Date.parse(hour) < Date.now() - 48 * 3600000,
-      )
-    )
-      throw new HttpError(
-        400,
-        "Expected machine and closed UTC hours within retention",
-      );
-    if (
-      !(await registrations(env)).some(
-        (machine) => machine.id === input.machine,
-      )
-    )
-      throw new HttpError(404, "Machine not found");
-    const object = env.MACHINES.getByName(input.machine);
-    const results = [];
-    for (const hour of new Set<string>(input.hours))
-      results.push(await object.discardHour(hour));
-    return json({ results });
-  }
-  if (path === "/api/v1/hourly-reports/run" && request.method === "POST") {
-    const input = await body(request);
-    if (
-      !input ||
-      typeof input !== "object" ||
-      Object.keys(input).some((k) => !["machine", "hour"].includes(k)) ||
+      Array.isArray(input) ||
+      Object.keys(input).some((k) => !["machine", "date"].includes(k)) ||
       (input.machine !== undefined &&
         (typeof input.machine !== "string" ||
           !/^[a-z0-9][a-z0-9_-]{0,79}$/.test(input.machine))) ||
-      (input.hour !== undefined &&
-        (typeof input.hour !== "string" ||
-          !validHour(input.hour) ||
-          Date.parse(input.hour) + 3600000 > Date.now() - 300000 ||
-          Date.parse(input.hour) < Date.now() - 48 * 3600000))
+      (input.date !== undefined &&
+        (typeof input.date !== "string" ||
+          !validDate(input.date) ||
+          Date.parse(dailyCutoff(input.date)) > Date.now()))
     )
-      throw new HttpError(400, "Expected a closed UTC hour within retention");
+      throw new HttpError(
+        400,
+        "Expected a report date already due at 23:59 Asia/Shanghai",
+      );
     const ids = (await registrations(env))
       .filter((m) => m.enabled)
       .map((m) => m.id);
     if (input.machine && !ids.includes(input.machine))
       throw new HttpError(404, "Machine not found");
-    return json(await runHourly(env, ids, Date.now(), input));
+    return json(await runDaily(env, ids, Date.now(), input));
   }
   if (path === "/api/v1/machines" && request.method === "GET")
     return json({
@@ -518,38 +491,38 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   if (request.method !== "GET") throw new HttpError(405, "Method not allowed");
   if (path === "/api/v1/me") return json(await withProfile(viewer));
-  if (path === "/api/v1/hourly-reports") {
+  if (path === "/api/v1/daily-reports") {
     const machine = url.searchParams.get("machine");
-    const hour = url.searchParams.get("hour");
-    if (hour && !validHour(hour)) throw new HttpError(400, "Invalid UTC hour");
+    const date = url.searchParams.get("date");
+    if (date && !validDate(date))
+      throw new HttpError(400, "Invalid report date");
     const limit = positive(url.searchParams.get("limit"), 12, 100);
     const before = url.searchParams.get("before");
     const cursor = before?.split("|");
     if (
       cursor &&
       (cursor.length !== 2 ||
-        !validHour(cursor[0]) ||
+        !validDate(cursor[0]) ||
         !/^[1-9]\d{0,15}$/.test(cursor[1]) ||
         !Number.isSafeInteger(Number(cursor[1])))
     )
-      throw new HttpError(400, "Invalid hourly cursor");
+      throw new HttpError(400, "Invalid daily cursor");
     const { results } = await env.DB.prepare(
-      "SELECT seq,hour,payload FROM machine_hour_reports WHERE (hour,seq)<(?,?) AND (? IS NULL OR machine_id=?) AND (? IS NULL OR hour=?) ORDER BY hour DESC,seq DESC LIMIT ?",
+      "SELECT seq,date,payload FROM machine_daily_reports WHERE (date,seq)<(?,?) AND (? IS NULL OR machine_id=?) AND (? IS NULL OR date=?) ORDER BY date DESC,seq DESC LIMIT ?",
     )
       .bind(
-        cursor?.[0] ?? "9999-12-31T23:00:00.000Z",
+        cursor?.[0] ?? "9999-12-31",
         cursor ? Number(cursor[1]) : Number.MAX_SAFE_INTEGER,
         machine,
         machine,
-        hour,
-        hour,
+        date,
+        date,
         limit + 1,
       )
-      .all<{ seq: number; hour: string; payload: string }>();
+      .all<{ seq: number; date: string; payload: string }>();
     const entries = results
       .slice(0, limit)
       .map((r) => ({ seq: r.seq, report: JSON.parse(r.payload) }));
-    const now = Date.now();
     const machines = (await registrations(env)).filter(
       (entry) => entry.enabled && (!machine || entry.id === machine),
     );
@@ -557,9 +530,9 @@ async function route(request: Request, env: Env): Promise<Response> {
       await Promise.all(
         machines.map(async (entry) =>
           (
-            await env.MACHINES.getByName(entry.id).hourJobs(now)
+            await env.MACHINES.getByName(entry.id).dailyJobs()
           )
-            .filter((job) => !hour || job.hour === hour)
+            .filter((job) => !date || job.date === date)
             .map((job) => ({
               ...job,
               machineId: entry.id,
@@ -573,7 +546,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       jobs,
       nextCursor:
         results.length > limit
-          ? `${results[limit - 1].hour}|${results[limit - 1].seq}`
+          ? `${results[limit - 1].date}|${results[limit - 1].seq}`
           : null,
     });
   }
@@ -697,19 +670,16 @@ export default {
     const ids = (await registrations(env))
       .filter((m) => m.enabled)
       .map((m) => m.id);
-    const result = await runHourly(env, ids, controller.scheduledTime);
+    const result = await runDaily(env, ids, controller.scheduledTime);
     console.log(
       JSON.stringify({
-        event: "hourly_run",
+        event: "daily_run",
         generated: result.results.filter((entry) => "generated" in entry)
           .length,
-        deferred: result.results.filter((entry) => "deferred" in entry).length,
         failed: result.results.filter((entry) => "error" in entry).length,
         pending: "deferred" in result && result.deferred,
       }),
     );
-    if (result.results.some((r) => "error" in r))
-      throw new Error("Hourly report generation failed");
   },
   async fetch(request, env) {
     const url = new URL(request.url);

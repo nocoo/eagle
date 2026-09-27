@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { HourlySettingsSchema } from "../../src/shared/hourly.ts";
+import { DailySettingsSchema } from "../../src/shared/daily.ts";
 import { report } from "../fixtures.ts";
 
 test.use({ reducedMotion: "reduce" });
@@ -35,7 +35,7 @@ for (const [path, title] of routes) {
         json:
           pathname === "/api/v1/settings"
             ? {
-                ...HourlySettingsSchema.parse({}),
+                ...DailySettingsSchema.parse({}),
                 hasApiKey: false,
                 configured: false,
               }

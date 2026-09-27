@@ -8,7 +8,7 @@ A stable manager ID and durable increasing sequence serialize each machine's sem
 
 The DO stores semantic records independently of deterministic current state. Latest pointers are per Pane/task; newer sequence with older observation cannot roll back a more recent interpretation or freshness. Current view resolves the daemon's task ID first. Old tasks remain visible in hourly history and can only appear as superseded when no interpretation exists for the new task. Checks require the daemon's current exact fact basis, current task, a snapshot newer than 90 seconds and observations newer than five minutes; they cannot refresh stale facts. Native activity and Git changes immediately make the interpretation stale. Manager connection freshness is separate.
 
-Changed semantic records are atomically stored in DO and its D1 outbox. Idempotent outbox writes replicate immutable history to D1. The API acknowledgement confirms DO persistence even during D1 outage. Existing report archives and hourly AI aggregation remain paused.
+Changed semantic records are atomically stored in DO and its D1 outbox. Idempotent outbox writes replicate immutable history to D1. The API acknowledgement confirms DO persistence even during D1 outage. Whole-snapshot D1 history remains paused; daily AI reports aggregate the retained streams independently.
 
 Manager transport failure preserves pending batches. Private state and input files use 0700 directories / 0600 files. Tokens never enter LLM input, summary bodies, browser persistence or D1. Context from terminals is untrusted data, not executable instructions. A single-instance lock prevents overlapping Manager runs; the daemon never waits for the LLM.
 
@@ -81,7 +81,7 @@ Access-protected query API:
 
 DO keeps 30 days from receipt, at most 10,000 semantic change records per machine (whichever expires first). Records still in the outbox are protected from deletion until D1 acknowledges them; backpressure bounds the extra queue. Inactive task pointers use the same 30-day / 10,000-entry bound; pointers for the current live inventory (at most 1,000 Panes) remain pinned so delayed historical tasks cannot evict current interpretations. Fact attestations retain 30 days / 50,000 entries; an expired reference is rejected rather than invented. Inputs observed over 30 days ago or more than 30 seconds in the future are rejected. D1 replicas currently retain history without automatic deletion. Retention is enforced on collection, semantic writes and history reads; an idle object's expired rows are removed on its next access.
 
-UI polls DO current state every five seconds, keeps mounted content while refreshing, and shows UTC hour buckets with their latest summary and count. Expanding a bucket fetches all its records with pagination. History polling every 15 seconds updates counts and records without clearing loaded content. This same UTC hour key is the future aggregation unit; no hourly AI job is enabled yet.
+UI polls DO current state every five seconds, keeps mounted content while refreshing, and shows UTC hour buckets with their latest summary and count. Expanding a bucket fetches all its records with pagination. History polling every 15 seconds updates counts and records without clearing loaded content. Daily reports read these UTC buckets as Beijing 00–23 hourly sections; there is no hourly AI job.
 
 ## Continuous Manager
 
@@ -113,7 +113,7 @@ Preserve the existing `manager.id` and `manager-MACHINE_ID/` directory across up
 Protocol, independent DO streams, hourly history and retention: https://github.com/nocoo/eagle/blob/main/docs/PANE-SUMMARIES.md
 Reusable Skill: https://github.com/nocoo/eagle/blob/main/skills/eagle-report/SKILL.md
 
-Only semantic Pane history is enabled. Hourly machine summaries and historical whole-report writes remain paused.
+Semantic Pane history and daily machine reports are enabled. Historical whole-snapshot D1 writes remain paused.
 
 
 ## Concise Manager output

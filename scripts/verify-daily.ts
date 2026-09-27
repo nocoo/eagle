@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { chromium, expect } from "@playwright/test";
-import { HourlySettingsSchema, REPORT_SECTIONS } from "../src/shared/hourly.ts";
+import {
+  DailyContentSchema,
+  DailySettingsSchema,
+} from "../src/shared/daily.ts";
 
 const origin = process.env.EAGLE_VERIFY_ORIGIN || "https://eagle.dev.hexly.ai";
 const production = !origin.includes(".dev.");
@@ -37,30 +40,32 @@ try {
   assert.equal(response.status(), 200);
   const settings = await response.json();
   assert(!Object.hasOwn(settings, "apiKey"));
-  assert(settings.intervalHours >= 1);
-  assert.deepEqual(settings.sections, REPORT_SECTIONS);
+  assert.equal(settings.schedule, "23:59");
+  assert.equal(settings.timezone, "Asia/Shanghai");
+  assert(!Object.hasOwn(settings, "intervalHours"));
   if (!settings.configured) {
     const run = await context.request.post(
-      `${origin}/api/v1/hourly-reports/run`,
+      `${origin}/api/v1/daily-reports/run`,
       { data: {} },
     );
     assert.equal(run.status(), 200);
     assert.equal((await run.json()).skipped, "ai_not_configured");
   }
   const history = await context.request.get(
-    `${origin}/api/v1/hourly-reports?limit=12`,
+    `${origin}/api/v1/daily-reports?limit=12`,
   );
   assert.equal(history.status(), 200);
   const records = await history.json();
   assert(Array.isArray(records.entries));
   for (const entry of records.entries)
-    for (const key of Object.keys(REPORT_SECTIONS))
-      assert(entry.report.content[key]);
+    DailyContentSchema.parse(entry.report.content);
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${origin}/settings`);
-  await expect(page.getByRole("combobox", { name: "生成间隔" })).toBeVisible();
+  await expect(
+    page.getByRole("switch", { name: "自动生成报告" }),
+  ).toBeVisible();
   if (!settings.configured)
     await expect(
       page.getByText("未配置 AI，自动跳过报告生成。", { exact: true }),
@@ -72,10 +77,7 @@ try {
       "Credential verification requires an unconfigured account",
     );
     const restore = Object.fromEntries(
-      Object.keys(HourlySettingsSchema.shape).map((key) => [
-        key,
-        settings[key],
-      ]),
+      Object.keys(DailySettingsSchema.shape).map((key) => [key, settings[key]]),
     );
     const key = `eagle-verification-${crypto.randomUUID()}`;
     try {
@@ -129,43 +131,40 @@ try {
       assert.equal(restored.status(), 200);
       await page.reload();
       await expect(
-        page.getByRole("combobox", { name: "生成间隔" }),
+        page.getByRole("switch", { name: "自动生成报告" }),
       ).toBeVisible();
     }
   }
   const prefix = production ? "production" : "local";
   await page.screenshot({
-    path: `.local/${prefix}-hourly-settings.png`,
+    path: `.local/${prefix}-daily-settings.png`,
     animations: "disabled",
   });
   await page.getByRole("button", { name: "最近历史", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "小时报告", exact: true }),
+    page.getByRole("heading", { name: "日报", exact: true }),
   ).toBeVisible();
   if (records.entries.length) {
     await page.getByRole("button", { name: "展开报告" }).first().click();
     const article = page.getByRole("article").first();
-    for (const title of Object.values(REPORT_SECTIONS))
-      await expect(
-        article.getByRole("heading", { name: title, exact: true }),
-      ).toBeVisible();
+    await expect(article.locator(".daily-hour")).toHaveCount(24);
     const content = await article.textContent();
     await article.evaluate((element) =>
       element.setAttribute("data-eval-mounted", "yes"),
     );
-    const refresh = page.getByRole("button", { name: "刷新小时报告" });
+    const refresh = page.getByRole("button", { name: "刷新日报" });
     await refresh.click();
     await expect(refresh).toBeEnabled();
     await expect(article).toHaveAttribute("data-eval-mounted", "yes");
     assert.equal(await article.textContent(), content);
   }
   await page.screenshot({
-    path: `.local/${prefix}-hourly-history.png`,
+    path: `.local/${prefix}-daily-history.png`,
     animations: "disabled",
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({
-    path: `.local/${prefix}-hourly-mobile.png`,
+    path: `.local/${prefix}-daily-mobile.png`,
     animations: "disabled",
   });
   assert(
@@ -178,7 +177,7 @@ try {
     origin,
     checkedAt: new Date().toISOString(),
     configured: settings.configured,
-    intervalHours: settings.intervalHours,
+    schedule: settings.schedule,
     reports: records.entries.length,
     credentialSave,
     checks: [
@@ -197,7 +196,7 @@ try {
     ],
   };
   await writeFile(
-    `.local/${prefix}-hourly-verification.json`,
+    `.local/${prefix}-daily-verification.json`,
     JSON.stringify(result, null, 2),
   );
   console.log(JSON.stringify(result));

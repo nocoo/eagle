@@ -1,15 +1,24 @@
 import { DurableObject } from "cloudflare:workers";
-import { type HourlySettings, HourlySettingsSchema } from "../shared/hourly.ts";
+import { type DailySettings, DailySettingsSchema } from "../shared/daily.ts";
 import { aiEndpoint, sealAiKey, unsealAiKey } from "./ai-secret.ts";
 
 /** Control-plane index only. Each machine owns its metadata and authentication. */
 export class MachineDirectory extends DurableObject<Env> {
-  settings(): HourlySettings {
-    return HourlySettingsSchema.parse(
-      this.ctx.storage.kv.get("hourly-settings") ?? {},
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    const old = ctx.storage.kv.get<Record<string, unknown>>("hourly-settings");
+    if (old) {
+      const { intervalHours: _interval, ...settings } = old;
+      ctx.storage.kv.put("daily-settings", DailySettingsSchema.parse(settings));
+      ctx.storage.kv.delete("hourly-settings");
+    }
+  }
+  settings(): DailySettings {
+    return DailySettingsSchema.parse(
+      this.ctx.storage.kv.get("daily-settings") ?? {},
     );
   }
-  async aiKey(settings: HourlySettings = this.settings()): Promise<string> {
+  async aiKey(settings: DailySettings = this.settings()): Promise<string> {
     const value =
       this.ctx.storage.kv.get<Awaited<ReturnType<typeof sealAiKey>>>(
         "ai-credential",
@@ -18,10 +27,10 @@ export class MachineDirectory extends DurableObject<Env> {
     return unsealAiKey(value, this.env.AI_ENCRYPTION_KEY, aiEndpoint(settings));
   }
   async saveSettings(
-    settings: HourlySettings,
+    settings: DailySettings,
     apiKey?: string | null,
-  ): Promise<HourlySettings> {
-    const value = HourlySettingsSchema.parse(settings);
+  ): Promise<DailySettings> {
+    const value = DailySettingsSchema.parse(settings);
     const endpoint = aiEndpoint(value);
     const credential = apiKey
       ? await sealAiKey(apiKey, this.env.AI_ENCRYPTION_KEY, endpoint)
@@ -29,7 +38,7 @@ export class MachineDirectory extends DurableObject<Env> {
         ? null
         : undefined;
     this.ctx.storage.transactionSync(() => {
-      this.ctx.storage.kv.put("hourly-settings", value);
+      this.ctx.storage.kv.put("daily-settings", value);
       if (credential === null) this.ctx.storage.kv.delete("ai-credential");
       else if (credential !== undefined)
         this.ctx.storage.kv.put("ai-credential", credential);

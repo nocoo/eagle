@@ -1,8 +1,8 @@
 import { resolveAiConfig } from "@nocoo/next-ai/server";
-import type { HourlySettings } from "../shared/hourly.ts";
+import type { DailySettings } from "../shared/daily.ts";
 
 const encoder = new TextEncoder();
-export function aiEndpoint(settings: HourlySettings): string {
+export function aiEndpoint(settings: DailySettings): string {
   if (!settings.provider) return "";
   const config = resolveAiConfig({ ...settings, apiKey: "validation-only" });
   return `${config.provider}:${config.baseURL.replace(/\/$/, "")}:${config.sdkType}:${config.authType}`;
@@ -61,7 +61,7 @@ export async function unsealAiKey(
 }
 export async function withAiKey(
   env: Env,
-  settings?: HourlySettings,
+  settings?: DailySettings,
 ): Promise<Env> {
   return {
     ...env,

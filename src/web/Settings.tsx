@@ -18,15 +18,11 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import {
-  type HourlySettings,
-  REPORT_SECTIONS,
-  TEMPLATE_VERSION,
-} from "../shared/hourly.ts";
+import { type DailySettings, TEMPLATE_VERSION } from "../shared/daily.ts";
 import { AuthError, api } from "./api.ts";
 import { TIMEZONE_OFFSETS, timezoneLabel, useTimezone } from "./Timezone.tsx";
 
-type SettingsView = HourlySettings & {
+type SettingsView = DailySettings & {
   hasApiKey: boolean;
   configured: boolean;
 };
@@ -83,7 +79,7 @@ export function Settings({ onAuthError }: { onAuthError: () => void }) {
       });
     return () => controller.abort();
   }, [onAuthError]);
-  const change = (value: Partial<HourlySettings>) => {
+  const change = (value: Partial<DailySettings>) => {
     const changedEndpoint =
       (value.provider !== undefined && value.provider !== settings?.provider) ||
       (value.baseURL !== undefined && value.baseURL !== settings?.baseURL) ||
@@ -112,9 +108,8 @@ export function Settings({ onAuthError }: { onAuthError: () => void }) {
     setNotice("");
     const { hasApiKey: _key, configured: _ready, ...input } = settings;
     // Responses may include read-only template metadata; send only the editable fields.
-    const payload: HourlySettings & { apiKey?: string | null } = {
+    const payload: DailySettings & { apiKey?: string | null } = {
       enabled: input.enabled,
-      intervalHours: input.intervalHours,
       provider: input.provider,
       model: input.model,
       baseURL: input.baseURL,
@@ -156,11 +151,11 @@ export function Settings({ onAuthError }: { onAuthError: () => void }) {
           skipped?: string;
           deferred?: boolean;
           results: { generated?: boolean; error?: string }[];
-        }>("/api/v1/hourly-reports/run", {
+        }>("/api/v1/daily-reports/run", {
           method: "POST",
           body: "{}",
           headers: { "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(600000),
+          signal: AbortSignal.timeout(780000),
         });
         if (result.skipped)
           setNotice(
@@ -172,11 +167,11 @@ export function Settings({ onAuthError }: { onAuthError: () => void }) {
           setError("部分报告生成失败，可重试；成功报告已保存在历史中。");
         else if (result.deferred)
           setNotice(
-            `已生成 ${result.results.filter((r) => r.generated).length} 份报告；剩余小时将在下一轮继续处理，也可再次补生成。`,
+            `已生成 ${result.results.filter((r) => r.generated).length} 份报告；剩余机器请再次手动生成。`,
           );
         else
           setNotice(
-            `已生成 ${result.results.filter((r) => r.generated).length} 份小时报告，可在最近历史查看。`,
+            `已生成 ${result.results.filter((r) => r.generated).length} 份日报，可在最近历史查看。`,
           );
       }
     } catch (e) {
@@ -296,7 +291,7 @@ export function Settings({ onAuthError }: { onAuthError: () => void }) {
                       ["anthropic", "Anthropic Messages"],
                     ]}
                     onChange={(sdkType) =>
-                      change({ sdkType: sdkType as HourlySettings["sdkType"] })
+                      change({ sdkType: sdkType as DailySettings["sdkType"] })
                     }
                   />
                   <Choice
@@ -309,7 +304,7 @@ export function Settings({ onAuthError }: { onAuthError: () => void }) {
                     ]}
                     onChange={(authType) =>
                       change({
-                        authType: authType as HourlySettings["authType"],
+                        authType: authType as DailySettings["authType"],
                       })
                     }
                   />
@@ -386,38 +381,24 @@ export function Settings({ onAuthError }: { onAuthError: () => void }) {
             </Button>
           </LayerCard>
         </SectionRule>
-        <SectionRule title="小时报告" hint="每台机器独立总结，完成后归入历史。">
+        <SectionRule title="日报" hint="每台机器独立总结，完成后归入历史。">
           <LayerCard className="space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <Label htmlFor="hourly-enabled">自动生成报告</Label>
+                <Label htmlFor="daily-enabled">自动生成报告</Label>
                 <p className="mt-1 text-xs text-basalt-muted-foreground">
-                  按 UTC 小时整理，整点后预留 5 分钟接收上报。
+                  北京时间每天 23:59 启动，每台机器一天一份。
                 </p>
               </div>
               <Switch
-                id="hourly-enabled"
+                id="daily-enabled"
                 checked={settings.enabled}
                 onCheckedChange={(enabled) => change({ enabled })}
               />
             </div>
-            <Choice
-              id="hourly-interval"
-              label="生成间隔"
-              value={String(settings.intervalHours)}
-              values={[1, 2, 3, 6, 12, 24].map((n) => [String(n), `${n} 小时`])}
-              onChange={(value) =>
-                change({
-                  intervalHours: Number(
-                    value,
-                  ) as HourlySettings["intervalHours"],
-                })
-              }
-            />
             <p className="text-xs text-basalt-muted-foreground">
-              即使间隔大于 1
-              小时，仍为每台机器的每个小时单独生成报告。原始小时输入保留 48
-              小时，失败后可在此补生成。
+              按 00–23 时汇报，截止 23:59，不含最后一分钟。原始采集保留 48
+              小时；校验失败最多重试一次，之后可手动重试。
             </p>
             {!settings.configured && (
               <p className="text-sm text-basalt-muted-foreground">
@@ -433,7 +414,7 @@ export function Settings({ onAuthError }: { onAuthError: () => void }) {
               onClick={() => void act("run")}
             >
               {busy === "run" && <Loader2 size={14} className="eagle-spin" />}
-              补生成已结束小时
+              生成最近日报
             </Button>
           </LayerCard>
         </SectionRule>
@@ -463,7 +444,11 @@ export function Settings({ onAuthError }: { onAuthError: () => void }) {
           <p className="text-xs leading-relaxed text-basalt-muted-foreground">
             先读总览，再展开具体进展。报告覆盖本小时的事实采集与语义解释，区分已验证成果和推断，并注明缺失证据。
           </p>
-          {Object.values(REPORT_SECTIONS).map((title, i) => (
+          {[
+            "总览 ≤160 字",
+            "24 个小时，每小时 ≤80 字",
+            "下一步 ≤3 条，每条 ≤60 字",
+          ].map((title, i) => (
             <div key={title} className="flex gap-3 items-center text-sm">
               <span className="mono text-xs text-basalt-muted-foreground">
                 0{i + 1}

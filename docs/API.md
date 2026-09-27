@@ -42,9 +42,9 @@ Managed credentials use `eag1.`-prefixed HS256 JWTs signed by `AGENT_SIGNING_KEY
 
 The browser polls current state every five seconds while visible. Existing cards, focus, search and open detail remain mounted during refresh. Latest changes come from DO state; history is fetched only on explicit navigation.
 
-## History and AI hourly reports
+## History and AI daily reports
 
-Raw snapshot D1 writes remain paused. Existing `reports` and `machines` tables remain untouched, and `/api/v1/history` keeps its decreasing sequence cursor. Migration 0003 adds a separate `machine_hour_reports` archive. The hourly Cron and Access-protected settings/query API are described in [AI hourly reports](HOURLY-REPORTS.md). Generation skips when AI is not configured.
+Raw snapshot D1 writes remain paused. Existing `reports` and `machines` tables remain untouched, and `/api/v1/history` keeps its decreasing sequence cursor. Migration 0004 replaces the hourly archive with `machine_daily_reports`. The daily Cron and Access-protected settings/query API are described in [AI daily reports](DAILY-REPORTS.md). Generation skips when AI is not configured.
 
 On first deployment the DO namespace starts empty. Configured machines are marked as awaiting a report until their next successful full upload; old D1 snapshots remain accessible in history, never mislabeled as live DO state. Deploy the Worker before restarting upgraded collectors.
 
@@ -60,4 +60,4 @@ This is evidence reconciliation, not an LLM oracle: the management agent is resp
 
 `POST /api/v1/summaries` and `GET /api/v1/agent-state` use the same machine Bearer, including on the ingestion host. Summary protocol v1 is independent of report schema v1: task binding, monotonic manager sequence, UTC observation hours, content hash/source and conflict rules are specified in [PANE-SUMMARIES.md](PANE-SUMMARIES.md). DO accepts delayed observations without requiring a matching snapshot time; they never overwrite deterministic facts or a more recent task interpretation.
 
-Website Access protects `GET /api/v1/semantic-hours?machine=M[&space=S&pane=P]`. It lists hour/count/latest groups. Add `hour=YYYY-MM-DDTHH:00:00.000Z&mode=latest` or `mode=all` to query a bucket. `before` is an exclusive UTC hour or record seq cursor; latest mode rejects cursors. `limit` is 1–100. `GET /api/v1/summary-history?machine=M&space=S&pane=P` reads the D1 archive replica. Raw terminals and credentials do not enter this protocol. Snapshot D1 history remains paused; AI hourly aggregation is now available independently through the settings and hourly-report API.
+Website Access protects `GET /api/v1/semantic-hours?machine=M[&space=S&pane=P]`. It lists hour/count/latest groups. Add `hour=YYYY-MM-DDTHH:00:00.000Z&mode=latest` or `mode=all` to query a bucket. `before` is an exclusive UTC hour or record seq cursor; latest mode rejects cursors. `limit` is 1–100. `GET /api/v1/summary-history?machine=M&space=S&pane=P` reads the D1 archive replica. Raw terminals and credentials do not enter this protocol. Snapshot D1 history remains paused; AI daily aggregation is available independently through the settings and daily-report API.
