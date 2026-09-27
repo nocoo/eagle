@@ -685,8 +685,9 @@ export function App() {
           ? "最近历史"
           : (selectedMachine?.name ?? "全局总览");
   const compactMachine = page === "overview" && !!selectedMachine;
+  const navigationLabel = page === "overview" ? "查看最近历史" : "返回总览";
   const syncCaption = (
-    <span className="sync-caption">
+    <span className="sync-caption" data-ready={!!data && !error}>
       <span
         className={syncing ? "sync-dot syncing" : "sync-dot"}
         data-offline={!!error}
@@ -836,9 +837,11 @@ export function App() {
         <AppMain className="relative" tabIndex={-1}>
           <AppHeader
             title={title}
-            breadcrumbs={[
-              { label: <span className="whitespace-nowrap">工作台</span> },
-            ]}
+            breadcrumbs={
+              mobile
+                ? undefined
+                : [{ label: <span className="whitespace-nowrap">工作台</span> }]
+            }
             leading={
               mobile ? (
                 <Button
@@ -869,7 +872,9 @@ export function App() {
               />
               <div
                 className={
-                  compactMachine ? "machine-page space-y-3" : "space-y-5"
+                  compactMachine
+                    ? "page-content machine-page space-y-3"
+                    : "page-content space-y-3 md:space-y-5"
                 }
               >
                 <PageHeader
@@ -892,30 +897,54 @@ export function App() {
                   }
                   actions={
                     <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        aria-label="刷新"
-                        disabled={syncing}
-                        onClick={() => void refresh()}
-                      >
-                        <RefreshCw
-                          size={14}
-                          className={syncing ? "eagle-spin" : ""}
-                        />
-                        刷新
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() =>
-                          navigate(page === "overview" ? "history" : "overview")
-                        }
-                        aria-label={
-                          page === "overview" ? "查看最近历史" : "返回总览"
-                        }
-                      >
-                        {page === "overview" ? "最近历史" : "返回总览"}
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size={mobile ? "icon" : "sm"}
+                            aria-label="刷新"
+                            disabled={syncing}
+                            onClick={() => void refresh()}
+                          >
+                            <RefreshCw
+                              size={14}
+                              aria-hidden="true"
+                              className={syncing ? "eagle-spin" : ""}
+                            />
+                            <span className="hidden md:inline">刷新</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>刷新</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size={mobile ? "icon" : "sm"}
+                            onClick={() =>
+                              navigate(
+                                page === "overview" ? "history" : "overview",
+                              )
+                            }
+                            aria-label={navigationLabel}
+                          >
+                            {page === "overview" ? (
+                              <HistoryIcon
+                                className="md:hidden"
+                                aria-hidden="true"
+                              />
+                            ) : (
+                              <LayoutDashboard
+                                className="md:hidden"
+                                aria-hidden="true"
+                              />
+                            )}
+                            <span className="hidden md:inline">
+                              {page === "overview" ? "最近历史" : "返回总览"}
+                            </span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{navigationLabel}</TooltipContent>
+                      </Tooltip>
                     </>
                   }
                 />

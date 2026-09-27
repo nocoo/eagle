@@ -962,8 +962,26 @@
   .resource-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .machine-page > header > div {
-    gap: 8px;
+  .page-content > header > div {
+    @apply flex-row items-center gap-2;
+  }
+  .page-content > header > div > :first-child {
+    @apply flex items-center gap-2 space-y-0;
+  }
+  .page-content > header > div > :last-child {
+    @apply shrink-0 flex-nowrap;
+  }
+  .page-content > header h1 {
+    @apply truncate text-xl;
+  }
+  .page-content > header p {
+    @apply shrink-0;
+  }
+  .page-content:not(.machine-page) > header p,
+  .page-content > header .sync-caption,
+  .page-content > header .machine-heading > span:not(:first-child),
+  .page-content > .sync-caption[data-ready="true"] {
+    display: none;
   }
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1008,7 +1026,7 @@
     font-size: 10px;
   }
   .sync-caption {
-    font-size: 9px;
+    @apply text-xs;
   }
   .sync-intro > span {
     display: none;
@@ -1414,14 +1432,25 @@
     grid-template-columns: 1fr;
   }
 }
-@media (max-width: 600px) {
+@media (max-width: 767px) {
+  .connect-page,
+  .connect-layout,
+  .settings-layout {
+    @apply gap-3;
+  }
   .connect-steps {
-    grid-template-columns: 1fr;
-    gap: 8px;
+    @apply gap-2;
   }
   .connect-step {
-    padding: 12px 16px;
+    @apply justify-center px-1 py-2 text-center;
   }
+  .connect-step .section-index {
+    @apply block mr-0;
+  }
+  .connect-step strong {
+    @apply whitespace-nowrap text-xs;
+  }
+  .connect-step .panel-icon,
   .connect-step p {
     display: none;
   }

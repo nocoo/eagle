@@ -662,3 +662,21 @@ serving and the first catalogue-derived production Cron observation.
   isolated shell output in 1,269 ms, released all four subscriptions and closed
   its temporary pane. Public live checks, deployment and exact-revision CI remain
   pending.
+
+## 2026-09-27 09:27 +08 — compact mobile page headers
+
+- The machine, fleet, Connect, history and settings headers now keep the title
+  and two accessible icon actions in one 36px row. Mobile hides supporting
+  metadata and the framework breadcrumb; machine freshness and connection errors
+  remain visible. Connect steps share one compact row and page gaps are smaller.
+- New browser checks first failed at 104–117px header heights, then passed at
+  390px and 320px, including both themes, long names, stale data, refresh failure,
+  keyboard navigation and desktop metadata. Full checks passed 115 unit/API/
+  package tests and 145 browser tests with 11 existing viewport-specific skips
+  on the final implementation. Strict types, check-only lint and build pass;
+  four existing informational lint suggestions and the bundle advisory remain.
+- The real local HTTPS origin authenticated successfully and rendered all five
+  36px headers using its September 27 06:23 +08 cached snapshot (15 Spaces).
+  No new Herdr collection, production authentication, ingestion or D1 writes were
+  performed. The stale snapshot stays explicitly marked. This UI change has not
+  been deployed; validation is complete for its atomic commit.
