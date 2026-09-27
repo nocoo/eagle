@@ -170,8 +170,18 @@ export async function generateDay(
       const hours = [];
       for (let hour = 0; hour < 24; hour++) {
         signal.throwIfAborted();
-        hours.push(await object.dayHourInput(date, hour));
+        hours.push(await object.dayHourInput(date, hour, claim.lease));
       }
+      const [factCount, , semanticCount] = claim.version.split(":").map(Number);
+      if (
+        hours.reduce((n, h) => n + h.coverage.snapshots, 0) !== factCount ||
+        hours.reduce((n, h) => n + h.coverage.semanticRecords, 0) !==
+          semanticCount
+      )
+        throw Object.assign(
+          new Error("Daily input expired during preparation"),
+          { name: "DailyInputExpiredError" },
+        );
       const inputHash = await digest({ date, version: claim.version, hours });
       stage = "model";
       if (!(await object.dailyStage(date, claim.lease, stage)))
@@ -190,6 +200,7 @@ export async function generateDay(
         date,
         timezone: REPORT_TIMEZONE,
         cutoff: dailyCutoff(date),
+        dataReceivedBy: claim.dataReceivedBy,
         generatedAt: new Date().toISOString(),
         templateVersion: TEMPLATE_VERSION,
         provider: settings.provider,
@@ -231,9 +242,11 @@ export async function generateDay(
         ? "archive_unavailable"
         : signal.aborted || name === "TimeoutError" || name === "AbortError"
           ? "timeout"
-          : name === "DailyOutputError" || name === "AIOutputTruncatedError"
-            ? "invalid_output"
-            : "generation_failed";
+          : name === "DailyInputExpiredError"
+            ? "input_expired"
+            : name === "DailyOutputError" || name === "AIOutputTruncatedError"
+              ? "invalid_output"
+              : "generation_failed";
     await object.finishDay(date, claim.lease, category);
     console.error(
       JSON.stringify({

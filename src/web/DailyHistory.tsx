@@ -86,7 +86,7 @@ function ReportCard({ report }: { report: DailyReport }) {
           )}
           <p className="text-xs text-basalt-muted-foreground">
             数据截止北京时间
-            23:59，不含最后一分钟及生成后收到的上报。无采集数据不代表没有活动。
+            23:59，不含最后一分钟及生成开始后收到的上报。无采集数据不代表没有活动。
             <br />
             {report.model} · 生成于 {time(report.generatedAt)}
           </p>
@@ -103,7 +103,6 @@ const errors: Record<string, string> = {
   generation_failed: "模型调用失败",
   storage_unavailable: "存储暂不可用",
   interrupted: "生成被中断",
-  input_changed: "收到补充数据，请重新生成",
   input_expired: "原始输入已超过 48 小时保留期",
 };
 

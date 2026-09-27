@@ -88,3 +88,16 @@ cross-machine speedup.
 ## 2026-09-27 — Overbroad mobile test edit
 
 While replacing mobile search with a select, a text replacement also removed a desktop search fixture step. The focused suite exposed the resulting keyboard-focus failure; the desktop filter step was restored. Scope scripted test edits to the intended test block and inspect the diff before running the suite.
+
+## 2026-09-27 — freeze daily input before model generation
+
+The initial daily rewrite carried forward the hourly generator's rule that any
+late input invalidates the in-flight final. During release review, this proved
+inappropriate for a 23:59 one-shot schedule: a normal delayed collector upload
+could cancel the only daily run. No production deployment had occurred.
+
+A failing local API test reproduced the cancellation. Daily claims now freeze
+snapshot and semantic sequence limits, all 24 buckets read that same boundary,
+and input counts are verified before model work. Receipt time is archived;
+manual regeneration incorporates late arrivals. Future one-shot aggregates must
+separate their immutable input boundary from the continuously updated source.

@@ -426,10 +426,19 @@ export class MachineState extends DurableObject<Env> {
         "DELETE FROM daily_jobs WHERE date<? AND json_extract(payload,'$.pending') IS NULL",
         new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
       );
-      return { lease: job.lease as string, version, pending: job.pending };
+      return {
+        lease: job.lease as string,
+        version,
+        pending: job.pending,
+        dataReceivedBy: job.lastAttemptAt,
+      };
     });
   }
-  dayHourInput(date: string, hour: number) {
+  dayHourInput(date: string, hour: number, lease: string) {
+    const job = this.dailyState(date);
+    if (!job || job.lease !== lease || job.expires <= Date.now())
+      throw new Error("Daily lease unavailable");
+    const [, factSeq, , semanticSeq] = job.version.split(":").map(Number);
     const start = new Date(
       Date.parse(dailyStart(date)) + hour * 3600000,
     ).toISOString();
@@ -438,18 +447,20 @@ export class MachineState extends DurableObject<Env> {
         ? dailyCutoff(date)
         : new Date(Date.parse(start) + 3600000).toISOString();
     const rows = this.ctx.storage.sql.exec<{ payload: string }>(
-      "SELECT payload FROM hourly_facts WHERE hour=? AND captured_at<? ORDER BY captured_at,seq",
+      "SELECT payload FROM hourly_facts WHERE hour=? AND captured_at<? AND seq<=? ORDER BY captured_at,seq",
       start,
       end,
+      factSeq,
     );
     function* reports() {
       for (const row of rows) yield JSON.parse(row.payload) as Report;
     }
     const semantics = this.ctx.storage.sql
       .exec<SemanticRow>(
-        "SELECT * FROM semantic_records WHERE hour=? AND observed_at<? ORDER BY observed_at,seq",
+        "SELECT * FROM semantic_records WHERE hour=? AND observed_at<? AND seq<=? ORDER BY observed_at,seq",
         start,
         end,
+        semanticSeq,
       )
       .toArray()
       .map(unpack);
@@ -482,8 +493,6 @@ export class MachineState extends DurableObject<Env> {
     const job = this.dailyState(date);
     if (!job || job.lease !== lease || job.expires <= Date.now())
       return "lease_lost" as const;
-    if (job.version !== this.dailyVersion(date))
-      return "input_changed" as const;
     job.pending = result;
     job.stage = "archive";
     this.saveDailyState(job);

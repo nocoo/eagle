@@ -3,7 +3,7 @@
 Each machine gets one Chinese report per Beijing calendar date. The only Worker
 Cron is `59 15 * * *`: 23:59 in `Asia/Shanghai`. It starts at 23:59 and covers
 00:00 inclusive through 23:59 exclusive. The final minute is deliberately outside
-this cutoff. Uploads received after generation are absent until a manual rerun.
+this cutoff. Uploads received after generation starts are absent until a manual rerun.
 The UI states this coverage; an empty hour means unknown, not inactivity.
 
 ## Collection and input
@@ -61,8 +61,11 @@ budget, below Cloudflare's 15-minute Cron wall limit. Excess fleet work is repor
 as deferred and requires a manual run. One Cron does not mean one fleet-wide call.
 
 DO `daily_jobs` persists a five-minute exclusive lease, input version, attempt,
-stage, safe error, completion and pending final report. A changed input cannot
-cache an obsolete final; an expired/replaced lease cannot update job state.
+stage, safe error, completion and pending final report. The input is frozen at claim time using the maximum snapshot/semantic sequence.
+Later uploads cannot cancel that snapshot or enter only some of its hour buckets.
+`dataReceivedBy` records the receipt boundary; manual regeneration includes new
+arrivals. Preparation checks frozen counts before invoking the model. An
+expired/replaced lease cannot update job state.
 Duplicate Cron delivery never regenerates an already attempted day. Failure is
 visible and can be manually retried, without periodic report polling or alarms.
 Successful validated content is cached before D1 writes. Archive retries reuse

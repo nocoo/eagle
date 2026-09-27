@@ -2266,7 +2266,7 @@ test("daily large input uses one bounded prompt and exposes per-hour sampling", 
   }
 });
 
-test("daily late input cannot archive an outdated report and manual retry includes it", async () => {
+test("daily generation freezes its input and manual regeneration includes late arrivals", async () => {
   const machine = "daily-changing";
   const credential = await dailyMachine(machine);
   await request(
@@ -2291,8 +2291,8 @@ test("daily late input cannot archive an outdated report and manual retry includ
     release();
     aiHold = undefined;
   }
-  assert.equal((await running).results[0].skipped, "input_changed");
-  assert.equal((await dailyHistory(machine)).entries.length, 0);
+  assert.equal((await running).results[0].generated, true);
+  assert.equal((await dailyHistory(machine)).entries[0].report.snapshots, 1);
   assert.equal((await dailyResult(machine)).results[0].generated, true);
   assert.equal((await dailyHistory(machine)).entries[0].report.snapshots, 2);
 });
