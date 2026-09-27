@@ -54,7 +54,10 @@ The parser never truncates an invalid model output into an accepted report.
 ## Execution and failure
 
 Each machine/day normally needs one model call. At most one retry is allowed for
-transport, output or validation failure. Authentication errors fail immediately.
+transport, output or validation failure. Populated hours are listed explicitly;
+validation feedback identifies every missing/invalid hourly citation for the
+retry. Missing task progress is never treated as missing collection. Authentication
+errors fail immediately.
 Each call has a 90-second timeout and 6,000 output-token cap; each machine has a
 four-minute turn. Two machines can run concurrently within a 12-minute invocation
 budget, below Cloudflare's 15-minute Cron wall limit. Excess fleet work is reported

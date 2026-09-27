@@ -4,6 +4,7 @@
 
 - Replace hourly AI reports and five-minute polling with one daily Cron at 23:59 Beijing time, generating one report per machine with 24 hourly entries.
 - Enforce a fixed Chinese JSON format: overview up to 160 characters, each hour up to 80, and at most three next steps of 60 characters each; validate sources and retry at most once.
+- Freeze each run at one receipt boundary, distinguish quiet hours from missing collection, and give the bounded retry precise validation feedback.
 - Bound model input with disclosed hourly samples, retain raw collection and semantic history, and preserve cached reports across archive failures.
 - Browse daily reports by Beijing date with compact mobile rows, clear coverage and manual retry; preserve existing AI connection settings and encrypted credentials.
 - Delete the retired hourly archive and generation state. Keep the published Agent and onboarding at v0.7.1.

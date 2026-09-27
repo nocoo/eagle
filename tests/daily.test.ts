@@ -170,3 +170,66 @@ test("semantic sampling keeps task identity and progress ahead of bulky evidence
   assert(sampled.records[0].value.includes("接口校验通过，生产尚未部署"));
   assert.equal(sampled.excerptedRecords, 1);
 });
+
+test("daily retry receives every populated hour mistaken for missing data with its real citations", async (t) => {
+  const inputIds = Array.from(
+    { length: 24 },
+    (_, hour) => new Set(hour < 8 ? [`H0${hour}-F1`] : []),
+  );
+  const valid = {
+    overview: "夜间有采集，尚无新进展证据。",
+    hours: inputIds.map((ids, hour) => ({
+      hour,
+      summary: ids.size ? "仅采集到旧状态，暂无新进展证据。" : "无采集数据。",
+      evidenceIds: [...ids],
+    })),
+    nextSteps: [],
+  };
+  const bad = {
+    ...valid,
+    hours: valid.hours.map((h) => ({
+      ...h,
+      summary: "无采集数据。",
+      evidenceIds: [],
+    })),
+  };
+  const prompts: string[] = [];
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      prompts.push(JSON.stringify(JSON.parse(String(init?.body))));
+      return Response.json({
+        id: "daily-retry",
+        object: "chat.completion",
+        created: 1,
+        model: "test",
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: JSON.stringify(prompts.length === 1 ? bad : valid),
+            },
+          },
+        ],
+      });
+    },
+  );
+  const result = await completeReport(
+    DailySettingsSchema.parse({
+      provider: "custom",
+      model: "test",
+      baseURL: "https://api.ai.example/v1",
+    }),
+    { AI_API_KEY: "isolated-test-key" } as Env,
+    "测试日报",
+    inputIds,
+    AbortSignal.timeout(1000),
+  );
+  assert.deepEqual(result, valid);
+  assert.equal(prompts.length, 2);
+  for (let hour = 0; hour < 8; hour++)
+    assert(prompts[1].includes(`H0${hour}-F1`));
+});

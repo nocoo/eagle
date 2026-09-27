@@ -708,3 +708,22 @@ serving and the first catalogue-derived production Cron observation.
   Semantic-only coverage and duplicate daily Cron/fleet fairness are covered.
 - Production migration, first real daily model result and v0.8.0 publication are
   next. Access verification is being prepared; production has not been changed.
+
+## 2026-09-27 15:39 +08 — production daily generation correction
+
+- v0.8.0 revision 33dbbca is deployed; the CF schedule API lists only
+  `59 15 * * *`. Migration 0004 removed the old hourly archive. Exact-revision CI
+  passed, and public live verification collected 16 Spaces / 17 Panes with
+  authenticated ingestion, D1/history and desktop/mobile rendering checks.
+- MBP's September 26 daily report archived 1,928 snapshots and 24 hourly entries;
+  its overview is 91 characters. Mac Studio failed strict evidence validation.
+  Instrumented retries identified populated 00–07 buckets mislabeled empty,
+  not a JSON or length failure. No invalid report was archived.
+- Added a failing regression and explicit populated-hour guidance plus precise
+  validation feedback for the one permitted retry. Local checks and a production
+  retry of this correction are next; GitHub Release/tag publication is pending.
+
+- At 15:40 +08, the corrected prompt generated Mac Studio's real September 26
+  report in a diagnostic run limited to one model call; all validation passed and
+  the production archive was written. Local `check` passes 117 tests, types,
+  check-only lint and build. Deployment of this final correction is pending.

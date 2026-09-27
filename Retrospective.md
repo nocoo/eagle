@@ -101,3 +101,17 @@ snapshot and semantic sequence limits, all 24 buckets read that same boundary,
 and input counts are verified before model work. Receipt time is archived;
 manual regeneration incorporates late arrivals. Future one-shot aggregates must
 separate their immutable input boundary from the continuously updated source.
+
+## 2026-09-27 — distinguish quiet hours from missing collection
+
+Production daily generation passed on MBP but failed on Mac Studio. An isolated
+instrumented retry showed valid JSON and compliant lengths; the model called
+00–07 empty even though each hour had four retained input records. It conflated
+missing new task progress with missing collection, and the generic retry prompt
+repeated that mistake. Invalid content was never archived.
+
+The prompt now explicitly lists populated/empty hour buckets and states that
+quiet or stale task evidence still counts as collection. Validation collects all
+bad hourly citations and gives the single retry the actual hour-specific source
+IDs and previous output. The validator and two-call limit remain unchanged.
+A regression test covers eight populated hours incorrectly marked empty.

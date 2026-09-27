@@ -112,7 +112,10 @@ before(async () => {
             if (!aiHoldMatch || prompt.includes(aiHoldMatch)) await aiHold;
             const hours = prompt.includes("DATA_JSON:")
               ? (JSON.parse(
-                  prompt.split("DATA_JSON:")[1].split("\n上次")[0],
+                  prompt
+                    .split("DATA_JSON:")[1]
+                    .split("\n校验反馈")[0]
+                    .split("\n上次")[0],
                 ) as { hour: number; records: { id: string }[] }[])
               : [];
             const content = hours.length
