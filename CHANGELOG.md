@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.5 — 2026-09-27
+
+- Keep mobile machine, overview, Connect, history and settings page titles and accessible icon actions in one compact row.
+- Hide redundant mobile descriptions, synchronization metadata and the framework breadcrumb while preserving machine freshness and connection errors.
+- Arrange Connect steps horizontally, reduce section gaps and keep long machine names within narrow screens.
+- Keep the published Agent and onboarding at v0.7.1; this website-only release does not publish an npm package.
+
 ## v0.7.4 — 2026-09-27
 
 - Save unsent commands per terminal in localStorage and restore drafts after refresh, navigation or disconnect; keep recognizable credentials out of the cache.
