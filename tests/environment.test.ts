@@ -85,3 +85,18 @@ test("temperature stays unavailable on macOS and reads only bounded Linux CPU se
     "unavailable",
   );
 });
+
+test("malformed OS output and blank thermal data remain unknown instead of fabricating readings", async () => {
+  assert.equal(
+    vpnState("darwin", '* (Disconnected) id "Profile (Connected)"', []),
+    "disconnected",
+  );
+  assert.equal(vpnState("linux", "unexpected output", ["eth0"]), "unknown");
+  const result = await readTemperature(
+    "linux",
+    async (path) => (path.endsWith("type") ? "x86_pkg_temp" : " \n"),
+    async () => ["thermal_zone0"],
+  );
+  assert.equal(result.status, "unavailable");
+  assert.equal(result.celsius, null);
+});

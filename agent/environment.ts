@@ -141,7 +141,9 @@ export async function readTemperature(
       const type = (await read(`${base}/type`)).trim();
       if (!/^(x86_pkg_temp|cpu-thermal|cpu_thermal|soc_thermal)$/.test(type))
         continue;
-      const value = Number((await read(`${base}/temp`)).trim()) / 1000;
+      const raw = (await read(`${base}/temp`)).trim();
+      if (!/^-?\d+$/.test(raw)) continue;
+      const value = Number(raw) / 1000;
       if (Number.isFinite(value) && value >= -20 && value <= 150)
         temperatures.push(value);
     } catch {
