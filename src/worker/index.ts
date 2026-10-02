@@ -143,6 +143,26 @@ async function ingest(
   if (report.machine.id !== machineId)
     throw new HttpError(403, "Token does not authorize this machine");
   timely(report.capturedAt);
+  const telemetry = report.machine.telemetry;
+  if (telemetry) {
+    for (const at of [
+      telemetry.observedAt,
+      telemetry.diskObservedAt,
+      telemetry.temperature?.observedAt,
+      telemetry.network?.observedAt,
+      telemetry.vpn?.observedAt,
+    ])
+      if (at) timely(at);
+    if (
+      [
+        telemetry.diskObservedAt,
+        telemetry.temperature?.observedAt,
+        telemetry.network?.observedAt,
+        telemetry.vpn?.observedAt,
+      ].some((at) => at && at > telemetry.observedAt)
+    )
+      throw new HttpError(400, "Resource timestamp exceeds sample time");
+  }
   const payload = canonical(report);
   await noSecrets(payload, env);
   const digest = Array.from(
@@ -549,6 +569,17 @@ async function route(request: Request, env: Env): Promise<Response> {
           ? `${results[limit - 1].date}|${results[limit - 1].seq}`
           : null,
     });
+  }
+  if (path === "/api/v1/resources") {
+    if (request.method !== "GET")
+      throw new HttpError(405, "Method not allowed");
+    const machine = url.searchParams.get("machine");
+    if (!machine || !/^[a-z0-9][a-z0-9_-]{0,79}$/.test(machine))
+      throw new HttpError(400, "Machine required");
+    const object = env.MACHINES.getByName(machine);
+    if (!(await object.registration(machine))?.enabled)
+      throw new HttpError(404, "Machine not found");
+    return json(await object.resources());
   }
   if (path === "/api/v1/overview") {
     const ids = (await registrations(env))

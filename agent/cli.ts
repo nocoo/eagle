@@ -11,7 +11,11 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { ReportSchema, WatchPortsSchema } from "../src/shared/schema.ts";
+import {
+  ReportSchema,
+  SlowIntervalSchema,
+  WatchPortsSchema,
+} from "../src/shared/schema.ts";
 import {
   type AgentConfig,
   checkUrl,
@@ -29,7 +33,8 @@ const ConfigSchema = z.strictObject({
   machineId: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/),
   machineName: z.string().min(1),
   evidenceFile: z.string().optional(),
-  intervalSeconds: z.number().int().min(15).max(3600).default(30),
+  intervalSeconds: z.literal(30).default(30),
+  slowIntervalSeconds: SlowIntervalSchema,
   codexDir: z.string().optional(),
   spoolDir: z.string().optional(),
   watchPorts: WatchPortsSchema.default([]),

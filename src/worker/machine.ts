@@ -9,6 +9,12 @@ import {
   sampleHour,
 } from "../shared/daily.ts";
 import { compactHour, utcHour } from "../shared/report-input.ts";
+import {
+  MAX_RESOURCE_SAMPLES,
+  RESOURCE_RETENTION_SECONDS,
+  type ResourceSample,
+  resourceSample,
+} from "../shared/resources.ts";
 import type { MachineView, Report } from "../shared/schema.ts";
 import {
   canonical,
@@ -96,6 +102,9 @@ export class MachineState extends DurableObject<Env> {
   }
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    ctx.storage.sql.exec(
+      "CREATE TABLE IF NOT EXISTS resource_samples (observed_at TEXT PRIMARY KEY, payload TEXT NOT NULL)",
+    );
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS receipts (
       seq INTEGER PRIMARY KEY AUTOINCREMENT,
       report_id TEXT NOT NULL UNIQUE,
@@ -275,6 +284,19 @@ export class MachineState extends DurableObject<Env> {
         "DELETE FROM hourly_facts WHERE hour < ?",
         utcHour(Date.now() - 48 * 3600000),
       );
+      const telemetry = report.machine.telemetry;
+      if (
+        !receipt &&
+        telemetry &&
+        Date.parse(telemetry.observedAt) >=
+          Date.now() - RESOURCE_RETENTION_SECONDS * 1000
+      )
+        sql.exec(
+          "INSERT OR IGNORE INTO resource_samples VALUES (?, ?)",
+          telemetry.observedAt,
+          JSON.stringify(resourceSample(telemetry)),
+        );
+      this.pruneResources();
       const current: MachineView = newer
         ? {
             id: report.machine.id,
@@ -317,6 +339,30 @@ export class MachineState extends DurableObject<Env> {
       this.ctx.storage.kv.put("current", facts);
       return { accepted: true, duplicate: !!receipt, seq } as const;
     });
+  }
+
+  private pruneResources() {
+    this.ctx.storage.sql.exec(
+      "DELETE FROM resource_samples WHERE observed_at < ?",
+      new Date(Date.now() - RESOURCE_RETENTION_SECONDS * 1000).toISOString(),
+    );
+    this.ctx.storage.sql.exec(
+      "DELETE FROM resource_samples WHERE observed_at IN (SELECT observed_at FROM resource_samples ORDER BY observed_at DESC LIMIT -1 OFFSET ?)",
+      MAX_RESOURCE_SAMPLES,
+    );
+  }
+  resources() {
+    this.pruneResources();
+    return {
+      retentionSeconds: RESOURCE_RETENTION_SECONDS,
+      samples: this.ctx.storage.sql
+        .exec<{ payload: string }>(
+          "SELECT payload FROM resource_samples WHERE observed_at <= ? ORDER BY observed_at",
+          new Date().toISOString(),
+        )
+        .toArray()
+        .map((row) => JSON.parse(row.payload) as ResourceSample),
+    };
   }
 
   agentCurrent(credentialId: string | null) {

@@ -115,3 +115,7 @@ quiet or stale task evidence still counts as collection. Validation collects all
 bad hourly citations and gives the single retry the actual hour-specific source
 IDs and previous output. The validator and two-call limit remain unchanged.
 A regression test covers eight populated hours incorrectly marked empty.
+
+## 2026-10-02 — A regression run raced its implementation
+
+While adding resource-history coverage, the first API regression was launched asynchronously and source edits began before its process completed. Both API invocations bundled into the same `.local/test-worker` path, so the purported red run actually saw the implementation and passed. That run is not failing-baseline evidence. Re-ran the regression against the original Worker entrypoint sequentially, observed the missing endpoint failure, restored the implementation in `finally`, and then continued verification. Dependent red/edit/green steps must complete in order; only checks with independent state may overlap. No production state was used.

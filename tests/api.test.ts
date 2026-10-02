@@ -23,6 +23,7 @@ import {
   dailyStart,
   dueDate,
 } from "../src/shared/daily.ts";
+import type { MachineView, Report } from "../src/shared/schema.ts";
 import { viewerAuthorized } from "../src/worker/auth.ts";
 import { report, telemetry } from "./fixtures.ts";
 
@@ -2546,4 +2547,139 @@ test("one daily cron serves separate machines without a slow model blocking the 
   const duplicate = await mf.dispatchFetch(cronUrl);
   assert.equal(duplicate.status, 200, await duplicate.text());
   assert.equal(aiCalls, calls);
+});
+
+test("resource history is authenticated, isolated, idempotent, time ordered and retained independently of current state", async () => {
+  const machine = "synthetic-resource-history";
+  const created = await request(
+    "/api/v1/machines",
+    { id: machine, name: "Synthetic resource history" },
+    viewer,
+  );
+  assert.equal(created.status, 201);
+  const credentials = (await created.json()) as { token: string };
+  const endpoint = `/api/v1/resources?machine=${machine}`;
+  assert.equal((await request(endpoint)).status, 401);
+  assert.equal((await request(endpoint, {}, viewer)).status, 405);
+  assert.equal(
+    (await request("/api/v1/resources", undefined, viewer)).status,
+    400,
+  );
+  assert.equal(
+    (await request("/api/v1/resources?machine=unknown", undefined, viewer))
+      .status,
+    404,
+  );
+  const base = Date.now() - 60000;
+  const make = (id: string, offset: number) => {
+    const at = new Date(base + offset).toISOString();
+    const value = report(id, at);
+    value.machine.id = machine;
+    value.machine.telemetry = {
+      ...telemetry(at),
+      sampleIntervalSeconds: 30,
+    } as NonNullable<Report["machine"]["telemetry"]>;
+    return value;
+  };
+  const latest = make("resource-new", 30000);
+  assert.equal(
+    (await request("/api/v1/reports", latest, credentials.token)).status,
+    201,
+  );
+  assert.equal(
+    (await request("/api/v1/reports", latest, credentials.token)).status,
+    200,
+  );
+  assert.equal(
+    (
+      await request(
+        "/api/v1/reports",
+        { ...latest, spaces: [] },
+        credentials.token,
+      )
+    ).status,
+    409,
+  );
+  const older = make("resource-old", 0);
+  assert.equal(
+    (await request("/api/v1/reports", older, credentials.token)).status,
+    201,
+  );
+  await request(
+    "/api/v1/reports",
+    make("resource-expired", -86400000),
+    credentials.token,
+  );
+  const sameSample = { ...latest, reportId: "resource-same-observation" };
+  await request("/api/v1/reports", sameSample, credentials.token);
+  const missing = make("resource-missing", 40000);
+  assert(missing.machine.telemetry);
+  missing.machine.telemetry.resources = null;
+  await request("/api/v1/reports", missing, credentials.token);
+  const future = make("resource-future", 600000);
+  future.capturedAt = latest.capturedAt;
+  assert.equal(
+    (await request("/api/v1/reports", future, credentials.token)).status,
+    400,
+  );
+  const history = (await (
+    await request(endpoint, undefined, viewer)
+  ).json()) as {
+    retentionSeconds: number;
+    samples: {
+      observedAt: string;
+      cpu: number | null;
+      memory: number | null;
+      load: number[] | null;
+    }[];
+  };
+  assert.equal(history.retentionSeconds, 86400);
+  assert.deepEqual(
+    history.samples.map((s) => s.observedAt),
+    [older, latest, missing].map((v) => v.machine.telemetry?.observedAt),
+  );
+  assert.equal(history.samples[0].memory, 75);
+  assert.deepEqual(history.samples[0].load, [1, 2, 3]);
+  assert.equal(history.samples[2].cpu, null);
+  const state = (await (
+    await request("/api/v1/agent-state", undefined, credentials.token)
+  ).json()) as MachineView;
+  assert.equal(state.report.reportId, missing.reportId);
+  const legacy = make("resource-legacy", 50000);
+  delete legacy.machine.telemetry;
+  await request("/api/v1/reports", legacy, credentials.token);
+  const preserved = (await (
+    await request(endpoint, undefined, viewer)
+  ).json()) as typeof history;
+  assert.equal(preserved.samples.length, 3);
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "MachineState",
+    { name: machine },
+  );
+  const seed = new Date(Date.now() - 7200000).toISOString();
+  await storage.exec(
+    `WITH RECURSIVE samples(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM samples WHERE n<2885)
+    INSERT INTO resource_samples SELECT strftime('%Y-%m-%dT%H:%M:%fZ', ?, '+' || n || ' seconds'), json_set(?, '$.observedAt', strftime('%Y-%m-%dT%H:%M:%fZ', ?, '+' || n || ' seconds')) FROM samples`,
+    seed,
+    JSON.stringify(history.samples[0]),
+    seed,
+  );
+  await storage.exec(
+    "INSERT INTO resource_samples VALUES (?,?)",
+    "2000-01-01T00:00:00.000Z",
+    JSON.stringify(history.samples[0]),
+  );
+  await mf.unsafeEvictDurableObject("eagle", "MachineState", { name: machine });
+  const retained = (await (
+    await request(endpoint, undefined, viewer)
+  ).json()) as typeof history;
+  assert.equal(retained.samples.length, 2880);
+  assert(
+    retained.samples.every(
+      (sample) => Date.parse(sample.observedAt) >= Date.now() - 86400000,
+    ),
+  );
+  await request(`/api/v1/machines/${machine}/revoke`, {}, viewer);
+  assert.equal((await request(endpoint, undefined, viewer)).status, 404);
 });

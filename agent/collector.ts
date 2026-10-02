@@ -293,6 +293,7 @@ export type AgentConfig = {
   machineName: string;
   evidenceFile?: string;
   intervalSeconds?: number;
+  slowIntervalSeconds?: number;
   codexDir?: string;
   spoolDir?: string;
   watchPorts?: { name: string; port: number; host?: string }[];
@@ -414,10 +415,6 @@ export function conversationEvidence(
 export async function collect(config: AgentConfig): Promise<Report> {
   const capturedAt = new Date().toISOString();
   const warnings: string[] = [];
-  const telemetry = await collectTelemetry(config.watchPorts);
-  if (!telemetry.resources)
-    warnings.push("机器资源采集失败，端口检查结果仍保留");
-  else if (!telemetry.resources.disk) warnings.push("主目录磁盘信息不可读");
   let spaces: Space[] = [];
   const cachePath = join(
     dirname(config.spoolDir ?? join(homedir(), ".config/eagle/spool")),
@@ -432,6 +429,15 @@ export async function collect(config: AgentConfig): Promise<Report> {
   } catch {
     /* First collection has no cache. */
   }
+
+  const telemetry = await collectTelemetry(
+    config.watchPorts,
+    config.slowIntervalSeconds,
+    previous?.machine.telemetry,
+  );
+  if (!telemetry.resources)
+    warnings.push("机器资源采集失败，端口检查结果仍保留");
+  else if (!telemetry.resources.disk) warnings.push("主目录磁盘信息不可读");
 
   const sessions: { name: string; running: boolean }[] = JSON.parse(
     await herdr(["session", "list", "--json"]),

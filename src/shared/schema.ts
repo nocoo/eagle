@@ -35,7 +35,44 @@ export const PortCheckSchema = WatchPortSchema.extend({
   latencyMs: z.number().nonnegative().nullable(),
   checkedAt: timestamp,
 });
+const ConnectionObservation = z.strictObject({
+  state: z.enum(["connected", "disconnected", "unknown"]),
+  source: z.enum([
+    "macos-reachability",
+    "macos-vpn",
+    "network-manager",
+    "unsupported",
+  ]),
+  observedAt: timestamp,
+});
+export const SlowIntervalSchema = z
+  .number()
+  .int()
+  .min(60)
+  .max(3600)
+  .default(300);
 export const MachineTelemetrySchema = z.strictObject({
+  sampleIntervalSeconds: z.literal(30).optional(),
+  slowIntervalSeconds: SlowIntervalSchema.removeDefault().optional(),
+  diskObservedAt: timestamp.optional(),
+  network: ConnectionObservation.optional(),
+  vpn: ConnectionObservation.optional(),
+  temperature: z
+    .discriminatedUnion("status", [
+      z.strictObject({
+        status: z.literal("available"),
+        celsius: z.number().min(-20).max(150),
+        source: z.literal("linux-cpu-thermal"),
+        observedAt: timestamp,
+      }),
+      z.strictObject({
+        status: z.literal("unavailable"),
+        celsius: z.null(),
+        source: z.enum(["unsupported", "linux-cpu-thermal"]),
+        observedAt: timestamp,
+      }),
+    ])
+    .optional(),
   observedAt: timestamp,
   resources: z
     .strictObject({

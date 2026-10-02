@@ -80,3 +80,45 @@ test("optional machine telemetry preserves v1 reports and rejects invalid resour
   snapshot.ports.push(snapshot.ports[0]);
   assert.equal(parse().success, false);
 });
+
+test("environment telemetry accepts bounded evidence and keeps old v1 snapshots valid", () => {
+  const value = {
+    ...telemetry(),
+    sampleIntervalSeconds: 30,
+    slowIntervalSeconds: 300,
+    diskObservedAt: "2026-09-19T05:45:00.000Z",
+    network: {
+      state: "connected",
+      source: "macos-reachability",
+      observedAt: "2026-09-19T05:50:00.000Z",
+    },
+    vpn: {
+      state: "unknown",
+      source: "macos-vpn",
+      observedAt: "2026-09-19T05:50:00.000Z",
+    },
+    temperature: {
+      status: "unavailable",
+      celsius: null,
+      source: "unsupported",
+      observedAt: "2026-09-19T05:45:00.000Z",
+    },
+  };
+  const parse = (sample: unknown) =>
+    ReportSchema.safeParse({
+      ...report(),
+      machine: { ...report().machine, telemetry: sample },
+    });
+  assert.equal(parse(value).success, true);
+  assert.equal(parse(telemetry()).success, true);
+  assert.equal(
+    parse({ ...value, vpn: { ...value.vpn, remoteIp: "203.0.113.1" } }).success,
+    false,
+  );
+  assert.equal(
+    parse({ ...value, temperature: { ...value.temperature, celsius: 50 } })
+      .success,
+    false,
+  );
+  assert.equal(parse({ ...value, slowIntervalSeconds: 1 }).success, false);
+});

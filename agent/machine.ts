@@ -15,8 +15,11 @@ import {
   type MachineTelemetry,
   MachineTelemetrySchema,
   type PortCheck,
+  SlowIntervalSchema,
   WatchPortsSchema,
 } from "../src/shared/schema.ts";
+
+import { readConnections, readTemperature } from "./environment.ts";
 
 type CpuSample = { idle: number; total: number };
 export function cpuUsage(before: CpuSample, after: CpuSample): number | null {
@@ -42,12 +45,6 @@ async function resources(): Promise<MachineTelemetry["resources"]> {
   await delay(250);
   const after = cpus();
   const cpuSampleMs = Math.round(performance.now() - started);
-  const disk = await statfs(homedir())
-    .then((fs) => ({
-      totalBytes: fs.blocks * fs.bsize,
-      availableBytes: fs.bavail * fs.bsize,
-    }))
-    .catch(() => null);
   return {
     cpuModel: processors[0]?.model || "",
     cpuCores: processors.length || availableParallelism(),
@@ -59,7 +56,7 @@ async function resources(): Promise<MachineTelemetry["resources"]> {
     loadAverage:
       platform() === "win32" ? null : (loadavg() as [number, number, number]),
     memory: { totalBytes: totalmem(), freeBytes: freemem() },
-    disk,
+    disk: null,
     uptimeSeconds: Math.floor(uptime()),
   };
 }
@@ -99,17 +96,88 @@ function checkPort(target: {
     );
   });
 }
-export async function collectTelemetry(
-  watchPorts: unknown = [],
-): Promise<MachineTelemetry> {
-  const targets = WatchPortsSchema.parse(watchPorts);
-  const [sample, ports] = await Promise.all([
-    resources().catch(() => null),
-    Promise.all(targets.map(checkPort)),
-  ]);
-  return MachineTelemetrySchema.parse({
-    observedAt: new Date().toISOString(),
-    resources: sample,
-    ports,
-  });
+type SlowSample = {
+  disk: NonNullable<MachineTelemetry["resources"]>["disk"];
+  temperature: Omit<NonNullable<MachineTelemetry["temperature"]>, "observedAt">;
+};
+type Probes = {
+  now: () => number;
+  fast: () => Promise<MachineTelemetry["resources"]>;
+  slow: () => Promise<SlowSample>;
+  connections: () => Promise<Pick<MachineTelemetry, "network" | "vpn">>;
+};
+const probes: Probes = {
+  now: Date.now,
+  fast: resources,
+  slow: async () => {
+    const [disk, temperature] = await Promise.all([
+      statfs(homedir())
+        .then((fs) => ({
+          totalBytes: fs.blocks * fs.bsize,
+          availableBytes: fs.bavail * fs.bsize,
+        }))
+        .catch(() => null),
+      readTemperature(),
+    ]);
+    return { disk, temperature };
+  },
+  connections: readConnections,
+};
+export function createTelemetrySampler(source: Probes = probes) {
+  let slow: (SlowSample & { observedAt: string }) | undefined;
+  let pending: Promise<MachineTelemetry> | undefined;
+  return async (
+    watchPorts: unknown = [],
+    interval: number = 300,
+    previous?: MachineTelemetry,
+  ): Promise<MachineTelemetry> => {
+    const targets = WatchPortsSchema.parse(watchPorts);
+    const slowIntervalSeconds = SlowIntervalSchema.parse(interval);
+    if (pending) return pending;
+    pending = (async () => {
+      if (!slow && previous?.diskObservedAt && previous.temperature)
+        slow = {
+          disk: previous.resources?.disk ?? null,
+          temperature: previous.temperature,
+          observedAt: previous.diskObservedAt,
+        };
+      const elapsed = slow
+        ? source.now() - Date.parse(slow.observedAt)
+        : Infinity;
+      const low =
+        elapsed < 0 || elapsed >= slowIntervalSeconds * 1000
+          ? source.slow().then((value) => {
+              slow = {
+                ...value,
+                observedAt: new Date(source.now()).toISOString(),
+              };
+            })
+          : Promise.resolve();
+      const [sample, ports, connections] = await Promise.all([
+        source.fast().catch(() => null),
+        Promise.all(targets.map(checkPort)),
+        source.connections(),
+        low,
+      ]);
+      return MachineTelemetrySchema.parse({
+        observedAt: new Date(source.now()).toISOString(),
+        sampleIntervalSeconds: 30,
+        slowIntervalSeconds,
+        diskObservedAt: slow?.observedAt,
+        temperature: slow && {
+          ...slow.temperature,
+          observedAt: slow.observedAt,
+        },
+        resources: sample && { ...sample, disk: slow?.disk ?? null },
+        ports,
+        ...connections,
+      });
+    })();
+    try {
+      return await pending;
+    } finally {
+      pending = undefined;
+    }
+  };
 }
+export const collectTelemetry = createTelemetrySampler();
