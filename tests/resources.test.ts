@@ -27,3 +27,31 @@ test("resource chart preserves non-percent load, null measurements, long gaps an
   assert.equal(points[4].load1, null);
   assert.deepEqual(resourcePoints([], new Date().toISOString()), []);
 });
+
+test("unknown resource cadence does not fabricate gaps or extrapolate its tail", () => {
+  const samples: ResourceSample[] = [0, 120, 240].map((seconds) => ({
+    observedAt: new Date(seconds * 1000).toISOString(),
+    intervalSeconds: null,
+    cpu: 25,
+    memory: 75,
+    load: [1, 2, 3],
+  }));
+  const current = resourcePoints(samples, samples[2].observedAt);
+  assert.deepEqual(
+    current.map((point) => [point.at, point.cpu]),
+    [
+      [0, 25],
+      [120000, 25],
+      [240000, 25],
+    ],
+  );
+  const historical = resourcePoints(samples, new Date(250000).toISOString());
+  assert.deepEqual(historical.slice(0, -1), current);
+  assert.equal(historical.at(-1)?.at, 250000);
+  assert.equal(historical.at(-1)?.cpu, null);
+  samples[1].intervalSeconds = 30;
+  assert.deepEqual(
+    resourcePoints(samples, samples[2].observedAt).map((point) => point.at),
+    [0, 120000, 150000, 240000],
+  );
+});

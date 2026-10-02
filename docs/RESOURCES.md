@@ -131,8 +131,10 @@ data and asks the viewer to sign in again.
 CPU and memory use a fixed **0–100% left axis**. Load uses an independently
 scaled **right axis**, with three dashed 1/5/15-minute lines and unit-aware
 hover values. All timestamps follow the existing timezone preference. Nulls and
-gaps longer than two nominal sample periods break the curves; offline tails
-remain empty. No zero fill or extrapolation is performed. Disk and temperature
+gaps longer than two reported sample periods break the curves. Unknown cadence
+does not imply a 30-second period or fabricate gaps between observed points;
+the time after the last observation remains empty. No zero fill or extrapolation
+is performed. Disk and temperature
 stay out of the chart to avoid interpolating cached observations.
 
 Network/fast observations become historical after 90 seconds or loss of machine
