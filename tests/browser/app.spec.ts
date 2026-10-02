@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import pkg from "../../agent/package.json" with { type: "json" };
+import pkg from "../../package.json" with { type: "json" };
 import { report, telemetry } from "../fixtures.ts";
 
 // Workspace sheets now open realtime by default. Keep these task/overview
@@ -802,10 +802,10 @@ test("Connect manages machines and creates a one-time onboarding prompt without 
   await page.getByRole("button", { name: "创建并生成提示词" }).click();
   await expect(page.getByRole("heading", { name: "接入提示词" })).toBeVisible();
   await expect(page.getByLabel("提示词预览")).toContainText(
-    `npm install -g @nocoo/eagle-agent@${pkg.version} --registry=https://registry.npmjs.org`,
+    `npm install -g @nocoo/eagle-agent@${pkg.config.publishedAgentVersion} --registry=https://registry.npmjs.org`,
   );
   await expect(page.getByLabel("提示词预览")).toContainText(
-    `npm install -g @nocoo/eagle-agent@${pkg.version} --registry=https://mirrors.cloud.tencent.com/npm/`,
+    `npm install -g @nocoo/eagle-agent@${pkg.config.publishedAgentVersion} --registry=https://mirrors.cloud.tencent.com/npm/`,
   );
   await expect(page.getByLabel("提示词预览")).toContainText("首选腾讯云镜像");
   await expect(page.getByLabel("提示词预览")).toContainText("默认直连");

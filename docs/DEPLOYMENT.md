@@ -10,6 +10,35 @@ NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem" node scripts/verify-live.ts
 
 `verify-live.ts` reads `.local/agent-dev.json` by default; local viewing needs no credentials. For production, set `EAGLE_VERIFY_ORIGIN=https://eagle.hexly.ai`, `EAGLE_CONFIG` to the production agent configuration and `EAGLE_ACCESS_JWT_FILE` to a mode-0600 file containing a genuine Access application JWT. Obtain it through `cloudflared access login --quiet https://eagle.hexly.ai`; never paste credentials into commands or logs. Screenshots and sanitized receipts remain in ignored `.local/`. The script checks anonymous Access redirection, authenticated viewing, idempotency, every real Space, automatic updates, history and mobile layout.
 
+## Website-only releases
+
+The root manifest owns the website/Worker version and
+`config.publishedAgentVersion` owns its verified npm onboarding pin. An
+unpublished Agent source version is not an installation target. A website-only
+release may leave `agent/package.json` unchanged and use the existing published
+Agent; do not publish npm, restart collectors, or change real machine configs.
+
+The current GitHub workflow runs checks on main/PR only; it has no npm/tag/release
+publication trigger. `npm run deploy` builds the website and deploys only the
+Eagle Worker with `BUILD_REVISION` from a clean, committed HEAD. Inspect these
+triggers again for every release before pushing a tag. Use an ordinary version
+tag and GitHub Release only after exact-SHA CI and the authorized deployment.
+
+Run `wrangler d1 migrations list eagle --remote` first. Apply only genuinely
+pending required migrations; the resource-history table is initialized inside
+each existing machine DO, with no new D1 migration. Preserve Worker secrets.
+
+`verify-live.ts` actively collects and uploads a real machine report. When the
+release explicitly excludes collection, use a separate read-only verifier:
+check the real local origin and production health/version/revision, anonymous
+Access redirects, authenticated viewer/overview/resource reads and actual
+Chromium rendering. Reuse a genuine application JWT in a private file, never
+an Agent token as viewer auth. Do not modify machines, issue tokens, ingest
+fixtures, send realtime input, or trigger daily jobs. Record actual existing
+collector versions, sample timestamps and empty history instead of treating
+synthetic validation as production evidence. Missing Access login blocks
+protected-page verification, not permission to disable authentication.
+
 ## Deploy
 
 For realtime changes, also run `node scripts/verify-realtime.ts` against both origins with their realtime bridges running. See [Space realtime mode](REALTIME.md). On this Mac the production realtime bridge is supervised separately as `com.hexly.eagle-realtime`.

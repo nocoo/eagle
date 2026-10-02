@@ -72,7 +72,7 @@ The deterministic collector runs every 30 seconds by default. Manager uses the e
 
 See the [agent contract](AGENT.md) for machine identity, credentials, retries, background services and upgrade order. Give the [eagle-report Skill](../skills/eagle-report/SKILL.md) to your management agent. The [report schema](../public/report-v1.schema.json) is generated from the TypeScript validator; the server also checks cross-object uniqueness.
 
-Source Agent 0.8.0 adds [environment resources](RESOURCES.md): 30-second fast samples, default 300-second disk/temperature reads, and 24-hour CPU/memory/load history with independent axes. This candidate is not yet published; the installation commands above remain on published 0.7.1. Source functionality is not evidence of a production deployment.
+Website v0.9.0 provides the [environment resource](RESOURCES.md) page and history storage. Source Agent 0.8.0 supports: 30-second fast samples, default 300-second disk/temperature reads, and 24-hour CPU/memory/load history with independent axes. This candidate is not yet published; installation commands and website Connect remain pinned to published 0.7.1. Existing CPU/memory/load reports can accumulate history after the Worker upgrade; network/VPN/temperature require the future Agent. Historical data is never fabricated or backfilled.
 
 ## Development
 

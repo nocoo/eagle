@@ -73,7 +73,7 @@ eagle-agent realtime-watch
 
 机器身份、凭据、重试、后台服务与升级顺序见 [Agent 契约](docs/AGENT.md)。可将 [eagle-report Skill](skills/eagle-report/SKILL.md)交给管理 Agent；[报告 Schema](public/report-v1.schema.json)由 TypeScript 校验器生成，服务端另行检查跨对象唯一性。
 
-源码中的 Agent 0.8.0 候选版新增 [环境资源监控](docs/RESOURCES.md)：30 秒快速采样、默认 300 秒磁盘/温度采样，以及 24 小时 CPU/内存/load 双轴历史。候选版尚未发布；上面的安装命令仍指向已发布 0.7.1，不能据此假定线上已有新功能。
+网站 v0.9.0 提供 [环境资源监控](docs/RESOURCES.md) 页面与历史存储；源码 Agent 0.8.0 候选版支持：30 秒快速采样、默认 300 秒磁盘/温度采样，以及 24 小时 CPU/内存/load 双轴历史。候选版尚未发布；安装命令与网站 Connect 均固定已发布 0.7.1。旧 Agent 已有的 CPU/内存/load 可从网站升级后开始积累历史，网络/VPN/温度仍需新版 Agent；不回填或伪造既有历史。
 
 ## 开发
 

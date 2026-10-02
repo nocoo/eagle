@@ -8,7 +8,9 @@ Durable Objects/D1 and a standalone Node Agent. Human overview: [README.md](READ
 Maintain project instructions only in this root AGENTS.md; do not create a
 CLAUDE.md alias or copy. Root `package.json` owns the website/Worker release
 version; keep its lockfile synchronized. `agent/package.json` owns the independent
-Agent version; CLI output, onboarding and Agent installation docs derive from it.
+Agent version; CLI output and packed artifacts derive from it. Website onboarding
+uses root `config.publishedAgentVersion`, which must reference a verified published
+Agent version and can differ from an unpublished source candidate.
 Website-only releases may keep the currently published Agent version and skip npm
 publication when Agent behavior, dependencies and protocol requirements are
 unchanged. Changes to those require an Agent version bump and publication before
@@ -101,8 +103,10 @@ time-sensitive assertions must pause the browser clock and advance it explicitly
 
 Public dashboard: `eagle.hexly.ai`; machine ingestion: `eagle-ingest.hexly.ai`.
 Deployment and live checks require authorization for that operation. Releases
-require `scripts/verify-live.ts` against the real local and public origins;
-those live checks are not routine documentation validation.
+require real local and public verification per `docs/DEPLOYMENT.md`. Use
+`scripts/verify-live.ts` for authorized collection changes; website-only releases
+that exclude collection use the documented read-only API/browser checks.
+Live checks are not routine documentation validation.
 
 Report actual checks and unresolved gaps with each change. Preserve accident
 narratives in the root retrospective; keep only brief recurring project rules

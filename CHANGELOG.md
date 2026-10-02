@@ -1,11 +1,12 @@
 # Changelog
 
-## Unreleased — Environment resources
+## v0.9.0 — 2026-10-02
 
 - Extend the existing Agent/report/DO flow with bounded OS network/VPN evidence, unavailable-aware CPU temperature, 30-second fast samples and configurable 300-second slow observations.
 - Retain 24 hours / 2880 resource samples without duplicating full reports or re-enabling D1 snapshot history; preserve late-arrival ordering, idempotency and old v1 reports.
 - Keep machine Space topology and add environment cards with CPU/memory percent charts, independent dashed load axes and explicit gaps/offline states.
-- Prepare Agent source 0.8.0; npm publication, production onboarding and deployment remain pending and separately authorized.
+- Publish the website/Worker independently; Connect explicitly pins published Agent 0.7.1 from website metadata. Agent source 0.8.0 remains unpublished, and installed Agents are not upgraded or restarted.
+- Existing Agent telemetry can populate CPU/memory/load history after this Worker deployment; new network/VPN/temperature observations require the future Agent release. No historical data is fabricated or backfilled.
 
 ## v0.8.0 — 2026-09-27
 
