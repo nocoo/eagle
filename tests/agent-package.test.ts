@@ -19,13 +19,15 @@ test("npm agent artifact installs outside the checkout and accepts credentials o
   assert.equal(lock.packages[""].version, pkg.version);
   const directory = mkdtempSync(join(tmpdir(), "eagle-agent-package-"));
   try {
-    const packed = JSON.parse(
-      execFileSync(
-        "npm",
-        ["pack", "./agent", "--pack-destination", directory, "--json"],
-        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    const packed = Object.values(
+      JSON.parse(
+        execFileSync(
+          "npm",
+          ["pack", "./agent", "--pack-destination", directory, "--json"],
+          { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+        ),
       ),
-    )[0];
+    )[0] as { version: string; filename: string; files: { path: string }[] };
     assert.equal(packed.version, manifest.version);
     assert(
       packed.files.every(
