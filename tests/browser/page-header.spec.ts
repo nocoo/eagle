@@ -26,6 +26,10 @@ for (const [path, title] of routes) {
     let refreshes = 0;
     await page.route("**/api/**", (route) => {
       const pathname = new URL(route.request().url()).pathname;
+      if (pathname === "/api/v1/resources")
+        return route.fulfill({
+          json: { retentionSeconds: 86400, samples: [] },
+        });
       if (pathname === "/api/v1/overview") {
         refreshes++;
         if (failed)

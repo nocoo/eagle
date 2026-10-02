@@ -70,6 +70,8 @@ test("live overview reads only current state and keeps cards mounted through ref
   let historyReads = 0;
   const value = report("do-snapshot", new Date().toISOString());
   await page.route("**/api/**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/v1/resources")
+      return route.fulfill({ json: { retentionSeconds: 86400, samples: [] } });
     if (route.request().url().includes("history")) historyReads++;
     await paused;
     if (fail) return route.fulfill({ status: 503, json: {} });

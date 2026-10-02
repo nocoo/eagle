@@ -1,5 +1,14 @@
 # 用户视角检查点
 
+## 2026-10-02 — Environment resources, local implementation
+
+- CPU/load/memory and bounded OS network/VPN evidence now travel through the existing whole-machine report. Disk/temperature default to 300-second cached observations; macOS temperature is explicitly unavailable. No real Herdr inventory or production reports have been collected for this work.
+- Machine DO resource history retains 24 hours / 2880 fast samples, independently of current state and existing daily input retention. Isolated Miniflare checks cover authentication, replay/conflict, late arrivals, null data, old v1 reports, eviction and pruning. No remote D1 migration or production change occurred.
+- Backend check passed 124 tests, strict types, lint and build using cached npm 11.19.1. The local npm 12 package-install policy remains an environment limitation; its pack JSON container handling is corrected in the package test.
+- The environment region and dual-axis chart pass four focused desktop/mobile browser checks. Full browser validation and real isolated HTTP/UI synthetic verification are in progress. Existing Caddy and p4/p5 remain running; the next unverified hop is isolated synthetic report ingestion to the new chart.
+- Agent source version is 0.8.0, not yet published. Publication and production deployment remain outside this task; production onboarding must not select this version until publication.
+
+
 ## 2026-09-27 — Draft resilience and mobile refinements in progress
 
 - Realtime drafts now persist per terminal and remain editable during disconnects; retained frames show a retry indicator. Mobile workspace navigation uses a search-free select.

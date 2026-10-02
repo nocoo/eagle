@@ -42,6 +42,7 @@ import {
   type State,
 } from "../shared/schema.ts";
 import { age } from "./api.ts";
+import { EnvironmentResources } from "./EnvironmentResources.tsx";
 import { useTimezone } from "./Timezone.tsx";
 
 const states: State[] = ["active", "attention", "verified", "unverified"];
@@ -210,7 +211,7 @@ export function MachineResources({
                     ? "未知"
                     : `${resources.cpuUsagePercent}%`}
                 </dd>
-                <dd className="mt-1 truncate text-[10px] text-basalt-muted-foreground">
+                <dd className="mt-1 truncate text-[11px] text-basalt-muted-foreground">
                   负载{" "}
                   {resources.loadAverage
                     ?.map((n) => n.toFixed(1))
@@ -231,7 +232,7 @@ export function MachineResources({
                   )}{" "}
                   / {gib(resources.memory.totalBytes)} GiB
                 </dd>
-                <dd className="mt-1 text-[10px] text-basalt-muted-foreground">
+                <dd className="mt-1 text-[11px] text-basalt-muted-foreground">
                   空闲 {gib(resources.memory.freeBytes)} GiB
                 </dd>
               </div>
@@ -248,10 +249,22 @@ export function MachineResources({
                     ? `${gib(resources.disk.availableBytes)} GiB`
                     : "未知"}
                 </dd>
-                <dd className="mt-1 text-[10px] text-basalt-muted-foreground">
+                <dd className="mt-1 text-[11px] text-basalt-muted-foreground">
                   {resources.disk
                     ? `总计 ${gib(resources.disk.totalBytes)} GiB`
                     : "磁盘信息不可读"}
+                </dd>
+                <dd className="mt-1 text-[11px] text-basalt-muted-foreground">
+                  <time
+                    dateTime={telemetry.diskObservedAt ?? telemetry.observedAt}
+                  >
+                    {time(telemetry.diskObservedAt ?? telemetry.observedAt)}
+                  </time>{" "}
+                  采样
+                  {(stale ||
+                    age(telemetry.diskObservedAt ?? telemetry.observedAt, now) >
+                      (telemetry.slowIntervalSeconds ?? 30) + 90) &&
+                    " · 历史采样"}
                 </dd>
               </div>
               <div style={accent("hsl(var(--basalt-accent-7))")}>
@@ -263,7 +276,7 @@ export function MachineResources({
                   {Math.floor(resources.uptimeSeconds / 86400)} 天{" "}
                   {Math.floor(resources.uptimeSeconds / 3600) % 24} 小时
                 </dd>
-                <dd className="mt-1 text-[10px] text-basalt-muted-foreground">
+                <dd className="mt-1 text-[11px] text-basalt-muted-foreground">
                   <time dateTime={telemetry.observedAt}>
                     {time(telemetry.observedAt)}
                   </time>{" "}
@@ -276,7 +289,7 @@ export function MachineResources({
               资源采集失败 · 等待更新
             </p>
           )}
-          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-basalt-border pt-2 text-[10px] text-basalt-muted-foreground">
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-basalt-border pt-2 text-[11px] text-basalt-muted-foreground">
             <span title="只验证本机 TCP 连接，不代表应用业务健康。">
               关注端口 · TCP
             </span>
@@ -1083,17 +1096,19 @@ export function Dashboard({
           </div>
           <div className="dashboard-resources">
             {machines.map((machine) => (
-              <MachineResources key={machine.id} machine={machine} now={now} />
+              <EnvironmentResources
+                key={machine.id}
+                machine={machine}
+                now={now}
+              >
+                <MachineResources machine={machine} now={now} />
+              </EnvironmentResources>
             ))}
           </div>
           <aside className="dashboard-aside" aria-label="变化与证据摘要">
             <SectionRule
               className="board-rule"
-              title={
-                <>
-                  <span className="section-index">02</span> 运行脉搏
-                </>
-              }
+              title={<>运行脉搏</>}
               actions={
                 <span className="live-label">
                   <span className="live-dot" />

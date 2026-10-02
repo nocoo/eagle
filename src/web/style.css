@@ -207,6 +207,7 @@
   gap: 14px;
 }
 .machine-layout {
+  grid-template-columns: minmax(0, 1fr) 360px;
   grid-template-areas:
     "spaces resources"
     "spaces pulse";
@@ -909,7 +910,8 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .machine-layout {
-    grid-template-areas: "resources" "spaces" "pulse";
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "spaces" "resources" "pulse";
     grid-template-rows: auto auto auto;
   }
   .resource-grid {
@@ -2552,4 +2554,46 @@
   .workspace-refreshing {
     animation: none;
   }
+}
+
+.environment-resources {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+.environment-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  font-size: 11px;
+}
+.environment-status-grid > div {
+  min-width: 0;
+}
+.environment-status-grid dt,
+.resource-note {
+  color: hsl(var(--basalt-muted-foreground));
+}
+.environment-status-grid > div > dd {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+.resource-note {
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 8px;
+}
+.resource-chart-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+.resource-history {
+  min-width: 0;
+}
+.resource-history [role="group"] > div {
+  min-width: 0;
 }
