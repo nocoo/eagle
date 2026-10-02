@@ -140,3 +140,10 @@ Command-help review caught that cloudflared login prints its JWT by default.
 The displayed login instruction now includes `--quiet`; the unsafe suggestion
 was not executed. Check credential-bearing CLI output contracts before adding
 onboarding commands, even when their arguments contain no secrets.
+
+The machine-card fixture repeated the telemetry literal-widening mistake; it
+now uses `MachineTelemetrySchema.parse` rather than manually narrowing selected
+fields. The paused-clock tooltip check also initially focused a scroll-moving
+trigger; Radix correctly dismissed the tooltip on scroll. Scroll into view
+first, activate the control, then advance the paused clock explicitly. The final
+complete browser run passes without raising timeouts or weakening assertions.

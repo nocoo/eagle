@@ -23,6 +23,7 @@ import {
 import { resourcePoints } from "../shared/resources.ts";
 import type { MachineView } from "../shared/schema.ts";
 import { age } from "./api.ts";
+import { CardHelp } from "./CardHelp.tsx";
 import { useTimezone } from "./Timezone.tsx";
 import { useResourceHistory } from "./useResourceHistory.ts";
 
@@ -75,6 +76,13 @@ export function EnvironmentResources({
       />
       {children}
       <LayerCard className="environment-status">
+        <div className="resource-chart-heading mb-2">
+          <strong>环境状态</strong>
+          <CardHelp label="环境状态说明">
+            网络表示系统路径，不验证公网；VPN
+            仅据系统管理状态，未识别的隧道保持未知。
+          </CardHelp>
+        </div>
         <dl className="environment-status-grid">
           {(["network", "vpn"] as const).map((key) => {
             const reading = telemetry?.[key];
@@ -140,33 +148,43 @@ export function EnvironmentResources({
                   (slowSeconds ?? 300) + 90)) && <dd>历史采样 · 等待更新</dd>}
           </div>
         </dl>
-        <p className="resource-note">
-          网络表示系统路径，不验证公网；VPN
-          仅据系统管理状态，未识别的隧道保持未知。
-        </p>
       </LayerCard>
       <LayerCard className="resource-history">
         <div className="resource-chart-heading">
           <strong>资源时间序列</strong>
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-label="刷新资源历史"
-            disabled={history.loading}
-            onClick={history.refresh}
-          >
-            <RefreshCw size={14} />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="刷新资源历史"
+              disabled={history.loading}
+              onClick={history.refresh}
+            >
+              <RefreshCw size={14} />
+            </Button>
+            <CardHelp label="资源时间序列说明">
+              <p>
+                CPU / 内存 · 左轴 0–100%；Load 1/5/15 分钟 ·
+                右轴虚线（不是百分比）
+              </p>
+              <p>
+                {telemetry?.sampleIntervalSeconds
+                  ? `${telemetry.sampleIntervalSeconds} 秒采样`
+                  : "采样周期未知"}
+                {" · 保留 24 小时 / 最多 2880 点 · "}
+                {zone}
+              </p>
+              <p>
+                缺失与超过两个采样周期的空档断线，不补零。内存为总量减空闲量，可能包含缓存，不代表内存压力。
+              </p>
+              <p>
+                磁盘不入图；磁盘 / 温度
+                {slowSeconds ? `每 ${slowSeconds} 秒` : "周期未知"}
+                读取，卡片保留原采样时间。
+              </p>
+            </CardHelp>
+          </div>
         </div>
-        <p className="resource-note">
-          CPU / 内存 · 左轴 0–100%；Load 1/5/15 分钟 · 右轴虚线（不是百分比）
-        </p>
-        <p className="resource-note">
-          {telemetry?.sampleIntervalSeconds
-            ? `${telemetry.sampleIntervalSeconds} 秒采样`
-            : "采样周期未知"}{" "}
-          · 保留 24 小时 / 最多 2880 点 · {zone}
-        </p>
         {history.error && (
           <p role="alert" className="resource-note">
             {history.error}
@@ -183,7 +201,7 @@ export function EnvironmentResources({
             ariaLabel="CPU、内存与负载历史"
             size="h-56 w-full"
             legend={<ChartLegend items={series} />}
-            summary={`缺失与超过两个采样周期的空档断线，不补零。最后采样 ${last ? time(last.observedAt) : "未知"}。内存为总量减空闲量，可能包含缓存，不代表内存压力。`}
+            summary={`最后采样 ${last ? time(last.observedAt) : "未知"} · ${zone}`}
           >
             <LineChart
               data={points}
@@ -281,11 +299,6 @@ export function EnvironmentResources({
             </LineChart>
           </ChartShell>
         )}
-        <p className="resource-note">
-          磁盘不入图；磁盘 / 温度
-          {slowSeconds ? `每 ${slowSeconds} 秒` : "周期未知"}
-          读取，卡片保留原采样时间。
-        </p>
       </LayerCard>
     </section>
   );

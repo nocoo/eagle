@@ -1,5 +1,23 @@
 # 用户视角检查点
 
+## 2026-10-03 06:23 +08 — compact machine cards verified
+
+- Environment status, resource history, recent changes and evidence coverage
+  now keep static explanations in top-right info controls. Hover, keyboard
+  focus and touch reveal the text; freshness, missing data, errors and warnings
+  remain visible. Sections 01/02 are unchanged; runtime pulse is section 03.
+- The machine resources/pulse column grows from 400 to 560px on wide viewports,
+  instead of being overridden to 320px above 1800px. The actual local HTTPS page
+  measures 538px at 1920px, with no horizontal overflow at 390px. Local screenshots
+  confirm the rendered layout and hover content, using the existing stale data.
+- Final gates pass: 128 Node tests, strict types, check-only lint and build;
+  165 browser tests pass with 11 existing viewport-specific skips. Four existing
+  informational lint suggestions and the existing bundle-size advisory remain.
+  The earlier workspace timeout does not recur in the complete final run.
+- No Herdr collection, D1 fixture writes or production mutations occurred. Local
+  frontend 7053 and API 37053 remain running for user acceptance; production
+  reads through the Local/Prod switch were verified separately above.
+
 ## 2026-10-03 06:17 +08 — local production environment switch
 
 - Local and Prod render through the existing local HTTPS frontend; actual

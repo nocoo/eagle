@@ -192,8 +192,17 @@ test("environment resources retain Space, show bounded dual axes and honest miss
   ).toBeVisible();
   await expect(environment).toContainText("VPN 未知");
   await expect(environment).toContainText("不可用");
-  await expect(environment).toContainText("30 秒");
-  await expect(environment).toContainText("300 秒");
+  const help = environment.getByRole("button", { name: "资源时间序列说明" });
+  await help.scrollIntoViewIfNeeded();
+  await help.click();
+  await page.clock.runFor(1);
+  await expect(page.getByRole("tooltip")).toContainText("30 秒");
+  await expect(page.getByRole("tooltip")).toContainText("300 秒");
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Load 1/5/15 分钟 · 右轴虚线",
+  );
+  await expect(page.getByRole("tooltip")).toContainText("磁盘不入图");
+  await page.keyboard.press("Escape");
   const chart = environment.getByRole("group", { name: "CPU、内存与负载历史" });
   await expect(chart).toBeVisible();
   const percentAxis = chart.getByText("100%", { exact: true });
@@ -216,8 +225,6 @@ test("environment resources retain Space, show bounded dual axes and honest miss
   await expect(cpuDots.last()).toBeVisible();
   await expect(memoryDots).toHaveCount(1);
   await expect(memoryDots).toBeVisible();
-  await expect(environment).toContainText("Load 1/5/15 分钟 · 右轴虚线");
-  await expect(environment).toContainText("磁盘不入图");
   await page.clock.runFor(180000);
   await expect(environment).toContainText("历史快照");
   await expect(environment).toContainText("上次网络");

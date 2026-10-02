@@ -42,6 +42,7 @@ import {
   type State,
 } from "../shared/schema.ts";
 import { age } from "./api.ts";
+import { CardHelp } from "./CardHelp.tsx";
 import { EnvironmentResources } from "./EnvironmentResources.tsx";
 import { useTimezone } from "./Timezone.tsx";
 
@@ -589,9 +590,9 @@ function RecentActivity({ machines }: { machines: MachineView[] }) {
         </span>
         <h2>最近变化</h2>
         <Badge variant="purple">{changes.length}</Badge>
-      </div>
-      <div className="activity-summary">
-        各机器最近一次任务或拓扑变化 · 保留变化的采集时间
+        <CardHelp label="最近变化说明">
+          各机器最近一次任务或拓扑变化 · 保留变化的采集时间
+        </CardHelp>
       </div>
       <ol className="activity-feed">
         {changes.slice(0, 7).map((item) => (
@@ -639,6 +640,9 @@ function EvidenceCoverage({ machines }: { machines: MachineView[] }) {
         <span className="mono ml-auto text-xs text-basalt-muted-foreground">
           {panes.length} PANES
         </span>
+        <CardHelp label="证据覆盖说明">
+          覆盖表示存在记录。只有当前任务的结论、Goal、Git、测试与线上证据一致，才计入已验证完成。
+        </CardHelp>
       </div>
       <div className="coverage-rows">
         {evidenceKinds.map((kind, i) => {
@@ -671,9 +675,6 @@ function EvidenceCoverage({ machines }: { machines: MachineView[] }) {
           );
         })}
       </div>
-      <p className="coverage-note">
-        覆盖表示存在记录。只有当前任务的结论、Goal、Git、测试与线上证据一致，才计入已验证完成。
-      </p>
     </LayerCard>
   );
 }
@@ -1108,7 +1109,11 @@ export function Dashboard({
           <aside className="dashboard-aside" aria-label="变化与证据摘要">
             <SectionRule
               className="board-rule"
-              title={<>运行脉搏</>}
+              title={
+                <>
+                  <span className="section-index">03</span> 运行脉搏
+                </>
+              }
               actions={
                 <span className="live-label">
                   <span className="live-dot" />
