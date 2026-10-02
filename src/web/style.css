@@ -2590,6 +2590,12 @@
 .resource-history {
   min-width: 0;
 }
+.resource-history .resource-chart-heading {
+  flex-wrap: wrap;
+}
+.resource-history .resource-chart-heading > div {
+  margin-left: auto;
+}
 .resource-history [role="group"] > div {
   min-width: 0;
 }

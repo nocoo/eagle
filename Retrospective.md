@@ -147,3 +147,12 @@ fields. The paused-clock tooltip check also initially focused a scroll-moving
 trigger; Radix correctly dismissed the tooltip on scroll. Scroll into view
 first, activate the control, then advance the paused clock explicitly. The final
 complete browser run passes without raising timeouts or weakening assertions.
+
+## 2026-10-03 — resource-window checks must await actual layout
+
+The time-axis assertion repeated the Recharts portal assumption by looking
+inside the empty axis group. It now checks the accessible chart application.
+A 320px viewport transition also exposed the header's inflexible action row;
+the row can wrap, and geometry assertions wait for responsive layout to settle.
+Paused-clock tests advance the real five-second dashboard refresh cadence.
+The final suite passes with all range, point-count and width assertions intact.

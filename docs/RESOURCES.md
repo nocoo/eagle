@@ -128,6 +128,15 @@ five-second overview poll. Switching machines aborts stale reads. Failed history
 refreshes keep the last valid data with an error; 401/403 clears protected chart
 data and asks the viewer to sign in again.
 
+The chart defaults to the latest six hours. The top-right 6h/12h/24h segment
+filters the already-loaded history and fixes the time axis to the selected
+rolling window; it does not fetch again or change storage retention. Samples
+outside the selected window, including future observations, are not displayed.
+CPU, memory and disk show equal-width usage meters alongside the existing
+numeric values. Disk usage is total minus available space, while its primary
+number remains available GiB. Missing values do not produce a zero meter;
+uptime has no percentage meter.
+
 CPU and memory use a fixed **0–100% left axis**. Load uses an independently
 scaled **right axis**, with three dashed 1/5/15-minute lines and unit-aware
 hover values. All timestamps follow the existing timezone preference. Nulls and

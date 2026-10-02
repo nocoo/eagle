@@ -3,6 +3,7 @@ import {
   Button,
   Input,
   LayerCard,
+  Meter,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -170,6 +171,16 @@ export function MachineResources({
   const { time } = useTimezone();
   const telemetry = machine.report.machine.telemetry;
   const resources = telemetry?.resources;
+  const memoryUsage = resources
+    ? Math.round(
+        (1 - resources.memory.freeBytes / resources.memory.totalBytes) * 100,
+      )
+    : null;
+  const diskUsage = resources?.disk
+    ? Math.round(
+        (1 - resources.disk.availableBytes / resources.disk.totalBytes) * 100,
+      )
+    : null;
   const stale =
     isStale(machine, now) || (telemetry && age(telemetry.observedAt, now) > 90);
   const gib = (value: number) =>
@@ -212,6 +223,15 @@ export function MachineResources({
                     ? "未知"
                     : `${resources.cpuUsagePercent}%`}
                 </dd>
+                {resources.cpuUsagePercent !== null && (
+                  <dd className="mt-2">
+                    <Meter
+                      value={resources.cpuUsagePercent}
+                      hideValue
+                      aria-label="CPU 占用"
+                    />
+                  </dd>
+                )}
                 <dd className="mt-1 truncate text-[11px] text-basalt-muted-foreground">
                   负载{" "}
                   {resources.loadAverage
@@ -233,8 +253,18 @@ export function MachineResources({
                   )}{" "}
                   / {gib(resources.memory.totalBytes)} GiB
                 </dd>
+                {memoryUsage !== null && (
+                  <dd className="mt-2">
+                    <Meter
+                      value={memoryUsage}
+                      hideValue
+                      aria-label="内存占用"
+                    />
+                  </dd>
+                )}
                 <dd className="mt-1 text-[11px] text-basalt-muted-foreground">
-                  空闲 {gib(resources.memory.freeBytes)} GiB
+                  占用 {memoryUsage}% · 空闲 {gib(resources.memory.freeBytes)}{" "}
+                  GiB
                 </dd>
               </div>
               <div
@@ -250,9 +280,14 @@ export function MachineResources({
                     ? `${gib(resources.disk.availableBytes)} GiB`
                     : "未知"}
                 </dd>
+                {diskUsage !== null && (
+                  <dd className="mt-2">
+                    <Meter value={diskUsage} hideValue aria-label="磁盘占用" />
+                  </dd>
+                )}
                 <dd className="mt-1 text-[11px] text-basalt-muted-foreground">
                   {resources.disk
-                    ? `总计 ${gib(resources.disk.totalBytes)} GiB`
+                    ? `占用 ${diskUsage}% · 总计 ${gib(resources.disk.totalBytes)} GiB`
                     : "磁盘信息不可读"}
                 </dd>
                 <dd className="mt-1 text-[11px] text-basalt-muted-foreground">

@@ -1,5 +1,23 @@
 # 用户视角检查点
 
+## 2026-10-03 06:40 +08 — resource windows and usage meters
+
+- Resource history defaults to six hours with 6h/12h/24h controls and a fixed
+  rolling axis. Switching windows filters existing samples without new reads;
+  expired-window and future points are excluded. CPU, memory and disk use
+  published Basalt meters with equal track widths and retained numeric text.
+- Actual local HTTPS rendering confirms three 250.8px tracks at a 1920px
+  viewport, default 6h and working 24h selection. At 320px controls wrap without
+  horizontal overflow. Local data remains the existing historical snapshot;
+  no production requests, writes, new collection or D1 seeds were performed.
+- Final checks pass 128 Node tests, strict types, check-only lint and build;
+  169 browser tests pass with 11 existing viewport skips. Existing lint infos
+  and the bundle-size advisory remain. Synthetic browser tests cover boundaries,
+  missing readings, equal track geometry and mobile layout.
+- Retention changes are paused for the requested investigation/recommendation.
+  Existing resource retention remains 24 hours / 2880 points on reads/ingestion;
+  no data-deletion policy or backend behavior was changed.
+
 ## 2026-10-03 06:23 +08 — compact machine cards verified
 
 - Environment status, resource history, recent changes and evidence coverage

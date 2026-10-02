@@ -1,4 +1,4 @@
-import { Badge, Button, LayerCard } from "@nocoo/basalt";
+import { Badge, Button, LayerCard, SegmentControl } from "@nocoo/basalt";
 import {
   ANIMATION_PROPS,
   AXIS_CONFIG,
@@ -10,7 +10,7 @@ import { ChartLegend } from "@nocoo/basalt/charts/legend";
 import { ChartTooltipContent } from "@nocoo/basalt/charts/tooltip";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { RefreshCw } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import {
   CartesianGrid,
   Dot,
@@ -51,11 +51,16 @@ export function EnvironmentResources({
   children: ReactNode;
 }) {
   const { time, zone } = useTimezone();
+  const [hours, setHours] = useState(6);
+  const until = Date.parse(now);
+  const since = until - hours * 3600000;
   const telemetry = machine.report.machine.telemetry;
   const history = useResourceHistory(machine.id, telemetry?.observedAt);
   const samples =
     history.data?.samples.filter(
-      (sample) => Date.parse(sample.observedAt) >= Date.parse(now) - 86400000,
+      (sample) =>
+        Date.parse(sample.observedAt) >= since &&
+        Date.parse(sample.observedAt) <= until,
     ) ?? [];
   const points = resourcePoints(samples, now);
   const offline = age(machine.lastSeen, now) > 90;
@@ -153,8 +158,18 @@ export function EnvironmentResources({
         <div className="resource-chart-heading">
           <strong>资源时间序列</strong>
           <div className="flex items-center gap-1">
+            <SegmentControl
+              legend="资源历史时间范围"
+              value={String(hours)}
+              onValueChange={(value) => setHours(Number(value))}
+              options={[6, 12, 24].map((value) => ({
+                value: String(value),
+                label: `${value}h`,
+              }))}
+              className="[&>legend]:sr-only [&_[data-slot=segment-control-viewport]]:pb-0 [&_[role=radio]]:px-2"
+            />
             <Button
-              size="sm"
+              size="icon"
               variant="ghost"
               aria-label="刷新资源历史"
               disabled={history.loading}
@@ -212,7 +227,8 @@ export function EnvironmentResources({
                 {...AXIS_CONFIG}
                 dataKey="at"
                 type="number"
-                domain={["dataMin", "dataMax"]}
+                domain={[since, until]}
+                allowDataOverflow
                 minTickGap={35}
                 tickFormatter={(at: number) =>
                   time(new Date(at).toISOString(), {
