@@ -737,3 +737,11 @@ serving and the first catalogue-derived production Cron observation.
   report in a diagnostic run limited to one model call; all validation passed and
   the production archive was written. Local `check` passes 117 tests, types,
   check-only lint and build. Deployment of this final correction is pending.
+
+## 2026-10-03T07:16:50.299670+08:00 — Dependency duty checkpoint
+
+- Herdr: reviewer panes confirmed; the existing release session is waiting for Access acceptance. No live Agent collection was run.
+- Authentication: GitHub owner identity verified; no Access or production credentials used.
+- D1: the normal Node/API suite passed using its temporary Miniflare stores.
+- Rendering: production build passed; parser evidence preserves all509 CSS selectors, conditions, declarations and equal-specificity ordering. Local browser testing was not run.
+- Next: finish the remaining compatible root dependency targets, then review the full candidate and require current-head browser CI before merge.

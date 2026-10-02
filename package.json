@@ -11,7 +11,7 @@
     "dev:api": "wrangler dev --port 37053 --inspector-port 38053",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check .",
+    "lint": "biome check . --error-on-warnings",
     "format": "biome check --write .",
     "test": "node --test tests/*.test.ts",
     "test:browser": "playwright test",

@@ -80,7 +80,7 @@ requirements. Configuration evidence is separate from successful execution.
 
 | Dimension | Contract and current state |
 | --- | --- |
-| L1 | Planned: UT, statements/branches/functions/lines each >=95%, strict types and check-only lint with zero errors/warnings, automatic index-snapshot pre-commit and proven rejection. CI runs Node tests, strict TypeScript, Biome and build via `check`; no coverage threshold, explicit warning rejection, installed project hook or complete skip/focus gate is established. |
+| L1 | Planned: UT, statements/branches/functions/lines each >=95%, strict types and check-only lint with zero errors/warnings, automatic index-snapshot pre-commit and proven rejection. CI runs Node tests, strict TypeScript, Biome and build via `check`; lint now rejects warnings; coverage thresholds, installed project hooks and complete skip/focus enforcement remain unimplemented. |
 | L2 | Planned: every owned endpoint/method over local HTTP plus real SQL/process integration. `tests/api.test.ts` uses real Miniflare/D1 and package/process tests exist; exhaustive endpoint/method coverage and a dedicated push gate are not established. |
 | L3 | Configured in CI: Playwright desktop/mobile journeys through `test:browser`. Fresh browser contexts and `reuseExistingServer: false` are configured; this is not proof of every live Herdr/Access journey. |
 | G2 | Planned: dependency and secret scanning with missing required tools failing. No scanner step is configured in `check.yml` or a project push hook. |
