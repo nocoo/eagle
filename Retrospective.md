@@ -164,3 +164,15 @@ reads within 19 ms of resize completion, and the eventual snapshot was already
 stacked. The assertion now reads all rectangles in one browser evaluation and
 polls the unchanged ordering conditions. No product CSS, timeout, retry count or
 skip was changed; release publication waits for the complete rerun.
+
+## 2026-10-03 — inspect deployed roles and asset ownership
+
+An additional release smoke check assumed Basalt Meter exposed the `meter`
+role, although the existing browser tests correctly use `progressbar`. After
+fixing that selector, an unrestricted module-script lookup matched both the
+application bundle and Cloudflare's injected analytics script. Neither failure
+was a product defect. The corrected check uses the established accessible role
+and the application's `/assets/` module in the document head. It verified three
+206px bars, sidebar version 0.10.0, the published Agent pin 0.8.0 and the deployed
+revision. Reuse tested library selectors and scope asset checks to owned files
+instead of assuming deployment infrastructure adds no scripts.

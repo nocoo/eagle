@@ -823,3 +823,15 @@ serving and the first catalogue-derived production Cron observation.
   UI passed 6h/12h/24h switching, section 03 and authenticated Local/Prod/Local
   reads with no browser errors or production mutation. The temporary local
   realtime bridge stopped cleanly; website push, deployment and CI are next.
+
+- At 07:39 +08, revision `64243d5` passed exact-revision GitHub Check run
+  `37078233254` and was deployed as Worker version
+  `086e25c3-292c-41fe-b662-38f026389044`. Public health and the authenticated
+  sidebar both report 0.10.0; the served bundle pins npm Agent 0.8.0. Real
+  production collection rendered 12 Spaces / 17 Panes with Access, idempotency,
+  DO, legacy D1, desktop/mobile and no-browser-error checks passing. Production
+  realtime returned isolated shell output in 1,566 ms and closed all four
+  subscriptions. The three resource bars each measure 206px. Final release
+  records only are being added; the resulting revision still requires its own
+  deployment, CI and tag verification. No retention or installed-service change
+  was made.
