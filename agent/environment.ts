@@ -49,7 +49,11 @@ export function vpnState(
   if (os === "darwin" && /^\s*\*?\s*\(Connected\)\s/m.test(value))
     return "connected";
   if (os === "linux" && /^vpn:activated$/m.test(value)) return "connected";
-  if (interfaces.some((name) => /^(utun|tun|tap|wg|ppp|ipsec)/i.test(name)))
+  if (
+    interfaces.some((name) =>
+      /^(utun|tun|tap|wg|ppp|ipsec|tailscale|zt)/i.test(name),
+    )
+  )
     return "unknown";
   const statuses = [...value.matchAll(/^\s*\*?\s*\(([^)]+)\)\s/gm)].map(
     (match) => match[1],

@@ -48,6 +48,14 @@ test("VPN requires an active OS-managed connection; tunnel presence is never pos
     vpnState("linux", "802-3-ethernet:activated", ["eth0"]),
     "disconnected",
   );
+  assert.equal(
+    vpnState("linux", "802-3-ethernet:activated", ["tailscale0"]),
+    "unknown",
+  );
+  assert.equal(
+    vpnState("linux", "802-3-ethernet:activated", ["ztabcd1234"]),
+    "unknown",
+  );
   assert.equal(vpnState("linux", null, ["eth0"]), "unknown");
 });
 
