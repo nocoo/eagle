@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.10.0 — 2026-10-03
+
+- Switch the local frontend between Local and Prod with authenticated HTTP and realtime proxying, per-tab selection and environment-isolated drafts.
+- Default resource history to six hours with 6h/12h/24h selection, fixed rolling axes and equal-width CPU, memory and disk usage meters alongside numeric readings.
+- Preserve sections 01/02, number runtime pulse 03, widen the resource/pulse column on large displays and move static card explanations into accessible info controls.
+- Bound resource-history requests, retain isolated samples and preserve unknown sampling cadence without fabricating gaps or readings.
+- Publish independent Agent v0.8.0 with OS network/VPN evidence, unavailable-aware CPU temperature, 30-second fast samples and configurable slow observations; update onboarding to the verified npm artifact.
+- Include Basalt 2.2.0 and the upstream undici 7.29.1 security override. Storage-retention recommendations remain unimplemented; existing policies are unchanged.
+
 ## v0.9.0 — 2026-10-02
 
 - Extend the existing Agent/report/DO flow with bounded OS network/VPN evidence, unavailable-aware CPU temperature, 30-second fast samples and configurable 300-second slow observations.

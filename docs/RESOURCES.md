@@ -2,12 +2,11 @@
 
 Resources use the existing Agent report, machine Durable Object and machine
 page. There is no additional collector service or remote telemetry destination.
-Website/Worker **0.9.0** ships independently. The source Agent is **0.8.0**;
-this candidate remains unpublished. Website `config.publishedAgentVersion`
-keeps Connect on verified published **0.7.1**. Publish the new artifact before
-changing that website pin. Existing published Agent 0.7.1 does not collect the
-new environment fields. Production rollout and restarting installed agents require separate
-authorization.
+Website/Worker **0.10.0** and independent npm Agent **0.8.0** ship together.
+Website `config.publishedAgentVersion` pins the verified Agent artifact for
+Connect. Upgrade the receiving Worker before installing the Agent's additional
+environment fields. Publication does not automatically upgrade or restart
+installed agents; service upgrades require explicit authorization.
 
 ## Sampling and cost
 

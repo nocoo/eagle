@@ -792,3 +792,34 @@ serving and the first catalogue-derived production Cron observation.
   report in a diagnostic run limited to one model call; all validation passed and
   the production archive was written. Local `check` passes 117 tests, types,
   check-only lint and build. Deployment of this final correction is pending.
+
+## 2026-10-03 07:30 +08 — v0.10.0 release preparation
+
+- Local/Prod proxying, compact numbered machine cards, selectable resource
+  windows and equal-width usage meters are committed. Storage retention is
+  unchanged; the requested global 24-hour policy remains a recommendation.
+- After merging the upstream undici security fix, checks passed 128 unit/API/
+  package tests, strict types, lint and build; browser checks passed 169 with
+  11 existing viewport-specific skips. Worker dry-run succeeded and remote D1
+  has no pending migrations. Final release-version gates are still pending.
+- Real local and current production v0.9.0 checks passed authenticated Herdr
+  collection, idempotent ingestion, DO state, readable D1 history and rendering.
+  Realtime checks returned isolated shell output in 1,592 ms locally and
+  1,562 ms publicly, closed four subscriptions each and removed their panes.
+- The retained Agent 0.8.0 tarball passed an isolated anonymous installation,
+  CLI version and help checks. npm publication succeeded after human browser
+  authorization. The public exact version and latest tag match the retained
+  SHA-1/SHA-512 hashes; a fresh anonymous Tencent mirror installation also passed
+  version/help checks with empty cache/config outside the checkout. Onboarding
+  now pins verified 0.8.0. Installed Agent services have not been upgraded or
+  restarted. Next: rerun gates, then publish and verify the website revision.
+
+- At 07:34 +08, final release checks passed 128 tests, strict types, lint and
+  build. A responsive-layout test race was fixed in a separate atomic commit;
+  40 repeated card checks and the complete browser matrix (169 passed,
+  11 existing viewport skips) passed without weakened assertions. Real local
+  collection rendered 12 Spaces / 17 Panes, and realtime returned isolated
+  shell output in 223 ms with all four subscriptions closed. The v0.10.0 local
+  UI passed 6h/12h/24h switching, section 03 and authenticated Local/Prod/Local
+  reads with no browser errors or production mutation. The temporary local
+  realtime bridge stopped cleanly; website push, deployment and CI are next.
