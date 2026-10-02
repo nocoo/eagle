@@ -57,6 +57,7 @@ export function EnvironmentResources({
     ) ?? [];
   const points = resourcePoints(samples, now);
   const offline = age(machine.lastSeen, now) > 90;
+  const staleMachine = offline || age(machine.report.capturedAt, now) > 300;
   const temperature = telemetry?.temperature;
   const slowSeconds = telemetry?.slowIntervalSeconds;
   const last = samples.at(-1);
@@ -132,7 +133,7 @@ export function EnvironmentResources({
                 "时间未知"
               )}
             </dd>
-            {(offline ||
+            {(staleMachine ||
               (!!temperature &&
                 age(temperature.observedAt, now) >
                   (slowSeconds ?? 300) + 90)) && <dd>历史采样 · 等待更新</dd>}
