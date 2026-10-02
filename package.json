@@ -26,7 +26,7 @@
     "@ai-sdk/openai": "4.0.83",
     "@nocoo/basalt": "2.2.0",
     "@nocoo/next-ai": "^0.4.0",
-    "ai": "^7.0.107",
+    "ai": "7.0.126",
     "jose": "^6.2.12",
     "lucide-react": "^1.34.0",
     "react": "^19.2.8",
