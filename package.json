@@ -35,6 +35,9 @@
     "ws": "^8.21.3",
     "zod": "^4.1.0"
   },
+  "overrides": {
+    "undici": "7.29.1"
+  },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",
     "@playwright/test": "^1.62.1",
