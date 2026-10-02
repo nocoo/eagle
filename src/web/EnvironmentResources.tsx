@@ -13,6 +13,7 @@ import { RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   CartesianGrid,
+  Dot,
   Line,
   LineChart,
   Tooltip,
@@ -260,7 +261,20 @@ export function EnvironmentResources({
                   stroke={item.color}
                   strokeWidth={2}
                   strokeDasharray={index < 2 ? undefined : "6 4"}
-                  dot={false}
+                  dot={({ index, points: linePoints, value, cx, cy }) =>
+                    value != null &&
+                    linePoints[index - 1]?.value == null &&
+                    linePoints[index + 1]?.value == null ? (
+                      <Dot
+                        className={`resource-${item.key}-sample`}
+                        cx={cx}
+                        cy={cy}
+                        r={3}
+                        fill={item.color}
+                        stroke={item.color}
+                      />
+                    ) : null
+                  }
                   connectNulls={false}
                 />
               ))}

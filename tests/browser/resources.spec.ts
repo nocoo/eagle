@@ -127,7 +127,7 @@ test("environment resources retain Space, show bounded dual axes and honest miss
             {
               observedAt: "2026-10-02T00:56:00.000Z",
               intervalSeconds: 30,
-              cpu: 10,
+              cpu: 0,
               memory: 70,
               load: [120, 10, 8],
             },
@@ -209,11 +209,20 @@ test("environment resources retain Space, show bounded dual axes and honest miss
   await expect(
     chart.locator(".resource-cpu path.recharts-line-curve"),
   ).not.toHaveAttribute("stroke-dasharray");
+  const cpuDots = chart.locator(".resource-cpu-sample");
+  const memoryDots = chart.locator(".resource-memory-sample");
+  await expect(cpuDots).toHaveCount(2);
+  await expect(cpuDots.first()).toBeVisible();
+  await expect(cpuDots.last()).toBeVisible();
+  await expect(memoryDots).toHaveCount(1);
+  await expect(memoryDots).toBeVisible();
   await expect(environment).toContainText("Load 1/5/15 分钟 · 右轴虚线");
   await expect(environment).toContainText("磁盘不入图");
   await page.clock.runFor(180000);
   await expect(environment).toContainText("历史快照");
   await expect(environment).toContainText("上次网络");
+  await expect(cpuDots).toHaveCount(2);
+  await expect(cpuDots.last()).toBeVisible();
   fail = true;
   await environment.getByRole("button", { name: "刷新资源历史" }).click();
   await expect(environment).toContainText("历史更新失败");
