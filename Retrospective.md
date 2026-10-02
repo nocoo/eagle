@@ -156,3 +156,11 @@ A 320px viewport transition also exposed the header's inflexible action row;
 the row can wrap, and geometry assertions wait for responsive layout to settle.
 Paused-clock tests advance the real five-second dashboard refresh cadence.
 The final suite passes with all range, point-count and width assertions intact.
+
+The final v0.10.0 release run exposed the same resize race in the separate
+machine-card layout check. It read the three section rectangles in different
+browser turns while the mobile shell was changing layout. The trace placed all
+reads within 19 ms of resize completion, and the eventual snapshot was already
+stacked. The assertion now reads all rectangles in one browser evaluation and
+polls the unchanged ordering conditions. No product CSS, timeout, retry count or
+skip was changed; release publication waits for the complete rerun.

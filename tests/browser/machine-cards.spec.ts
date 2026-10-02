@@ -116,13 +116,26 @@ test("wide machine layouts grow the resources and pulse column instead of shrink
     ),
   ).toBe(true);
   await page.setViewportSize({ width: 390, height: 844 });
-  const spaces = await page.locator(".dashboard-spaces").boundingBox();
-  const resources = await page.locator(".dashboard-resources").boundingBox();
-  const pulse = await aside.boundingBox();
-  expect(spaces && resources && spaces.y + spaces.height <= resources.y).toBe(
-    true,
-  );
-  expect(resources && pulse && resources.y + resources.height <= pulse.y).toBe(
-    true,
-  );
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const spaces = document
+          .querySelector(".dashboard-spaces")
+          ?.getBoundingClientRect();
+        const resources = document
+          .querySelector(".dashboard-resources")
+          ?.getBoundingClientRect();
+        const pulse = document
+          .querySelector(".dashboard-aside")
+          ?.getBoundingClientRect();
+        return Boolean(
+          spaces &&
+            resources &&
+            pulse &&
+            spaces.bottom <= resources.top &&
+            resources.bottom <= pulse.top,
+        );
+      }),
+    )
+    .toBe(true);
 });
