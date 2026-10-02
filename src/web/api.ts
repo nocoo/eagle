@@ -1,6 +1,8 @@
+import { apiPath, authenticationMessage } from "./environment.ts";
+
 export class AuthError extends Error {}
 export async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(apiPath(path), {
     ...options,
     credentials: "same-origin",
     redirect: "manual",
@@ -11,7 +13,7 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
     response.status === 403 ||
     response.type === "opaqueredirect"
   )
-    throw new AuthError("请通过 Cloudflare Access 重新登录");
+    throw new AuthError(authenticationMessage);
   if (!response.ok) {
     if (options?.method && options.method !== "GET") {
       const messages: Record<number, string> = {

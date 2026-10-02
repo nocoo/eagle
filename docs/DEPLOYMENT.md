@@ -2,6 +2,34 @@
 
 Commands run from the repository root. See [local setup](../README.md#开发) before verifying the development origin.
 
+## Local frontend, Local or Prod backend
+
+`npm run dev` exposes a Local / Prod segment in the header at
+`https://eagle.dev.hexly.ai`. Local is the default; it uses the local Worker
+on port 37053. Prod keeps the local frontend and proxies viewer API requests
+and realtime WebSockets to `https://eagle.hexly.ai`. **Prod has full production
+read/write access**, including settings, machine credentials and terminal input.
+It is not a preview or a read-only mode. Automated checks use synthetic upstreams.
+
+Before selecting Prod, authenticate the local proxy in your terminal:
+
+```sh
+cloudflared access login --quiet https://eagle.hexly.ai
+```
+
+The proxy retrieves the cached application token using `cloudflared access token`;
+it never sends it to the frontend. Missing or expired authentication fails closed
+with a login instruction, without falling back to Local. Browser logout is
+disabled for this local proxy identity, which is managed by cloudflared.
+
+The selection is per-tab session storage. Switching reloads the home page,
+discards unsaved forms and closes existing realtime connections. Terminal drafts
+are separated by environment and are never sent automatically. Previously
+submitted production operations may still finish; switching does not undo them.
+Each request has a fixed environment path, so another tab cannot retarget it.
+Production onboarding uses `eagle-ingest.hexly.ai`; Local uses the local origin.
+The gateway is dev-server-only and does not add a production Worker route.
+
 ## Verify the live path
 
 ```sh

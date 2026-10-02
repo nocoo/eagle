@@ -1,5 +1,24 @@
 # 用户视角检查点
 
+## 2026-10-03 06:17 +08 — local production environment switch
+
+- Local and Prod render through the existing local HTTPS frontend; actual
+  read-only `/me` and `/overview` requests through the production proxy return
+  200 with the existing cloudflared session. A browser switched Local to Prod
+  and back successfully. No production writes or new Herdr collection occurred.
+- Local D1 remains the existing development database, with its stale September
+  27 snapshot. Environment selection does not switch the ingestion API or seed
+  either database. Production write and terminal-control tests use synthetic
+  upstreams, credentials and sockets only.
+- 128 Node tests, strict types, lint and build pass. Ten environment browser
+  regressions pass. The full browser run reports 160 passing, 11 existing skips
+  and one workspace reconnect assertion requiring isolated verification.
+- The isolated workspace regression and all environment cases then passed
+  (11 passed, one existing mobile skip). The full-run timeout remains recorded;
+  no timeout or assertion was weakened. Final combined gates follow the UI work.
+- Next: finish the environment commit, then consolidate machine-card help and
+  widen the numbered runtime-pulse column as requested.
+
 ## 2026-10-02 — Environment resources, local implementation
 
 - CPU/load/memory and bounded OS network/VPN evidence now travel through the existing whole-machine report. Disk/temperature default to 300-second cached observations; macOS temperature is explicitly unavailable. No real Herdr inventory or production reports have been collected for this work.

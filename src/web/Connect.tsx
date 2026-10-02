@@ -27,6 +27,7 @@ import {
 import { type MachineView, WatchPortsSchema } from "../shared/schema.ts";
 import { AuthError, api } from "./api.ts";
 import { isStale } from "./Dashboard.tsx";
+import { ingestOrigin } from "./environment.ts";
 import { useTimezone } from "./Timezone.tsx";
 
 export function Connect({
@@ -132,9 +133,7 @@ export function Connect({
       setError("剪贴板不可用，请允许此网站访问剪贴板后重试。");
     }
   }
-  const url = import.meta.env.DEV
-    ? window.location.origin
-    : "https://eagle-ingest.hexly.ai";
+  const url = ingestOrigin;
   return (
     <div className="connect-page eagle-enter">
       <div className="connect-steps">

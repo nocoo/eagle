@@ -13,6 +13,7 @@ import { LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Viewer } from "../shared/schema.ts";
 import { api } from "./api.ts";
+import { localFrontend, localProduction } from "./environment.ts";
 export function Mark({ size = 24 }: { size?: number }) {
   return (
     <img
@@ -58,10 +59,10 @@ export function SidebarAccount({ collapsed }: { collapsed: boolean }) {
           size="icon"
           variant="ghost"
           aria-label="退出登录"
-          aria-disabled={!viewer || viewer.local}
+          aria-disabled={!viewer || viewer.local || localFrontend}
           className="shrink-0 aria-disabled:opacity-50"
           onClick={() => {
-            if (viewer && !viewer.local)
+            if (viewer && !viewer.local && !localFrontend)
               window.location.assign("/cdn-cgi/access/logout");
           }}
         >
@@ -69,7 +70,11 @@ export function SidebarAccount({ collapsed }: { collapsed: boolean }) {
         </Button>
       </TooltipTrigger>
       <TooltipContent side={collapsed ? "right" : "top"}>
-        {viewer?.local ? "本地免登录，无须退出" : "退出登录"}
+        {localProduction
+          ? "生产身份由本机 cloudflared 管理；可切回 Local"
+          : viewer?.local
+            ? "本地免登录，无须退出"
+            : "退出登录"}
       </TooltipContent>
     </Tooltip>
   );

@@ -32,6 +32,7 @@ import {
   LiveServerMessageSchema,
   type LiveTopology,
 } from "../shared/realtime.ts";
+import { apiPath, environment } from "./environment.ts";
 import { useInputDraft } from "./InputDraft.ts";
 import { RealtimeActivity } from "./RealtimeActivity.tsx";
 import { TerminalOutput } from "./TerminalOutput.tsx";
@@ -112,7 +113,7 @@ export function Realtime({
       disconnect();
       setConnection("正在连接");
       setRetrying(true);
-      const url = new URL("/api/v1/realtime", location.origin);
+      const url = new URL(apiPath("/api/v1/realtime"), location.origin);
       url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
       url.searchParams.set("machine", machineId);
       url.searchParams.set("space", spaceId);
@@ -267,7 +268,7 @@ export function Realtime({
   const targetIdentity = pane ? `${pane.id}/${pane.terminalId}` : "";
   const draft = useInputDraft(
     pane
-      ? `eagle-input-draft:${JSON.stringify([machineId, spaceId, pane.id, pane.terminalId])}`
+      ? `eagle-input-draft:${JSON.stringify([environment, machineId, spaceId, pane.id, pane.terminalId])}`
       : "",
   );
   const { text } = draft;

@@ -125,3 +125,18 @@ While adding resource-history coverage, the first API regression was launched as
 The resource-timeout regression passed in both browsers, but assigning the inferred telemetry fixture directly to a typed report failed TypeScript: its load array was not a fixed-length tuple. Parsing the fixture through the existing telemetry schema restored the contract without a cast. Browser execution does not replace strict type and formatting checks; complete both before committing a regression fix.
 
 The isolated-sample regression initially searched beneath each line group, but Recharts renders dots through a separate SVG z-index portal. That selector could not distinguish a missing dot from a correctly portaled one. Added explicit series-specific dot classes, repeated the failing baseline with the corrected selector, then verified actual visibility and counts. Inspect library rendering boundaries before relying on DOM ancestry in chart assertions.
+
+## 2026-10-03 — verify library and command contracts first
+
+The environment regression initially assumed Basalt segments were pressed
+buttons and tried to reach the header while a modal was open. The installed
+component exposes radios; modal focus isolation correctly hides the header.
+The corrected test follows the actual roles and closes the modal before
+switching. Socket isolation now asserts no active old connections rather than
+assuming exactly one connection lifecycle. Node fetch also ignores a custom
+Host override; the host-boundary check now uses the native HTTP client.
+
+Command-help review caught that cloudflared login prints its JWT by default.
+The displayed login instruction now includes `--quiet`; the unsafe suggestion
+was not executed. Check credential-bearing CLI output contracts before adding
+onboarding commands, even when their arguments contain no secrets.
