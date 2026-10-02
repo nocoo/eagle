@@ -16,6 +16,7 @@ onboarding uses it.
 Package tests must verify the packed manifest and installed CLI match the Agent
 manifest, while website health/UI versions match the root manifest.
 
+- [Environment resources](docs/RESOURCES.md) defines cadence, OS evidence and resource history.
 - [Agent contract](docs/AGENT.md), [real-time protocol](docs/REALTIME.md),
   [daily reports](docs/DAILY-REPORTS.md) describe product behavior.
 - `.github/workflows/check.yml`, `package.json`, `tests/`, TypeScript/Biome and

@@ -7,6 +7,7 @@
 - Backend check passed 124 tests, strict types, lint and build using cached npm 11.19.1. The local npm 12 package-install policy remains an environment limitation; its pack JSON container handling is corrected in the package test.
 - The environment region and dual-axis chart pass four focused desktop/mobile browser checks. Full browser validation and real isolated HTTP/UI synthetic verification are in progress. Existing Caddy and p4/p5 remain running; the next unverified hop is isolated synthetic report ingestion to the new chart.
 - Agent source version is 0.8.0, not yet published. Publication and production deployment remain outside this task; production onboarding must not select this version until publication.
+- Final local verification: 125 Node/API/collector/package tests pass, strict types/lint/build pass (four existing informational lint suggestions and the existing bundle advisory), and 149 browser cases pass with 11 existing viewport skips. A real temporary Worker on loopback 17053 ingested 35 explicitly synthetic reports, returned ordered history with gaps/load above 100, and rendered dark/light/mobile charts with no page errors; D1 raw-report count remained zero. The synthetic machine was revoked. Two real local resource-only probes 30 seconds apart retained the same slow-observation timestamp and reported macOS temperature unavailable; no real report was uploaded. Remote exact-SHA CI is the remaining verification step at this checkpoint.
 
 
 ## 2026-09-27 — Draft resilience and mobile refinements in progress

@@ -59,6 +59,23 @@ Optional `watchPorts`: `[{ "name": "Raven", "port": 7024 }]`. Only loopback TCP 
 
 Detailed configuration and manager evidence format: https://github.com/nocoo/eagle/blob/main/docs/AGENT.md
 
+## Environment resource candidate
+
+Source Agent 0.8.0 adds 30-second CPU/load/memory and OS network/VPN samples,
+with configurable disk/temperature sampling (`slowIntervalSeconds`, default 300,
+range 60–3600). `intervalSeconds` must be 30; update any previous custom value
+explicitly before upgrading. Cached slow observations keep their original times.
+macOS temperature is unavailable without a supported unprivileged sensor; a
+`tun`/`utun` interface alone never proves VPN connectivity. No addresses,
+connection details or profile names are uploaded. The machine page displays
+24-hour CPU/memory/load history from the same report stream.
+
+This source candidate has not yet been published. The public installation
+commands above intentionally remain at published 0.7.1. Build and install a
+local tarball for isolated validation; publish 0.8.0 before deploying onboarding
+that selects it. Do not restart an existing production collector as part of a
+source checkout test. Full contract: https://github.com/nocoo/eagle/blob/main/docs/RESOURCES.md
+
 ## Optional reporting proxy
 
 Direct connections are the default. Set `NODE_USE_ENV_PROXY=0` in the service environment and leave proxy addresses unset. A local proxy is not a prerequisite for Eagle.

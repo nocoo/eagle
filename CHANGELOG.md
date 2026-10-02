@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Environment resources
+
+- Extend the existing Agent/report/DO flow with bounded OS network/VPN evidence, unavailable-aware CPU temperature, 30-second fast samples and configurable 300-second slow observations.
+- Retain 24 hours / 2880 resource samples without duplicating full reports or re-enabling D1 snapshot history; preserve late-arrival ordering, idempotency and old v1 reports.
+- Keep machine Space topology and add environment cards with CPU/memory percent charts, independent dashed load axes and explicit gaps/offline states.
+- Prepare Agent source 0.8.0; npm publication, production onboarding and deployment remain pending and separately authorized.
+
 ## v0.8.0 — 2026-09-27
 
 - Replace hourly AI reports and five-minute polling with one daily Cron at 23:59 Beijing time, generating one report per machine with 24 hourly entries.

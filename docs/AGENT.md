@@ -38,6 +38,7 @@ Create `~/.config/eagle/agent.json`, directory mode 0700 and file mode 0600:
   "machineName": "Your machine",
   "token": "REPLACE_WITH_MACHINE_SECRET",
   "intervalSeconds": 30,
+  "slowIntervalSeconds": 300,
   "watchPorts": [{ "name": "Raven", "port": 7024 }],
   "evidenceFile": "/absolute/private/path/evidence.json"
 }
@@ -86,7 +87,11 @@ Automatic collection covers **every running local Herdr session** and every Spac
 
 ## Machine resources and watched ports
 
-Collector 0.2.0 adds optional `machine.telemetry` to v1 snapshots. It samples CPU utilization across all logical cores over approximately 250 ms, CPU model/core count, 1/5/15-minute load average, total/free RAM, home-filesystem total/available space and system uptime. Memory usage is total minus free, which may include caches; it is not a memory-pressure measurement. Missing resources or disk measurements remain unknown. Values and their observation times are kept in the machine DO current snapshot and returned by overview. Whole-snapshot D1 history remains paused; daily reports include retained hourly observations.
+Agent 0.8.0 source extends optional v1 `machine.telemetry` with network/VPN states, unavailable-aware temperature, separate observation times and resource chart history. This candidate is not yet published; the installation instructions above still refer to published Agent 0.7.1. Publish and verify the new Agent before deploying its onboarding or restarting installed collectors.
+
+CPU/load/memory and OS network/VPN status target 30 seconds. CPU utilization uses an approximately 250 ms window. `intervalSeconds` now accepts only 30; update non-30 configurations explicitly before upgrading. `slowIntervalSeconds` defaults to 300 (60–3600), caching home-filesystem disk and temperature with original timestamps. Existing private cached reports preserve slow measurements across process restarts. Serial collection prevents overlapping cycles; a delayed cycle produces a history gap, not fabricated samples.
+
+Memory is total minus free and may include caches; load is the OS 1/5/15-minute average, not a percentage. macOS temperature is explicitly unavailable. VPN connected requires affirmative OS service evidence; a tunnel alone remains unknown. No profile names, interfaces, addresses or connection details enter reports. The machine DO retains compact fast samples for 24 hours / 2880 points, with an authenticated viewer history API; whole-report D1 history stays paused. See [environment resources](RESOURCES.md) for evidence boundaries, units, limits, chart behavior and rollout order.
 
 `watchPorts` is optional and defaults to an empty list. Each entry has `name`, `port` and optional `host` (`127.0.0.1` by default; `::1` is also supported). At most 32 unique host/port pairs can be configured. For Raven, 7023 is the dashboard and 7024 is the proxy; configure either or both. Checks run concurrently, each bounded to one second, and send no application data or credentials. Results distinguish TCP connect success, connection refusal, timeout and check error. A listening port does not prove business health or successful task deployment. The UI marks observations older than 90 seconds as historical.
 

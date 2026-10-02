@@ -9,6 +9,7 @@ All private responses are `Cache-Control: no-store`. Maximum streamed upload siz
 | `POST /api/v1/heartbeat` | Machine Bearer | `{schemaVersion:1,machineId,sentAt,warning?}`; requires initial report |
 | `GET /api/v1/me` | Verified Access JWT | `{name,email,avatar,local}`; account and optional author-service profile |
 | `GET /api/v1/overview` | Verified Access JWT | Server time, DO current state per machine, heartbeat, warning, revision, latest changes, pending machine IDs |
+| `GET /api/v1/resources?machine=ID` | Verified Access JWT | Compact fast resource samples, ascending observation time; 24 hours / 2880 points, no-store; enabled machines only |
 | `GET /api/v1/history` | Verified Access JWT | Existing D1 history only; optional `machine`, `space`, `before` cursor, `limit` 1–100 (default 20); entries and nextCursor |
 | `GET /api/v1/machines` | Verified Access JWT | Machine configuration and `canIssue`; no tokens |
 | `POST /api/v1/machines` | Verified Access JWT | `{id,name,watchPorts?}`; 201 `{machine,token}` shown once; duplicate ID 409 |
@@ -25,6 +26,8 @@ Account email comes from the verified JWT payload, never an unverified email hea
 Report v1 now accepts optional `machine.telemetry` with `observedAt`, nullable `resources`, and `ports`. Resources include CPU model/core count/utilization/sample duration/load average, total/free memory bytes, nullable home-filesystem total/available bytes, and uptime seconds. Each port has a name, loopback host, port number, `checkedAt`, `status` (`open`, `closed`, `timeout`, `error`) and nullable successful-connection `latencyMs`. Unknown data is not zero. The validator rejects out-of-range values and duplicate watched endpoints. Existing v1 reports without telemetry remain valid; upgrade the server before enabling the new collector.
 
 Telemetry is persisted with the current full snapshot in the machine's Durable Object. Overview returns it; new reports do not enter D1. Resource samples and port observations older than 90 seconds are shown as historical; TCP success never counts as task-deployment evidence.
+
+The environment additions, OS evidence boundaries and independently retained resource-history stream are defined in [Machine environment resources](RESOURCES.md). Slow disk/temperature observations retain their own timestamps; missing fields on older reports remain unknown.
 
 ## Current state and ordering
 
