@@ -119,3 +119,7 @@ A regression test covers eight populated hours incorrectly marked empty.
 ## 2026-10-02 — A regression run raced its implementation
 
 While adding resource-history coverage, the first API regression was launched asynchronously and source edits began before its process completed. Both API invocations bundled into the same `.local/test-worker` path, so the purported red run actually saw the implementation and passed. That run is not failing-baseline evidence. Re-ran the regression against the original Worker entrypoint sequentially, observed the missing endpoint failure, restored the implementation in `finally`, and then continued verification. Dependent red/edit/green steps must complete in order; only checks with independent state may overlap. No production state was used.
+
+## 2026-10-03 — Classify historical scanner matches precisely
+
+The full-history scan returned five non-secret matches: documentation prose, two isolated test fixture values, and the public JWT audience identifier in configuration and generated types. Independent reviews checked the exact historical locations. Only those five complete historical fingerprints are listed in `.gitleaksignore`; no path, rule or vulnerability is broadly excluded. A separate temporary Git fixture verifies that a newly introduced synthetic credential still fails scanning with this same fingerprint file.
