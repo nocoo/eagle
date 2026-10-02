@@ -1,7 +1,92 @@
 import { expect, test } from "@playwright/test";
+import { MachineTelemetrySchema } from "../../src/shared/schema.ts";
 import { report, telemetry } from "../fixtures.ts";
 
 const now = "2026-10-02T01:00:00.000Z";
+test("resource history times out, preserves samples and allows retry", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date(now) });
+  await page.clock.pauseAt(new Date(now));
+  await page.addInitScript(() => {
+    AbortSignal.timeout = (milliseconds) => {
+      const controller = new AbortController();
+      setTimeout(
+        () => controller.abort(new DOMException("Timed out", "TimeoutError")),
+        milliseconds,
+      );
+      return controller.signal;
+    };
+  });
+  let stalled = false;
+  let reads = 0;
+  const value = report("synthetic-resource-timeout", now);
+  value.machine.telemetry = MachineTelemetrySchema.parse(telemetry(now));
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/v1/resources") {
+      reads++;
+      if (stalled) return;
+      return route.fulfill({
+        json: {
+          retentionSeconds: 86400,
+          samples: [
+            {
+              observedAt: now,
+              intervalSeconds: 30,
+              cpu: 25,
+              memory: 75,
+              load: [1, 2, 3],
+            },
+          ],
+        },
+      });
+    }
+    if (path === "/api/v1/me")
+      return route.fulfill({
+        json: {
+          name: "Synthetic viewer",
+          email: "",
+          avatar: null,
+          local: true,
+        },
+      });
+    return route.fulfill({
+      json: {
+        now,
+        machines: [
+          {
+            id: value.machine.id,
+            name: value.machine.name,
+            report: value,
+            lastSeen: now,
+            receivedAt: now,
+            warning: null,
+          },
+        ],
+      },
+    });
+  });
+  await page.goto(`/?machine=${value.machine.id}`);
+  const chart = page.getByRole("group", { name: "CPU、内存与负载历史" });
+  const refresh = page.getByRole("button", { name: "刷新资源历史" });
+  await expect(chart).toBeVisible();
+  stalled = true;
+  await refresh.click();
+  await expect.poll(() => reads).toBe(2);
+  await page.clock.runFor(14999);
+  await expect(refresh).toBeDisabled();
+  await page.clock.runFor(1);
+  await expect(page.getByRole("alert")).toContainText("历史更新失败");
+  await expect(chart).toBeVisible();
+  await expect(refresh).toBeEnabled();
+  stalled = false;
+  await refresh.click();
+  await expect.poll(() => reads).toBe(3);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(refresh).toBeEnabled();
+});
+
 test("environment resources retain Space, show bounded dual axes and honest missing/offline evidence", async ({
   page,
 }) => {

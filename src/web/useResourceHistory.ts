@@ -19,7 +19,12 @@ export function useResourceHistory(machineId: string, observedAt?: string) {
     }));
     void api<ResourceHistory>(
       `/api/v1/resources?machine=${encodeURIComponent(machineId)}`,
-      { signal: controller.signal },
+      {
+        signal: AbortSignal.any([
+          controller.signal,
+          AbortSignal.timeout(15000),
+        ]),
+      },
     )
       .then((data) => {
         if (!Array.isArray(data.samples) || data.retentionSeconds !== 86400)
