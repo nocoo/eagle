@@ -123,3 +123,7 @@ Reusable Skill: https://github.com/nocoo/eagle/blob/main/skills/eagle-report/SKI
 ## Space realtime control
 
 Run `eagle-agent realtime-watch` as a separate user service using the same secure configuration. This enables authenticated web control through an outbound WebSocket; the collector remains read-only. Open a Space in Eagle and select 实时模式, then 接管输入. Unwatched Spaces consume no screen polling. Leaving/hiding the page releases the subscription; input is never replayed after a disconnect. Details and limits: https://github.com/nocoo/eagle/blob/main/docs/REALTIME.md
+
+## Unpublished source candidate
+
+The source manifest is 0.8.2 and raises the Zod minimum to 4.6.5. It is not yet published to npm. The verified installation and website onboarding pin remain 0.8.1 until a separately authorized publication verifies the new artifact.
