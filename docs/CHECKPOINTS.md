@@ -793,6 +793,15 @@ serving and the first catalogue-derived production Cron observation.
   the production archive was written. Local `check` passes 117 tests, types,
   check-only lint and build. Deployment of this final correction is pending.
 
+
+## 2026-10-03T07:16:50.299670+08:00 — Dependency duty checkpoint
+
+- Herdr: reviewer panes confirmed; the existing release session is waiting for Access acceptance. No live Agent collection was run.
+- Authentication: GitHub owner identity verified; no Access or production credentials used.
+- D1: the normal Node/API suite passed using its temporary Miniflare stores.
+- Rendering: production build passed; parser evidence preserves all509 CSS selectors, conditions, declarations and equal-specificity ordering. Local browser testing was not run.
+- Next: finish the remaining compatible root dependency targets, then review the full candidate and require current-head browser CI before merge.
+
 ## 2026-10-03 07:30 +08 — v0.10.0 release preparation
 
 - Local/Prod proxying, compact numbered machine cards, selectable resource
@@ -835,3 +844,10 @@ serving and the first catalogue-derived production Cron observation.
   records only are being added; the resulting revision still requires its own
   deployment, CI and tag verification. No retention or installed-service change
   was made.
+
+## 2026-10-03T08:02:23.417435+08:00 — Dependency candidate integration
+
+- Herdr: the old release pane remains separate; final publication evidence for v0.10.0 is now available. No live collector or Access operation was run by this duty.
+- Source: verified published tag and Check CI at `229b87aef4956f1a790a7eb66dc0a59703bd5a44`; integrated that completed release while retaining all new environment/resource features and onboarding0.8.0.
+- D1 and rendering: reviewed the new proxy tests as loopback-only fixtures. Reapplied strict CSS ordering against the new baseline; all510 selector/condition/declaration records and equal-specificity order are preserved.
+- Next: validate the combined tree, refresh both independent reviews and current-head browser CI before ready/merge.
