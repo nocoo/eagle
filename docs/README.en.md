@@ -40,20 +40,20 @@ Realtime mode separately transmits redacted current terminal screens. Screen tex
 
 Open [Eagle](https://eagle.hexly.ai), sign in through Access, add a machine in **Connect**, and give its generated onboarding prompt to the existing management Agent (Hermes recommended; alternatives supported) on that machine.
 
-The collector requires Node.js 24+, npm and Herdr 0.9.1+; realtime input currently requires Herdr 0.9.1 protocol 22. Install it independently from npm without cloning Eagle. Website releases are independent; install the published Agent v0.8.0:
+The collector requires Node.js 24+, npm and Herdr 0.9.1+; realtime input currently requires Herdr 0.9.1 protocol 22. Install it independently from npm without cloning Eagle. Website releases are independent; install the published Agent v0.8.1:
 
 ```sh
-npm install -g @nocoo/eagle-agent@0.8.0 --registry=https://registry.npmjs.org
+npm install -g @nocoo/eagle-agent@0.8.1 --registry=https://registry.npmjs.org
 eagle-agent --version
 ```
 
 If npm downloads fail, use the Tencent Cloud mirror instead. Choose one installation command:
 
 ```sh
-npm install -g @nocoo/eagle-agent@0.8.0 --registry=https://mirrors.cloud.tencent.com/npm/
+npm install -g @nocoo/eagle-agent@0.8.1 --registry=https://mirrors.cloud.tencent.com/npm/
 ```
 
-The expected version is `0.8.0`. These commands select a registry for this installation only, without changing the global npm registry. Mirrors may lag (`404` / `ETARGET`); retry later and keep the pinned version. Save onboarding credentials following the [installation and configuration guide](../agent/README.md), then run:
+The expected version is `0.8.1`. These commands select a registry for this installation only, without changing the global npm registry. Mirrors may lag (`404` / `ETARGET`); retry later and keep the pinned version. Save onboarding credentials following the [installation and configuration guide](../agent/README.md), then run:
 
 ```sh
 eagle-agent once
@@ -72,7 +72,7 @@ The deterministic collector runs every 30 seconds by default. Manager uses the e
 
 See the [agent contract](AGENT.md) for machine identity, credentials, retries, background services and upgrade order. Give the [eagle-report Skill](../skills/eagle-report/SKILL.md) to your management agent. The [report schema](../public/report-v1.schema.json) is generated from the TypeScript validator; the server also checks cross-object uniqueness.
 
-Website v0.10.0 and independent Agent v0.8.0 provide [environment resources](RESOURCES.md): 30-second fast samples, default 300-second disk/temperature reads, and up to 24 hours of CPU/memory/load history with independent axes. Charts default to six hours with 6h/12h/24h selection; CPU, memory and disk retain numeric readings alongside equal-width usage meters. The development frontend can switch between Local and Prod backends. Installation and Connect pin Agent 0.8.0; publication does not automatically upgrade or restart existing collectors. Historical data is never fabricated or backfilled.
+Website v0.10.1 and independent Agent v0.8.1 provide [environment resources](RESOURCES.md): six read-only CPU, GPU, memory, disk, network and fan cards retain numbers, equal-width meters and evidence timestamps. Apple Silicon can use separately installed macmon for unprivileged temperature, GPU, fan and memory readings; physical-interface traffic rates need no macmon. Fast samples run every 30 seconds; disk and Linux temperature default to 300 seconds. History defaults to six hours with 6h/12h/24h selection. The development frontend can switch between Local and Prod backends. Installation and Connect pin Agent 0.8.1; publication does not automatically upgrade or restart existing collectors. Historical data is never fabricated or backfilled.
 
 ## Development
 

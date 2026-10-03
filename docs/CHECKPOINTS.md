@@ -869,3 +869,22 @@ serving and the first catalogue-derived production Cron observation.
 - Source: verified published tag and Check CI at `229b87aef4956f1a790a7eb66dc0a59703bd5a44`; integrated that completed release while retaining all new environment/resource features and onboarding0.8.0.
 - D1 and rendering: reviewed the new proxy tests as loopback-only fixtures. Reapplied strict CSS ordering against the new baseline; all510 selector/condition/declaration records and equal-specificity order are preserved.
 - Next: validate the combined tree, refresh both independent reviews and current-head browser CI before ready/merge.
+
+## 2026-10-03 09:21 +08 — hardware patch release preparation
+
+- The explicit Z+1 release targets website 0.10.1 and published Agent 0.8.1;
+  the unpublished 0.9.0 source candidate was replaced, not published. Upstream
+  dependency updates were merged without dropping the six-card UI. Strict CSS
+  ordering, both retrospective histories and both checkpoint histories remain.
+- On the combined dependency tree, 133 unit/API/package tests, strict types,
+  warning-rejecting lint and build passed. Browser checks passed 173 with
+  11 existing viewport skips. Worker dry-run succeeded; remote D1 lists no
+  pending migration. Real local verification collected 11 Spaces / 15 Panes,
+  confirmed idempotent ingestion, DO state, readable D1 history and rendering.
+- The retained 0.8.1 npm artifact passed an anonymous isolated install and CLI
+  checks. Human login and publication authorization succeeded; official exact
+  version, latest tag and retained hashes match. After brief metadata/tarball
+  propagation lag, the Tencent mirror artifact passed fresh anonymous install,
+  version and help checks. Onboarding now pins verified 0.8.1. Production
+  deployment and local installed-service upgrade/restart remain pending; their
+  secure configurations are unchanged.

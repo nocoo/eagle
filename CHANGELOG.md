@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.10.1 — 2026-10-03
+
+- Organize machine resources into six compact Basalt cards for CPU, GPU, memory, disk, network and fans, with equal-width meters, per-card help and responsive layouts.
+- Publish Agent v0.8.1 with optional unprivileged macmon CPU/GPU temperatures, GPU activity, fan RPM and memory/swap observations, plus bounded physical-interface traffic rates.
+- Preserve missing/stale evidence, network/VPN status, watched ports, uptime and existing 6h/12h/24h history. No fan control, health scoring or retention-policy change is introduced.
+- Integrate upstream AI SDK, icons, WebSocket, Vite, Wrangler and Biome dependency updates; keep strict warning rejection and CSS cascade ordering.
+- Keep independently verified npm onboarding and install the released Agent on the authorized local machine without changing its configuration.
+
 ## v0.10.0 — 2026-10-03
 
 - Switch the local frontend between Local and Prod with authenticated HTTP and realtime proxying, per-tab selection and environment-isolated drafts.

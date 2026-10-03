@@ -41,20 +41,20 @@ Codex 适配器仅提取最终回复和生命周期事件，不采集推理与�
 
 打开 [Eagle](https://eagle.hexly.ai)，通过 Access 登录，在 **Connect** 添加机器，将生成的接入提示词交给该机器上的 管理 Agent（推荐 Hermes，也支持其他 Agent）。
 
-采集器需要 Node.js 24+、npm 与 Herdr 0.9.1+；实时输入当前要求 Herdr 0.9.1 的协议 22。可从 npm 独立安装，无须克隆 Eagle 仓库。网站可独立发布；当前 Agent 固定使用已发布的 v0.8.0：
+采集器需要 Node.js 24+、npm 与 Herdr 0.9.1+；实时输入当前要求 Herdr 0.9.1 的协议 22。可从 npm 独立安装，无须克隆 Eagle 仓库。网站可独立发布；当前 Agent 固定使用已发布的 v0.8.1：
 
 ```sh
-npm install -g @nocoo/eagle-agent@0.8.0 --registry=https://registry.npmjs.org
+npm install -g @nocoo/eagle-agent@0.8.1 --registry=https://registry.npmjs.org
 eagle-agent --version
 ```
 
 若 npm 下载失败，改用腾讯云镜像，二选一即可：
 
 ```sh
-npm install -g @nocoo/eagle-agent@0.8.0 --registry=https://mirrors.cloud.tencent.com/npm/
+npm install -g @nocoo/eagle-agent@0.8.1 --registry=https://mirrors.cloud.tencent.com/npm/
 ```
 
-预期版本为 `0.8.0`。命令仅为本次安装指定源，不修改全局 npm 源；镜像可能延迟同步，遇到 `404` / `ETARGET` 时稍后重试，保持固定版本。按照[安装与配置说明](agent/README.md)保存接入凭据后运行：
+预期版本为 `0.8.1`。命令仅为本次安装指定源，不修改全局 npm 源；镜像可能延迟同步，遇到 `404` / `ETARGET` 时稍后重试，保持固定版本。按照[安装与配置说明](agent/README.md)保存接入凭据后运行：
 
 ```sh
 eagle-agent once
@@ -73,7 +73,7 @@ eagle-agent realtime-watch
 
 机器身份、凭据、重试、后台服务与升级顺序见 [Agent 契约](docs/AGENT.md)。可将 [eagle-report Skill](skills/eagle-report/SKILL.md)交给管理 Agent；[报告 Schema](public/report-v1.schema.json)由 TypeScript 校验器生成，服务端另行检查跨对象唯一性。
 
-网站 v0.10.0 与独立 Agent v0.8.0 提供 [环境资源监控](docs/RESOURCES.md)：30 秒快速采样、默认 300 秒磁盘/温度采样，以及最多 24 小时 CPU/内存/load 双轴历史。图表默认最近 6 小时，可切换 6h/12h/24h；CPU、内存与磁盘保留数值并显示等宽占用条。开发页面支持 Local/Prod 后端切换。安装命令与 Connect 固定 Agent 0.8.0；发布不会自动升级或重启已有采集器，不回填或伪造历史。
+网站 v0.10.1 与独立 Agent v0.8.1 提供 [环境资源监控](docs/RESOURCES.md)：CPU、GPU、内存、磁盘、网络与风扇六张只读卡片，保留数值、等宽占用条与原始证据时间。Apple Silicon 可通过单独安装的 macmon 无提权读取温度、GPU、风扇与内存；物理网卡上下行速率无需 macmon。快速采样每 30 秒，磁盘与 Linux 温度默认每 300 秒。历史图默认最近 6 小时，可切换 6h/12h/24h。开发页面支持 Local/Prod 后端切换。安装命令与 Connect 固定 Agent 0.8.1；发布不会自动升级或重启已有采集器，不回填或伪造历史。
 
 ## 开发
 

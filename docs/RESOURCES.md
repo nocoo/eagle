@@ -2,7 +2,7 @@
 
 Resources use the existing Agent report, machine Durable Object and machine
 page. There is no additional collector service or remote telemetry destination.
-Website/Worker **0.10.0** and independent npm Agent **0.8.0** ship together.
+Website/Worker **0.10.1** and independent npm Agent **0.8.1** ship together.
 Website `config.publishedAgentVersion` pins the verified Agent artifact for
 Connect. Upgrade the receiving Worker before installing the Agent's additional
 environment fields. Publication does not automatically upgrade or restart
@@ -10,8 +10,8 @@ installed agents; service upgrades require explicit authorization.
 
 ## Sampling and cost
 
-Agent source candidate **0.9.0** adds optional, read-only macOS hardware
-observations. It is not published; Connect remains pinned to verified 0.8.0.
+Agent **0.8.1** adds optional, read-only macOS hardware observations.
+Connect pins the independently published Agent version.
 Install `macmon` separately on Apple Silicon and make it available on the
 collector service's PATH. No automatic installation, privilege elevation or
 fan-control command is performed. One bounded macmon JSON sample per fast cycle

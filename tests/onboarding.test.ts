@@ -97,15 +97,15 @@ test("onboarding pins the published Agent independently of website releases", ()
   assert.doesNotMatch(prompt, /与 Eagle 网站版本一致/);
 });
 
-test("resource release pins published Agent 0.8.0", () => {
+test("resource release pins published Agent 0.8.1", () => {
   const prompt = onboardingPrompt(
     machine,
     "fixture-token",
     "https://ingest.example.test",
     [],
   );
-  assert.equal(site.config.publishedAgentVersion, "0.8.0");
-  assert(prompt.includes("npm install -g @nocoo/eagle-agent@0.8.0 "));
+  assert.equal(site.config.publishedAgentVersion, "0.8.1");
+  assert(prompt.includes("npm install -g @nocoo/eagle-agent@0.8.1 "));
   assert(
     !prompt.includes(`npm install -g @nocoo/eagle-agent@${site.version} `),
   );
