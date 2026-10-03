@@ -1,9 +1,8 @@
 # @nocoo/eagle-agent
 
-Source candidate 0.9.0 adds optional macOS GPU, temperature, fan and traffic
+Agent 0.8.1 adds optional macOS GPU, temperature, fan and traffic
 observations. Install macmon separately and include it in the service PATH for
-hardware readings; no sudo or fan control is used. This candidate is not yet
-published. The installation commands below stay pinned to published 0.8.0.
+hardware readings; no sudo or fan control is used.
 
 Read-only Herdr inventory, task evidence, machine resources and named TCP port checks for Eagle. Requires Node.js 24+ and the Herdr CLI on macOS or Linux.
 
@@ -11,16 +10,16 @@ Read-only Herdr inventory, task evidence, machine resources and named TCP port c
 
 Check `node --version`, `npm --version` and `herdr --version` first. Install Node.js 24+ from https://nodejs.org/en/download if needed, and have Herdr installed and running. No Eagle repository checkout, TypeScript compiler or npm login is required to install this public package.
 
-Install Agent v0.8.0 from npm. Website releases are independent:
+Install Agent v0.8.1 from npm. Website releases are independent:
 
 ```sh
-npm install -g @nocoo/eagle-agent@0.8.0 --registry=https://registry.npmjs.org
+npm install -g @nocoo/eagle-agent@0.8.1 --registry=https://registry.npmjs.org
 ```
 
 **If npm downloads time out, use the Tencent Cloud mirror / 下载超时时首选腾讯云镜像：**
 
 ```sh
-npm install -g @nocoo/eagle-agent@0.8.0 --registry=https://mirrors.cloud.tencent.com/npm/
+npm install -g @nocoo/eagle-agent@0.8.1 --registry=https://mirrors.cloud.tencent.com/npm/
 ```
 
 `--registry` applies only to this installation; it does not change your global npm configuration. Mirrors may lag (`404` / `ETARGET`); retry later or use the official registry when reachable. Keep the pinned version, HTTPS and certificate verification. Eagle credentials are unrelated to npm and must never be sent to a registry.
@@ -28,7 +27,7 @@ npm install -g @nocoo/eagle-agent@0.8.0 --registry=https://mirrors.cloud.tencent
 Verify the installation before configuring the agent:
 
 ```sh
-eagle-agent --version # expected: 0.8.0
+eagle-agent --version # expected: 0.8.1
 eagle-agent --help
 ```
 
@@ -70,8 +69,8 @@ Agent 0.8.0 adds 30-second CPU/load/memory and OS network/VPN samples,
 with configurable disk/temperature sampling (`slowIntervalSeconds`, default 300,
 range 60–3600). `intervalSeconds` must be 30; update any previous custom value
 explicitly before upgrading. Cached slow observations keep their original times.
-Source candidate 0.9.0 reads macOS hardware through optional unprivileged
-macmon; published 0.8.0 does not include that integration. A
+Agent 0.8.1 reads macOS hardware through optional unprivileged
+macmon. A
 `tun`/`utun` interface alone never proves VPN connectivity. No addresses,
 connection details or profile names are uploaded. The machine page displays
 24-hour CPU/memory/load history from the same report stream.

@@ -1,6 +1,6 @@
 {
   "name": "@nocoo/eagle-agent",
-  "version": "0.9.0",
+  "version": "0.8.1",
   "description": "Report all local Herdr spaces and machine resources to Eagle",
   "type": "module",
   "license": "UNLICENSED",
@@ -24,7 +24,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "ws": "^8.21.3",
+    "ws": "8.22.0",
     "zod": "^4.1.0"
   },
   "publishConfig": {
