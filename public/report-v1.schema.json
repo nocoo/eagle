@@ -122,7 +122,7 @@
                     },
                     "source": {
                       "type": "string",
-                      "const": "linux-cpu-thermal"
+                      "enum": ["linux-cpu-thermal", "macmon"]
                     },
                     "observedAt": {
                       "type": "string",
@@ -145,7 +145,7 @@
                     },
                     "source": {
                       "type": "string",
-                      "enum": ["unsupported", "linux-cpu-thermal"]
+                      "enum": ["unsupported", "linux-cpu-thermal", "macmon"]
                     },
                     "observedAt": {
                       "type": "string",
@@ -157,6 +157,162 @@
                   "additionalProperties": false
                 }
               ]
+            },
+            "hardware": {
+              "type": "object",
+              "properties": {
+                "observedAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                "source": {
+                  "type": "string",
+                  "const": "macmon"
+                },
+                "gpuUsagePercent": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "gpuTemperatureCelsius": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": -20,
+                      "maximum": 150
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "fans": {
+                  "anyOf": [
+                    {
+                      "maxItems": 8,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rpm": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 30000
+                          },
+                          "maxRpm": {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "exclusiveMinimum": 0,
+                                "maximum": 30000
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": ["rpm", "maxRpm"],
+                        "additionalProperties": false
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "memory": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "totalBytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "usedBytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["totalBytes", "usedBytes"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "swapUsedBytes": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "observedAt",
+                "source",
+                "gpuUsagePercent",
+                "gpuTemperatureCelsius",
+                "fans",
+                "memory",
+                "swapUsedBytes"
+              ],
+              "additionalProperties": false
+            },
+            "traffic": {
+              "type": "object",
+              "properties": {
+                "observedAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                "source": {
+                  "type": "string",
+                  "const": "netstat-physical"
+                },
+                "sampleMs": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 10000
+                },
+                "downloadBytesPerSecond": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "uploadBytesPerSecond": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "observedAt",
+                "source",
+                "sampleMs",
+                "downloadBytesPerSecond",
+                "uploadBytesPerSecond"
+              ],
+              "additionalProperties": false
             },
             "observedAt": {
               "type": "string",

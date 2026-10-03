@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ReportSchema } from "../src/shared/schema.ts";
+import { MachineTelemetrySchema, ReportSchema } from "../src/shared/schema.ts";
 import { report, telemetry } from "./fixtures.ts";
 
 test("v1 report round trips; unsupported versions, secrets and duplicate IDs fail closed", () => {
@@ -121,4 +121,56 @@ test("environment telemetry accepts bounded evidence and keeps old v1 snapshots 
     false,
   );
   assert.equal(parse({ ...value, slowIntervalSeconds: 1 }).success, false);
+});
+
+test("hardware telemetry validates percentages, fan bounds, memory and private fields", () => {
+  const hardware = {
+    observedAt: telemetry().observedAt,
+    source: "macmon",
+    gpuUsagePercent: 25,
+    gpuTemperatureCelsius: 60,
+    fans: [{ rpm: 1300, maxRpm: 5200 }],
+    memory: { totalBytes: 1000, usedBytes: 400 },
+    swapUsedBytes: 50,
+  };
+  const sample = {
+    ...telemetry(),
+    hardware,
+    traffic: {
+      observedAt: telemetry().observedAt,
+      source: "netstat-physical",
+      sampleMs: 500,
+      downloadBytesPerSecond: 1000,
+      uploadBytesPerSecond: 2000,
+    },
+    temperature: {
+      status: "available",
+      celsius: 65,
+      source: "macmon",
+      observedAt: telemetry().observedAt,
+    },
+  };
+  assert.equal(MachineTelemetrySchema.safeParse(sample).success, true);
+  for (const change of [
+    { gpuUsagePercent: 101 },
+    { fans: [{ rpm: -1, maxRpm: 1000 }] },
+    { fans: [{ rpm: 6000, maxRpm: 5000 }] },
+    { fans: Array(9).fill({ rpm: 0, maxRpm: null }) },
+    { memory: { totalBytes: 1000, usedBytes: 2000 } },
+    { serialNumber: "private" },
+  ])
+    assert.equal(
+      MachineTelemetrySchema.safeParse({
+        ...sample,
+        hardware: { ...hardware, ...change },
+      }).success,
+      false,
+    );
+  assert.equal(
+    MachineTelemetrySchema.safeParse({
+      ...sample,
+      traffic: { ...sample.traffic, sampleMs: 0 },
+    }).success,
+    false,
+  );
 });

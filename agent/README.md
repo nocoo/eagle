@@ -1,5 +1,10 @@
 # @nocoo/eagle-agent
 
+Source candidate 0.9.0 adds optional macOS GPU, temperature, fan and traffic
+observations. Install macmon separately and include it in the service PATH for
+hardware readings; no sudo or fan control is used. This candidate is not yet
+published. The installation commands below stay pinned to published 0.8.0.
+
 Read-only Herdr inventory, task evidence, machine resources and named TCP port checks for Eagle. Requires Node.js 24+ and the Herdr CLI on macOS or Linux.
 
 ## Download and install

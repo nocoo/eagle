@@ -62,16 +62,61 @@ export const MachineTelemetrySchema = z.strictObject({
       z.strictObject({
         status: z.literal("available"),
         celsius: z.number().min(-20).max(150),
-        source: z.literal("linux-cpu-thermal"),
+        source: z.enum(["linux-cpu-thermal", "macmon"]),
         observedAt: timestamp,
       }),
       z.strictObject({
         status: z.literal("unavailable"),
         celsius: z.null(),
-        source: z.enum(["unsupported", "linux-cpu-thermal"]),
+        source: z.enum(["unsupported", "linux-cpu-thermal", "macmon"]),
         observedAt: timestamp,
       }),
     ])
+    .optional(),
+  hardware: z
+    .strictObject({
+      observedAt: timestamp,
+      source: z.literal("macmon"),
+      gpuUsagePercent: z.number().min(0).max(100).nullable(),
+      gpuTemperatureCelsius: z.number().min(-20).max(150).nullable(),
+      fans: z
+        .array(
+          z
+            .strictObject({
+              rpm: z.number().min(0).max(30000),
+              maxRpm: z.number().positive().max(30000).nullable(),
+            })
+            .refine(
+              (fan) => fan.maxRpm === null || fan.rpm <= fan.maxRpm,
+              "Fan speed exceeds maximum",
+            ),
+        )
+        .max(8)
+        .nullable(),
+      memory: z
+        .strictObject({ totalBytes: bytes.positive(), usedBytes: bytes })
+        .refine(
+          (memory) => memory.usedBytes <= memory.totalBytes,
+          "Used memory exceeds total",
+        )
+        .nullable(),
+      swapUsedBytes: bytes.nullable(),
+    })
+    .optional(),
+  traffic: z
+    .strictObject({
+      observedAt: timestamp,
+      source: z.literal("netstat-physical"),
+      sampleMs: z.number().positive().max(10000),
+      downloadBytesPerSecond: z
+        .number()
+        .nonnegative()
+        .max(Number.MAX_SAFE_INTEGER),
+      uploadBytesPerSecond: z
+        .number()
+        .nonnegative()
+        .max(Number.MAX_SAFE_INTEGER),
+    })
     .optional(),
   observedAt: timestamp,
   resources: z

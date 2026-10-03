@@ -151,6 +151,8 @@ async function ingest(
       telemetry.temperature?.observedAt,
       telemetry.network?.observedAt,
       telemetry.vpn?.observedAt,
+      telemetry.hardware?.observedAt,
+      telemetry.traffic?.observedAt,
     ])
       if (at) timely(at);
     if (
@@ -159,6 +161,8 @@ async function ingest(
         telemetry.temperature?.observedAt,
         telemetry.network?.observedAt,
         telemetry.vpn?.observedAt,
+        telemetry.hardware?.observedAt,
+        telemetry.traffic?.observedAt,
       ].some((at) => at && at > telemetry.observedAt)
     )
       throw new HttpError(400, "Resource timestamp exceeds sample time");

@@ -308,7 +308,25 @@ test("uploads update current state without writing a D1 report", async () => {
 
 test("telemetry and current state survive DO eviction without a D1 write", async () => {
   const value = currentReport("telemetry", -10000);
-  const snapshot = telemetry(value.capturedAt);
+  const snapshot = {
+    ...telemetry(value.capturedAt),
+    hardware: {
+      observedAt: value.capturedAt,
+      source: "macmon",
+      gpuUsagePercent: 25,
+      gpuTemperatureCelsius: 60,
+      fans: [{ rpm: 1200, maxRpm: 5000 }],
+      memory: null,
+      swapUsedBytes: 0,
+    },
+    traffic: {
+      observedAt: value.capturedAt,
+      source: "netstat-physical",
+      sampleMs: 500,
+      downloadBytesPerSecond: 1000,
+      uploadBytesPerSecond: 2000,
+    },
+  };
   const payload = {
     ...value,
     machine: { ...value.machine, telemetry: snapshot },
@@ -318,6 +336,14 @@ test("telemetry and current state survive DO eviction without a D1 write", async
     401,
   );
   assert.equal((await request("/api/v1/reports", payload)).status, 201);
+  for (const key of ["hardware", "traffic"] as const) {
+    const future = structuredClone(payload);
+    future.reportId += `-${key}-future`;
+    future.machine.telemetry[key].observedAt = new Date(
+      Date.parse(value.capturedAt) + 1000,
+    ).toISOString();
+    assert.equal((await request("/api/v1/reports", future)).status, 400);
+  }
   const duplicate = await request("/api/v1/reports", payload);
   assert.equal(duplicate.status, 200);
   assert.equal(

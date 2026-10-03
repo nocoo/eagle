@@ -20,6 +20,7 @@ import {
 } from "../src/shared/schema.ts";
 
 import { readConnections, readTemperature } from "./environment.ts";
+import { readHardware, readTraffic } from "./hardware.ts";
 
 type CpuSample = { idle: number; total: number };
 export function cpuUsage(before: CpuSample, after: CpuSample): number | null {
@@ -105,6 +106,8 @@ type Probes = {
   fast: () => Promise<MachineTelemetry["resources"]>;
   slow: () => Promise<SlowSample>;
   connections: () => Promise<Pick<MachineTelemetry, "network" | "vpn">>;
+  hardware?: typeof readHardware;
+  traffic?: typeof readTraffic;
 };
 const probes: Probes = {
   now: Date.now,
@@ -122,6 +125,8 @@ const probes: Probes = {
     return { disk, temperature };
   },
   connections: readConnections,
+  hardware: readHardware,
+  traffic: readTraffic,
 };
 export function createTelemetrySampler(source: Probes = probes) {
   let slow: (SlowSample & { observedAt: string }) | undefined;
@@ -138,7 +143,10 @@ export function createTelemetrySampler(source: Probes = probes) {
       if (!slow && previous?.diskObservedAt && previous.temperature)
         slow = {
           disk: previous.resources?.disk ?? null,
-          temperature: previous.temperature,
+          temperature:
+            previous.temperature.source === "macmon"
+              ? { status: "unavailable", celsius: null, source: "unsupported" }
+              : previous.temperature,
           observedAt: previous.diskObservedAt,
         };
       const elapsed = slow
@@ -153,23 +161,40 @@ export function createTelemetrySampler(source: Probes = probes) {
               };
             })
           : Promise.resolve();
-      const [sample, ports, connections] = await Promise.all([
-        source.fast().catch(() => null),
-        Promise.all(targets.map(checkPort)),
-        source.connections(),
-        low,
-      ]);
+      const [sample, ports, connections, hardware, traffic] = await Promise.all(
+        [
+          source.fast().catch(() => null),
+          Promise.all(targets.map(checkPort)),
+          source.connections(),
+          source.hardware?.(),
+          source.traffic?.(),
+          low,
+        ],
+      );
+      const observedAt = new Date(source.now()).toISOString();
+      const { cpuTemperature, ...hardwareMetrics } = hardware ?? {};
       return MachineTelemetrySchema.parse({
-        observedAt: new Date(source.now()).toISOString(),
+        observedAt,
         sampleIntervalSeconds: 30,
         slowIntervalSeconds,
         diskObservedAt: slow?.observedAt,
-        temperature: slow && {
-          ...slow.temperature,
-          observedAt: slow.observedAt,
-        },
+        temperature: hardware
+          ? {
+              status: cpuTemperature === null ? "unavailable" : "available",
+              celsius: cpuTemperature,
+              source: "macmon",
+              observedAt,
+            }
+          : slow && {
+              ...slow.temperature,
+              observedAt: slow.observedAt,
+            },
         resources: sample && { ...sample, disk: slow?.disk ?? null },
         ports,
+        hardware: hardware
+          ? { ...hardwareMetrics, observedAt, source: "macmon" }
+          : undefined,
+        traffic,
         ...connections,
       });
     })();

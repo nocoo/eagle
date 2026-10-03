@@ -10,6 +10,25 @@ installed agents; service upgrades require explicit authorization.
 
 ## Sampling and cost
 
+Agent source candidate **0.9.0** adds optional, read-only macOS hardware
+observations. It is not published; Connect remains pinned to verified 0.8.0.
+Install `macmon` separately on Apple Silicon and make it available on the
+collector service's PATH. No automatic installation, privilege elevation or
+fan-control command is performed. One bounded macmon JSON sample per fast cycle
+provides CPU/GPU temperatures, GPU active percentage, per-fan RPM/maximum RPM,
+used memory and swap. Missing tools, unsupported machines or invalid readings
+remain unknown. Fields are allowlisted; raw output and device identifiers are
+not reported. These are macmon readings, not calibrated sensor guarantees.
+
+macOS traffic uses two bounded `netstat -ibn` reads approximately 500 ms apart.
+Only one link-layer counter per physical `en` interface participates; loopback,
+VPN/tunnel and virtual interfaces are excluded to avoid double counting. Rates
+include LAN traffic, not just Internet traffic. Counter resets or interface
+changes invalidate the sample. No link-speed percentage or health score is
+inferred. Linux keeps its existing CPU thermal probe; GPU/fan/traffic readings
+are unavailable there. New readings stay in the current snapshot and existing
+daily-input retention; no history table or longer retention is introduced.
+
 | Measurement | Target cadence | Meaning and cost |
 | --- | --- | --- |
 | CPU | 30 seconds | Utilization across logical CPUs over a fresh approximately 250 ms window; percent, not a 30-second average |

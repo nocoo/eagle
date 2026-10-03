@@ -100,3 +100,37 @@ test("slow probes are cached with their original timestamps, configurable, and s
   assert.equal(cached.diskObservedAt, second.diskObservedAt);
   await assert.rejects(sample([], 1));
 });
+
+test("missing optional hardware does not break sampling or revive cached macmon readings", async () => {
+  const { createTelemetrySampler } = await import("../agent/machine.ts");
+  const { MachineTelemetrySchema } = await import("../src/shared/schema.ts");
+  const { telemetry } = await import("./fixtures.ts");
+  const now = Date.parse(telemetry().observedAt);
+  const sample = createTelemetrySampler({
+    now: () => now,
+    fast: async () => MachineTelemetrySchema.parse(telemetry()).resources,
+    slow: async () => ({
+      disk: null,
+      temperature: {
+        status: "unavailable",
+        celsius: null,
+        source: "unsupported",
+      },
+    }),
+    connections: async () => ({}),
+    hardware: async () => null,
+  });
+  const previous = MachineTelemetrySchema.parse({
+    ...telemetry(),
+    diskObservedAt: telemetry().observedAt,
+    temperature: {
+      status: "available",
+      source: "macmon",
+      celsius: 65,
+      observedAt: telemetry().observedAt,
+    },
+  });
+  const value = await sample([], 300, previous);
+  assert.equal(value.hardware, undefined);
+  assert.equal(value.temperature?.status, "unavailable");
+});
