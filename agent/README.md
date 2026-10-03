@@ -6,16 +6,16 @@ Read-only Herdr inventory, task evidence, machine resources and named TCP port c
 
 Check `node --version`, `npm --version` and `herdr --version` first. Install Node.js 24+ from https://nodejs.org/en/download if needed, and have Herdr installed and running. No Eagle repository checkout, TypeScript compiler or npm login is required to install this public package.
 
-Install Agent v0.7.1 from npm. Website releases are independent; this is the published Agent version:
+Install Agent v0.8.0 from npm. Website releases are independent:
 
 ```sh
-npm install -g @nocoo/eagle-agent@0.7.1 --registry=https://registry.npmjs.org
+npm install -g @nocoo/eagle-agent@0.8.0 --registry=https://registry.npmjs.org
 ```
 
 **If npm downloads time out, use the Tencent Cloud mirror / 下载超时时首选腾讯云镜像：**
 
 ```sh
-npm install -g @nocoo/eagle-agent@0.7.1 --registry=https://mirrors.cloud.tencent.com/npm/
+npm install -g @nocoo/eagle-agent@0.8.0 --registry=https://mirrors.cloud.tencent.com/npm/
 ```
 
 `--registry` applies only to this installation; it does not change your global npm configuration. Mirrors may lag (`404` / `ETARGET`); retry later or use the official registry when reachable. Keep the pinned version, HTTPS and certificate verification. Eagle credentials are unrelated to npm and must never be sent to a registry.
@@ -23,7 +23,7 @@ npm install -g @nocoo/eagle-agent@0.7.1 --registry=https://mirrors.cloud.tencent
 Verify the installation before configuring the agent:
 
 ```sh
-eagle-agent --version # expected: 0.7.1
+eagle-agent --version # expected: 0.8.0
 eagle-agent --help
 ```
 
@@ -59,9 +59,9 @@ Optional `watchPorts`: `[{ "name": "Raven", "port": 7024 }]`. Only loopback TCP 
 
 Detailed configuration and manager evidence format: https://github.com/nocoo/eagle/blob/main/docs/AGENT.md
 
-## Environment resource candidate
+## Environment resources
 
-Source Agent 0.8.0 adds 30-second CPU/load/memory and OS network/VPN samples,
+Agent 0.8.0 adds 30-second CPU/load/memory and OS network/VPN samples,
 with configurable disk/temperature sampling (`slowIntervalSeconds`, default 300,
 range 60–3600). `intervalSeconds` must be 30; update any previous custom value
 explicitly before upgrading. Cached slow observations keep their original times.
@@ -70,11 +70,10 @@ macOS temperature is unavailable without a supported unprivileged sensor; a
 connection details or profile names are uploaded. The machine page displays
 24-hour CPU/memory/load history from the same report stream.
 
-This source candidate has not yet been published. The public installation
-commands above intentionally remain at published 0.7.1. Build and install a
-local tarball for isolated validation; publish 0.8.0 before deploying onboarding
-that selects it. Do not restart an existing production collector as part of a
-source checkout test. Full contract: https://github.com/nocoo/eagle/blob/main/docs/RESOURCES.md
+The receiving Worker must support the additional telemetry fields before
+upgrading an installed collector. Publishing a package does not upgrade or
+restart existing services. Preserve the configured identity, credentials and
+spool when explicitly upgrading. Full contract: https://github.com/nocoo/eagle/blob/main/docs/RESOURCES.md
 
 ## Optional reporting proxy
 

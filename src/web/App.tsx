@@ -69,6 +69,12 @@ import {
   Status,
   Topology,
 } from "./Dashboard.tsx";
+import { EnvironmentSwitch } from "./EnvironmentSwitch.tsx";
+import {
+  authenticationMessage,
+  localFrontend,
+  localProduction,
+} from "./environment.ts";
 import { PaneSummaryView } from "./PaneSummary.tsx";
 import { Realtime } from "./Realtime.tsx";
 import { Settings } from "./Settings.tsx";
@@ -91,6 +97,7 @@ function AccessGate() {
         aria-label="项目链接"
         className="absolute right-4 top-4 flex items-center gap-1"
       >
+        <EnvironmentSwitch />
         <FamilyActions />
       </nav>
       <LayerCard className="access-card">
@@ -99,9 +106,15 @@ function AccessGate() {
         </span>
         <Badge variant="blue">CLOUDFLARE ACCESS</Badge>
         <h1>安全连接到 Eagle</h1>
-        <p>使用 nocoo 团队身份继续访问工作台。</p>
+        <p>
+          {localProduction
+            ? authenticationMessage
+            : "使用 nocoo 团队身份继续访问工作台。"}
+        </p>
         <Button onClick={() => window.location.assign(window.location.href)}>
-          通过 Cloudflare Access 继续
+          {localProduction
+            ? "已在终端登录，重试"
+            : "通过 Cloudflare Access 继续"}
         </Button>
       </LayerCard>
     </main>
@@ -856,9 +869,13 @@ export function App() {
             }
             actions={
               <>
-                <Badge variant="blue" className="hidden sm:inline-flex">
-                  {import.meta.env.DEV ? "LOCAL" : "ACCESS"}
-                </Badge>
+                {localFrontend ? (
+                  <EnvironmentSwitch />
+                ) : (
+                  <Badge variant="blue" className="hidden sm:inline-flex">
+                    ACCESS
+                  </Badge>
+                )}
                 <FamilyActions />
               </>
             }

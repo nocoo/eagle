@@ -129,3 +129,63 @@ The full-history scan returned five non-secret matches: documentation prose, two
 Biome 2.5.15 exposed 25 descending-specificity warnings that 2.5.10 did not report on the same baseline. The normal lint command did not reject warnings, so a dependency commit alone was insufficient for acceptance. The remaining uncommitted upgrade was deferred while the stylesheet order was repaired. Parser checks verified all 509 selectors, declaration values, conditional scopes and equal-specificity ordering, along with imports, layers and keyframes. The rule stays enabled and normal lint now rejects warnings. Existing browser CI provides rendering acceptance; no React component tests were added.
 
 The first user-view checkpoint during the scanner and lint investigation was later than the requested 15-minute interval. Its actual timestamp is retained rather than backfilled. Future long maintenance work must track that checkpoint timer alongside running validation.
+
+
+## 2026-10-03 — Browser success did not validate a fixture's type
+
+The resource-timeout regression passed in both browsers, but assigning the inferred telemetry fixture directly to a typed report failed TypeScript: its load array was not a fixed-length tuple. Parsing the fixture through the existing telemetry schema restored the contract without a cast. Browser execution does not replace strict type and formatting checks; complete both before committing a regression fix.
+
+The isolated-sample regression initially searched beneath each line group, but Recharts renders dots through a separate SVG z-index portal. That selector could not distinguish a missing dot from a correctly portaled one. Added explicit series-specific dot classes, repeated the failing baseline with the corrected selector, then verified actual visibility and counts. Inspect library rendering boundaries before relying on DOM ancestry in chart assertions.
+
+## 2026-10-03 — verify library and command contracts first
+
+The environment regression initially assumed Basalt segments were pressed
+buttons and tried to reach the header while a modal was open. The installed
+component exposes radios; modal focus isolation correctly hides the header.
+The corrected test follows the actual roles and closes the modal before
+switching. Socket isolation now asserts no active old connections rather than
+assuming exactly one connection lifecycle. Node fetch also ignores a custom
+Host override; the host-boundary check now uses the native HTTP client.
+
+Command-help review caught that cloudflared login prints its JWT by default.
+The displayed login instruction now includes `--quiet`; the unsafe suggestion
+was not executed. Check credential-bearing CLI output contracts before adding
+onboarding commands, even when their arguments contain no secrets.
+
+The machine-card fixture repeated the telemetry literal-widening mistake; it
+now uses `MachineTelemetrySchema.parse` rather than manually narrowing selected
+fields. The paused-clock tooltip check also initially focused a scroll-moving
+trigger; Radix correctly dismissed the tooltip on scroll. Scroll into view
+first, activate the control, then advance the paused clock explicitly. The final
+complete browser run passes without raising timeouts or weakening assertions.
+
+## 2026-10-03 — resource-window checks must await actual layout
+
+The time-axis assertion repeated the Recharts portal assumption by looking
+inside the empty axis group. It now checks the accessible chart application.
+A 320px viewport transition also exposed the header's inflexible action row;
+the row can wrap, and geometry assertions wait for responsive layout to settle.
+Paused-clock tests advance the real five-second dashboard refresh cadence.
+The final suite passes with all range, point-count and width assertions intact.
+
+The final v0.10.0 release run exposed the same resize race in the separate
+machine-card layout check. It read the three section rectangles in different
+browser turns while the mobile shell was changing layout. The trace placed all
+reads within 19 ms of resize completion, and the eventual snapshot was already
+stacked. The assertion now reads all rectangles in one browser evaluation and
+polls the unchanged ordering conditions. No product CSS, timeout, retry count or
+skip was changed; release publication waits for the complete rerun.
+
+## 2026-10-03 — inspect deployed roles and asset ownership
+
+An additional release smoke check assumed Basalt Meter exposed the `meter`
+role, although the existing browser tests correctly use `progressbar`. After
+fixing that selector, an unrestricted module-script lookup matched both the
+application bundle and Cloudflare's injected analytics script. Neither failure
+was a product defect. The corrected check uses the established accessible role
+and the application's `/assets/` module in the document head. It verified three
+206px bars, sidebar version 0.10.0, the published Agent pin 0.8.0 and the deployed
+revision. Reuse tested library selectors and scope asset checks to owned files
+instead of assuming deployment infrastructure adds no scripts.
+
+The remote advanced during PR CI with a concurrent v0.10.0 release. Old green checks were not used to merge. After its final tag and exact-revision CI were verified, the candidate incorporated the completed release. Both documentation histories and new features were preserved; CSS ordering was regenerated against the new510-selector baseline. Combined-tree tests, reviews and CI must pass again.

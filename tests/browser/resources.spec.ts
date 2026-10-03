@@ -1,7 +1,92 @@
 import { expect, test } from "@playwright/test";
+import { MachineTelemetrySchema } from "../../src/shared/schema.ts";
 import { report, telemetry } from "../fixtures.ts";
 
 const now = "2026-10-02T01:00:00.000Z";
+test("resource history times out, preserves samples and allows retry", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date(now) });
+  await page.clock.pauseAt(new Date(now));
+  await page.addInitScript(() => {
+    AbortSignal.timeout = (milliseconds) => {
+      const controller = new AbortController();
+      setTimeout(
+        () => controller.abort(new DOMException("Timed out", "TimeoutError")),
+        milliseconds,
+      );
+      return controller.signal;
+    };
+  });
+  let stalled = false;
+  let reads = 0;
+  const value = report("synthetic-resource-timeout", now);
+  value.machine.telemetry = MachineTelemetrySchema.parse(telemetry(now));
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/v1/resources") {
+      reads++;
+      if (stalled) return;
+      return route.fulfill({
+        json: {
+          retentionSeconds: 86400,
+          samples: [
+            {
+              observedAt: now,
+              intervalSeconds: 30,
+              cpu: 25,
+              memory: 75,
+              load: [1, 2, 3],
+            },
+          ],
+        },
+      });
+    }
+    if (path === "/api/v1/me")
+      return route.fulfill({
+        json: {
+          name: "Synthetic viewer",
+          email: "",
+          avatar: null,
+          local: true,
+        },
+      });
+    return route.fulfill({
+      json: {
+        now,
+        machines: [
+          {
+            id: value.machine.id,
+            name: value.machine.name,
+            report: value,
+            lastSeen: now,
+            receivedAt: now,
+            warning: null,
+          },
+        ],
+      },
+    });
+  });
+  await page.goto(`/?machine=${value.machine.id}`);
+  const chart = page.getByRole("group", { name: "CPU、内存与负载历史" });
+  const refresh = page.getByRole("button", { name: "刷新资源历史" });
+  await expect(chart).toBeVisible();
+  stalled = true;
+  await refresh.click();
+  await expect.poll(() => reads).toBe(2);
+  await page.clock.runFor(14999);
+  await expect(refresh).toBeDisabled();
+  await page.clock.runFor(1);
+  await expect(page.getByRole("alert")).toContainText("历史更新失败");
+  await expect(chart).toBeVisible();
+  await expect(refresh).toBeEnabled();
+  stalled = false;
+  await refresh.click();
+  await expect.poll(() => reads).toBe(3);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(refresh).toBeEnabled();
+});
+
 test("environment resources retain Space, show bounded dual axes and honest missing/offline evidence", async ({
   page,
 }) => {
@@ -42,7 +127,7 @@ test("environment resources retain Space, show bounded dual axes and honest miss
             {
               observedAt: "2026-10-02T00:56:00.000Z",
               intervalSeconds: 30,
-              cpu: 10,
+              cpu: 0,
               memory: 70,
               load: [120, 10, 8],
             },
@@ -107,8 +192,17 @@ test("environment resources retain Space, show bounded dual axes and honest miss
   ).toBeVisible();
   await expect(environment).toContainText("VPN 未知");
   await expect(environment).toContainText("不可用");
-  await expect(environment).toContainText("30 秒");
-  await expect(environment).toContainText("300 秒");
+  const help = environment.getByRole("button", { name: "资源时间序列说明" });
+  await help.scrollIntoViewIfNeeded();
+  await help.click();
+  await page.clock.runFor(1);
+  await expect(page.getByRole("tooltip")).toContainText("30 秒");
+  await expect(page.getByRole("tooltip")).toContainText("300 秒");
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Load 1/5/15 分钟 · 右轴虚线",
+  );
+  await expect(page.getByRole("tooltip")).toContainText("磁盘不入图");
+  await page.keyboard.press("Escape");
   const chart = environment.getByRole("group", { name: "CPU、内存与负载历史" });
   await expect(chart).toBeVisible();
   const percentAxis = chart.getByText("100%", { exact: true });
@@ -124,11 +218,18 @@ test("environment resources retain Space, show bounded dual axes and honest miss
   await expect(
     chart.locator(".resource-cpu path.recharts-line-curve"),
   ).not.toHaveAttribute("stroke-dasharray");
-  await expect(environment).toContainText("Load 1/5/15 分钟 · 右轴虚线");
-  await expect(environment).toContainText("磁盘不入图");
+  const cpuDots = chart.locator(".resource-cpu-sample");
+  const memoryDots = chart.locator(".resource-memory-sample");
+  await expect(cpuDots).toHaveCount(2);
+  await expect(cpuDots.first()).toBeVisible();
+  await expect(cpuDots.last()).toBeVisible();
+  await expect(memoryDots).toHaveCount(1);
+  await expect(memoryDots).toBeVisible();
   await page.clock.runFor(180000);
   await expect(environment).toContainText("历史快照");
   await expect(environment).toContainText("上次网络");
+  await expect(cpuDots).toHaveCount(2);
+  await expect(cpuDots.last()).toBeVisible();
   fail = true;
   await environment.getByRole("button", { name: "刷新资源历史" }).click();
   await expect(environment).toContainText("历史更新失败");

@@ -49,14 +49,11 @@ export function resourcePoints(samples: ResourceSample[], now: string) {
     const previous = samples[index - 1];
     if (
       previous &&
-      at - Date.parse(previous.observedAt) >
-        (previous.intervalSeconds ?? 30) * 2000
+      previous.intervalSeconds !== null &&
+      at - Date.parse(previous.observedAt) > previous.intervalSeconds * 2000
     )
       points.push(
-        gap(
-          Date.parse(previous.observedAt) +
-            (previous.intervalSeconds ?? 30) * 1000,
-        ),
+        gap(Date.parse(previous.observedAt) + previous.intervalSeconds * 1000),
       );
     points.push({
       at,
@@ -71,7 +68,7 @@ export function resourcePoints(samples: ResourceSample[], now: string) {
   if (
     last &&
     Date.parse(now) - Date.parse(last.observedAt) >
-      (last.intervalSeconds ?? 30) * 2000
+      (last.intervalSeconds ?? 0) * 2000
   )
     points.push(gap(Date.parse(now)));
   return points;

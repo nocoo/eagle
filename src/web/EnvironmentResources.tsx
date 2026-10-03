@@ -1,4 +1,4 @@
-import { Badge, Button, LayerCard } from "@nocoo/basalt";
+import { Badge, Button, LayerCard, SegmentControl } from "@nocoo/basalt";
 import {
   ANIMATION_PROPS,
   AXIS_CONFIG,
@@ -10,9 +10,10 @@ import { ChartLegend } from "@nocoo/basalt/charts/legend";
 import { ChartTooltipContent } from "@nocoo/basalt/charts/tooltip";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { RefreshCw } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import {
   CartesianGrid,
+  Dot,
   Line,
   LineChart,
   Tooltip,
@@ -22,6 +23,7 @@ import {
 import { resourcePoints } from "../shared/resources.ts";
 import type { MachineView } from "../shared/schema.ts";
 import { age } from "./api.ts";
+import { CardHelp } from "./CardHelp.tsx";
 import { useTimezone } from "./Timezone.tsx";
 import { useResourceHistory } from "./useResourceHistory.ts";
 
@@ -49,11 +51,16 @@ export function EnvironmentResources({
   children: ReactNode;
 }) {
   const { time, zone } = useTimezone();
+  const [hours, setHours] = useState(6);
+  const until = Date.parse(now);
+  const since = until - hours * 3600000;
   const telemetry = machine.report.machine.telemetry;
   const history = useResourceHistory(machine.id, telemetry?.observedAt);
   const samples =
     history.data?.samples.filter(
-      (sample) => Date.parse(sample.observedAt) >= Date.parse(now) - 86400000,
+      (sample) =>
+        Date.parse(sample.observedAt) >= since &&
+        Date.parse(sample.observedAt) <= until,
     ) ?? [];
   const points = resourcePoints(samples, now);
   const offline = age(machine.lastSeen, now) > 90;
@@ -74,6 +81,13 @@ export function EnvironmentResources({
       />
       {children}
       <LayerCard className="environment-status">
+        <div className="resource-chart-heading mb-2">
+          <strong>环境状态</strong>
+          <CardHelp label="环境状态说明">
+            网络表示系统路径，不验证公网；VPN
+            仅据系统管理状态，未识别的隧道保持未知。
+          </CardHelp>
+        </div>
         <dl className="environment-status-grid">
           {(["network", "vpn"] as const).map((key) => {
             const reading = telemetry?.[key];
@@ -139,33 +153,53 @@ export function EnvironmentResources({
                   (slowSeconds ?? 300) + 90)) && <dd>历史采样 · 等待更新</dd>}
           </div>
         </dl>
-        <p className="resource-note">
-          网络表示系统路径，不验证公网；VPN
-          仅据系统管理状态，未识别的隧道保持未知。
-        </p>
       </LayerCard>
       <LayerCard className="resource-history">
         <div className="resource-chart-heading">
           <strong>资源时间序列</strong>
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-label="刷新资源历史"
-            disabled={history.loading}
-            onClick={history.refresh}
-          >
-            <RefreshCw size={14} />
-          </Button>
+          <div className="flex items-center gap-1">
+            <SegmentControl
+              legend="资源历史时间范围"
+              value={String(hours)}
+              onValueChange={(value) => setHours(Number(value))}
+              options={[6, 12, 24].map((value) => ({
+                value: String(value),
+                label: `${value}h`,
+              }))}
+              className="[&>legend]:sr-only [&_[data-slot=segment-control-viewport]]:pb-0 [&_[role=radio]]:px-2"
+            />
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="刷新资源历史"
+              disabled={history.loading}
+              onClick={history.refresh}
+            >
+              <RefreshCw size={14} />
+            </Button>
+            <CardHelp label="资源时间序列说明">
+              <p>
+                CPU / 内存 · 左轴 0–100%；Load 1/5/15 分钟 ·
+                右轴虚线（不是百分比）
+              </p>
+              <p>
+                {telemetry?.sampleIntervalSeconds
+                  ? `${telemetry.sampleIntervalSeconds} 秒采样`
+                  : "采样周期未知"}
+                {" · 保留 24 小时 / 最多 2880 点 · "}
+                {zone}
+              </p>
+              <p>
+                缺失与超过两个采样周期的空档断线，不补零。内存为总量减空闲量，可能包含缓存，不代表内存压力。
+              </p>
+              <p>
+                磁盘不入图；磁盘 / 温度
+                {slowSeconds ? `每 ${slowSeconds} 秒` : "周期未知"}
+                读取，卡片保留原采样时间。
+              </p>
+            </CardHelp>
+          </div>
         </div>
-        <p className="resource-note">
-          CPU / 内存 · 左轴 0–100%；Load 1/5/15 分钟 · 右轴虚线（不是百分比）
-        </p>
-        <p className="resource-note">
-          {telemetry?.sampleIntervalSeconds
-            ? `${telemetry.sampleIntervalSeconds} 秒采样`
-            : "采样周期未知"}{" "}
-          · 保留 24 小时 / 最多 2880 点 · {zone}
-        </p>
         {history.error && (
           <p role="alert" className="resource-note">
             {history.error}
@@ -182,7 +216,7 @@ export function EnvironmentResources({
             ariaLabel="CPU、内存与负载历史"
             size="h-56 w-full"
             legend={<ChartLegend items={series} />}
-            summary={`缺失与超过两个采样周期的空档断线，不补零。最后采样 ${last ? time(last.observedAt) : "未知"}。内存为总量减空闲量，可能包含缓存，不代表内存压力。`}
+            summary={`最后采样 ${last ? time(last.observedAt) : "未知"} · ${zone}`}
           >
             <LineChart
               data={points}
@@ -193,7 +227,8 @@ export function EnvironmentResources({
                 {...AXIS_CONFIG}
                 dataKey="at"
                 type="number"
-                domain={["dataMin", "dataMax"]}
+                domain={[since, until]}
+                allowDataOverflow
                 minTickGap={35}
                 tickFormatter={(at: number) =>
                   time(new Date(at).toISOString(), {
@@ -260,18 +295,26 @@ export function EnvironmentResources({
                   stroke={item.color}
                   strokeWidth={2}
                   strokeDasharray={index < 2 ? undefined : "6 4"}
-                  dot={false}
+                  dot={({ index, points: linePoints, value, cx, cy }) =>
+                    value != null &&
+                    linePoints[index - 1]?.value == null &&
+                    linePoints[index + 1]?.value == null ? (
+                      <Dot
+                        className={`resource-${item.key}-sample`}
+                        cx={cx}
+                        cy={cy}
+                        r={3}
+                        fill={item.color}
+                        stroke={item.color}
+                      />
+                    ) : null
+                  }
                   connectNulls={false}
                 />
               ))}
             </LineChart>
           </ChartShell>
         )}
-        <p className="resource-note">
-          磁盘不入图；磁盘 / 温度
-          {slowSeconds ? `每 ${slowSeconds} 秒` : "周期未知"}
-          读取，卡片保留原采样时间。
-        </p>
       </LayerCard>
     </section>
   );

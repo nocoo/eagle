@@ -2,12 +2,11 @@
 
 Resources use the existing Agent report, machine Durable Object and machine
 page. There is no additional collector service or remote telemetry destination.
-Website/Worker **0.9.0** ships independently. The source Agent is **0.8.0**;
-this candidate remains unpublished. Website `config.publishedAgentVersion`
-keeps Connect on verified published **0.7.1**. Publish the new artifact before
-changing that website pin. Existing published Agent 0.7.1 does not collect the
-new environment fields. Production rollout and restarting installed agents require separate
-authorization.
+Website/Worker **0.10.0** and independent npm Agent **0.8.0** ship together.
+Website `config.publishedAgentVersion` pins the verified Agent artifact for
+Connect. Upgrade the receiving Worker before installing the Agent's additional
+environment fields. Publication does not automatically upgrade or restart
+installed agents; service upgrades require explicit authorization.
 
 ## Sampling and cost
 
@@ -128,11 +127,22 @@ five-second overview poll. Switching machines aborts stale reads. Failed history
 refreshes keep the last valid data with an error; 401/403 clears protected chart
 data and asks the viewer to sign in again.
 
+The chart defaults to the latest six hours. The top-right 6h/12h/24h segment
+filters the already-loaded history and fixes the time axis to the selected
+rolling window; it does not fetch again or change storage retention. Samples
+outside the selected window, including future observations, are not displayed.
+CPU, memory and disk show equal-width usage meters alongside the existing
+numeric values. Disk usage is total minus available space, while its primary
+number remains available GiB. Missing values do not produce a zero meter;
+uptime has no percentage meter.
+
 CPU and memory use a fixed **0–100% left axis**. Load uses an independently
 scaled **right axis**, with three dashed 1/5/15-minute lines and unit-aware
 hover values. All timestamps follow the existing timezone preference. Nulls and
-gaps longer than two nominal sample periods break the curves; offline tails
-remain empty. No zero fill or extrapolation is performed. Disk and temperature
+gaps longer than two reported sample periods break the curves. Unknown cadence
+does not imply a 30-second period or fabricate gaps between observed points;
+the time after the last observation remains empty. No zero fill or extrapolation
+is performed. Disk and temperature
 stay out of the chart to avoid interpolating cached observations.
 
 Network/fast observations become historical after 90 seconds or loss of machine

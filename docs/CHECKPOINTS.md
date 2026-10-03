@@ -1,5 +1,60 @@
 # 用户视角检查点
 
+## 2026-10-03 06:40 +08 — resource windows and usage meters
+
+- Resource history defaults to six hours with 6h/12h/24h controls and a fixed
+  rolling axis. Switching windows filters existing samples without new reads;
+  expired-window and future points are excluded. CPU, memory and disk use
+  published Basalt meters with equal track widths and retained numeric text.
+- Actual local HTTPS rendering confirms three 250.8px tracks at a 1920px
+  viewport, default 6h and working 24h selection. At 320px controls wrap without
+  horizontal overflow. Local data remains the existing historical snapshot;
+  no production requests, writes, new collection or D1 seeds were performed.
+- Final checks pass 128 Node tests, strict types, check-only lint and build;
+  169 browser tests pass with 11 existing viewport skips. Existing lint infos
+  and the bundle-size advisory remain. Synthetic browser tests cover boundaries,
+  missing readings, equal track geometry and mobile layout.
+- Retention changes are paused for the requested investigation/recommendation.
+  Existing resource retention remains 24 hours / 2880 points on reads/ingestion;
+  no data-deletion policy or backend behavior was changed.
+
+## 2026-10-03 06:23 +08 — compact machine cards verified
+
+- Environment status, resource history, recent changes and evidence coverage
+  now keep static explanations in top-right info controls. Hover, keyboard
+  focus and touch reveal the text; freshness, missing data, errors and warnings
+  remain visible. Sections 01/02 are unchanged; runtime pulse is section 03.
+- The machine resources/pulse column grows from 400 to 560px on wide viewports,
+  instead of being overridden to 320px above 1800px. The actual local HTTPS page
+  measures 538px at 1920px, with no horizontal overflow at 390px. Local screenshots
+  confirm the rendered layout and hover content, using the existing stale data.
+- Final gates pass: 128 Node tests, strict types, check-only lint and build;
+  165 browser tests pass with 11 existing viewport-specific skips. Four existing
+  informational lint suggestions and the existing bundle-size advisory remain.
+  The earlier workspace timeout does not recur in the complete final run.
+- No Herdr collection, D1 fixture writes or production mutations occurred. Local
+  frontend 7053 and API 37053 remain running for user acceptance; production
+  reads through the Local/Prod switch were verified separately above.
+
+## 2026-10-03 06:17 +08 — local production environment switch
+
+- Local and Prod render through the existing local HTTPS frontend; actual
+  read-only `/me` and `/overview` requests through the production proxy return
+  200 with the existing cloudflared session. A browser switched Local to Prod
+  and back successfully. No production writes or new Herdr collection occurred.
+- Local D1 remains the existing development database, with its stale September
+  27 snapshot. Environment selection does not switch the ingestion API or seed
+  either database. Production write and terminal-control tests use synthetic
+  upstreams, credentials and sockets only.
+- 128 Node tests, strict types, lint and build pass. Ten environment browser
+  regressions pass. The full browser run reports 160 passing, 11 existing skips
+  and one workspace reconnect assertion requiring isolated verification.
+- The isolated workspace regression and all environment cases then passed
+  (11 passed, one existing mobile skip). The full-run timeout remains recorded;
+  no timeout or assertion was weakened. Final combined gates follow the UI work.
+- Next: finish the environment commit, then consolidate machine-card help and
+  widen the numbered runtime-pulse column as requested.
+
 ## 2026-10-02 — Environment resources, local implementation
 
 - CPU/load/memory and bounded OS network/VPN evidence now travel through the existing whole-machine report. Disk/temperature default to 300-second cached observations; macOS temperature is explicitly unavailable. No real Herdr inventory or production reports have been collected for this work.
@@ -738,6 +793,7 @@ serving and the first catalogue-derived production Cron observation.
   the production archive was written. Local `check` passes 117 tests, types,
   check-only lint and build. Deployment of this final correction is pending.
 
+
 ## 2026-10-03T07:16:50.299670+08:00 — Dependency duty checkpoint
 
 - Herdr: reviewer panes confirmed; the existing release session is waiting for Access acceptance. No live Agent collection was run.
@@ -745,3 +801,53 @@ serving and the first catalogue-derived production Cron observation.
 - D1: the normal Node/API suite passed using its temporary Miniflare stores.
 - Rendering: production build passed; parser evidence preserves all509 CSS selectors, conditions, declarations and equal-specificity ordering. Local browser testing was not run.
 - Next: finish the remaining compatible root dependency targets, then review the full candidate and require current-head browser CI before merge.
+
+## 2026-10-03 07:30 +08 — v0.10.0 release preparation
+
+- Local/Prod proxying, compact numbered machine cards, selectable resource
+  windows and equal-width usage meters are committed. Storage retention is
+  unchanged; the requested global 24-hour policy remains a recommendation.
+- After merging the upstream undici security fix, checks passed 128 unit/API/
+  package tests, strict types, lint and build; browser checks passed 169 with
+  11 existing viewport-specific skips. Worker dry-run succeeded and remote D1
+  has no pending migrations. Final release-version gates are still pending.
+- Real local and current production v0.9.0 checks passed authenticated Herdr
+  collection, idempotent ingestion, DO state, readable D1 history and rendering.
+  Realtime checks returned isolated shell output in 1,592 ms locally and
+  1,562 ms publicly, closed four subscriptions each and removed their panes.
+- The retained Agent 0.8.0 tarball passed an isolated anonymous installation,
+  CLI version and help checks. npm publication succeeded after human browser
+  authorization. The public exact version and latest tag match the retained
+  SHA-1/SHA-512 hashes; a fresh anonymous Tencent mirror installation also passed
+  version/help checks with empty cache/config outside the checkout. Onboarding
+  now pins verified 0.8.0. Installed Agent services have not been upgraded or
+  restarted. Next: rerun gates, then publish and verify the website revision.
+
+- At 07:34 +08, final release checks passed 128 tests, strict types, lint and
+  build. A responsive-layout test race was fixed in a separate atomic commit;
+  40 repeated card checks and the complete browser matrix (169 passed,
+  11 existing viewport skips) passed without weakened assertions. Real local
+  collection rendered 12 Spaces / 17 Panes, and realtime returned isolated
+  shell output in 223 ms with all four subscriptions closed. The v0.10.0 local
+  UI passed 6h/12h/24h switching, section 03 and authenticated Local/Prod/Local
+  reads with no browser errors or production mutation. The temporary local
+  realtime bridge stopped cleanly; website push, deployment and CI are next.
+
+- At 07:39 +08, revision `64243d5` passed exact-revision GitHub Check run
+  `37078233254` and was deployed as Worker version
+  `086e25c3-292c-41fe-b662-38f026389044`. Public health and the authenticated
+  sidebar both report 0.10.0; the served bundle pins npm Agent 0.8.0. Real
+  production collection rendered 12 Spaces / 17 Panes with Access, idempotency,
+  DO, legacy D1, desktop/mobile and no-browser-error checks passing. Production
+  realtime returned isolated shell output in 1,566 ms and closed all four
+  subscriptions. The three resource bars each measure 206px. Final release
+  records only are being added; the resulting revision still requires its own
+  deployment, CI and tag verification. No retention or installed-service change
+  was made.
+
+## 2026-10-03T08:02:23.417435+08:00 — Dependency candidate integration
+
+- Herdr: the old release pane remains separate; final publication evidence for v0.10.0 is now available. No live collector or Access operation was run by this duty.
+- Source: verified published tag and Check CI at `229b87aef4956f1a790a7eb66dc0a59703bd5a44`; integrated that completed release while retaining all new environment/resource features and onboarding0.8.0.
+- D1 and rendering: reviewed the new proxy tests as loopback-only fixtures. Reapplied strict CSS ordering against the new baseline; all510 selector/condition/declaration records and equal-specificity order are preserved.
+- Next: validate the combined tree, refresh both independent reviews and current-head browser CI before ready/merge.

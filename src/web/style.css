@@ -663,14 +663,12 @@
   font-size: 12px;
   font-weight: 600;
 }
+.panel-heading > button:last-child {
+  margin-left: auto;
+}
 .panel-icon {
   display: flex;
   color: var(--eagle-color);
-}
-.activity-summary {
-  padding: 9px 14px 12px;
-  color: hsl(var(--basalt-muted-foreground));
-  font-size: 9px;
 }
 .activity-feed {
   list-style: none;
@@ -748,12 +746,6 @@
 }
 .coverage-row > svg {
   color: hsl(var(--basalt-muted-foreground));
-}
-.coverage-note {
-  font-size: 9px;
-  line-height: 1.7;
-  color: hsl(var(--basalt-muted-foreground));
-  padding: 12px 14px 15px;
 }
 .sync-caption {
   display: flex;
@@ -907,6 +899,11 @@
 @media (min-width: 1800px) {
   .dashboard-layout {
     grid-template-columns: minmax(0, 1fr) 320px;
+  }
+}
+@media (min-width: 1440px) {
+  .machine-layout {
+    grid-template-columns: minmax(0, 1fr) clamp(400px, 28vw, 560px);
   }
 }
 @media (max-width: 1390px) {
@@ -1132,7 +1129,6 @@
     outline: 2px solid hsl(var(--basalt-ring));
     outline-offset: 2px;
   }
-  .dashboard-aside .activity-summary,
   .dashboard-aside .activity-time {
     font-size: 11px;
   }
@@ -2655,6 +2651,12 @@
 }
 .resource-history {
   min-width: 0;
+}
+.resource-history .resource-chart-heading {
+  flex-wrap: wrap;
+}
+.resource-history .resource-chart-heading > div {
+  margin-left: auto;
 }
 .resource-history [role="group"] > div {
   min-width: 0;
