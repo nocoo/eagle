@@ -82,6 +82,7 @@ for (const [path, title] of routes) {
     await expect(refresh).toBeEnabled();
     for (const width of isMobile ? [390, 320] : [1280]) {
       await page.setViewportSize({ width, height: 844 });
+      await page.clock.runFor(32);
       if (width === 320)
         await page.getByRole("button", { name: "切换主题" }).click();
       const box = await header.boundingBox();
@@ -140,6 +141,7 @@ for (const [path, title] of routes) {
       await expect(header.getByRole("heading")).toHaveText(
         "Mac One With A Very Long Machine Name",
       );
+      await page.clock.runFor(32);
       if (isMobile) {
         expect((await header.boundingBox())?.height).toBeLessThanOrEqual(40);
         await expect(navigation).toBeInViewport({ ratio: 1 });

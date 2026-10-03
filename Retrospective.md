@@ -189,3 +189,7 @@ revision. Reuse tested library selectors and scope asset checks to owned files
 instead of assuming deployment infrastructure adds no scripts.
 
 The remote advanced during PR CI with a concurrent v0.10.0 release. Old green checks were not used to merge. After its final tag and exact-revision CI were verified, the candidate incorporated the completed release. Both documentation histories and new features were preserved; CSS ordering was regenerated against the new510-selector baseline. Combined-tree tests, reviews and CI must pass again.
+
+## 2026-10-03 — Advance frozen frames before viewport captures
+
+The integrated candidate passed layout assertions in CI, but Chromium refused the overview screenshot after a viewport change while the test clock was paused. The existing page-header test now advances two virtual animation frames after viewport and stale-heading changes before measuring/capturing the resulting layout. All assertions and screenshot artifacts remain; no retries, skips or timeout increases were added. Browser verification remains in CI under this duty’s local-browser restriction.
