@@ -190,3 +190,14 @@ boundary; inspect installed tools and verify a bounded read before ruling out
 host capabilities. The sample establishes availability on this machine only,
 not sensor accuracy or support across every Mac model. No integration or service
 change was made during this investigation.
+
+## 2026-10-03 — missing hardware must not fail a complete report
+
+The initial optional hardware integration used a short-circuit object expression
+that emitted null when macmon was absent, but the protocol accepts an omitted
+field, not null. An injected missing-tool regression caught the complete-report
+failure. The branch now omits hardware and never revives the previous macmon
+temperature as a cached slow probe. The browser regression also caught lost
+historical network labels in the new cards; each network/VPN label now retains
+its own freshness. Hardware absence and stale evidence must be tested alongside
+the successful local sensor path, not inferred from it.

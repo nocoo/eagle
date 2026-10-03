@@ -33,15 +33,16 @@ daily-input retention; no history table or longer retention is introduced.
 | --- | --- | --- |
 | CPU | 30 seconds | Utilization across logical CPUs over a fresh approximately 250 ms window; percent, not a 30-second average |
 | Load | 30 seconds | OS 1/5/15-minute load averages; runnable/uninterruptible work, not percentages; unavailable on unsupported platforms |
-| Memory | 30 seconds | OS total/free bytes; displayed usage is `(total - free) / total`; caches may count as used, not memory pressure |
+| Memory | 30 seconds | History uses OS total/free bytes; the card uses macmon used RAM when available, otherwise total minus free. Neither is memory pressure |
 | Network and VPN | 30 seconds | Two bounded OS status commands; each at most 1.5 seconds and 32 KiB of output; no packets sent to test public Internet |
 | Home-filesystem disk | 300 seconds by default | One `statfs` on the collector user's home filesystem, not an all-volume scan; total/available bytes |
-| CPU temperature | 300 seconds by default | Celsius from a bounded Linux CPU thermal-zone allowlist; no macOS privileged probe |
+| Linux CPU temperature | 300 seconds by default | Celsius from a bounded Linux CPU thermal-zone allowlist |
+| macOS hardware and traffic | 30 seconds | Optional bounded unprivileged macmon and physical-interface counter samples; no controls |
 
 `intervalSeconds` is now required to be **30** when present. Older configurations
 that chose a different report cadence must explicitly set 30 before starting the
 new Agent. `slowIntervalSeconds` defaults to **300**, accepts integer values from
-**60 through 3600**, and controls disk and temperature together:
+**60 through 3600**, and controls disk and Linux temperature together:
 
 ```json
 {
@@ -65,7 +66,7 @@ credential, OS service, elevated command or kernel component is installed.
 
 ## Network, VPN and temperature evidence
 
-Only state enums, fixed source identifiers and timestamps leave the probe.
+Only allowlisted numeric readings, state enums, fixed source identifiers and timestamps leave the probe.
 Interface names, service/profile names, IP addresses, routes, connection lists,
 peers, public keys and command output are never included in telemetry. The
 network commands inspect status; they do not enumerate network connections.
@@ -92,7 +93,7 @@ network commands inspect status; they do not enumerate network connections.
   activation alone does not prove a peer handshake and remains unknown. Empty,
   unsupported or failed status output remains unknown. These states describe
   observable OS evidence, not an exhaustive claim about every third-party VPN.
-- **Temperature:** macOS and unsupported platforms report `unavailable` with
+- **Temperature:** macOS without macmon and unsupported platforms report `unavailable` with
   `celsius:null`. Linux reads at most 16 `/sys/class/thermal/thermal_zone*`
   entries and only `x86_pkg_temp`, `cpu-thermal`, `cpu_thermal`, or `soc_thermal`
   zones. It reports the maximum valid CPU/SoC reading, in Celsius. Empty,
@@ -104,7 +105,7 @@ network commands inspect status; they do not enumerate network connections.
 
 Whole-machine report `schemaVersion:1` is retained. Optional telemetry additions
 are `sampleIntervalSeconds`, `slowIntervalSeconds`, `diskObservedAt`, `network`,
-`vpn`, and `temperature`. Old v1 reports retain their exact parsed fields and
+`vpn`, `temperature`, optional `hardware` and `traffic`. Old v1 reports retain their exact parsed fields and
 receipt digest; absent telemetry or fields remain unknown. New strict servers
 must be deployed before new agents because old servers reject added fields.
 The generated public JSON Schema describes the input contract.
@@ -139,8 +140,16 @@ missing/invalid IDs 400, and non-GET methods 405. Responses are `no-store`.
 ## Machine details
 
 Section **01 Space** is preserved. **02 Environment resources** retains the
-CPU/memory/disk/uptime and watched-port overview, adds network/VPN/temperature,
-and reads resource history for only the selected machine. It refreshes when the
+CPU/memory/disk/uptime and watched-port overview. Six read-only cards show CPU,
+GPU, memory, disk, aggregate physical-network rates and fans in two equal-width
+columns. CPU/GPU cards include temperature, the network card retains network/VPN
+status, and uptime appears with machine metadata. Every card has an accessible
+top-right information control. Fan RPM is the fastest reported fan; the meter
+is the highest actual/maximum RPM ratio, not a cooling-load estimate. All fan
+readings remain in its tooltip. No overall health score, fan-control buttons,
+fabricated trends or inferred Wi-Fi connection type are shown.
+
+The page reads resource history for only the selected machine. It refreshes when the
 current sample changes or the user requests a refresh, not on every unchanged
 five-second overview poll. Switching machines aborts stale reads. Failed history
 refreshes keep the last valid data with an error; 401/403 clears protected chart
@@ -150,7 +159,7 @@ The chart defaults to the latest six hours. The top-right 6h/12h/24h segment
 filters the already-loaded history and fixes the time axis to the selected
 rolling window; it does not fetch again or change storage retention. Samples
 outside the selected window, including future observations, are not displayed.
-CPU, memory and disk show equal-width usage meters alongside the existing
+CPU, GPU, memory, disk and fan cards show equal-width meters alongside their
 numeric values. Disk usage is total minus available space, while its primary
 number remains available GiB. Missing values do not produce a zero meter;
 uptime has no percentage meter.
@@ -166,7 +175,8 @@ stay out of the chart to avoid interpolating cached observations.
 
 Network/fast observations become historical after 90 seconds or loss of machine
 heartbeat. Disk/temperature carry their own timestamps and become historical
-after their configured slow period plus 90 seconds, or when the machine is
+after their configured slow period plus 90 seconds (macmon hardware uses 90
+seconds), or when the machine is
 stale/offline. Missing fields and unavailable sensors never display invented
 zero values. The historical chart remains readable when a machine is offline.
 

@@ -835,3 +835,21 @@ serving and the first catalogue-derived production Cron observation.
   records only are being added; the resulting revision still requires its own
   deployment, CI and tag verification. No retention or installed-service change
   was made.
+
+## 2026-10-03 09:10 +08 — six-card hardware resources
+
+- Agent candidate 0.9.0 adds bounded, unprivileged macmon hardware readings and
+  short physical-interface traffic samples. A missing tool does not fail a
+  whole-machine report or revive cached hardware readings. Strict schema and
+  API tests cover field bounds, private-field rejection, timestamp ordering,
+  idempotency and DO eviction. Connect still pins published Agent 0.8.0.
+- Six Basalt cards replace the resource/status blocks, retaining network/VPN,
+  uptime, watched ports, 6h/12h/24h history and evidence freshness. Read-only fan
+  RPM/ratios and GPU activity never imply health scores or control capabilities.
+- Checks passed 133 unit/API/package tests, strict types, lint and build; full
+  browser checks passed 173 with 11 existing viewport skips. Local real Herdr
+  collection rendered 10 Spaces / 15 Panes with idempotency, DO, unchanged D1
+  history writes and desktop/mobile verification. Real CPU/GPU temperatures,
+  two fans and network rates rendered; light and mobile screenshots were
+  inspected. Production authentication, ingestion and installed services were
+  not used or changed; publishing and deployment are outside this iteration.

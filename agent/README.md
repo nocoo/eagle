@@ -70,7 +70,8 @@ Agent 0.8.0 adds 30-second CPU/load/memory and OS network/VPN samples,
 with configurable disk/temperature sampling (`slowIntervalSeconds`, default 300,
 range 60–3600). `intervalSeconds` must be 30; update any previous custom value
 explicitly before upgrading. Cached slow observations keep their original times.
-macOS temperature is unavailable without a supported unprivileged sensor; a
+Source candidate 0.9.0 reads macOS hardware through optional unprivileged
+macmon; published 0.8.0 does not include that integration. A
 `tun`/`utun` interface alone never proves VPN connectivity. No addresses,
 connection details or profile names are uploaded. The machine page displays
 24-hour CPU/memory/load history from the same report stream.

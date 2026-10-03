@@ -3,7 +3,6 @@ import {
   Button,
   Input,
   LayerCard,
-  Meter,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -18,12 +17,9 @@ import {
   CheckCheck,
   CircleHelp,
   Clock3,
-  Cpu,
   GitBranch,
-  HardDrive,
   Layers3,
   ListChecks,
-  MemoryStick,
   Radio,
   Search,
   Server,
@@ -45,6 +41,8 @@ import {
 import { age } from "./api.ts";
 import { CardHelp } from "./CardHelp.tsx";
 import { EnvironmentResources } from "./EnvironmentResources.tsx";
+import { MachineResources } from "./MachineResources.tsx";
+
 import { useTimezone } from "./Timezone.tsx";
 
 const states: State[] = ["active", "attention", "verified", "unverified"];
@@ -156,212 +154,6 @@ export function MachineStatus({
         </time>
       </span>
     </span>
-  );
-}
-
-export function MachineResources({
-  machine,
-  now,
-  snapshot = false,
-}: {
-  machine: MachineView;
-  now: string;
-  snapshot?: boolean;
-}) {
-  const { time } = useTimezone();
-  const telemetry = machine.report.machine.telemetry;
-  const resources = telemetry?.resources;
-  const memoryUsage = resources
-    ? Math.round(
-        (1 - resources.memory.freeBytes / resources.memory.totalBytes) * 100,
-      )
-    : null;
-  const diskUsage = resources?.disk
-    ? Math.round(
-        (1 - resources.disk.availableBytes / resources.disk.totalBytes) * 100,
-      )
-    : null;
-  const stale =
-    isStale(machine, now) || (telemetry && age(telemetry.observedAt, now) > 90);
-  const gib = (value: number) =>
-    new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 }).format(
-      value / 1024 ** 3,
-    );
-  return (
-    <section aria-label="机器资源" className="machine-resources">
-      {!telemetry ? (
-        <p className="text-xs text-basalt-muted-foreground">尚未上报机器资源</p>
-      ) : (
-        <LayerCard className="p-3">
-          {!snapshot && (
-            <div className="resource-heading">
-              <span>
-                <Server size={14} />
-                机器资源
-              </span>
-              <span>{stale ? "等待更新" : "实时采样"}</span>
-            </div>
-          )}
-          {stale && (
-            <Badge variant="secondary" className="mb-2">
-              历史快照 · 等待更新
-            </Badge>
-          )}
-          {resources ? (
-            <dl className={`resource-grid ${stale ? "opacity-60" : ""}`}>
-              <div
-                className="min-w-0"
-                style={accent("hsl(var(--basalt-accent-1))")}
-                title={`${resources.cpuModel} · 采样 ${resources.cpuSampleMs} ms；负载为 1/5/15 分钟平均值`}
-              >
-                <dt className="mb-1 flex items-center gap-1.5 text-basalt-muted-foreground">
-                  <Cpu size={13} />
-                  CPU <span className="ml-auto">{resources.cpuCores} 核</span>
-                </dt>
-                <dd className="font-semibold tabular-nums">
-                  {resources.cpuUsagePercent === null
-                    ? "未知"
-                    : `${resources.cpuUsagePercent}%`}
-                </dd>
-                {resources.cpuUsagePercent !== null && (
-                  <dd className="mt-2">
-                    <Meter
-                      value={resources.cpuUsagePercent}
-                      hideValue
-                      aria-label="CPU 占用"
-                    />
-                  </dd>
-                )}
-                <dd className="mt-1 truncate text-[11px] text-basalt-muted-foreground">
-                  负载{" "}
-                  {resources.loadAverage
-                    ?.map((n) => n.toFixed(1))
-                    .join(" / ") ?? "未知"}
-                </dd>
-              </div>
-              <div
-                style={accent("hsl(var(--basalt-accent-9))")}
-                title="已用量为总内存减去系统报告的空闲内存；缓存可能计入，不代表内存压力。"
-              >
-                <dt className="mb-1 flex items-center gap-1.5 text-basalt-muted-foreground">
-                  <MemoryStick size={13} />
-                  内存
-                </dt>
-                <dd className="font-semibold tabular-nums">
-                  {gib(
-                    resources.memory.totalBytes - resources.memory.freeBytes,
-                  )}{" "}
-                  / {gib(resources.memory.totalBytes)} GiB
-                </dd>
-                {memoryUsage !== null && (
-                  <dd className="mt-2">
-                    <Meter
-                      value={memoryUsage}
-                      hideValue
-                      aria-label="内存占用"
-                    />
-                  </dd>
-                )}
-                <dd className="mt-1 text-[11px] text-basalt-muted-foreground">
-                  占用 {memoryUsage}% · 空闲 {gib(resources.memory.freeBytes)}{" "}
-                  GiB
-                </dd>
-              </div>
-              <div
-                style={accent("hsl(var(--basalt-accent-4))")}
-                title="采集器用户主目录所在文件系统的容量和可用空间。"
-              >
-                <dt className="mb-1 flex items-center gap-1.5 text-basalt-muted-foreground">
-                  <HardDrive size={13} />
-                  磁盘可用
-                </dt>
-                <dd className="font-semibold tabular-nums">
-                  {resources.disk
-                    ? `${gib(resources.disk.availableBytes)} GiB`
-                    : "未知"}
-                </dd>
-                {diskUsage !== null && (
-                  <dd className="mt-2">
-                    <Meter value={diskUsage} hideValue aria-label="磁盘占用" />
-                  </dd>
-                )}
-                <dd className="mt-1 text-[11px] text-basalt-muted-foreground">
-                  {resources.disk
-                    ? `占用 ${diskUsage}% · 总计 ${gib(resources.disk.totalBytes)} GiB`
-                    : "磁盘信息不可读"}
-                </dd>
-                <dd className="mt-1 text-[11px] text-basalt-muted-foreground">
-                  <time
-                    dateTime={telemetry.diskObservedAt ?? telemetry.observedAt}
-                  >
-                    {time(telemetry.diskObservedAt ?? telemetry.observedAt)}
-                  </time>{" "}
-                  采样
-                  {(stale ||
-                    age(telemetry.diskObservedAt ?? telemetry.observedAt, now) >
-                      (telemetry.slowIntervalSeconds ?? 30) + 90) &&
-                    " · 历史采样"}
-                </dd>
-              </div>
-              <div style={accent("hsl(var(--basalt-accent-7))")}>
-                <dt className="mb-1 flex items-center gap-1.5 text-basalt-muted-foreground">
-                  <Clock3 size={13} />
-                  运行时间
-                </dt>
-                <dd className="font-semibold tabular-nums">
-                  {Math.floor(resources.uptimeSeconds / 86400)} 天{" "}
-                  {Math.floor(resources.uptimeSeconds / 3600) % 24} 小时
-                </dd>
-                <dd className="mt-1 text-[11px] text-basalt-muted-foreground">
-                  <time dateTime={telemetry.observedAt}>
-                    {time(telemetry.observedAt)}
-                  </time>{" "}
-                  采样
-                </dd>
-              </div>
-            </dl>
-          ) : (
-            <p className="text-xs text-basalt-muted-foreground">
-              资源采集失败 · 等待更新
-            </p>
-          )}
-          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-basalt-border pt-2 text-[11px] text-basalt-muted-foreground">
-            <span title="只验证本机 TCP 连接，不代表应用业务健康。">
-              关注端口 · TCP
-            </span>
-            {!telemetry.ports.length && <span>未配置关注端口</span>}
-            {telemetry.ports.map((port) => {
-              const old = stale || age(port.checkedAt, now) > 90;
-              const label = {
-                open: "可连接",
-                closed: "未监听",
-                timeout: "连接超时",
-                error: "检查失败",
-              }[port.status];
-              return (
-                <Badge
-                  key={`${port.host}:${port.port}`}
-                  variant={
-                    old
-                      ? "secondary"
-                      : port.status === "open"
-                        ? "success"
-                        : "warning"
-                  }
-                  title={`${port.host}:${port.port} · ${time(port.checkedAt)} · 仅 TCP 连通性`}
-                >
-                  {port.name} · {port.port}
-                  <span>{old ? `上次${label}` : label}</span>
-                  {!old && port.latencyMs !== null && (
-                    <span className="tabular-nums">{port.latencyMs} ms</span>
-                  )}
-                </Badge>
-              );
-            })}
-          </div>
-        </LayerCard>
-      )}
-    </section>
   );
 }
 

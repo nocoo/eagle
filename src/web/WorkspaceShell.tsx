@@ -25,7 +25,8 @@ import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { assessPane } from "../shared/assessment.ts";
 import type { MachineView, Space } from "../shared/schema.ts";
 import { useCurrentTaskSnapshot } from "./CurrentTaskSnapshot.ts";
-import { MachineResources, machineConnection, Status } from "./Dashboard.tsx";
+import { machineConnection, Status } from "./Dashboard.tsx";
+import { MachineResources } from "./MachineResources.tsx";
 import { useTimezone } from "./Timezone.tsx";
 import { WorkspaceNavigation } from "./WorkspaceNavigation.tsx";
 
