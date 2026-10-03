@@ -176,3 +176,17 @@ and the application's `/assets/` module in the document head. It verified three
 206px bars, sidebar version 0.10.0, the published Agent pin 0.8.0 and the deployed
 revision. Reuse tested library selectors and scope asset checks to owned files
 instead of assuming deployment infrastructure adds no scripts.
+
+## 2026-10-03 — distinguish missing integration from unavailable hardware
+
+While explaining the missing environment readings, I described macOS temperature
+collection as unsupported without privilege. That conclusion came from Eagle's
+Linux-only temperature probe, not a check of this machine's available tools.
+The installed macmon 0.8.2 subsequently returned two fan RPM readings and CPU/GPU
+temperature readings from a single bounded, unprivileged JSON sample. The system
+powermetrics command required root, but that did not establish a platform-wide
+limitation. State that Eagle has not integrated a probe when that is the actual
+boundary; inspect installed tools and verify a bounded read before ruling out
+host capabilities. The sample establishes availability on this machine only,
+not sensor accuracy or support across every Mac model. No integration or service
+change was made during this investigation.
