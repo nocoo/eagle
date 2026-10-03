@@ -218,3 +218,7 @@ The remote advanced during PR CI with a concurrent v0.10.0 release. Old green ch
 ## 2026-10-03 — Advance frozen frames before viewport captures
 
 The integrated candidate passed layout assertions in CI, but Chromium refused the overview screenshot after a viewport change while the test clock was paused. The existing page-header test now advances two virtual animation frames after viewport and stale-heading changes before measuring/capturing the resulting layout. All assertions and screenshot artifacts remain; no retries, skips or timeout increases were added. Browser verification remains in CI under this duty’s local-browser restriction.
+
+## 2026-10-04: Audit Agent declarations separately from the root lock
+
+Dependency issue #26 targets the independent Agent manifest and its ignored generated copy in `agent/dist/agent/`. The root npm lock already resolved Zod 4.6.5, but the source Agent still declared ^4.1.0. The source minimum now requires ^4.6.5 and the independent source version is 0.8.2. Build and pack must regenerate and verify both manifest copies; never edit the ignored distribution as a source. This duty does not publish npm or change onboarding: the verified install pin stays 0.8.1 until separately authorized publication.
