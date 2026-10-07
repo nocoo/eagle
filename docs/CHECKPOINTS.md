@@ -888,3 +888,10 @@ serving and the first catalogue-derived production Cron observation.
   version and help checks. Onboarding now pins verified 0.8.1. Production
   deployment and local installed-service upgrade/restart remain pending; their
   secure configurations are unchanged.
+
+## 2026-10-07 dependency maintenance
+
+- Source baseline: `76c4766783ec36b5db9188c3e76999c889c268de`; isolated run `20261006T213545Z-31570f722a34`.
+- Root Node 26 check passed 133 tests, types, strict lint and build with owned local fixture state. Node 24 exposed a CONNECT request missing from the proxy fixture; preserve route, Host, token and report-count assertions while repairing the fixture.
+- Packed and installed Agent 0.8.2 was verified locally; published onboarding remains 0.8.1. No live Herdr collection, public authentication, production D1, rendering or npm publication was performed. Local Miniflare tests use owned temporary state.
+- Next hop: Node 24/26 fixture and complete checks, website dependency fixes, independent reviews and current-head CI/browser verification.
