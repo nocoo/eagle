@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import type { Duplex } from "node:stream";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
@@ -19,14 +20,32 @@ test("CLI networking defaults to direct and supports an explicit environment pro
     response.end("{}");
   });
   let proxied = 0;
+  const tunnels = new Set<Duplex>();
   const proxy = createServer((request, response) => {
-    assert.equal(request.url, `http://127.0.0.1:${port}/api/v1/heartbeat`);
+    assert.equal(
+      request.url,
+      tunnels.has(request.socket)
+        ? "/api/v1/heartbeat"
+        : `http://127.0.0.1:${port}/api/v1/heartbeat`,
+    );
+    assert.equal(request.headers.host, `127.0.0.1:${port}`);
     assert.equal(request.headers.authorization, `Bearer ${token}`);
     proxied++;
     request.resume();
     response.end("{}");
   });
+  proxy.on("connect", (request, socket, head) => {
+    assert.equal(request.url, `127.0.0.1:${port}`);
+    tunnels.add(socket);
+    socket.on("close", () => tunnels.delete(socket));
+    socket.pause();
+    socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+    proxy.emit("connection", socket);
+    if (head.length) socket.unshift(head);
+    socket.resume();
+  });
   t.after(() => {
+    for (const socket of tunnels) socket.destroy();
     origin.closeAllConnections();
     proxy.closeAllConnections();
     origin.close();
