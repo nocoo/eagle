@@ -154,14 +154,14 @@ struct WorkspaceListTests {
           title: "A",
           items: [
             SidebarItem(id: "one", title: "One", subtitle: "1"),
-            SidebarItem(id: "two", title: "Two", subtitle: "2")
+            SidebarItem(id: "two", title: "Two", subtitle: "2"),
           ]),
         WorkspaceGroup(
           id: "b",
           title: "B",
           items: [
-            SidebarItem(id: "three", title: "Three", subtitle: "3")
-          ])
+            SidebarItem(id: "three", title: "Three", subtitle: "3"),
+          ]),
       ],
       selection: "two"
     )
@@ -183,7 +183,7 @@ struct WorkspaceListTests {
           id: "a",
           title: "A",
           items: [
-            SidebarItem(id: "one", title: "One", subtitle: "1")
+            SidebarItem(id: "one", title: "One", subtitle: "1"),
           ])
       ]
     )
