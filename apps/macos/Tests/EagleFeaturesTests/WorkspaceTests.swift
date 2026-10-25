@@ -120,6 +120,70 @@ struct WorkspaceListTests {
     model.deleteSection("nope")
     model.renameItem("nope", to: "x")
     model.deleteItem("nope")
+    model.moveItem("nope", to: "secretariat")
+    #expect(model.groups == snapshot)
+    #expect(model.groupID(of: "nope") == nil)
+  }
+
+  @Test("groupID resolves the section that owns a row")
+  func groupID() {
+    let model = WorkspaceListViewModel()
+    #expect(model.groupID(of: "deps") == "review")
+    #expect(model.groupID(of: "investigator") == "secretariat")
+    #expect(model.groupID(of: "missing") == nil)
+  }
+
+  @Test("addGroup appends an empty section and expands it")
+  func addGroup() {
+    let model = WorkspaceListViewModel()
+    let before = model.groups.count
+    let id = model.addGroup()
+    #expect(model.groups.count == before + 1)
+    #expect(model.groups.last?.id == id)
+    #expect(model.groups.last?.items.isEmpty == true)
+    #expect(model.expanded.contains(id))
+    #expect(model.sections.first { $0.id == id }?.isExpanded == true)
+  }
+
+  @Test("moveItem relocates a row to the end of another group")
+  func moveItem() throws {
+    let model = WorkspaceListViewModel(
+      groups: [
+        WorkspaceGroup(id: "a", title: "A", items: [
+          SidebarItem(id: "one", title: "One", subtitle: "1"),
+          SidebarItem(id: "two", title: "Two", subtitle: "2"),
+        ]),
+        WorkspaceGroup(id: "b", title: "B", items: [
+          SidebarItem(id: "three", title: "Three", subtitle: "3"),
+        ]),
+      ],
+      selection: "two"
+    )
+    #expect(model.groupID(of: "two") == "a")
+    model.moveItem("two", to: "b")
+    #expect(model.groupID(of: "two") == "b")
+    let groupA = try #require(model.groups.first { $0.id == "a" })
+    let groupB = try #require(model.groups.first { $0.id == "b" })
+    #expect(groupA.items.map(\.id) == ["one"])
+    #expect(groupB.items.map(\.id) == ["three", "two"])
+    #expect(model.selection == "two")
+  }
+
+  @Test("moveItem ignores missing rows and same-group moves")
+  func moveItemNoOps() throws {
+    let model = WorkspaceListViewModel(
+      groups: [
+        WorkspaceGroup(id: "a", title: "A", items: [
+          SidebarItem(id: "one", title: "One", subtitle: "1"),
+        ]),
+      ]
+    )
+    let snapshot = model.groups
+    model.moveItem("one", to: "a")
+    #expect(model.groups == snapshot)
+    model.moveItem("missing", to: "a")
+    #expect(model.groups == snapshot)
+    model.moveItem("one", to: "missing")
     #expect(model.groups == snapshot)
   }
 }

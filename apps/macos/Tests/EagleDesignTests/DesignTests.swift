@@ -78,6 +78,17 @@ struct SidebarDataTests {
     #expect(plain == tagged)
     #expect(plain.tag == nil)
     #expect(SidebarItem(id: "a", title: "A", subtitle: "b", tag: "Personal").tag == "Personal")
+    let chrome = SidebarItem(
+      id: "b", title: "B", subtitle: "c", pinned: true, unread: true)
+    #expect(chrome.pinned)
+    #expect(chrome.unread)
+  }
+
+  @Test("move groups carry id and title")
+  func moveGroups() {
+    let group = SidebarItemGroup(id: "g1", title: "秘书处")
+    #expect(group.id == "g1")
+    #expect(group.title == "秘书处")
   }
 
   @Test("sections carry expansion state")

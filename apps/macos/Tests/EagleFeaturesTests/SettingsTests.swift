@@ -65,6 +65,60 @@ struct SettingsTests {
     model.checkForUpdates()
     #expect(model.updateState == .current("0.14.1"))
   }
+
+  @Test("setPermission writes the chosen option")
+  func setPermission() {
+    let model = SettingsViewModel()
+    let id = try! #require(model.machines.first?.id)
+    model.setPermission(id, .deny)
+    #expect(model.machines.first { $0.id == id }?.permission == .deny)
+  }
+
+  @Test("cancelRename clears the active target")
+  func cancelRename() {
+    let model = SettingsViewModel()
+    let id = try! #require(model.machines.first?.id)
+    model.beginRename(id)
+    model.cancelRename()
+    #expect(model.renameTarget == nil)
+  }
+}
+
+@Suite("Settings models")
+struct SettingsModelTests {
+  @Test("permission cycles through every case")
+  func permissionNext() {
+    var permission = MachinePermission.always
+    let seen = Set(
+      (0..<MachinePermission.allCases.count).map { _ in
+        permission = permission.next
+        return permission
+      }
+    )
+    #expect(seen.count == MachinePermission.allCases.count)
+  }
+
+  @Test("machine rows expose platform symbols and status copy")
+  func machinePresentation() {
+    let mac = MachineDevice(id: "m", name: "Mac", platform: "电脑", online: true)
+    #expect(mac.symbol == "display")
+    #expect(mac.status == "电脑 · 当前在线")
+
+    let phone = MachineDevice(
+      id: "p", name: "Phone", platform: "iOS", online: false, lastOpened: "1小时前")
+    #expect(phone.symbol == "iphone")
+    #expect(phone.status == "iOS · 上次打开：1小时前")
+
+    let offline = MachineDevice(id: "o", name: "Off", platform: "电脑", online: false)
+    #expect(offline.status == "电脑 · 离线")
+  }
+
+  @Test("mock usage fixtures stay populated")
+  func mockUsage() {
+    #expect(MockSettings.machines.count >= 2)
+    #expect(MockSettings.usage.planName == "Pro")
+    #expect(MockSettings.usage.percentUsed > 0)
+  }
 }
 
 @Suite("Account menu")
