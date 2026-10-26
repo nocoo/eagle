@@ -16,12 +16,16 @@ public final class ConversationViewModel: ObservableObject {
   @Published public private(set) var hasOlder = false
   /// A parked task is recoverable: `recover` retries it.
   @Published public private(set) var parked = false
-  /// Keystrokes repaint only the composer; they must not fan out through `objectWillChange`.
-  public var onDraftChange: (() -> Void)?
   private var draftStorage = ""
   public var draft: String {
     get { draftStorage }
     set { updateDraft(newValue) }
+  }
+
+  /// Updates draft storage without `ObservableObject` fan-out (the shell mirrors into `composer`).
+  public func writeDraft(_ value: String) {
+    guard draftStorage != value else { return }
+    draftStorage = value
   }
 
   private let conversation: ConversationPort
@@ -156,7 +160,6 @@ public final class ConversationViewModel: ObservableObject {
   private func updateDraft(_ value: String) {
     guard draftStorage != value else { return }
     draftStorage = value
-    onDraftChange?()
   }
 
   // MARK: - Sending

@@ -33,6 +33,7 @@ public struct BotsSettings {
 final class BotsWorkspaceViewModel: ObservableObject {
   @Published private(set) var items: [SidebarItem] = []
   let transcript = BotsTranscriptViewModel()
+  let composer = BotsComposerViewModel()
   var entries: [TranscriptEntry] { transcript.entries }
   @Published private(set) var title = "Bots"
   @Published private(set) var subtitle = "正在连接…"
@@ -84,7 +85,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
   private let presenter = BotsPresenter()
   private var app: AppViewModel?
   private var cancellables = Set<AnyCancellable>()
-  private var publicationScheduled = false
+  private var isPublishing = false
   private var pendingRepublish = false
   private var previews: [String: (source: String, text: String)] = [:]
 
@@ -230,10 +231,13 @@ final class BotsWorkspaceViewModel: ObservableObject {
 
   /// The conversation view model owns the only draft; the composer reads and writes it
   /// through these two members, so there is no second copy to drift.
-  var draft: String { app?.conversation.draft ?? "" }
+  var draft: String { composer.text }
 
   func setDraft(_ value: String) {
-    app?.conversation.draft = value
+    guard let conversation = app?.conversation else { return }
+    guard composer.text != value else { return }
+    conversation.writeDraft(value)
+    composer.text = value
   }
 
   func send() {
@@ -337,6 +341,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
     if canRecover != nextRecover { canRecover = nextRecover }
     let nextError = conversation.errorBanner ?? app.error
     if error != nextError { error = nextError }
+    if composer.text != conversation.draft { composer.text = conversation.draft }
   }
 
   /// The conversation view model publishes many times per answer (one delta each), so the
@@ -359,35 +364,29 @@ final class BotsWorkspaceViewModel: ObservableObject {
     )
     .sink { [weak self] _ in self?.schedulePublish() }
     .store(in: &cancellables)
-    conversation.onDraftChange = { [weak self] in
-      self?.transcript.objectWillChange.send()
-    }
     conversation.$hasSnapshot.removeDuplicates()
       .sink { [weak transcript] _ in transcript?.objectWillChange.send() }
       .store(in: &cancellables)
   }
 
   private func schedulePublish() {
-    if publicationScheduled {
+    if isPublishing {
       pendingRepublish = true
       return
     }
-    publicationScheduled = true
-    Task { @MainActor [weak self] in
-      guard let self else { return }
-      repeat {
-        self.pendingRepublish = false
-        self.publish()
-      } while self.pendingRepublish
-      self.publicationScheduled = false
-    }
+    isPublishing = true
+    repeat {
+      pendingRepublish = false
+      publish()
+    } while pendingRepublish
+    isPublishing = false
   }
 
-  /// Lets tests wait until a deferred `publish()` pass finishes after handshake events.
-  func awaitScheduledPublishDrain() async {
-    while publicationScheduled {
+  /// Yields until in-flight main-actor work (e.g. transcript projection) settles.
+  func awaitShellQuiescence() async {
+    for _ in 0..<8 {
       await Task.yield()
-      try? await Task.sleep(nanoseconds: 2_000_000)
+      try? await Task.sleep(nanoseconds: 5_000_000)
     }
   }
 }
