@@ -31,15 +31,18 @@ public final class SettingsViewModel: ObservableObject {
   @Published public var gatewayMessage: String?
   private var gatewayLoaded = false
   private let botsSettings: BotsSettings
+  private let urlSession: URLSession
 
   public init(
     machines: [MachineDevice] = MockSettings.machines,
     usage: UsageSummary = MockSettings.usage,
-    botsSettings: BotsSettings = BotsSettings()
+    botsSettings: BotsSettings = BotsSettings(),
+    urlSession: URLSession = .shared
   ) {
     self.machines = machines
     self.usage = usage
     self.botsSettings = botsSettings
+    self.urlSession = urlSession
   }
 
   public var onlineCount: Int {
@@ -134,7 +137,7 @@ public final class SettingsViewModel: ObservableObject {
 
   private func client() throws -> CatalogHTTPClient {
     let token = try TokenStore(root: botsSettings.rootURL).read()
-    return CatalogHTTPClient(baseURL: botsSettings.baseURL, token: token)
+    return CatalogHTTPClient(baseURL: botsSettings.baseURL, token: token, session: urlSession)
   }
 
   public func checkForUpdates() {
