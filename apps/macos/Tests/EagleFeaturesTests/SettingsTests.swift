@@ -1,4 +1,3 @@
-import BotsTransport
 import Foundation
 import Testing
 
@@ -220,38 +219,53 @@ struct SettingsTests {
   @Test("saveGateway persists, clears the key field and notifies listeners")
   func saveGatewaySuccess() async throws {
     let (settings, session) = try settingsGatewayFixture()
-    var notified = false
+    final class NotifyFlag: @unchecked Sendable {
+      var value = false
+    }
+    let notified = NotifyFlag()
     let token = NotificationCenter.default.addObserver(
       forName: .botsGatewayChanged,
       object: nil,
-      queue: nil
-    ) { _ in notified = true }
+      queue: .main
+    ) { _ in notified.value = true }
     defer { NotificationCenter.default.removeObserver(token) }
     GatewayHTTPStub.handler = { request in
-      #expect(request.httpMethod == "PUT")
-      let body = gatewayHTTPBody(request)
-      let parsed = try JSONSerialization.jsonObject(with: try #require(body)) as? [String: Any]
-      #expect(parsed?["baseUrl"] as? String == "http://gw/v1")
-      #expect(parsed?["model"] as? String == "m2")
-      #expect(parsed?["apiKey"] as? String == "fresh-key")
-      return (
-        200,
-        Data(
-          #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m2","hasApiKey":true}}"#
-            .utf8)
-      )
+      switch (request.httpMethod, request.url?.path) {
+      case ("POST", "/v1/settings/test"):
+        return (
+          200,
+          Data(
+            #"{"result":{"ok":true,"status":200,"message":"连接成功","latencyMs":1,"models":1}}"#
+              .utf8)
+        )
+      case ("PUT", "/v1/settings"):
+        let body = gatewayHTTPBody(request)
+        let parsed = try JSONSerialization.jsonObject(with: try #require(body)) as? [String: Any]
+        #expect(parsed?["baseUrl"] as? String == "http://gw/v1")
+        #expect(parsed?["model"] as? String == "m2")
+        #expect(parsed?["apiKey"] as? String == "fresh-key")
+        return (
+          200,
+          Data(
+            #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m2","hasApiKey":true}}"#
+              .utf8)
+        )
+      default:
+        return (404, Data())
+      }
     }
     let model = SettingsViewModel(botsSettings: settings, urlSession: session)
     model.gatewayBaseURL = " http://gw/v1 "
     model.gatewayModel = " m2 "
     model.gatewayAPIKey = "fresh-key"
-    model.gatewayProbe = try gatewayProbeFixture()
+    await model.testGateway()
+    #expect(model.gatewayProbe?.ok == true)
     await model.saveGateway()
     #expect(model.gateway?.model == "m2")
     #expect(model.gatewayAPIKey.isEmpty)
     #expect(model.gatewayProbe == nil)
     #expect(model.gatewayMessage == "已保存，Bot 会使用这个网关")
-    #expect(notified)
+    #expect(notified.value)
     GatewayHTTPStub.handler = nil
   }
 

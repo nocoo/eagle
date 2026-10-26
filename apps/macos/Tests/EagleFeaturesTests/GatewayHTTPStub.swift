@@ -71,10 +71,3 @@ func settingsGatewayFixture() throws -> (BotsSettings, URLSession) {
   let session = URLSession(configuration: configuration)
   return (settings, session)
 }
-
-func gatewayProbeFixture() throws -> GatewayProbe {
-  try JSONDecoder().decode(
-    GatewayProbe.self,
-    from: Data(#"{"ok":true,"status":200,"message":"x","latencyMs":1,"models":1}"#.utf8)
-  )
-}
