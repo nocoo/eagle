@@ -357,8 +357,8 @@ final class BotsWorkspaceViewModel: ObservableObject {
       conversation.$isSending.map { _ in }.eraseToAnyPublisher(),
       conversation.$hasOlder.map { _ in }.eraseToAnyPublisher()
     )
-      .sink { [weak self] _ in self?.schedulePublish() }
-      .store(in: &cancellables)
+    .sink { [weak self] _ in self?.schedulePublish() }
+    .store(in: &cancellables)
     conversation.$draft.removeDuplicates()
       .sink { [weak transcript] _ in transcript?.objectWillChange.send() }
       .store(in: &cancellables)
