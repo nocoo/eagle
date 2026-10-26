@@ -359,9 +359,9 @@ final class BotsWorkspaceViewModel: ObservableObject {
     )
     .sink { [weak self] _ in self?.schedulePublish() }
     .store(in: &cancellables)
-    conversation.$draft.removeDuplicates()
-      .sink { [weak transcript] _ in transcript?.objectWillChange.send() }
-      .store(in: &cancellables)
+    conversation.onDraftChange = { [weak self] in
+      self?.transcript.objectWillChange.send()
+    }
     conversation.$hasSnapshot.removeDuplicates()
       .sink { [weak transcript] _ in transcript?.objectWillChange.send() }
       .store(in: &cancellables)
@@ -380,6 +380,14 @@ final class BotsWorkspaceViewModel: ObservableObject {
         self.publish()
       } while self.pendingRepublish
       self.publicationScheduled = false
+    }
+  }
+
+  /// Lets tests wait until a deferred `publish()` pass finishes after handshake events.
+  func awaitScheduledPublishDrain() async {
+    while publicationScheduled {
+      await Task.yield()
+      try? await Task.sleep(nanoseconds: 2_000_000)
     }
   }
 }

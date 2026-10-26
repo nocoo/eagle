@@ -16,7 +16,13 @@ public final class ConversationViewModel: ObservableObject {
   @Published public private(set) var hasOlder = false
   /// A parked task is recoverable: `recover` retries it.
   @Published public private(set) var parked = false
-  @Published public var draft = ""
+  /// Keystrokes repaint only the composer; they must not fan out through `objectWillChange`.
+  public var onDraftChange: (() -> Void)?
+  private var draftStorage = ""
+  public var draft: String {
+    get { draftStorage }
+    set { updateDraft(newValue) }
+  }
 
   private let conversation: ConversationPort
   private let outbox: OutboxStore
@@ -145,6 +151,12 @@ public final class ConversationViewModel: ObservableObject {
 
   public func dismissError() {
     errorBanner = nil
+  }
+
+  private func updateDraft(_ value: String) {
+    guard draftStorage != value else { return }
+    draftStorage = value
+    onDraftChange?()
   }
 
   // MARK: - Sending

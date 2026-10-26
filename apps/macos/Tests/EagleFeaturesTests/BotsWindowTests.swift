@@ -66,6 +66,7 @@ struct BotsWindowTests {
     try await waitUntil {
       bots.connection == .ready && bots.subtitle == "已连接"
     }
+    await bots.awaitScheduledPublishDrain()
     return (bots, app, conversationPort, outbox)
   }
 
@@ -135,6 +136,7 @@ struct BotsWindowTests {
       observer.cancel()
       shellObserver.cancel()
     }
+    await bots.awaitScheduledPublishDrain()
     for index in 0..<30 { bots.setDraft("Draft \(index)") }
     try await Task.sleep(nanoseconds: 80_000_000)
     #expect(publications == 0)
