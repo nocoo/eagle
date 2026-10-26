@@ -13,6 +13,18 @@ import Testing
 @MainActor
 @Suite("Bots window")
 struct BotsWindowTests {
+  private func waitUntil(
+    timeout: TimeInterval = 2,
+    _ condition: () -> Bool
+  ) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+      if condition() { return }
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    Issue.record("condition not met within \(timeout)s")
+  }
+
   private func window(
     gateway: Bool? = true
   ) async throws -> (
@@ -48,7 +60,12 @@ struct BotsWindowTests {
     bots.select("b_1")
     conversationPort.emit(.connection(.ready))
     conversationPort.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
-    try await Task.sleep(nanoseconds: 60_000_000)
+    try await waitUntil {
+      app.conversation.connection == .ready && app.conversation.hasSnapshot
+    }
+    try await waitUntil {
+      bots.connection == .ready && bots.subtitle == "已连接"
+    }
     return (bots, app, conversationPort, outbox)
   }
 
@@ -60,8 +77,7 @@ struct BotsWindowTests {
     #expect(app.conversation.draft == "hello from Eagle", "there is no second draft")
 
     bots.send()
-    try await Task.sleep(nanoseconds: 60_000_000)
-    #expect(conversationPort.sent.last?.text == "hello from Eagle")
+    try await waitUntil { conversationPort.sent.last?.text == "hello from Eagle" }
 
     // A refusal restores the text through the same accessor the composer binds.
     let requestId = try #require(conversationPort.sent.last?.requestId)
@@ -344,15 +360,24 @@ final class StubConversation: ConversationPort {
   var aborted = 0
   var lastBotId: String?
   private var continuation: AsyncStream<ConversationEvent>.Continuation?
+  private var pending: [ConversationEvent] = []
 
   func open(botId: String) -> AsyncStream<ConversationEvent> {
-    AsyncStream { continuation in
+    continuation?.finish()
+    continuation = nil
+    return AsyncStream { continuation in
       self.continuation = continuation
+      for event in self.pending { continuation.yield(event) }
+      self.pending.removeAll()
     }
   }
 
   func emit(_ event: ConversationEvent) {
-    continuation?.yield(event)
+    if let continuation {
+      continuation.yield(event)
+    } else {
+      pending.append(event)
+    }
   }
 
   func send(
@@ -388,5 +413,6 @@ final class StubConversation: ConversationPort {
   func close() {
     continuation?.finish()
     continuation = nil
+    pending.removeAll()
   }
 }

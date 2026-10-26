@@ -85,6 +85,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
   private var app: AppViewModel?
   private var cancellables = Set<AnyCancellable>()
   private var publicationScheduled = false
+  private var pendingRepublish = false
   private var previews: [String: (source: String, text: String)] = [:]
 
   init(
@@ -342,23 +343,44 @@ final class BotsWorkspaceViewModel: ObservableObject {
   /// mapping runs on the next run loop turn rather than inside the notification.
   private func bind(_ app: AppViewModel) {
     cancellables.removeAll()
+    let conversation = app.conversation
     app.objectWillChange
-      .merge(with: app.conversation.objectWillChange)
-      .sink { [weak self] _ in
-        guard let self, !self.publicationScheduled else { return }
-        self.publicationScheduled = true
-        Task { @MainActor [weak self] in
-          self?.publicationScheduled = false
-          self?.publish()
-        }
-      }
+      .sink { [weak self] _ in self?.schedulePublish() }
       .store(in: &cancellables)
-    app.conversation.$draft.removeDuplicates()
+    // Draft edits repaint only the composer; they must not remap the sidebar or transcript.
+    Publishers.MergeMany(
+      conversation.$connection.map { _ in }.eraseToAnyPublisher(),
+      conversation.$hasSnapshot.map { _ in }.eraseToAnyPublisher(),
+      conversation.$state.map { _ in }.eraseToAnyPublisher(),
+      conversation.$errorBanner.map { _ in }.eraseToAnyPublisher(),
+      conversation.$parked.map { _ in }.eraseToAnyPublisher(),
+      conversation.$isSending.map { _ in }.eraseToAnyPublisher(),
+      conversation.$hasOlder.map { _ in }.eraseToAnyPublisher()
+    )
+      .sink { [weak self] _ in self?.schedulePublish() }
+      .store(in: &cancellables)
+    conversation.$draft.removeDuplicates()
       .sink { [weak transcript] _ in transcript?.objectWillChange.send() }
       .store(in: &cancellables)
-    app.conversation.$hasSnapshot.removeDuplicates()
+    conversation.$hasSnapshot.removeDuplicates()
       .sink { [weak transcript] _ in transcript?.objectWillChange.send() }
       .store(in: &cancellables)
+  }
+
+  private func schedulePublish() {
+    if publicationScheduled {
+      pendingRepublish = true
+      return
+    }
+    publicationScheduled = true
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      repeat {
+        self.pendingRepublish = false
+        self.publish()
+      } while self.pendingRepublish
+      self.publicationScheduled = false
+    }
   }
 }
 
