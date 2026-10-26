@@ -1,8 +1,19 @@
 import Foundation
 
+@testable import EagleFeatures
+
 /// Intercepts catalog HTTP for settings gateway tests without a live daemon.
 final class GatewayHTTPStub: URLProtocol {
-  static var handler: ((URLRequest) throws -> (Int, Data))?
+  private final class Storage: @unchecked Sendable {
+    var handler: ((URLRequest) throws -> (Int, Data))?
+  }
+
+  private static let storage = Storage()
+
+  static var handler: ((URLRequest) throws -> (Int, Data))? {
+    get { storage.handler }
+    set { storage.handler = newValue }
+  }
 
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -59,4 +70,11 @@ func settingsGatewayFixture() throws -> (BotsSettings, URLSession) {
   configuration.protocolClasses = [GatewayHTTPStub.self]
   let session = URLSession(configuration: configuration)
   return (settings, session)
+}
+
+func gatewayProbeFixture() throws -> GatewayProbe {
+  try JSONDecoder().decode(
+    GatewayProbe.self,
+    from: Data(#"{"ok":true,"status":200,"message":"x","latencyMs":1,"models":1}"#.utf8)
+  )
 }
