@@ -84,7 +84,11 @@ struct SettingsTests {
     model.cancelRename()
     #expect(model.renameTarget == nil)
   }
+}
 
+@Suite("Settings gateway", .serialized)
+@MainActor
+struct SettingsGatewayTests {
   @Test("loadGateway fills the form and reports configuration state")
   func loadGatewayConfigured() async throws {
     let (settings, session) = try settingsGatewayFixture()
