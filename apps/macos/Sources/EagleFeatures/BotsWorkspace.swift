@@ -85,7 +85,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
   private let presenter = BotsPresenter()
   private var app: AppViewModel?
   private var cancellables = Set<AnyCancellable>()
-  private var isPublishing = false
+  private var publicationScheduled = false
   private var pendingRepublish = false
   private var previews: [String: (source: String, text: String)] = [:]
 
@@ -235,9 +235,8 @@ final class BotsWorkspaceViewModel: ObservableObject {
 
   func setDraft(_ value: String) {
     guard let conversation = app?.conversation else { return }
-    guard composer.text != value else { return }
     conversation.writeDraft(value)
-    composer.text = value
+    if composer.text != value { composer.text = value }
   }
 
   func send() {
@@ -249,6 +248,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
       return
     }
     app.conversation.send()
+    mirrorConversationDraftIntoComposer()
     publish()
   }
 
@@ -317,6 +317,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
     if app.selection != selectedId, let next = app.selection {
       selectedId = next
       onSelect?(next)
+      mirrorConversationDraftIntoComposer()
     }
     guard let selected = app.bots.first(where: { $0.id == app.selection }) else {
       title = "Bots"
@@ -340,8 +341,16 @@ final class BotsWorkspaceViewModel: ObservableObject {
     let nextRecover = conversation.state.unavailable != nil || conversation.parked
     if canRecover != nextRecover { canRecover = nextRecover }
     let nextError = conversation.errorBanner ?? app.error
-    if error != nextError { error = nextError }
-    if composer.text != conversation.draft { composer.text = conversation.draft }
+    if error != nextError {
+      error = nextError
+      mirrorConversationDraftIntoComposer()
+    }
+  }
+
+  private func mirrorConversationDraftIntoComposer() {
+    guard let conversation = app?.conversation else { return }
+    let next = conversation.draft
+    if composer.text != next { composer.text = next }
   }
 
   /// The conversation view model publishes many times per answer (one delta each), so the
@@ -370,21 +379,33 @@ final class BotsWorkspaceViewModel: ObservableObject {
   }
 
   private func schedulePublish() {
-    if isPublishing {
+    if publicationScheduled {
       pendingRepublish = true
       return
     }
-    isPublishing = true
-    repeat {
-      pendingRepublish = false
-      publish()
-    } while pendingRepublish
-    isPublishing = false
+    publicationScheduled = true
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      repeat {
+        self.pendingRepublish = false
+        self.publish()
+      } while self.pendingRepublish
+      self.publicationScheduled = false
+    }
+  }
+
+  /// Waits until deferred shell publish passes finish (handshake, status, etc.).
+  func awaitScheduledPublishDrain() async {
+    while publicationScheduled {
+      await Task.yield()
+      try? await Task.sleep(nanoseconds: 2_000_000)
+    }
   }
 
   /// Yields until in-flight main-actor work (e.g. transcript projection) settles.
   func awaitShellQuiescence() async {
-    for _ in 0..<8 {
+    await awaitScheduledPublishDrain()
+    for _ in 0..<6 {
       await Task.yield()
       try? await Task.sleep(nanoseconds: 5_000_000)
     }
