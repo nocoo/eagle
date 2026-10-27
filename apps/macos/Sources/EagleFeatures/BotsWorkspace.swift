@@ -156,7 +156,8 @@ final class BotsWorkspaceViewModel: ObservableObject {
 
   func owns(_ id: String?) -> Bool {
     guard let id else { return false }
-    return items.contains { $0.id == id }
+    // Membership follows the catalog, not whether a deferred publish has projected rows yet.
+    return app?.bots.contains { $0.id == id } ?? false
   }
 
   /// Whether a section id belongs to this window's groups (a daemon group or 未分组).
@@ -252,8 +253,8 @@ final class BotsWorkspaceViewModel: ObservableObject {
     do {
       let model = try await makeApp(settings)
       app = model
-      bind(model)
       await model.refresh()
+      bind(model)
       publish()
       // The shell keeps its own landing selection (the demo workspace) unless a
       // development shell asks to open Bots directly.
@@ -449,7 +450,8 @@ final class BotsWorkspaceViewModel: ObservableObject {
       canRecover = false
       running = false
       error = nil
-      connection = .stopped
+      // Keep the socket state visible while the catalog still lists bots to choose from.
+      connection = app.bots.isEmpty ? .stopped : conversation.connection
       if !tasks.isEmpty { tasks = [] }
       if !usage.isEmpty { usage = [] }
       if !choices.isEmpty { choices = [] }

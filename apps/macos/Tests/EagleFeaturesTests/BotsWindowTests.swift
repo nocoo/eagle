@@ -11,7 +11,7 @@ import Testing
 /// publishes the transcript and the actions, and a refusal's restored text is the value the
 /// composer shows.
 @MainActor
-@Suite("Bots window")
+@Suite("Bots window", .serialized)
 struct BotsWindowTests {
   private func waitUntil(
     timeout: TimeInterval = 2,
@@ -59,9 +59,11 @@ struct BotsWindowTests {
       gatewayProbe: { gateway }
     )
     await bots.start()
+    await bots.awaitScheduledPublishDrain()
     bots.select("b_1")
     conversationPort.emit(.connection(.ready))
     conversationPort.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    await bots.awaitScheduledPublishDrain()
     try await waitUntil {
       app.conversation.connection == .ready && app.conversation.hasSnapshot
     }
