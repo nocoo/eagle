@@ -263,18 +263,12 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
       x: viewport.minX + Theme.Metric.conversationInset + 38,
       y: viewport.minY + Theme.Metric.edgeFadeHeight + 10 + 22)
     fixture.focusOther()
-    fixture.move(messagePoint)
-    await fixture.settle()
+    await fixture.hover(messagePoint)
+    await fixture.drainRunLoop(for: 0.2)
     state("beforeMessageSelection", fixture)
     fixture.click(messagePoint, count: 2)
     await fixture.settle()
-    // Copy the native selection instead of AX queries: on headless CI the accessibility
-    // server can block the main thread indefinitely while the Node probe times out.
-    let pasteboard = NSPasteboard.general
-    pasteboard.clearContents()
-    fixture.key("c", code: 8, modifiers: .command)
-    await fixture.settle()
-    let selectedText = pasteboard.string(forType: .string) ?? ""
+    let selectedText = await fixture.selectedText()
     editingStates.append([
       "step": "messageSelection", "selectedText": selectedText,
       "keyWindow": fixture.window.isKeyWindow,
@@ -491,17 +485,51 @@ private final class ComposerFocusWindow {
       with: .mouseEntered, location: location, modifierFlags: [],
       timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
       context: nil, eventNumber: 3, trackingNumber: 0, userData: nil)!
-    // Posting mouseMoved does not synthesize a tracking-area entry. Deliver the
-    // native entry callback to this host's existing mouse tracking owner first.
-    for area in host.trackingAreas
-    where area.options.contains(.mouseEnteredAndExited) && area.options.contains(.mouseMoved) {
-      (area.owner as? NSResponder)?.mouseEntered(with: entered)
+    for view in descendants {
+      for area in view.trackingAreas
+      where area.options.contains(.mouseEnteredAndExited)
+        && (area.options.contains(.activeAlways) || area.options.contains(.activeInKeyWindow))
+      {
+        (area.owner as? NSResponder)?.mouseEntered(with: entered)
+      }
     }
     let event = NSEvent.mouseEvent(
       with: .mouseMoved, location: location, modifierFlags: [],
       timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
       context: nil, eventNumber: 3, clickCount: 0, pressure: 0)!
+    if let hit = host.hitTest(location) {
+      hit.mouseMoved(with: event)
+    }
     NSApp.postEvent(event, atStart: false)
+  }
+
+  func hover(_ point: NSPoint) async {
+    let start = NSPoint(x: host.bounds.midX, y: host.bounds.midY)
+    for step in 0...12 {
+      let t = CGFloat(step) / 12
+      move(
+        NSPoint(
+          x: start.x + (point.x - start.x) * t,
+          y: start.y + (point.y - start.y) * t
+        ))
+      await settle()
+    }
+    move(point)
+    await settle()
+  }
+
+  func selectedText() async -> String {
+    if let editor = window.firstResponder as? NSTextView {
+      let range = editor.selectedRange()
+      if range.length > 0 {
+        return (editor.string as NSString).substring(with: range)
+      }
+    }
+    let pasteboard = NSPasteboard.general
+    pasteboard.clearContents()
+    key("c", code: 8, modifiers: .command)
+    await settle()
+    return pasteboard.string(forType: .string) ?? ""
   }
 
   func scroll(at point: NSPoint, delta: Int32) async -> [[String: Any]] {
