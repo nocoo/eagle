@@ -266,6 +266,8 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
     await fixture.hover(messagePoint)
     await fixture.drainRunLoop(for: 0.2)
     state("beforeMessageSelection", fixture)
+    fixture.click(messagePoint, count: 1)
+    await fixture.settle()
     fixture.click(messagePoint, count: 2)
     await fixture.settle()
     let selectedText = await fixture.selectedText()
@@ -519,17 +521,12 @@ private final class ComposerFocusWindow {
   }
 
   func selectedText() async -> String {
-    if let editor = window.firstResponder as? NSTextView {
-      let range = editor.selectedRange()
-      if range.length > 0 {
-        return (editor.string as NSString).substring(with: range)
-      }
+    for view in descendants.compactMap({ $0 as? NSTextView }) {
+      let range = view.selectedRange()
+      guard range.length > 0 else { continue }
+      return (view.string as NSString).substring(with: range)
     }
-    let pasteboard = NSPasteboard.general
-    pasteboard.clearContents()
-    key("c", code: 8, modifiers: .command)
-    await settle()
-    return pasteboard.string(forType: .string) ?? ""
+    return ""
   }
 
   func scroll(at point: NSPoint, delta: Int32) async -> [[String: Any]] {

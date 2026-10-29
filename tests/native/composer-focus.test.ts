@@ -19,6 +19,7 @@ test("the native Chat composer focuses on entry and whitespace while preserving 
   const cleanArguments = [
     "-i",
     "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+    "EAGLE_COMPOSER_FOCUS_FIXTURE=1",
     executable,
   ];
   let cursor: { x: number; y: number } | undefined;

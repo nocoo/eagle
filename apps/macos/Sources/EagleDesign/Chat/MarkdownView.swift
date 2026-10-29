@@ -183,7 +183,7 @@ public struct AssistantBubble: View, Equatable {
 
   @ViewBuilder
   private func selectable<Content: View>(_ content: Content) -> some View {
-    if hovering {
+    if hovering || ProcessInfo.processInfo.environment["EAGLE_COMPOSER_FOCUS_FIXTURE"] == "1" {
       content.textSelection(.enabled)
     } else {
       content
