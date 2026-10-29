@@ -440,11 +440,10 @@ private final class ComposerFocusWindow {
 
   /// Let SwiftUI and AppKit drain pending layout/scroll work without posting wheel events.
   func drainRunLoop(for duration: TimeInterval = 0.35) async {
-    let deadline = Date().addingTimeInterval(duration)
-    while Date() < deadline {
+    let steps = max(1, Int(duration / 0.01))
+    for _ in 0..<steps {
       host.layoutSubtreeIfNeeded()
-      RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
-      await Task.yield()
+      try? await Task.sleep(for: .milliseconds(10))
     }
   }
 
