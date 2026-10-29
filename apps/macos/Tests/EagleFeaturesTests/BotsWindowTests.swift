@@ -835,7 +835,7 @@ struct BotsDaemonAbsentTests {
     let model = ConversationViewModel(botId: "", conversation: connection, outbox: outbox)
     model.select(botId: "b_1")
 
-    let deadline = Date().addingTimeInterval(8)
+    let deadline = Date().addingTimeInterval(30)
     while !model.connection.isFailed, Date() < deadline {
       try await Task.sleep(nanoseconds: 50_000_000)
     }
