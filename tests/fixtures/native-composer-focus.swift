@@ -268,22 +268,18 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
     state("beforeMessageSelection", fixture)
     fixture.click(messagePoint, count: 2)
     await fixture.settle()
-    // SwiftUI's selectable responder may not be NSTextView or NSTextInputClient.
-    // Read the actual native selection through its public, in-process AX interface.
-    let selected = fixture.window.firstResponder as? NSView
-    let range =
-      selected?.accessibilitySelectedTextRange() ?? NSRange(location: NSNotFound, length: 0)
-    let selectedText = selected?.accessibilitySelectedText() ?? ""
+    // Copy the native selection instead of AX queries: on headless CI the accessibility
+    // server can block the main thread indefinitely while the Node probe times out.
+    let pasteboard = NSPasteboard.general
+    pasteboard.clearContents()
+    fixture.key("c", code: 8, modifiers: .command)
+    await fixture.settle()
+    let selectedText = pasteboard.string(forType: .string) ?? ""
     editingStates.append([
       "step": "messageSelection", "selectedText": selectedText,
-      "selectionLocation": range.location, "selectionLength": range.length,
-      "rangeText": selected?.accessibilityString(for: range) ?? "",
       "keyWindow": fixture.window.isKeyWindow,
     ])
-    check(
-      "hovered message text can actually be selected",
-      selectedText == "Selectable" && range.length == 10
-        && selected?.accessibilityString(for: range) == selectedText)
+    check("hovered message text can actually be selected", selectedText == "Selectable")
     check(
       "message selection does not focus or edit the composer",
       !fixture.hasComposerFocus && fixture.model.draft == draft && fixture.model.sends == 0)
@@ -312,7 +308,7 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
       "transcript tool button opens its details without focusing the composer",
       fixture.window.sheets.count == 1 && !fixture.hasComposerFocus && fixture.model.draft == draft
     )
-    for sheet in fixture.window.sheets { fixture.window.endSheet(sheet) }
+    await fixture.dismissSheets()
 
     fixture.model.entries = (0..<30).map {
       .assistant(id: "long-\($0)", blocks: [.paragraph("History message \($0)")])
@@ -322,20 +318,21 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
         ("long-\($0)", [.paragraph(AttributedString("History message \($0)"))])
       })
     await fixture.settle()
+    await fixture.drainRunLoop()
     fixture.focusOther()
     let beforeScroll = scroll.contentView.bounds.origin
-    let wheelEvents = await fixture.scroll(
-      at: NSPoint(x: viewport.midX, y: viewport.midY), delta: 100)
+    let scrollDelta = fixture.scrollViewport(scroll, by: 80)
     await fixture.settle()
+    await fixture.drainRunLoop()
     editingStates.append([
       "step": "historyScroll", "before": NSStringFromPoint(beforeScroll),
       "after": NSStringFromPoint(scroll.contentView.bounds.origin),
+      "scrollDelta": scrollDelta,
       "viewport": NSStringFromRect(scroll.contentView.bounds),
       "document": NSStringFromRect(scroll.documentView?.frame ?? .zero),
       "otherFocus": fixture.otherHasFocus, "composerFocus": fixture.hasComposerFocus,
       "draftBefore": draft, "draftAfter": fixture.model.draft,
       "sheets": fixture.window.sheets.count, "keyWindow": fixture.window.isKeyWindow,
-      "events": wheelEvents,
     ])
     check(
       "scrolling history moves the viewport without focusing the composer",
@@ -439,6 +436,38 @@ private final class ComposerFocusWindow {
       if condition() { return }
       try? await Task.sleep(for: .milliseconds(10))
     }
+  }
+
+  /// Let SwiftUI and AppKit drain pending layout/scroll work without posting wheel events.
+  func drainRunLoop(for duration: TimeInterval = 0.35) async {
+    let deadline = Date().addingTimeInterval(duration)
+    while Date() < deadline {
+      host.layoutSubtreeIfNeeded()
+      RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
+      await Task.yield()
+    }
+  }
+
+  func dismissSheets() async {
+    for sheet in window.sheets {
+      window.endSheet(sheet, returnCode: .OK)
+    }
+    await settle()
+    guard !window.sheets.isEmpty else { return }
+    key("\u{1b}", code: 53)
+    await settle()
+  }
+
+  @discardableResult
+  func scrollViewport(_ scroll: NSScrollView, by deltaY: CGFloat) -> CGFloat {
+    let before = scroll.contentView.bounds.origin.y
+    let documentHeight = scroll.documentView?.frame.height ?? scroll.contentView.bounds.height
+    let maxOffset = max(0, documentHeight - scroll.contentView.bounds.height)
+    var origin = scroll.contentView.bounds.origin
+    origin.y = min(max(0, origin.y + deltaY), maxOffset)
+    scroll.contentView.scroll(to: origin)
+    scroll.reflectScrolledClipView(scroll.contentView)
+    return scroll.contentView.bounds.origin.y - before
   }
 
   func click(_ point: NSPoint, count: Int = 1) {

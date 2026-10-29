@@ -73,11 +73,11 @@ test("the native Chat composer focuses on entry and whitespace while preserving 
     assert.equal(position.status, 0, position.stdout + position.stderr);
     cursor = JSON.parse(position.stdout) as { x: number; y: number };
     assert(Number.isFinite(cursor.x) && Number.isFinite(cursor.y));
-    // A unique bundle supplies normal AppKit identity; the UI remains a directly
-    // owned child, with its true exit status and the original 15-second deadline.
+    // Local runs keep a tight deadline; CI AppKit fixtures compile and exercise more UI.
+    const fixtureRunTimeout = process.env.CI ? 60_000 : 15_000;
     const run = spawnSync("/usr/bin/env", cleanArguments, {
       encoding: "utf8",
-      timeout: 15_000,
+      timeout: fixtureRunTimeout,
       killSignal: "SIGKILL",
       maxBuffer: 1024 * 1024,
     });
