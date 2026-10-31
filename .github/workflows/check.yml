@@ -22,9 +22,9 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
   macos:
-    runs-on: macos-15
+    runs-on: macos-26
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
       # Swift builds independently. Real App/device integration tests also exercise
