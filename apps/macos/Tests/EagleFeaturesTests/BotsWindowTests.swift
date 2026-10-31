@@ -120,15 +120,12 @@ struct BotsWindowTests {
               id: "tool", role: .tool, state: .complete, createdAt: "x",
               blocks: [.text("tool output")]),
           ])))
-    try await Task.sleep(for: .milliseconds(60))
-    #expect(bots.items.first?.subtitle == "可以正常轮询。 下一行")
+    try await waitUntil { bots.items.first?.subtitle == "可以正常轮询。 下一行" }
     port.emit(.connection(.reconnecting(attempt: 1)))
-    try await Task.sleep(for: .milliseconds(60))
-    #expect(bots.items.first?.subtitle == "可以正常轮询。 下一行")
+    try await waitUntil { bots.items.first?.subtitle == "可以正常轮询。 下一行" }
     port.emit(.connection(.ready))
     port.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
-    try await Task.sleep(for: .milliseconds(60))
-    #expect(bots.items.first?.subtitle == "")
+    try await waitUntil { bots.items.first?.subtitle == "" }
   }
 
   @Test("draft and error-only changes do not republish the transcript")
