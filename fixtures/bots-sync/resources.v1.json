@@ -1,0 +1,38 @@
+[
+  {
+    "name": "AGENTS.md",
+    "kind": "instructions",
+    "sha256": "44f36bfd70bec89f6f951b6c6566300104ae4f443079e62830f6499666566a3d",
+    "base64": "S2VlcCByZXNvdXJjZS12ZXJzaW9uLW9uZSBpbnN0cnVjdGlvbnMuIOS/neeVmeaMh+S7pOOAggo="
+  },
+  {
+    "name": "skills/fixture/SKILL.md",
+    "kind": "skill",
+    "sha256": "6d7ee131ef5ef6ba32c81acfdce1adae8b46db3fc013bfdb1c244654788fbd3e",
+    "base64": "LS0tCm5hbWU6IGZpeHR1cmUKZGVzY3JpcHRpb246IHJlYWQgdGhlIGNvbXBsZXRlIHNlbGVjdGVkIHBhY2thZ2UKLS0tClJlYWQgW2lucHV0XShyZWZlcmVuY2VzL25lc3RlZC9pbnB1dC50eHQpLCB0aGVuIHJ1biBgYmFzaCBzY3JpcHRzL25lc3RlZC9ydW4uc2hgLgpUaGUgc2NyaXB0IHJlc29sdmVzIGl0cyBvd24gcGFja2FnZSBhbmQgd3JpdGVzIHJlc3VsdC5iaW4gaW4gdGhlIGxvY2FsIGN3ZC4K"
+  },
+  {
+    "name": "skills/fixture/scripts/nested/run.sh",
+    "kind": "skill",
+    "sha256": "dfa0b5c28f5b92967f01ed04e7b5dd575a481d68b4f493fb650051824d6d22d5",
+    "base64": "IyEvYmluL3NoCnNldCAtZXUKcGtnPSQoQ0RQQVRIPSBjZCAtLSAiJChkaXJuYW1lIC0tICIkMCIpLy4uLy4uIiAmJiBwd2QpCmNhdCAiJHBrZy9yZWZlcmVuY2VzL25lc3RlZC9pbnB1dC50eHQiID4gIiRQV0QvcmVzdWx0LmJpbiIKY2F0ICIkcGtnL2Fzc2V0cy9yYXcuYmluIiA+PiAiJFBXRC9yZXN1bHQuYmluIgo="
+  },
+  {
+    "name": "skills/fixture/references/nested/input.txt",
+    "kind": "skill",
+    "sha256": "b34aadebafea79a497a2e32bb3dc52a2ab780307934505f96375853f863f7b34",
+    "base64": "bmVzdGVkIHJlZmVyZW5jZSBvbmUg5Y6f5a2X6IqCCg=="
+  },
+  {
+    "name": "skills/fixture/assets/raw.bin",
+    "kind": "skill",
+    "sha256": "d423c7d662b356d3bcfb768944ff3b5f3f89b7086bb16e6a5afba362da09acb3",
+    "base64": "AP8BgCo="
+  },
+  {
+    "name": "attachments/raw.bin",
+    "kind": "attachment",
+    "sha256": "50e8b854a41efdfdcf4fa3d86a12172c623e5d12b2b30ec16b0d6c26e1308602",
+    "base64": "AP5/Ag=="
+  }
+]

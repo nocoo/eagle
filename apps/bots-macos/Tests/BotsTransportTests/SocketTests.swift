@@ -228,6 +228,101 @@ extension SocketTests {
 }
 
 extension SocketTests {
+  func testReadyHeadSelectionAndMergeUseTheOriginalContextSocket() async throws {
+    let client = CatalogHTTPClient(baseURL: fixture.baseURL, token: fixture.token)
+    let bot = try await client.create(title: "历史接力", label: nil, appearance: .standard)
+    let shared = UUID().uuidString.lowercased()
+    let binding = try await client.bindReplica(botId: bot.id, sharedBotId: shared)
+    XCTAssertEqual(binding.sharedBotId, shared)
+    XCTAssertEqual(binding.localBotId, bot.id)
+    let actualBinding = try await client.loadReplicaBinding(botId: bot.id)
+    XCTAssertEqual(actualBinding, binding)
+    do {
+      try await client.configureSync(
+        botId: bot.id, peerDeviceId: UUID().uuidString.lowercased(), direction: .receive)
+      XCTFail("this fixture has no device synchronization backend")
+    } catch { XCTAssertTrue(error is ClientError) }
+    var sockets: [ConversationSocket] = []
+    var consumers: [Task<Void, Never>] = []
+    defer {
+      sockets.forEach { $0.close() }
+      consumers.forEach { $0.cancel() }
+    }
+    func connect(_ contextId: String?) async throws -> (ConversationSocket, EventCollector) {
+      let socket = ConversationSocket(
+        baseURL: fixture.baseURL, token: fixture.token, botId: bot.id, contextId: contextId)
+      let collector = EventCollector()
+      sockets.append(socket)
+      consumers.append(Task { for await event in socket.events { await collector.append(event) } })
+      socket.start()
+      _ = try await collector.waitFor {
+        if case .snapshot = $0 { return true }
+        return false
+      }
+      return (socket, collector)
+    }
+    func run(
+      _ socket: ConversationSocket, _ collector: EventCollector, _ request: String, _ text: String
+    ) async throws {
+      try socket.send(
+        text: text, requestId: request, whenBusy: .followUp, trace: Identifiers.trace("send"))
+      _ = try await collector.waitFor {
+        if case .submission(let value) = $0 {
+          return value.requestId == request && value.status == .done
+        }
+        return false
+      }
+    }
+    let (root, rootEvents) = try await connect(nil)
+    try await run(root, rootEvents, "native_context_seed", "共同上下文")
+    let page = try await client.loadHeads(botId: bot.id, after: 0)
+    let seed = try XCTUnwrap(page.items.filter(\.ready).max { $0.entries < $1.entries })
+    XCTAssertFalse(seed.head.isEmpty)
+    let detail = try await client.loadHead(botId: bot.id, head: seed.head)
+    XCTAssertEqual(detail.head, seed.head)
+    var tips: [String] = []
+    for (contextId, text) in [("native_context_left", "左侧继续"), ("native_context_right", "右侧继续")] {
+      let selection = try await client.createContext(
+        botId: bot.id, contextId: contextId, head: seed.head, resourceHead: nil)
+      XCTAssertEqual(selection.seedHead, seed.head)
+      let (socket, events) = try await connect(contextId)
+      try await run(socket, events, "r_\(contextId)", text)
+      _ = try await client.loadHeads(botId: bot.id, after: page.nextAfter)
+      let current = try await client.loadContext(botId: bot.id, contextId: contextId)
+      tips.append(try XCTUnwrap(current.tip))
+    }
+    let preview = try await client.previewMerge(botId: bot.id, heads: tips)
+    XCTAssertTrue(preview.conflicts.isEmpty)
+    XCTAssertTrue(preview.resources.isEmpty)
+    let merged = try await client.mergeHeads(
+      botId: bot.id, heads: tips, requestId: "native_merge_001", choices: [], resources: [])
+    let same = try await client.mergeHeads(
+      botId: bot.id, heads: tips, requestId: "native_merge_001", choices: [], resources: [])
+    XCTAssertEqual(merged, same)
+    let mergedDetail = try await client.loadHead(botId: bot.id, head: merged.head)
+    XCTAssertEqual(mergedDetail.parents, tips)
+    _ = try await client.createContext(
+      botId: bot.id, contextId: "native_context_merged", head: merged.head, resourceHead: nil)
+    let (selected, selectedEvents) = try await connect("native_context_merged")
+    let event = try await selectedEvents.waitFor {
+      if case .snapshot = $0 { return true }
+      return false
+    }
+    guard case .snapshot(let snapshot) = event else { return XCTFail("expected selected snapshot") }
+    XCTAssertEqual(
+      snapshot.messages.filter { $0.role == .user }.map(\.text), ["共同上下文", "左侧继续", "右侧继续"])
+    try await run(selected, selectedEvents, "native_merged_continue", "合并后继续")
+    let rootAgain = try await connect(nil)
+    let rootEvent = try await rootAgain.1.waitFor {
+      if case .snapshot = $0 { return true }
+      return false
+    }
+    guard case .snapshot(let rootSnapshot) = rootEvent else {
+      return XCTFail("expected root snapshot")
+    }
+    XCTAssertEqual(rootSnapshot.messages.filter { $0.role == .user }.map(\.text), ["共同上下文"])
+  }
+
   func testClosingASocketReleasesTheBotSubscriber() async throws {
     let catalog = CatalogHTTPClient(baseURL: fixture.baseURL, token: fixture.token)
     let bot = try await catalog.create(title: "释放", label: nil, appearance: .standard)

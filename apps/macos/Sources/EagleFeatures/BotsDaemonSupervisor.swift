@@ -1,7 +1,10 @@
+import BotsTransport
 import Combine
 import CryptoKit
+import Darwin
 import EagleDevices
 import Foundation
+import OSLog
 
 /// Owns the local Bots daemon: starts it with the app (unless one is already running),
 /// reports its state in Settings, and terminates the process it started when the app quits.
@@ -36,19 +39,52 @@ public final class BotsDaemonSupervisor: ObservableObject {
   private let deviceSocketPath: String?
   private let environment: [String: String]
   private let defaults: UserDefaults
+  private let publishSync: @MainActor (Int?, String?) async throws -> Void
+  private var syncGeneration = UUID()
+  private var syncTask: Task<Void, Never>?
+  private var lastSyncPublication: String?
+  public enum Withdrawal: Equatable { case confirmed, unknown, notOwned }
+  public private(set) var withdrawal: Withdrawal = .notOwned
+  private let syncLog = Logger(subsystem: "ai.hexly.eagle.bots", category: "sync")
   private var child: Process?
   /// A daemon this app started earlier (or adopted from its recorded pid); it is ours to stop.
   private var ownedPid: Int?
-  private var starting = false
+  private var ownedIdentity: ProcessIdentity?
+  private var stoppingChild = false
+  private struct ProcessIdentity: Equatable {
+    let pid: Int
+    let seconds: UInt64
+    let microseconds: UInt64
+    static func read(_ pid: Int) -> ProcessIdentity? {
+      var info = proc_bsdinfo()
+      guard pid > 0,
+        proc_pidinfo(
+          Int32(pid), PROC_PIDTBSDINFO, 0, &info,
+          Int32(MemoryLayout<proc_bsdinfo>.size)) == MemoryLayout<proc_bsdinfo>.size,
+        info.pbi_uid == getuid()
+      else { return nil }
+      return ProcessIdentity(
+        pid: pid, seconds: info.pbi_start_tvsec, microseconds: info.pbi_start_tvusec)
+    }
+  }
+  private var startupGeneration = UUID()
+  private var startTask: Task<Void, Never>?
+  private var stopTask: (generation: UUID, task: Task<Void, Never>)?
+  private var quitting = false
   private let log = LockedText()
 
   public init(
     settings: BotsSettings = BotsSettings(), bundle: URL = Bundle.main.bundleURL,
     environment: [String: String] = ProcessInfo.processInfo.environment,
-    defaults: UserDefaults = .standard
+    defaults: UserDefaults = .standard,
+    publishSync: @escaping @MainActor (Int?, String?) async throws -> Void = { port, digest in
+      try await DeviceSettingsViewModel.shared.publishSyncEndpoints(
+        port: port, expectedSelfDigest: digest)
+    }
   ) {
     self.settings = settings
     self.defaults = defaults
+    self.publishSync = publishSync
     self.environment = environment
     autoStart = defaults.object(forKey: botsAutoStartKey) as? Bool ?? true
     packaged = bundle.pathExtension == "app"
@@ -71,15 +107,28 @@ public final class BotsDaemonSupervisor: ObservableObject {
 
   /// Starts the daemon if nothing answers the health endpoint. Idempotent.
   public func startIfNeeded() async {
+    guard !quitting, stopTask == nil else { return }
     if case .running = status { return }
-    if starting { return }
-    starting = true
-    defer { starting = false }
+    if let startTask {
+      await startTask.value
+      return
+    }
+    let generation = UUID()
+    startupGeneration = generation
+    let task = Task { await start(generation: generation) }
+    startTask = task
+    await task.value
+    if startupGeneration == generation { startTask = nil }
+  }
+
+  private func start(generation: UUID) async {
+    guard currentStartup(generation) else { return }
     guard !packaged || deviceSocketPath != nil else {
       status = .failed("设备运行配置不可用，请重新安装 Eagle。")
       return
     }
     if let health = await probe() {
+      guard currentStartup(generation) else { return }
       guard matchesDevicePort(health) else {
         status = .failed("此端口的 Bots 服务未连接当前设备环境。请停止该服务后重试。")
         return
@@ -87,6 +136,7 @@ public final class BotsDaemonSupervisor: ObservableObject {
       adopt(health)
       return
     }
+    guard currentStartup(generation) else { return }
     guard autoStart else {
       status = .stopped
       return
@@ -108,7 +158,7 @@ public final class BotsDaemonSupervisor: ObservableObject {
         "scripts/serve.ts",
         "--root", settings.rootPath,
         "--port", settings.port,
-      ]
+      ] + (deviceSocketPath == nil ? [] : ["--sync-port", "0"])
     var childEnvironment =
       packaged
       ? [
@@ -134,6 +184,7 @@ public final class BotsDaemonSupervisor: ObservableObject {
         self?.terminated(finished)
       }
     }
+    guard currentStartup(generation) else { return }
     do {
       try process.run()
     } catch {
@@ -143,19 +194,26 @@ public final class BotsDaemonSupervisor: ObservableObject {
     }
     child = process
     ownedPid = Int(process.processIdentifier)
+    ownedIdentity = ProcessIdentity.read(Int(process.processIdentifier))
     defaults.set(ownedPid, forKey: botsDaemonPidKey)
     // Wait for health; a daemon with a busy port exits and the probe never answers.
     for _ in 0..<40 {
       try? await Task.sleep(nanoseconds: 250_000_000)
+      guard currentStartup(generation) else { return }
       if let health = await probe() {
+        guard currentStartup(generation), child === process else { return }
         guard health.pid == Int(process.processIdentifier), matchesDevicePort(health) else { break }
         status = .running(version: health.version, pid: health.pid, external: false)
+        observeSync(health)
         return
       }
+      guard currentStartup(generation), child === process else { return }
       if !process.isRunning { break }
     }
+    guard currentStartup(generation), child === process else { return }
     let tail = log.suffix(600)
     await terminateChild()
+    guard currentStartup(generation) else { return }
     status = .failed(
       tail.isEmpty ? "Bots daemon 没有在 10 秒内就绪。" : "Bots daemon 退出：\(tail)"
     )
@@ -168,26 +226,65 @@ public final class BotsDaemonSupervisor: ObservableObject {
       status = .failed("这个 daemon 不是由 App 启动的（pid \(pid)），不自动停止。")
       return
     }
-    await terminateChild()
-    status = .stopped
+    let generation = await stopOwned()
+    if startupGeneration == generation { status = .stopped }
   }
 
   public func restart() async {
-    await terminateChild()
+    let generation = await stopOwned()
+    guard startupGeneration == generation else { return }
+    quitting = false
     status = .stopped
     await startIfNeeded()
   }
 
-  /// `applicationWillTerminate` has little time: signal, wait briefly, then kill. It reads
-  /// the pid the supervisor recorded, so it works without touching the main actor.
-  public nonisolated static func terminateRecordedDaemon() {
-    let pid = UserDefaults.standard.integer(forKey: botsDaemonPidKey)
-    guard pid > 0 else { return }
-    kill(pid_t(pid), SIGTERM)
-    let deadline = Date().addingTimeInterval(3)
-    while kill(pid_t(pid), 0) == 0, Date() < deadline { usleep(50_000) }
-    if kill(pid_t(pid), 0) == 0 { kill(pid_t(pid), SIGKILL) }
-    UserDefaults.standard.removeObject(forKey: botsDaemonPidKey)
+  /// Normal App quit awaits this operation; uncertain cloud withdrawal never blocks exit forever.
+  public func prepareForApplicationQuit() async {
+    quitting = true
+    let generation = await stopOwned()
+    if startupGeneration == generation { status = .stopped }
+  }
+
+  private func currentStartup(_ generation: UUID) -> Bool {
+    !quitting && startupGeneration == generation
+  }
+
+  private func stopOwned() async -> UUID {
+    if let stopTask {
+      await stopTask.task.value
+      return stopTask.generation
+    }
+    let generation = UUID()
+    startupGeneration = generation
+    let pending = startTask
+    pending?.cancel()
+    startTask = nil
+    let task = Task {
+      await terminateChild()
+      await pending?.value
+    }
+    stopTask = (generation, task)
+    await task.value
+    if stopTask?.generation == generation { stopTask = nil }
+    return generation
+  }
+
+  /// Synchronous last-resort cleanup, after the awaited applicationShouldTerminate path.
+  public func terminateOwnedDaemonFallback() {
+    startupGeneration = UUID()
+    startTask?.cancel()
+    syncGeneration = UUID()
+    syncTask?.cancel()
+    syncTask = nil
+    if let child, child.isRunning {
+      kill(child.processIdentifier, SIGKILL)
+    } else if let ownedIdentity, ProcessIdentity.read(ownedIdentity.pid) == ownedIdentity {
+      kill(pid_t(ownedIdentity.pid), SIGKILL)
+    }
+  }
+
+  public static func terminateRecordedDaemon() {
+    shared.terminateOwnedDaemonFallback()
   }
 
   // MARK: - internals
@@ -196,6 +293,7 @@ public final class BotsDaemonSupervisor: ObservableObject {
     let version: String
     let pid: Int
     let deviceAccess: DeviceAccess?
+    let instance: String?
   }
   private struct DeviceAccess: Decodable {
     let version: Int
@@ -227,8 +325,14 @@ public final class BotsDaemonSupervisor: ObservableObject {
       recorded == health.pid
     {
       // A previous run of this app spawned it (a crash skipped the shutdown).
+      guard let identity = ProcessIdentity.read(health.pid) else {
+        status = .failed("无法确认已记录的 Bots 进程归属。")
+        return
+      }
       ownedPid = health.pid
+      ownedIdentity = identity
       status = .running(version: health.version, pid: health.pid, external: false)
+      observeSync(health)
       return
     }
     status = .running(version: health.version, pid: health.pid, external: true)
@@ -237,31 +341,157 @@ public final class BotsDaemonSupervisor: ObservableObject {
   private func terminated(_ process: Process) {
     guard child === process else { return }
     child = nil
-    ownedPid = nil
-    defaults.removeObject(forKey: botsDaemonPidKey)
-    if case .starting = status { return }
-    if case .stopped = status { return }
+    if stoppingChild { return }
+    syncGeneration = UUID()
+    syncTask?.cancel()
+    syncTask = nil
+    let generation = syncGeneration
+    let pid = ownedPid
     status = .stopped
+    Task {
+      await dispatchWithdrawal(generation: generation)
+      guard syncGeneration == generation, ownedPid == pid else { return }
+      ownedPid = nil
+      ownedIdentity = nil
+      defaults.removeObject(forKey: botsDaemonPidKey)
+    }
+  }
+
+  private struct SyncState: Decodable {
+    let version: Int
+    let instance: String
+    let pid: Int
+    let binding: String?
+    let ready: Bool
+    let actualPort: Int?
+    let selfDigest: String?
+  }
+
+  private func observeSync(_ health: Health) {
+    syncGeneration = UUID()
+    syncTask?.cancel()
+    lastSyncPublication = nil
+    let generation = syncGeneration
+    guard deviceSocketPath != nil, ownedPid == health.pid else { return }
+    syncTask = Task { [weak self] in
+      while !Task.isCancelled {
+        guard let self, self.syncGeneration == generation else { return }
+        await self.refreshSync(health, generation: generation)
+        do { try await Task.sleep(for: .seconds(5)) } catch { return }
+      }
+    }
+  }
+
+  private func refreshSync(_ health: Health, generation: UUID) async {
+    let state: SyncState?
+    do {
+      var request = URLRequest(url: settings.baseURL.appendingPathComponent("v1/sync/status"))
+      request.timeoutInterval = 1
+      let token = try TokenStore(root: settings.rootURL, environment: [:]).read()
+      request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+      let (data, response) = try await URLSession.shared.data(for: request)
+      guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+        throw DeviceHostError.unavailable
+      }
+      state = try JSONDecoder().decode(SyncState.self, from: data)
+    } catch { state = nil }
+    guard generation == syncGeneration, ownedPid == health.pid else { return }
+    var port: Int?
+    var digest: String?
+    if let state, state.version == 1, state.pid == health.pid,
+      state.instance == health.instance, state.binding == health.deviceAccess?.binding,
+      state.ready, let actualPort = state.actualPort, (1...65535).contains(actualPort),
+      let selfDigest = state.selfDigest,
+      selfDigest.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil
+    {
+      port = actualPort
+      digest = selfDigest
+    }
+    let key = port.map { "\($0):\(digest ?? "")" } ?? "withdraw"
+    guard lastSyncPublication != key || port != nil else { return }
+    // No await between the generation check and dispatch; Node orders already-dispatched writes.
+    do {
+      try await publishSync(port, digest)
+      guard generation == syncGeneration, ownedPid == health.pid else { return }
+      lastSyncPublication = key
+    } catch {
+      guard generation == syncGeneration else { return }
+      lastSyncPublication = nil
+      syncLog.error("endpoint publication unconfirmed")
+    }
+  }
+
+  private func withdrawSync() async {
+    syncGeneration = UUID()
+    syncTask?.cancel()
+    syncTask = nil
+    await dispatchWithdrawal(generation: syncGeneration)
+  }
+
+  private func dispatchWithdrawal(generation: UUID) async {
+    guard generation == syncGeneration else { return }
+    guard let pid = ownedPid, deviceSocketPath != nil else {
+      if withdrawal != .unknown { withdrawal = .notOwned }
+      return
+    }
+    // A non-cooperative XPC/Node operation can outlive cancellation: never await that task at the deadline.
+    let confirmed = await withCheckedContinuation { continuation in
+      var settled = false
+      var deadline: Task<Void, Never>?
+      Task {
+        guard generation == syncGeneration, ownedPid == pid else {
+          guard !settled else { return }
+          settled = true
+          deadline?.cancel()
+          continuation.resume(returning: false)
+          return
+        }
+        let result: Bool
+        do {
+          try await publishSync(nil, nil)
+          result = true
+        } catch { result = false }
+        guard !settled else { return }
+        settled = true
+        deadline?.cancel()
+        continuation.resume(returning: result)
+      }
+      deadline = Task {
+        do { try await Task.sleep(for: .seconds(3)) } catch { return }
+        guard !settled else { return }
+        settled = true
+        continuation.resume(returning: false)
+      }
+    }
+    guard generation == syncGeneration, ownedPid == pid else { return }
+    withdrawal = confirmed ? .confirmed : .unknown
+    if !confirmed { syncLog.error("endpoint withdrawal unconfirmed at shutdown") }
   }
 
   private func terminateChild() async {
-    guard let process = child, process.isRunning else {
-      child = nil
-      ownedPid = nil
-      defaults.removeObject(forKey: botsDaemonPidKey)
-      if case .running(_, _, let external) = status, !external {
-        status = .stopped
+    stoppingChild = true
+    defer { stoppingChild = false }
+    let identity = ownedIdentity
+    await withdrawSync()
+    guard let pid = ownedPid else { return }
+    if let process = child, process.isRunning {
+      process.terminate()
+      for _ in 0..<40 {
+        if !process.isRunning { break }
+        try? await Task.sleep(nanoseconds: 100_000_000)
       }
-      return
+      if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+    } else if let identity, identity.pid == pid, ProcessIdentity.read(pid) == identity {
+      kill(pid_t(pid), SIGTERM)
+      for _ in 0..<30 {
+        if ProcessIdentity.read(pid) != identity { break }
+        try? await Task.sleep(for: .milliseconds(100))
+      }
+      if ProcessIdentity.read(pid) == identity { kill(pid_t(pid), SIGKILL) }
     }
-    process.terminate()
-    for _ in 0..<40 {
-      if !process.isRunning { break }
-      try? await Task.sleep(nanoseconds: 100_000_000)
-    }
-    if process.isRunning { kill(pid_t(process.processIdentifier), SIGKILL) }
     child = nil
     ownedPid = nil
+    ownedIdentity = nil
     defaults.removeObject(forKey: botsDaemonPidKey)
   }
 

@@ -1,0 +1,29 @@
+{
+  "name": "@nocoo/bots-sync",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir .local/build",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check --error-on-warnings .",
+    "test": "node --test test/*.test.ts",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "format": "biome format --write src test package.json tsconfig.json biome.json wrangler.jsonc"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.4",
+    "@types/node": "26.6.5",
+    "miniflare": "5.20260918.0-alpha",
+    "typescript": "7.0.2",
+    "wrangler": "4.152.0"
+  },
+  "allowScripts": {
+    "workerd@1.20260918.1 || 1.20261019.1": true,
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true
+  }
+}

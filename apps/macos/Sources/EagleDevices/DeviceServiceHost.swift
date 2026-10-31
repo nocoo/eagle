@@ -26,6 +26,7 @@ public final class DeviceServiceHost {
   }
 
   private let node: URL
+  private let vault: any DeviceIdentityVault
   private let entry: URL
   private var child: Process?
   private var input: FileHandle?
@@ -41,11 +42,13 @@ public final class DeviceServiceHost {
 
   public init(
     identity: DeviceIdentity, configuration: DeviceHostConfiguration,
-    node: URL, entry: URL, stateDirectory: URL? = nil
+    node: URL, entry: URL, stateDirectory: URL? = nil,
+    vault: any DeviceIdentityVault = DeviceFileVault()
   ) {
     self.identity = identity
     self.configuration = configuration
     self.node = node
+    self.vault = vault
     self.entry = entry
     self.stateDirectory = stateDirectory ?? configuration.stateDirectory
   }
@@ -198,6 +201,7 @@ public final class DeviceServiceHost {
       [
         "pairing.create", "pairing.revoke", "pairing.redeem", "pairing.result", "member.remove",
         "policy.get", "policy.set",
+        "sync.share", "sync.incoming", "sync.endpoints.publish",
       ].contains(method)
     else { throw DeviceHostError.forbidden }
     guard pending.count < 32 else { throw DeviceHostError.unavailable }
@@ -305,6 +309,114 @@ public final class DeviceServiceHost {
           .object([
             "type": .string("signature"), "requestId": .string(id),
             "error": .string("invalid_registration_payload"),
+          ]))
+      }
+    case "sync_key_descriptor":
+      guard case .object(let envelope) = value,
+        Set(envelope.keys) == Set(["type", "requestId", "request"]),
+        let id = value["requestId"]?.string, UUID(uuidString: id) != nil,
+        case .object(let request) = value["request"],
+        Set(request.keys) == Set(["version", "registryOrigin", "identity"])
+      else {
+        rejectProtocol()
+        return
+      }
+      do {
+        let raw = DeviceJSON.object(request)
+        guard raw["version"] == .number(1),
+          raw["registryOrigin"] == .string(configuration.serviceOrigin),
+          case .object(let peer) = raw["identity"],
+          Set(peer.keys)
+            == Set(["deviceId", "publicKey", "groupId", "membershipEpoch", "credentialVersion"]),
+          raw["identity"]?["deviceId"] == .string(identity.deviceId),
+          raw["identity"]?["publicKey"] == .string(identity.publicKey),
+          raw["identity"]?["groupId"] == .null
+            || raw["identity"]?["groupId"]?.string.flatMap({
+              UUID(uuidString: $0)?.uuidString.lowercased()
+            }) == raw["identity"]?["groupId"]?.string,
+          let epoch = raw["identity"]?["membershipEpoch"]?.number,
+          epoch >= 0, epoch <= 9_007_199_254_740_991, epoch.rounded() == epoch,
+          let credential = raw["identity"]?["credentialVersion"]?.number,
+          credential >= 1, credential <= 9_007_199_254_740_991,
+          credential.rounded() == credential
+        else { throw DeviceIdentityError.invalidPayload }
+        let key = try DeviceWrappingKey.loadOrCreate(
+          profile: configuration.profile, serviceOrigin: configuration.serviceOrigin,
+          identity: identity, vault: vault)
+        let descriptor = try identity.wrappingDescriptor(
+          key: key, serviceOrigin: configuration.serviceOrigin, credentialVersion: Int64(credential)
+        )
+        try send(
+          .object([
+            "type": .string("sync_key_descriptor_result"),
+            "requestId": .string(id), "result": descriptor,
+          ]))
+      } catch {
+        try? send(
+          .object([
+            "type": .string("sync_key_descriptor_result"),
+            "requestId": .string(id), "error": .string("invalid_sync_key_descriptor"),
+          ]))
+      }
+    case "sync_key_seal", "sync_key_envelope", "sync_key_open":
+      guard case .object(let envelope) = value,
+        Set(envelope.keys) == Set(["type", "requestId", "request"]),
+        let kind = value["type"]?.string, let id = value["requestId"]?.string,
+        UUID(uuidString: id) != nil, let request = value["request"]
+      else {
+        rejectProtocol()
+        return
+      }
+      do {
+        let key: DeviceWrappingKey
+        if kind == "sync_key_seal" {
+          key = try DeviceWrappingKey.loadOrCreate(
+            profile: configuration.profile, serviceOrigin: configuration.serviceOrigin,
+            identity: identity, vault: vault)
+        } else {
+          key = try DeviceWrappingKey.loadExisting(
+            profile: configuration.profile, serviceOrigin: configuration.serviceOrigin,
+            identity: identity, vault: vault)
+        }
+        let keys = DevicePageKeys(
+          identity: identity, wrapping: key, origin: configuration.serviceOrigin)
+        let result: DeviceJSON
+        switch kind {
+        case "sync_key_seal": result = try keys.seal(request)
+        case "sync_key_envelope": result = try keys.issue(request)
+        default: result = try keys.open(request)
+        }
+        try send(
+          .object(["type": .string(kind + "_result"), "requestId": .string(id), "result": result]))
+      } catch {
+        try? send(
+          .object([
+            "type": .string(kind + "_result"), "requestId": .string(id),
+            "error": .string("invalid_sync_key_request"),
+          ]))
+      }
+    case "sync_proof":
+      guard case .object(let fields) = value,
+        Set(fields.keys) == Set(["type", "requestId", "request"]),
+        let id = value["requestId"]?.string, UUID(uuidString: id) != nil,
+        let raw = value["request"]
+      else {
+        rejectProtocol()
+        return
+      }
+      do {
+        let signature = try identity.signSyncProof(
+          SyncProofRequest(raw), serviceOrigin: configuration.serviceOrigin, now: Self.now)
+        try send(
+          .object([
+            "type": .string("sync_signature"), "requestId": .string(id),
+            "signature": .string(signature),
+          ]))
+      } catch {
+        try? send(
+          .object([
+            "type": .string("sync_signature"), "requestId": .string(id),
+            "error": .string("invalid_sync_proof"),
           ]))
       }
     case "approve":

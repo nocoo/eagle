@@ -5,6 +5,7 @@
       "**",
       "!**/worker-configuration.d.ts",
       "!apps/bots",
+      "!apps/bots-sync",
       "!**/dist",
       "!**/.build",
       "!node_modules",

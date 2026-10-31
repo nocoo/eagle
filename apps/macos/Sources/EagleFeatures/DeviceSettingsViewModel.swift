@@ -61,6 +61,28 @@ private struct DeviceServiceState: Decodable {
   let error: String?
 }
 
+public struct DeviceSyncIdentity: Decodable, Equatable, Sendable {
+  public let deviceId: String
+  public let publicKey: String
+  public let groupId: String?
+  public let membershipEpoch: Int
+  public let credentialVersion: Int
+}
+
+public struct DeviceSyncIncoming: Decodable, Equatable, Identifiable, Sendable {
+  public let sharedBotId: String
+  public let holder: DeviceSyncIdentity
+  public var id: String { holder.deviceId + "/" + sharedBotId }
+}
+
+private struct DeviceSyncIncomingPage: Decodable {
+  let version: Int
+  let local: DeviceSyncIdentity
+  let items: [DeviceSyncIncoming]
+  let nextAfter: Int
+  let hasMore: Bool
+}
+
 /// One App-wide control surface. Pairing codes stay in memory; only their hash binds a saved request ID.
 @MainActor public final class DeviceSettingsViewModel: ObservableObject {
   public static let shared = DeviceSettingsViewModel()
@@ -83,9 +105,14 @@ private struct DeviceServiceState: Decodable {
   @Published public private(set) var savedServiceAddress: String = ""
   @Published public private(set) var isStarting = false
   @Published public private(set) var isBusy = false
+  @Published public private(set) var incoming: [DeviceSyncIncoming] = []
+  @Published public private(set) var incomingIsStale = true
+  @Published public private(set) var incomingHasMore = false
+  private var incomingAfter = 0
 
   private let control: any DeviceControl
   private let defaults: UserDefaults
+  private let serviceAddressDefaults: UserDefaults?
   private let requiresServiceAddress: Bool
   private let now: @MainActor () -> Date
   private let observationWait: @MainActor () async throws -> Void
@@ -103,6 +130,8 @@ private struct DeviceServiceState: Decodable {
 
   public init(
     control: any DeviceControl = DeviceSystemControl(), defaults: UserDefaults = .standard,
+    /// Injected controls may explicitly own address storage; real helpers use their signed profile.
+    serviceAddressDefaults: UserDefaults? = nil,
     /// `nil` derives it from the bundle; tests state it instead.
     requiresServiceAddress: Bool? = nil,
     now: @escaping @MainActor () -> Date = { Date() },
@@ -112,6 +141,7 @@ private struct DeviceServiceState: Decodable {
   ) {
     self.control = control
     self.defaults = defaults
+    self.serviceAddressDefaults = serviceAddressDefaults
     // A bundle that names no relay (every published build) needs the person's choice first.
     self.requiresServiceAddress =
       requiresServiceAddress
@@ -121,7 +151,12 @@ private struct DeviceServiceState: Decodable {
     self.observationWait = observationWait
     enabled = true
     defaults.removeObject(forKey: Self.disabledKey)
-    savedServiceAddress = DeviceServiceAddress.saved(defaults) ?? ""
+    if let serviceAddressDefaults {
+      savedServiceAddress = DeviceServiceAddress.saved(serviceAddressDefaults) ?? ""
+    } else {
+      savedServiceAddress =
+        control.serviceProfile.flatMap { DeviceServiceAddress.saved(profile: $0) } ?? ""
+    }
     serviceAddressDraft = savedServiceAddress
     let record = defaults.dictionary(forKey: Self.pendingRedeemKey)
     // Older candidate records contain an ID only: they can be queried, never blindly retried.
@@ -178,13 +213,65 @@ private struct DeviceServiceState: Decodable {
     }
   }
 
+  /// Trusted parent metadata only; Bot private sockets cannot publish endpoint candidates.
+  public func publishSyncEndpoints(port: Int?, expectedSelfDigest: String?) async throws {
+    guard enabled, localReady, !stopping else { throw DeviceHostError.unavailable }
+    var params: [String: DeviceJSON] = ["syncPort": port.map { .number(Double($0)) } ?? .null]
+    if let expectedSelfDigest { params["expectedSelfDigest"] = .string(expectedSelfDigest) }
+    _ = try await control.call("sync.endpoints.publish", params: .object(params))
+  }
+
+  /// Metadata hints only. Every later receive still checks the current directional grant.
+  public func loadIncoming(more: Bool = false) async {
+    incomingIsStale = true
+    await perform {
+      let value = try await self.control.call(
+        "sync.incoming",
+        params: .object([
+          "after": .number(Double(more ? self.incomingAfter : 0)), "limit": .number(128),
+        ]))
+      let page = try value.decoded(DeviceSyncIncomingPage.self)
+      guard page.version == 1, page.local.deviceId == self.localDeviceId,
+        page.items.count <= 128
+      else { throw DeviceHostError.invalidResponse }
+      self.incoming = page.items
+      self.incomingAfter = page.nextAfter
+      self.incomingHasMore = page.hasMore
+      self.incomingIsStale = false
+    }
+  }
+
+  public func shareSync(sharedBotId: String, peerDeviceId: String, enabled: Bool) async -> Bool {
+    var confirmed = false
+    await perform {
+      let result = try await self.control.call(
+        "sync.share",
+        params: .object([
+          "sharedBotId": .string(sharedBotId), "peerDeviceId": .string(peerDeviceId),
+          "enabled": .bool(enabled),
+        ]))
+      guard result["enabled"] == .bool(enabled) else { throw DeviceHostError.invalidResponse }
+      confirmed = true
+    }
+    return confirmed
+  }
+
   /// Stores the origin and restarts the service so the helper picks it up.
   public func saveServiceAddress() async {
     guard let origin = DeviceServiceAddress.normalize(serviceAddressDraft) else {
       errorCode = "invalid_service_address"
       return
     }
-    DeviceServiceAddress.save(origin, defaults: defaults)
+    let saved: String?
+    if let serviceAddressDefaults {
+      saved = DeviceServiceAddress.save(origin, defaults: serviceAddressDefaults)
+    } else {
+      saved = control.serviceProfile.flatMap { DeviceServiceAddress.save(origin, profile: $0) }
+    }
+    guard saved != nil else {
+      errorCode = DeviceHostError.invalidConfiguration.rawValue
+      return
+    }
     savedServiceAddress = origin
     serviceAddressDraft = origin
     errorCode = nil
@@ -604,6 +691,14 @@ private struct DeviceServiceState: Decodable {
 
   private func applyDirectory(_ value: DeviceJSON) throws {
     let current = try value.decoded(DeviceDirectoryState.self)
+    if directory?.groupId != current.groupId || directory?.revision != current.revision
+      || directory?.localDeviceId != current.localDeviceId
+    {
+      incoming = []
+      incomingAfter = 0
+      incomingHasMore = false
+      incomingIsStale = true
+    }
     if directory?.groupId != current.groupId || directory?.localDeviceId != current.localDeviceId
       || directory?.revision != current.revision
       || directory?.observationRevision != current.observationRevision

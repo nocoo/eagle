@@ -94,6 +94,7 @@ budget for that step.
 
 | Step | Does |
 | --- | --- |
+| `replicaRun` | Imports a complete history carrier, checks passive inventory and starts one same-ID local branch; `resources: true` selects the normative complete resource manifest and verifies its actual provider section/version; `root:true,fresh:true` captures a resource-only carrier before the first real ordinary input, with no history receipt or placeholder turn |
 | `chat` | Sends a message as the person and waits for the run to settle |
 | `webhook` | Posts `body` to one of the case's webhook triggers with its own token; `idempotencyKey` when a retry is the point |
 | `patch` | `PATCH /v1/triggers/<bot>/<trigger>` with `{ enabled }` |

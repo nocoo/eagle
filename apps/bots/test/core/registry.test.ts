@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { BotDirectory, nodeDirectoryFs } from "../../src/core/BotDirectory.ts";
 import { BotRegistry } from "../../src/core/BotRegistry.ts";
+import type { DeviceSyncPort } from "../../src/core/DeviceSyncPort.ts";
 import { ClassifiedFailure } from "../../src/core/domain.ts";
 import type { RuntimeBotSpec } from "../../src/core/RuntimePort.ts";
 import { captureLog } from "../../src/log/log.ts";
@@ -54,6 +55,10 @@ const bench = async (
     waitDeadline?: boolean;
     /** Held open inside `busy()`, to land a lease across the idle-close decision. */
     busyGate?: Promise<void>;
+    readReplicaBinding?: (
+      spec: Pick<RuntimeBotSpec, "id" | "dir">,
+    ) => Promise<{ sharedBotId: string } | undefined>;
+    deviceSync?: DeviceSyncPort;
   } = {},
 ) => {
   const root = await mkdtemp(join(tmpdir(), "bots-registry-"));
@@ -86,6 +91,10 @@ const bench = async (
   const levels: string[] = [];
   const groupCalls: (readonly string[])[] = [];
   const registry = new BotRegistry({
+    ...(options.readReplicaBinding === undefined
+      ? {}
+      : { readReplicaBinding: options.readReplicaBinding }),
+    ...(options.deviceSync === undefined ? {} : { deviceSync: options.deviceSync }),
     directory,
     openRuntime: async (spec) => {
       opens += 1;
@@ -874,5 +883,44 @@ test("a lease granted before its open cannot deadlock a delete", async () => {
     assert.equal(await setup.directory.load().then((bots) => bots.length), 0);
   } finally {
     await setup.cleanup();
+  }
+});
+
+test("sync access rejects missing binding, missing port and real binding I/O before any extra runtime open", async () => {
+  for (const mode of ["unbound", "unconfigured", "io"] as const) {
+    const cause = new Error("owned binding read failed");
+    const setup = await bench({
+      bots: ["sync"],
+      readReplicaBinding: async () => {
+        if (mode === "io") throw cause;
+        return mode === "unbound"
+          ? undefined
+          : { sharedBotId: "44444444-4444-4444-8444-444444444444" };
+      },
+    });
+    try {
+      await setup.registry.start();
+      const opens = setup.opens();
+      setup.records.length = 0;
+      await assert.rejects(
+        setup.registry.syncAccess(
+          "b_bot0",
+          { peerDeviceId: "22222222-2222-4222-8222-222222222222", purpose: "replica.read" },
+          "tr_sync_missing",
+        ),
+        (error: unknown) => {
+          assert(error instanceof ClassifiedFailure);
+          assert.equal(error.failure.kind, mode === "io" ? "storage_failed" : "invalid_command");
+          if (mode === "io") assert.equal(error.cause, cause);
+          return true;
+        },
+      );
+      assert.equal(setup.opens(), opens);
+      assert.equal(setup.records.filter((r) => r.level === "error").length, 1);
+      assert.equal(setup.records.filter((r) => r.evt === "runtime.open.start").length, 0);
+    } finally {
+      await setup.registry.shutdown();
+      await setup.cleanup();
+    }
   }
 });

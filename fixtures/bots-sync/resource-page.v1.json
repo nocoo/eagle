@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "sharedBotId": "b4af5888-2c17-4644-ad7f-3bb2801945fa",
+  "source": {
+    "replicaId": "2e1d3d57-7a41-4852-a2ee-09f17c281800",
+    "epoch": "1d4bcaaa-d09b-42ca-bf00-f2f6d5bd71ca"
+  },
+  "range": {
+    "from": 1,
+    "to": 7
+  },
+  "events": [
+    {
+      "seq": 1,
+      "body": {
+        "kind": "resource",
+        "resource": {
+          "name": "AGENTS.md",
+          "kind": "instructions",
+          "sha256": "44f36bfd70bec89f6f951b6c6566300104ae4f443079e62830f6499666566a3d",
+          "base64": "S2VlcCByZXNvdXJjZS12ZXJzaW9uLW9uZSBpbnN0cnVjdGlvbnMuIOS/neeVmeaMh+S7pOOAggo="
+        }
+      }
+    },
+    {
+      "seq": 2,
+      "body": {
+        "kind": "resource",
+        "resource": {
+          "name": "skills/fixture/SKILL.md",
+          "kind": "skill",
+          "sha256": "6d7ee131ef5ef6ba32c81acfdce1adae8b46db3fc013bfdb1c244654788fbd3e",
+          "base64": "LS0tCm5hbWU6IGZpeHR1cmUKZGVzY3JpcHRpb246IHJlYWQgdGhlIGNvbXBsZXRlIHNlbGVjdGVkIHBhY2thZ2UKLS0tClJlYWQgW2lucHV0XShyZWZlcmVuY2VzL25lc3RlZC9pbnB1dC50eHQpLCB0aGVuIHJ1biBgYmFzaCBzY3JpcHRzL25lc3RlZC9ydW4uc2hgLgpUaGUgc2NyaXB0IHJlc29sdmVzIGl0cyBvd24gcGFja2FnZSBhbmQgd3JpdGVzIHJlc3VsdC5iaW4gaW4gdGhlIGxvY2FsIGN3ZC4K"
+        }
+      }
+    },
+    {
+      "seq": 3,
+      "body": {
+        "kind": "resource",
+        "resource": {
+          "name": "skills/fixture/scripts/nested/run.sh",
+          "kind": "skill",
+          "sha256": "dfa0b5c28f5b92967f01ed04e7b5dd575a481d68b4f493fb650051824d6d22d5",
+          "base64": "IyEvYmluL3NoCnNldCAtZXUKcGtnPSQoQ0RQQVRIPSBjZCAtLSAiJChkaXJuYW1lIC0tICIkMCIpLy4uLy4uIiAmJiBwd2QpCmNhdCAiJHBrZy9yZWZlcmVuY2VzL25lc3RlZC9pbnB1dC50eHQiID4gIiRQV0QvcmVzdWx0LmJpbiIKY2F0ICIkcGtnL2Fzc2V0cy9yYXcuYmluIiA+PiAiJFBXRC9yZXN1bHQuYmluIgo="
+        }
+      }
+    },
+    {
+      "seq": 4,
+      "body": {
+        "kind": "resource",
+        "resource": {
+          "name": "skills/fixture/references/nested/input.txt",
+          "kind": "skill",
+          "sha256": "b34aadebafea79a497a2e32bb3dc52a2ab780307934505f96375853f863f7b34",
+          "base64": "bmVzdGVkIHJlZmVyZW5jZSBvbmUg5Y6f5a2X6IqCCg=="
+        }
+      }
+    },
+    {
+      "seq": 5,
+      "body": {
+        "kind": "resource",
+        "resource": {
+          "name": "skills/fixture/assets/raw.bin",
+          "kind": "skill",
+          "sha256": "d423c7d662b356d3bcfb768944ff3b5f3f89b7086bb16e6a5afba362da09acb3",
+          "base64": "AP8BgCo="
+        }
+      }
+    },
+    {
+      "seq": 6,
+      "body": {
+        "kind": "resource",
+        "resource": {
+          "name": "attachments/raw.bin",
+          "kind": "attachment",
+          "sha256": "50e8b854a41efdfdcf4fa3d86a12172c623e5d12b2b30ec16b0d6c26e1308602",
+          "base64": "AP5/Ag=="
+        }
+      }
+    },
+    {
+      "seq": 7,
+      "body": {
+        "kind": "resource_manifest",
+        "resources": [
+          "1ec4d2bd9a26182c58e68de14d78e4b459a9601bc5876a81544b1347722c0b9b",
+          "463b7b1c0100a9e1d023d6e02b47d8d68e0abafb4bc3a96d7b08237266764d8d",
+          "d24be102c5594495bf959ed301e7a7d40be0708b1c5109965ce71c608470f1fa",
+          "62a343446d3881da8d604b0042933d4a0ef0a840445386f527759c99ebac7745",
+          "4cc0b3a31508944a6461e74efa339743a68b7607afb2f836bfd726334ed0f45a",
+          "c293335eb0519f228f970afc9ea5ad7ec0b3face17e62b4f9e18f29603e35b7e"
+        ]
+      }
+    }
+  ],
+  "nextAfter": 7,
+  "hasMore": false
+}

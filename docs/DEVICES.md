@@ -183,11 +183,18 @@ ad-hoc candidate is not a distribution-signed or notarized release.
 
 A **published App ships no relay address**: `Support/DeviceHost.release.json` carries an empty
 `baseUrl`, and nothing in the Swift sources names a host. The person who runs the App names
-their own service in **设置 → 设备 → 服务地址**; the choice is stored in the app's defaults as
-`eagle.deviceServiceAddress` (an origin only: HTTPS, or `http` on loopback, with no path,
-query or credentials) and the helper reads it at start, so changing it restarts the local
-service with the new relay. Until an address exists the App does not register the background
-service at all and nothing is contacted; the helper parks without starting its agent.
+their own service in **设置 → 设备 → 服务地址**. The choice is stored as
+`eagle.deviceServiceAddress` in the preference domain
+`ai.hexly.eagle.devices.address.<SHA-256 of signed profile UTF-8 bytes>`: an origin only
+(HTTPS, or `http` on loopback, with no path, query or credentials). The App gets that
+read-only profile from its `DeviceSystemControl` configuration; the helper reads the same
+profile at start, so changing the address restarts the local service with the new relay.
+Different Bot roots using the same profile share this helper address; independent helpers
+need distinct signed profiles and controls. No profile is inferred from Bot roots or sockets,
+and missing/invalid configuration does not fall back to daily preferences. Registration,
+pairing and Outbox retain their own storage; injected test controls explicitly own address
+storage. Until an address exists the App does not register the background service at all
+and nothing is contacted; the helper parks without starting its agent.
 
 `EAGLE_DEVICE_SERVICE_URL` remains an optional build input for a bundle that must name an
 origin up front (a candidate pointing at a local service, or a deployment that deliberately
@@ -354,3 +361,118 @@ target; no network reconnect automatically resends a run. Explicit busy/denied
 responses to an actual run record unaccepted state and allow an explicit retry
 with the same binding. Pins survive service restart and never store tokens or
 operation parameter plaintext.
+
+
+## P3 synchronization metadata slice (source delivered460b60d)
+
+The first local slice reuses the actual registered device session, Registry SQLite
+current membership/epoch/credential state and private helper/socket. A Bots-owned
+versioned port exposes synchronization identity, explicit sharedBotId/purpose
+access and this device's Tailscale candidates. Group membership and execution policy
+alone never grant Bot-history access. No caller-supplied group/name/IP is an identity.
+
+Authorization must fail closed on Registry/session failure; the existing offline
+local-directory fallback is for device presentation only. Private keys and session
+tokens stay behind the helper/service boundary. Registration signing remains strictly
+limited; metadata access does not imply a direct transport proof, E2EE or connectivity.
+The following interfaces are approved for this first slice. No payload
+history/resources, new execution scheduler, installation or pairing rewrite is in scope.
+
+Public metadata responses carry version:1. GET /sync/identity returns {version,identity};
+identity is {deviceId,publicKey,groupId,membershipEpoch,credentialVersion} read from the
+current session's Registry row. POST /sync/access takes strictly
+{sharedBotId,peerDeviceId,purpose:"replica.read"}. Source is the session device; peer is
+the history-granting target. Both must currently share a nonempty group, and the target
+must have explicitly granted this source for that sharedBotId at both current epoch/
+credential versions. The response binds source, target, sharedBotId/purpose and target
+endpoint metadata. Authentication, missing grant or Registry failure refuses access;
+no cached identity or offline-local fallback grants access.
+
+Trusted parent manage sync.share takes {sharedBotId,peerDeviceId,enabled}. It forwards
+to authenticated POST /sync/share. Granting device is derived from session. A grant
+allows peer to read this device, not the reverse; mutual access needs two grants.
+The minimal persisted key is (grantingDeviceId,sharedBotId,peerDeviceId), with current
+group and both epoch/credential bindings. Same-parameter retries are idempotent. Removal
+and re-pair invalidate old grants; only a new explicit management action rebinds them.
+Disabling deletes only the authenticated device's matching grant. Execution policy does
+not participate and creator/owner online status is never required for local execution.
+
+Trusted parent manage sync.endpoints.publish takes strictly {syncPort:1..65535|null}.
+The Node service probes installed Tailscale status for its own Self IPs; callers cannot
+provide addresses, IDs or groups. Missing installation or logged-out status yields [].
+Null withdraws existing candidates. Authenticated POST /sync/endpoints stores only the
+publisher's current group/epoch/credential binding, syncPort, bounded Tailscale IP list
+and server publishedAt. Returned candidates are metadata, not connectivity/authentication
+proof. No listener or management HTTP is opened/automatically published in this slice.
+
+Bot socket permits only sync.identity and sync.access reads. All new management writes
+remain trusted-parent-only, including endpoint withdrawal. Host permits exactly these two added management methods;
+its pending-32 bound and unknown-method refusal remain. Swift registration signer is unchanged:
+existing restricted registration obtains the service bearer; direct proof/E2EE is P4.
+
+This P3 source was delivered normally as460b60d; Agent1.2.0 remains unpublished.
+Onboarding remains pinned to verified published1.0.0; no package/release configuration
+or lockfile changes, npm publication, deployment or installed App replacement occur.
+A future actual Agent release must choose its version and pass publication/onboarding
+requirements separately. Local CLI fixtures prove discovery parsing and process wiring,
+not installed/physical Tailscale reachability or availability in the published Agent.
+
+
+### P4 restricted synchronization proof and parent lifecycle
+
+Agent1.2.0 remains an unpublished development source candidate; onboarding still uses
+published1.0.0. This source slice does not install an App or deploy Registry changes.
+P3 identity/access and registration/approval signatures retain their existing formats.
+The private Bot socket adds read-only sync.peer.authorize, sync.endpoints.self and sync.proof.
+Only the new authorize result includes the canonical locally configured Registry origin.
+The Swift helper separately accepts a strict typed sync_proof request and returns a matched
+sync_signature reply; registration signatures and approvals cannot satisfy that pending kind.
+The fixed eagle-bots-sync-proof-v1 domain binds both current peers, purpose, sharedBot, roles,
+nonces, generation, expiry<=60s and both ephemeral keys. Helper-owned identity/origin/time
+checks construct the exact canonical signing text; no arbitrary signing API or vault change.
+Private512KiB traffic contains metadata only. Dedicated encrypted page traffic is owned by
+Bots and never crosses this channel; Registry receives no conversation/resource plaintext.
+
+Trusted parent sync.endpoints.publish accepts only a port/null and optional expectedSelfDigest.
+Node rediscovers bounded Tailscale Self addresses, never accepts caller addresses/identity, and
+orders endpoint writes through Registry completion so a slow old publish cannot undo a later
+withdrawal. Failed writers release the chain. Bots sockets still cannot publish/share/revoke.
+The App reads authenticated owned daemon status, fences instance/pid/socket binding and local
+generation, and publishes only ready actual-port/digest metadata. Current ready status
+reconfirms positive publication on each existing polling round through the
+current Node session, so pairing/epoch/credential changes cannot leave a permanent port/digest
+cache hit. Withdrawal remains deduplicated. Polling plus request/failure retry time is not a hard
+five-second success guarantee. Stopping, readiness loss and
+unexpected owned exit withdraw; late callbacks cannot dispatch for a newer generation.
+EagleApplicationDelegate keeps launch/activation/last-window behavior, but normal quit returns
+terminateLater, awaits finite withdrawal/close and replies once. Three seconds without a
+withdrawal result records unknown even when the underlying call ignores cancellation; it does
+not wait indefinitely or claim cloud success. The synchronous WillTerminate hook is fallback.
+Verified adopted processes retain OS uid/pid/start-time identity, preventing arbitrary-PID kills
+when health disappears. None of this is installed-App or physical Tailscale acceptance evidence.
+
+
+### P4 durable object key port (unpublished source)
+
+The Bot private socket adds four strict, independently matched typed operations:
+`sync.key.descriptor`, `sync.key.seal`, `sync.key.envelope`, `sync.key.open`. They carry bounded
+key metadata only; no page/cipher body crosses the512KiB channel. Helper pending kinds and
+requestIds cannot satisfy registration,approval,proof or another key operation. The32-pending
+bound and4096B vault record limit remain. There is no generic signing or decryption endpoint.
+
+`eagle-bots-wrap-v1:<profile>` stores an independent X25519 private key bound to the exact
+profile,Registry origin,deviceId and Ed public key. Concurrent creation rereads the insert winner;
+corruption/insecure permissions refuse. Descriptors derive keyId/public key only from the
+persisted winner. Descriptor/seal may initialize a key; envelope/open require an existing one.
+The Ed-signed descriptor has its own eagle-bots-wrap-descriptor-v1 domain. Signed page manifests
+and directed key envelopes have separate fixed domains/purposes and complete object/identity
+bindings. keyEpoch1 is scoped to publisher/sharedBot; independent random per-object DEKs are
+not a general key-rotation implementation.
+
+New descriptors/seals use current Registry identity; issuing an envelope rechecks the current
+publisher-to-recipient grant and complete identities before/after the actual helper await.
+The original artifact publisher remains fixed while a new issuer must match the current
+handshake. Offline key.open validates the previously pinned complete signed artifact and local
+Ed/wrap ownership without cloud identity/access/proof. Old local capabilities survive credential
+or group revocation; they never authorize a new network read or envelope. Agent1.2.0 remains
+unpublished source, onboarding1.0.0 unchanged; no deployment or App installation is included.

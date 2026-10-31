@@ -23,6 +23,8 @@ import {
 import type { SearchClient } from "../../src/tools/search/client.ts";
 import type { UsageMeter } from "../../src/tools/usage.ts";
 
+export { getCurrentSystemMessage } from "@earendil-works/pi-ai";
+
 export const trace = "tr_runtime_1";
 export const requestId = "r_runtime_1";
 

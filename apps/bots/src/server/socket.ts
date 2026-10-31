@@ -438,12 +438,18 @@ export const attachConnection = (
         close(CLOSE.quarantined, "quarantined");
         return;
       }
-      const { rev, snapshot } = await service.subscribe(connId, command.botId, trace, (event) => {
-        // A client that stopped reading must not make the daemon buffer without a bound:
-        // the hub downgrades this subscriber to snapshot-only instead (PROTOCOL.md). An
-        // oversized frame is not backlog: the writer already closed 1008 for it.
-        if (emit(toServerEvent(event)) === "backlog") throw new SubscriberTooSlow();
-      });
+      const { rev, snapshot } = await service.subscribe(
+        connId,
+        command.botId,
+        trace,
+        (event) => {
+          // A client that stopped reading must not make the daemon buffer without a bound:
+          // the hub downgrades this subscriber to snapshot-only instead (PROTOCOL.md). An
+          // oversized frame is not backlog: the writer already closed 1008 for it.
+          if (emit(toServerEvent(event)) === "backlog") throw new SubscriberTooSlow();
+        },
+        command.contextId,
+      );
       subscribed = true;
       connectionBot = command.botId;
       leased = registry.touch(command.botId);
@@ -458,6 +464,8 @@ export const attachConnection = (
       const record = await service.send(connId, {
         requestId: command.requestId,
         text: command.text,
+        ...(command.contextId === undefined ? {} : { contextId: command.contextId }),
+        ...(command.resourceHead === undefined ? {} : { resourceHead: command.resourceHead }),
         whenBusy: command.whenBusy,
         trace,
       });

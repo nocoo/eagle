@@ -568,8 +568,8 @@ private final class ComposerFocusWindow {
           x: start.x + (point.x - start.x) * t,
           y: start.y + (point.y - start.y) * t
         ))
-      await settle()
     }
+    // Intermediate points have no assertions; settle after the complete movement.
     move(point)
     await settle()
   }

@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { declareEvent } from "../log/events.ts";
 import type { Log } from "../log/log.ts";
 import type { BotConfig, BotDirectory } from "./BotDirectory.ts";
+import type { DeviceSyncPort } from "./DeviceSyncPort.ts";
 import {
   type BotAppearance,
   type BotGroup,
@@ -20,9 +21,19 @@ import {
   type ToolGroup,
 } from "./domain.ts";
 import { newFailure } from "./failures.ts";
-import type { RuntimeBotSpec, RuntimeHandle } from "./RuntimePort.ts";
+import type { RuntimeBotSpec, RuntimeHandle, RuntimePort } from "./RuntimePort.ts";
+import {
+  parseTombstones,
+  type Tombstone,
+  tombstoneApplySchema,
+  tombstonePullSchema,
+  tombstoneSchema,
+} from "./Tombstones.ts";
 
 const Events = {
+  syncStart: declareEvent("core.sync.start"),
+  syncOk: declareEvent("core.sync.ok"),
+  syncFail: declareEvent("core.sync.fail"),
   catalogLoadOk: declareEvent("core.catalog.load.ok"),
   catalogWriteOk: declareEvent("core.catalog.write.ok"),
   catalogWriteFail: declareEvent("core.catalog.write.fail"),
@@ -43,10 +54,15 @@ const Events = {
   recoveryBotOk: declareEvent("core.recovery.bot.ok"),
   recoveryBotFail: declareEvent("core.recovery.bot.fail"),
   recoveryOk: declareEvent("core.recovery.ok"),
+  replicaStart: declareEvent("core.replica.start"),
+  replicaOk: declareEvent("core.replica.ok"),
+  replicaFail: declareEvent("core.replica.fail"),
 } as const;
 
 type Entry = {
   config: BotConfig;
+  sharedBotId: string | undefined;
+  deleted: boolean;
   /** The wire state; `closing` is internal and never leaves the registry. */
   state: BotState;
   closing: boolean;
@@ -70,8 +86,10 @@ type Entry = {
 };
 
 export type RegistryOptions = {
+  readonly deviceSync?: DeviceSyncPort;
   readonly directory: BotDirectory;
   readonly openRuntime: (spec: RuntimeBotSpec) => Promise<RuntimeHandle>;
+  readonly readReplicaBinding?: RuntimePort["readReplicaBinding"];
   readonly model: { readonly provider: string; readonly modelId: string };
   /** The reasoning level a newly created bot records; settings can change it at runtime. */
   readonly thinkingLevel?: string;
@@ -126,9 +144,388 @@ const assertTaskId = (taskId: string): void => {
   );
 };
 
+type ReplicaBinding = NonNullable<
+  Awaited<ReturnType<NonNullable<RuntimePort["readReplicaBinding"]>>>
+>;
+export type ReadyReplica = {
+  readonly botId: string;
+  readonly sharedBotId: string;
+  readonly binding: Readonly<ReplicaBinding>;
+  /** Final synchronous object/slot publication only; all staging happens before this lease. */
+  publish(action: () => undefined, guard: () => void): Promise<void>;
+  check(): Promise<void>;
+  command(
+    method: "pull" | "apply" | "status" | "heads" | "head" | "context" | "merge",
+    params: unknown,
+    guard?: () => void,
+  ): Promise<unknown>;
+};
+
 export class BotRegistry {
+  /** A sync request may lease an existing healthy handle, never open or recover one. */
+  async readyReplica(botId: string, trace: string, uniqueShared?: string): Promise<ReadyReplica> {
+    const first = await this.#syncLease(botId, trace, uniqueShared);
+    const use = (
+      method?: Parameters<ReadyReplica["command"]>[0],
+      params?: unknown,
+      guard?: () => void,
+    ) => this.#syncLease(botId, trace, uniqueShared, first, method, params, guard);
+    return {
+      botId,
+      sharedBotId: first.sharedBotId,
+      binding: first.binding,
+      publish: async (action, guard) => {
+        await this.#syncLease(
+          botId,
+          trace,
+          uniqueShared,
+          first,
+          undefined,
+          undefined,
+          guard,
+          action,
+        );
+      },
+      check: async () => {
+        await use();
+      },
+      command: async (method, params, guard) => (await use(method, params, guard)).result,
+    };
+  }
+
+  async readySharedReplica(sharedBotId: string, trace: string): Promise<ReadyReplica> {
+    const matches = await this.#directorySerial(() => this.#syncAliases(sharedBotId)).catch(
+      (error) => this.#syncStorageFailure(error, trace),
+    );
+    if (matches.length !== 1)
+      throw this.#syncRefused(trace, undefined, "shared Bot binding is absent or ambiguous");
+    return this.readyReplica(matches[0] as string, trace, sharedBotId);
+  }
+
+  async #syncAliases(sharedBotId: string): Promise<string[]> {
+    const matches: string[] = [];
+    for (const [botId, entry] of this.#entries) {
+      if (entry.deleted) continue;
+      const binding = await this.#options.readReplicaBinding?.({
+        id: botId,
+        dir: this.#options.directory.botDir(botId),
+      });
+      if (binding?.sharedBotId === sharedBotId) matches.push(botId);
+    }
+    return matches;
+  }
+
+  #syncRefused(trace: string, botId: string | undefined, message: string): ClassifiedFailure {
+    const failure = newFailure("invalid_command");
+    this.#options.log.emit("error", "core", Events.syncFail, {
+      trace,
+      ...(botId === undefined ? {} : { botId }),
+      failure,
+      origin: true,
+    });
+    return new ClassifiedFailure(failure, "not_admitted", message);
+  }
+
+  #syncStorageFailure(error: unknown, trace: string, botId?: string): never {
+    if (error instanceof ClassifiedFailure) throw error;
+    const failure = newFailure("storage_failed");
+    this.#options.log.emit("error", "core", Events.syncFail, {
+      trace,
+      ...(botId === undefined ? {} : { botId }),
+      failure,
+      origin: true,
+    });
+    throw new ClassifiedFailure(failure, "not_admitted", "sync binding could not be read", {
+      cause: error,
+    });
+  }
+
+  #syncLease(
+    botId: string,
+    trace: string,
+    uniqueShared?: string,
+    expected?: {
+      entry: Entry;
+      handle: RuntimeHandle;
+      sharedBotId: string;
+      binding: ReplicaBinding;
+    },
+    method?: Parameters<ReadyReplica["command"]>[0],
+    params?: unknown,
+    guard?: () => void,
+    publish?: () => undefined,
+  ): Promise<{
+    entry: Entry;
+    handle: RuntimeHandle;
+    sharedBotId: string;
+    binding: ReplicaBinding;
+    result: unknown;
+  }> {
+    return this.#directorySerial(async () => {
+      const entry = this.#entry(botId, trace);
+      const handle = entry.handle;
+      const healthy = () =>
+        this.#entries.get(botId) === entry &&
+        entry.handle === handle &&
+        handle !== undefined &&
+        handle.replica !== undefined &&
+        !entry.deleted &&
+        !entry.closing &&
+        !entry.deleting &&
+        entry.settling === undefined &&
+        ["idle", "running"].includes(entry.state) &&
+        entry.unavailable === undefined;
+      if (!healthy() || (expected && (expected.entry !== entry || expected.handle !== handle)))
+        throw this.#syncRefused(
+          trace,
+          botId,
+          "sync requires the same ready local Bot; recover it locally first",
+        );
+      this.#touch(entry);
+      try {
+        const binding = await this.#options.readReplicaBinding?.({
+          id: botId,
+          dir: this.#options.directory.botDir(botId),
+        });
+        if (
+          !binding ||
+          (expected &&
+            (["localBotId", "sharedBotId", "replicaId", "epoch"] as const).some(
+              (key) => expected.binding[key] !== binding[key],
+            )) ||
+          (uniqueShared !== undefined &&
+            (uniqueShared !== binding.sharedBotId ||
+              (await this.#syncAliases(uniqueShared)).length !== 1)) ||
+          (await this.#options.directory.isDeleted(binding.sharedBotId)) ||
+          !healthy()
+        )
+          throw this.#syncRefused(trace, botId, "sync Bot identity or lifecycle changed");
+        if (publish) {
+          guard?.();
+          publish();
+        }
+        const completeBinding =
+          binding.localBotId !== undefined &&
+          binding.replicaId !== undefined &&
+          binding.epoch !== undefined
+            ? {
+                localBotId: binding.localBotId,
+                sharedBotId: binding.sharedBotId,
+                replicaId: binding.replicaId,
+                epoch: binding.epoch,
+              }
+            : undefined;
+        const result =
+          method === undefined
+            ? undefined
+            : await (handle as RuntimeHandle).replica?.({
+                method,
+                params,
+                trace,
+                ...(guard === undefined ? {} : { guard }),
+                ...(completeBinding === undefined ? {} : { expectedBinding: completeBinding }),
+              });
+        if (!healthy()) throw this.#syncRefused(trace, botId, "sync Bot lifecycle changed");
+        return {
+          entry,
+          handle: handle as RuntimeHandle,
+          sharedBotId: binding.sharedBotId,
+          binding: { ...binding },
+          result,
+        };
+      } finally {
+        this.release(botId);
+      }
+    }).catch((error) => this.#syncStorageFailure(error, trace, botId));
+  }
+
+  async syncAccess(
+    botId: string,
+    input: Omit<Parameters<DeviceSyncPort["access"]>[0], "sharedBotId">,
+    trace: string,
+  ): Promise<unknown> {
+    const fields = { botId, trace };
+    this.#options.log.emit("info", "core", Events.syncStart, fields);
+    try {
+      const binding = async () => {
+        const entry = this.#entry(botId, trace);
+        const result = await this.#options.readReplicaBinding?.({
+          id: botId,
+          dir: this.#options.directory.botDir(botId),
+        });
+        if (result === undefined)
+          throw new ClassifiedFailure(
+            newFailure("invalid_command"),
+            "not_admitted",
+            "Bot has no shared identity binding",
+          );
+        if (await this.#options.directory.isDeleted(result.sharedBotId))
+          throw this.#unresolved(botId, trace);
+        if (this.#entry(botId, trace) !== entry) throw this.#unresolved(botId, trace);
+        return result.sharedBotId;
+      };
+      const sharedBotId = await this.#directorySerial(binding);
+      const port = this.#options.deviceSync;
+      if (port === undefined)
+        throw new ClassifiedFailure(
+          newFailure("invalid_command"),
+          "not_admitted",
+          "device synchronization is not configured",
+        );
+      const result = await port.access({ ...input, sharedBotId }, fields);
+      await this.#directorySerial(async () => {
+        if ((await binding()) !== sharedBotId)
+          throw new ClassifiedFailure(
+            newFailure("invalid_command"),
+            "not_admitted",
+            "Bot shared identity changed",
+          );
+      });
+      this.#options.log.emit("info", "core", Events.syncOk, fields);
+      return result;
+    } catch (error) {
+      const classified =
+        error instanceof ClassifiedFailure
+          ? error
+          : new ClassifiedFailure(
+              newFailure("storage_failed"),
+              "not_admitted",
+              "sync binding could not be read",
+              { cause: error },
+            );
+      const own = classified.failure.layer === "core" && classified.failure.kind !== "unknown_bot";
+      this.#options.log.emit(own ? "error" : "warn", "core", Events.syncFail, {
+        ...fields,
+        failure: classified.failure,
+        ...(own ? { origin: true } : { detail: { propagated: true } }),
+      });
+      throw classified;
+    }
+  }
+  async replica(
+    botId: string,
+    command: Parameters<NonNullable<RuntimeHandle["replica"]>>[0],
+  ): Promise<unknown> {
+    if (command.method === "bind")
+      return this.#directorySerial(() => this.#replica(botId, command));
+    return this.#replica(botId, command);
+  }
+
+  async #replica(
+    botId: string,
+    command: Parameters<NonNullable<RuntimeHandle["replica"]>>[0],
+  ): Promise<unknown> {
+    const fields = { botId, trace: command.trace };
+    this.#options.log.emit("info", "core", Events.replicaStart, fields);
+    let leased = false;
+    try {
+      leased = this.touch(botId);
+      if (!leased)
+        throw new ClassifiedFailure(
+          newFailure("unknown_bot"),
+          "not_admitted",
+          "bot is unavailable",
+        );
+      const binding =
+        command.method === "bind" ? parseTombstones(tombstoneSchema, command.params) : undefined;
+      if (binding !== undefined && (await this.#options.directory.isDeleted(binding.sharedBotId)))
+        throw new ClassifiedFailure(
+          newFailure("invalid_command"),
+          "not_admitted",
+          "shared Bot is permanently deleted",
+        );
+      const handle = await this.open(botId, command.trace);
+      if (handle.replica === undefined)
+        throw new ClassifiedFailure(
+          newFailure("invalid_command"),
+          "not_admitted",
+          "runtime has no history handoff",
+        );
+      const result = await handle.replica(command);
+      if (binding !== undefined)
+        this.#entry(botId, command.trace).sharedBotId = binding.sharedBotId;
+      this.#options.log.emit("info", "core", Events.replicaOk, fields);
+      return result;
+    } catch (error) {
+      const failure =
+        error instanceof ClassifiedFailure ? error.failure : newFailure("storage_failed");
+      this.#options.log.emit(
+        failure.layer === "core" ? "error" : "warn",
+        "core",
+        Events.replicaFail,
+        { ...fields, failure, ...(failure.layer === "core" ? { origin: true } : {}) },
+      );
+      throw error;
+    } finally {
+      if (leased) this.release(botId);
+    }
+  }
   readonly #options: RegistryOptions;
   readonly #entries = new Map<string, Entry>();
+  #directoryTail: Promise<unknown> = Promise.resolve();
+
+  #directorySerial<T>(action: () => Promise<T>): Promise<T> {
+    const next = this.#directoryTail.then(action);
+    this.#directoryTail = next.catch(() => undefined);
+    return next;
+  }
+
+  async tombstones(
+    method: "pull" | "apply" | "status",
+    params: unknown,
+    trace: string,
+  ): Promise<unknown> {
+    this.#options.log.emit("info", "core", Events.replicaStart, { trace });
+    try {
+      let result: unknown;
+      if (method === "pull") {
+        const { after, limit } = parseTombstones(tombstonePullSchema, params);
+        result = await this.#options.directory.tombstones(after, limit);
+      } else {
+        const { items } = parseTombstones(tombstoneApplySchema, params);
+        result = await this.#directorySerial(async () => {
+          const affected = await this.#persistDeleted(items);
+          for (const entry of affected) await this.#removeEntry(entry, entry.config.id, trace);
+          return {};
+        });
+      }
+      this.#options.log.emit("info", "core", Events.replicaOk, { trace });
+      return result;
+    } catch (error) {
+      const failure =
+        error instanceof ClassifiedFailure ? error.failure : newFailure("storage_failed");
+      const own =
+        failure.layer === "core" &&
+        !(error instanceof ClassifiedFailure && error.disposition === "runtime");
+      this.#options.log.emit(own ? "error" : "warn", "core", Events.replicaFail, {
+        trace,
+        failure,
+        ...(own ? { origin: true } : { detail: { propagated: true } }),
+      });
+      throw error instanceof ClassifiedFailure
+        ? error
+        : new ClassifiedFailure(failure, "runtime", "tombstone storage failed", { cause: error });
+    }
+  }
+
+  async #persistDeleted(items: readonly Tombstone[]): Promise<Entry[]> {
+    const ids = new Set(items.map((item) => item.sharedBotId));
+    const affected = [...this.#entries.values()].filter(
+      (entry) => entry.sharedBotId !== undefined && ids.has(entry.sharedBotId),
+    );
+    const prior = affected.map((entry) => entry.deleted);
+    for (const entry of affected) entry.deleted = true;
+    try {
+      await this.#options.directory.markDeleted(
+        items,
+        Object.fromEntries(affected.map((entry) => [entry.config.id, entry.sharedBotId as string])),
+      );
+    } catch (error) {
+      for (const [index, entry] of affected.entries()) entry.deleted = prior[index] ?? false;
+      throw error;
+    }
+    return affected;
+  }
   /** The model a newly created bot records; settings can change it at runtime. */
   #defaultModel: { readonly provider: string; readonly modelId: string };
   /** The reasoning level a newly created bot records; settings can change it at runtime. */
@@ -159,17 +556,95 @@ export class BotRegistry {
   async start(): Promise<void> {
     const trace = this.#boot();
     this.#groups = await this.#options.directory.loadGroups().catch(() => []);
-    let bots: readonly BotConfig[];
     try {
       const reconciled = await this.#options.directory.reconcile();
-      this.#options.log.emit("info", "core", Events.reconcileOk, {
-        trace,
-        detail: { count: reconciled.finishedDeletes.length },
-      });
-      bots = await this.#options.directory.load();
+      const finished = new Set(reconciled.finishedDeletes);
+      let failed = reconciled.failedDeletes;
+      let discoveredAlias = false;
+      const bots = await this.#options.directory.load();
       this.#options.log.emit("info", "core", Events.catalogLoadOk, {
         trace,
         detail: { count: bots.length },
+      });
+      for (const config of bots) {
+        let binding: { sharedBotId: string } | undefined;
+        let bindingFailure: Failure | undefined;
+        try {
+          binding = await this.#options.readReplicaBinding?.({
+            id: config.id,
+            dir: this.#options.directory.botDir(config.id),
+          });
+        } catch (error) {
+          bindingFailure =
+            error instanceof ClassifiedFailure ? error.failure : newFailure("storage_failed");
+          this.#options.log.emit(
+            bindingFailure.layer === "core" ? "error" : "warn",
+            "core",
+            Events.openFail,
+            {
+              trace,
+              botId: config.id,
+              failure: bindingFailure,
+              ...(bindingFailure.layer === "core"
+                ? { origin: true }
+                : { detail: { propagated: true } }),
+            },
+          );
+          this.#options.log.emit("warn", "core", Events.recoveryBotFail, {
+            trace,
+            botId: config.id,
+            failure: bindingFailure,
+            detail: { propagated: true },
+          });
+        }
+        if (
+          binding !== undefined &&
+          (await this.#options.directory.isDeleted(binding.sharedBotId))
+        ) {
+          await this.#options.directory.markDeleted([{ sharedBotId: binding.sharedBotId }], {
+            [config.id]: binding.sharedBotId,
+          });
+          discoveredAlias = true;
+          continue;
+        }
+        this.#entries.set(config.id, {
+          config,
+          sharedBotId: binding?.sharedBotId,
+          deleted: false,
+          state: bindingFailure === undefined ? "catalogued" : "unavailable",
+          closing: false,
+          handle: undefined,
+          opening: undefined,
+          subscribers: 0,
+          activity: 0,
+          deleting: false,
+          leaseWaiters: [],
+          unavailable:
+            bindingFailure === undefined
+              ? undefined
+              : unavailable(bindingFailure.kind, "the replica binding could not be read"),
+          cancelIdle: undefined,
+          cancelRetry: undefined,
+          settling: undefined,
+        });
+      }
+      if (discoveredAlias) {
+        const after = await this.#options.directory.reconcile();
+        for (const id of after.finishedDeletes) finished.add(id);
+        failed = after.failedDeletes;
+      }
+      for (const botId of failed) {
+        this.#options.log.emit("error", "core", Events.deleteFail, {
+          trace,
+          botId,
+          failure: newFailure("storage_failed"),
+          origin: true,
+          detail: { reason: "startup" },
+        });
+      }
+      this.#options.log.emit("info", "core", Events.reconcileOk, {
+        trace,
+        detail: { count: finished.size },
       });
     } catch (error) {
       const failure = newFailure("storage_failed");
@@ -180,23 +655,6 @@ export class BotRegistry {
       });
       throw new ClassifiedFailure(failure, "runtime", "the catalog could not be loaded", {
         cause: error,
-      });
-    }
-    for (const config of bots) {
-      this.#entries.set(config.id, {
-        config,
-        state: "catalogued",
-        closing: false,
-        handle: undefined,
-        opening: undefined,
-        subscribers: 0,
-        activity: 0,
-        deleting: false,
-        leaseWaiters: [],
-        unavailable: undefined,
-        cancelIdle: undefined,
-        cancelRetry: undefined,
-        settling: undefined,
       });
     }
     await this.#recover(trace);
@@ -260,7 +718,9 @@ export class BotRegistry {
   }
 
   summaries(): readonly BotSummary[] {
-    return [...this.#entries.values()].map((entry) => this.#summary(entry));
+    return [...this.#entries.values()]
+      .filter((entry) => !entry.deleted)
+      .map((entry) => this.#summary(entry));
   }
 
   state(botId: string): BotState | undefined {
@@ -496,6 +956,8 @@ export class BotRegistry {
     await this.#write(trace, config.id, () => this.#options.directory.create(config));
     const entry: Entry = {
       config,
+      sharedBotId: undefined,
+      deleted: false,
       state: "catalogued",
       closing: false,
       handle: undefined,
@@ -529,7 +991,19 @@ export class BotRegistry {
 
   /** Closes the handle, then removes the directory in its two idempotent steps. */
   async remove(botId: string, trace: string): Promise<void> {
-    const entry = this.#entry(botId, trace);
+    return this.#directorySerial(async () => {
+      const entry = this.#entries.get(botId);
+      if (entry === undefined) throw this.#unresolved(botId, trace);
+      await this.#removeEntry(entry, botId, trace);
+      const sharedBotId = entry.sharedBotId;
+      if (sharedBotId === undefined) return;
+      for (const alias of [...this.#entries.values()])
+        if (alias.deleted && alias.sharedBotId === sharedBotId)
+          await this.#removeEntry(alias, alias.config.id, trace);
+    });
+  }
+
+  async #removeEntry(entry: Entry, botId: string, trace: string): Promise<void> {
     if (entry.state === "quarantined") {
       throw new ClassifiedFailure(
         newFailure("internal"),
@@ -610,8 +1084,18 @@ export class BotRegistry {
           "the bot's close timed out; it is quarantined",
         );
       }
+      entry.handle = undefined;
     }
     try {
+      if (!entry.deleted) {
+        const binding = await this.#options.readReplicaBinding?.({
+          id: botId,
+          dir: this.#options.directory.botDir(botId),
+        });
+        entry.sharedBotId = binding?.sharedBotId;
+        if (binding !== undefined)
+          await this.#persistDeleted([{ sharedBotId: binding.sharedBotId }]);
+      }
       await this.#options.directory.remove(botId);
     } catch (error) {
       const failure = newFailure("storage_failed");
@@ -729,7 +1213,8 @@ export class BotRegistry {
    */
   touch(botId: string): boolean {
     const entry = this.#entries.get(botId);
-    if (entry === undefined || entry.deleting || entry.state === "quarantined") return false;
+    if (entry === undefined || entry.deleted || entry.deleting || entry.state === "quarantined")
+      return false;
     this.#touch(entry);
     return true;
   }
@@ -791,15 +1276,25 @@ export class BotRegistry {
 
   #entry(botId: string, trace: string): Entry {
     const entry = this.#entries.get(botId);
-    if (entry === undefined) throw this.#unresolved(botId, trace);
+    if (entry === undefined || entry.deleted) throw this.#unresolved(botId, trace);
     return entry;
   }
 
   async #openOnce(entry: Entry, trace: string): Promise<RuntimeHandle> {
     const started = performance.now();
+    const retryBinding = entry.state === "unavailable";
+    let owned: RuntimeHandle | undefined;
     entry.state = "opening";
     this.#options.log.emit("info", "core", Events.openStart, { trace, botId: entry.config.id });
     try {
+      if (retryBinding) {
+        const binding = await this.#options.readReplicaBinding?.({
+          id: entry.config.id,
+          dir: this.#options.directory.botDir(entry.config.id),
+        });
+        if (binding !== undefined && (await this.#options.directory.isDeleted(binding.sharedBotId)))
+          throw this.#unresolved(entry.config.id, trace);
+      }
       const handle = await this.#options.openRuntime({
         id: entry.config.id,
         dir: this.#options.directory.botDir(entry.config.id),
@@ -808,6 +1303,18 @@ export class BotRegistry {
         toolGroups: resolveToolGroups(entry.config.toolGroups ?? this.#defaultToolGroups),
         trace,
       });
+      owned = handle;
+      const binding = await this.#options.readReplicaBinding?.({
+        id: entry.config.id,
+        dir: this.#options.directory.botDir(entry.config.id),
+      });
+      entry.sharedBotId = binding?.sharedBotId;
+      if (
+        entry.deleted ||
+        (binding !== undefined && (await this.#options.directory.isDeleted(binding.sharedBotId)))
+      ) {
+        throw this.#unresolved(entry.config.id, trace);
+      }
       entry.handle = handle;
       entry.state = "idle";
       entry.unavailable = undefined;
@@ -819,9 +1326,18 @@ export class BotRegistry {
       if (entry.subscribers === 0) this.#scheduleIdle(entry);
       return handle;
     } catch (error) {
+      entry.state = "unavailable";
+      if (owned !== undefined) {
+        const outcome = await owned
+          .close(trace, this.#options.closeDeadlineMs)
+          .catch(() => "timeout");
+        if (outcome === "timeout") {
+          entry.handle = owned;
+          this.#quarantine(entry, trace);
+        }
+      }
       const failure: Failure =
         error instanceof ClassifiedFailure ? error.failure : newFailure("storage_failed");
-      entry.state = "unavailable";
       entry.unavailable = unavailable(failure.kind, "the bot could not be opened");
       const own = failure.layer === "core";
       this.#options.log.emit(own ? "error" : "warn", "core", Events.openFail, {
@@ -950,6 +1466,7 @@ export class BotRegistry {
     this.#options.log.emit("info", "core", Events.recoveryStart, { trace });
     let resumed = 0;
     for (const entry of this.#entries.values()) {
+      if (entry.state === "unavailable") continue;
       let failure: Failure | undefined;
       const busy = await this.open(entry.config.id, trace)
         .then((handle) => handle.busy())

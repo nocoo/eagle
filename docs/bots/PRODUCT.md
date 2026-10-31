@@ -280,3 +280,69 @@ recorded in [CHECKPOINTS.md](CHECKPOINTS.md):
    `BotsCore`/`BotsFeatures`/`EagleDesign`.
 8. Isolation holds: root `npm run check`, the Eagle Swift package tests and biome
    do not touch `apps/bots` or `apps/bots-macos`.
+
+
+## P0 local multi-replica history
+
+The daemon's authenticated local history handoff can move a complete immutable head
+between independent SQLite runtimes. Import preserves original history without running
+models/tools or adopting the source's active work. A person/caller explicitly starts a
+new local run from a ready head, under a fixed request ID. Two devices may create sibling
+branches without replacing either; the workspace, provider session and credentials stay
+local. This first slice has no App sync UI, discovery, network sync service or cloud.
+
+Original model/tool records, reset/compaction sources, edits, inline attachments and
+supplied versioned resource bytes are retained. P0 rejects nested tool history because
+its full results are not transcript entries. Saved-but-uninstalled instructions/skill
+resources block continuation; installing/loading complete resources remains P2.
+The current production tools do not expose nested execution. See RUNTIME/TESTING for
+actual local evidence; physical multi-Mac and P1–P6 remain unverified/planned.
+
+
+## P1 first local incremental slice
+
+A Bot can explicitly associate an empty local replica with a shared Bot UUID, pull/apply
+new committed history and run from a complete locally materialized head without the
+source online. Each machine owns its run intents; received input/run facts are passive.
+Concurrent continuations remain distinct heads, including after restart and forwarding.
+Missing or invalid source data does not claim applied status or prevent another complete
+local head from running. The implementation is currently a local authenticated API, not
+an App sync workflow or physical multi-Mac acceptance; resource installation and device/
+network/UI stages remain planned.
+
+Saved history can be passively restored into a new local Bot directory while retaining
+its explicit shared identity. The runtime generates a new stable replica identity/epoch;
+source facts keep their old identities and unsent branches. A local carrier inventory
+covers legacy imported heads absent from source pages. Only a new user request runs on
+the restored instance; pending/active work in saved facts stays passive. This does not
+provide automatic directory rollback detection, resource installation or a backup service.
+
+
+## P1 permanent shared-Bot deletion
+
+Deleting a bound Bot permanently deletes its sharedBotId. Root catalog tombstones
+survive removal/restart and can be passed explicitly between authenticated local
+daemons. Old pages, imports, bindings and saved execution intents cannot restore that
+identity. A new Bot has a new identity; there is no undelete or automatic trash cleanup.
+Trash retains original history and unuploaded branches. This local API slice adds no
+cloud transport, App workflow or physical-device acceptance.
+
+
+## P2 fixed-head resource loading (first local slice)
+
+An explicit local run selects the complete resources manifest from its immutable head.
+Bot-specific AGENTS instructions, every file of each selected skill package and attachments
+are installed in that Bot's state, never over the local workspace. Each branch retains
+its selected version through completion/restart while another branch uses another version.
+Imports/pages stay passive. Ordinary root-chat version selection is delivered: each input
+selects an explicit ready resourceHead on the original root/queue, including fixed queued
+versions after local edits. No selector on a new round preserves legacy empty resources.
+This does not certify complete P2, device transport, cloud or physical-Mac acceptance.
+
+A fresh empty Bot can capture a complete ordered package with replica export
+`{kind:"resources",resources}` and passively import the explicit resource-only carrier.
+Its immutable head selects the package for the first real ordinary input; no placeholder
+chat/history is needed. All selected skill files and attachments retain their original
+bytes and relative hierarchy. Model sections provide this Bot's installed paths; tools
+write in its own local workspace. The package supplies no cwd, credentials or permissions.
+Incomplete/invalid packages or failed installation admit no work; empty carriers are refused.

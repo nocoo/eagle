@@ -4,7 +4,7 @@ import EagleFeatures
 import SwiftUI
 
 struct EagleApp: App {
-  @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+  @NSApplicationDelegateAdaptor(EagleApplicationDelegate.self) private var delegate
   @AppStorage("eagle.appearance") private var appearance = "system"
 
   var body: some Scene {
@@ -45,27 +45,6 @@ struct EagleApp: App {
         .keyboardShortcut("2", modifiers: [.command, .control])
       }
     }
-  }
-}
-
-final class AppDelegate: NSObject, NSApplicationDelegate {
-  func applicationDidFinishLaunching(_ notification: Notification) {
-    NSApp.setActivationPolicy(.regular)
-    // A bundle carries its icon in Info.plist; a `swift run` binary has none and would show the
-    // generic executable icon in the Dock.
-    if Bundle.main.bundleIdentifier == nil { NSApp.applicationIconImage = EagleIcon.image }
-    NSApp.activate(ignoringOtherApps: true)
-    DeviceApprovalWindowController.shared.observe(DeviceSettingsViewModel.shared)
-    Task { @MainActor in await DeviceSettingsViewModel.shared.startIfNeeded() }
-  }
-
-  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-    true
-  }
-
-  /// The daemon is a child of the app: quitting the app must not leave it running.
-  func applicationWillTerminate(_ notification: Notification) {
-    BotsDaemonSupervisor.terminateRecordedDaemon()
   }
 }
 

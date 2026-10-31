@@ -51,18 +51,28 @@ public enum ConnectionState: Sendable, Equatable {
 public struct CommandContext: Sendable, Equatable {
   public let trace: String
   public let requestId: String?
+  public let contextId: String?
+  public let resourceHead: String?
 
-  public init(trace: String, requestId: String? = nil) {
+  public init(
+    trace: String, requestId: String? = nil, contextId: String? = nil, resourceHead: String? = nil
+  ) {
     self.trace = trace
     self.requestId = requestId
+    self.contextId = contextId
+    self.resourceHead = resourceHead
   }
 
-  public static func command(_ prefix: String = "cmd") -> CommandContext {
-    CommandContext(trace: Identifiers.trace(prefix))
+  public static func command(_ prefix: String = "cmd", contextId: String? = nil) -> CommandContext {
+    CommandContext(trace: Identifiers.trace(prefix), contextId: contextId)
   }
 
-  public static func send(_ requestId: String) -> CommandContext {
-    CommandContext(trace: Identifiers.trace("send"), requestId: requestId)
+  public static func send(
+    _ requestId: String, contextId: String? = nil, resourceHead: String? = nil
+  ) -> CommandContext {
+    CommandContext(
+      trace: Identifiers.trace("send"), requestId: requestId, contextId: contextId,
+      resourceHead: resourceHead)
   }
 }
 
@@ -124,7 +134,7 @@ public protocol CatalogPort: AnyObject {
 }
 
 public protocol ConversationPort: AnyObject {
-  func open(botId: String) -> AsyncStream<ConversationEvent>
+  func open(botId: String, contextId: String?) -> AsyncStream<ConversationEvent>
   /// `botId` is the connection the caller believes it is writing to; the transport
   /// refuses when the socket now belongs to another bot.
   func send(
@@ -138,6 +148,12 @@ public protocol ConversationPort: AnyObject {
   func resync(context: CommandContext, botId: String) async throws
   func loadHistory(before messageId: String, context: CommandContext, botId: String) async throws
   func close()
+}
+
+extension ConversationPort {
+  public func open(botId: String) -> AsyncStream<ConversationEvent> {
+    open(botId: botId, contextId: nil)
+  }
 }
 
 /// A failure the client itself produced (no connection, a rejected frame, a bad URL).

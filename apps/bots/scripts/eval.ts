@@ -10,6 +10,17 @@ import { dirname, join, resolve } from "node:path";
 import { WebSocket } from "ws";
 import { readConfig } from "../src/config.ts";
 import { type DaemonHandle, startDaemon } from "../src/main.ts";
+import {
+  type HistoryBundle,
+  hash,
+  resourceSchema,
+  validateBundle,
+} from "../src/runtime/pi/HistoryReplica.ts";
+import {
+  pageSchema,
+  type ResourceCarrier,
+  validateResourceCarrier,
+} from "../src/runtime/pi/syncProtocol.ts";
 
 type ScriptedReply =
   | { readonly text: string }
@@ -54,6 +65,15 @@ type CaseFile = {
 };
 
 type Step =
+  | { readonly kind: "replicaSync"; readonly text: string; readonly contains: string }
+  | {
+      readonly kind: "replicaRun";
+      readonly text: string;
+      readonly contains: string;
+      readonly resources?: true;
+      readonly root?: true;
+      readonly fresh?: true;
+    }
   | { readonly kind: "chat"; readonly text: string; readonly timeoutMs?: number }
   | {
       readonly kind: "webhook";
@@ -91,7 +111,12 @@ const failure = (message: string): never => {
 
 /** A local OpenAI Responses endpoint: streams the case's replies, in order. */
 const scriptedModel = (script: readonly ScriptedReply[], repeatLast: boolean) => {
-  const requests: { readonly lastInput: string; readonly tools: number }[] = [];
+  const requests: {
+    readonly lastInput: string;
+    readonly tools: number;
+    readonly resourceVersion: string | undefined;
+    readonly completeSkill: boolean;
+  }[] = [];
   let index = 0;
   const server = createServer((request, response) => {
     const chunks: Buffer[] = [];
@@ -111,9 +136,15 @@ const scriptedModel = (script: readonly ScriptedReply[], repeatLast: boolean) =>
       if (process.env.EVAL_TRACE === "1") {
         process.stdout.write(`model request ${requests.length + 1}\n`);
       }
+      const inputText = JSON.stringify(body.input);
       requests.push({
         lastInput: JSON.stringify(body.input?.at(-1) ?? null).slice(0, 2_000),
         tools: body.tools?.length ?? 0,
+        resourceVersion: /Resource version: ([a-f0-9]{64})/.exec(inputText)?.[1],
+        completeSkill:
+          inputText.includes("resource-version-one instructions") &&
+          inputText.includes("Skill directory:") &&
+          inputText.includes("scripts/nested/run.sh"),
       });
       const reply = index < script.length ? script[index] : repeatLast ? script.at(-1) : undefined;
       index += 1;
@@ -347,12 +378,13 @@ const viewer = async (port: number, token: string, botId: string) => {
     errors,
     triggers,
     settled: (requestId: string): string | undefined => submissions.get(requestId),
-    send: (text: string, requestId: string): void => {
+    send: (text: string, requestId: string, resourceHead?: string): void => {
       socket.send(
         JSON.stringify({
           type: "send",
           requestId,
           text,
+          ...(resourceHead === undefined ? {} : { resourceHead }),
           whenBusy: "followUp",
           trace: `tr_eval_${requestId}`,
         }),
@@ -370,13 +402,13 @@ const wait = async (ms: number): Promise<void> =>
   new Promise((resolve_) => setTimeout(resolve_, ms));
 
 const waitUntil = async (
-  check: () => boolean,
+  check: () => boolean | Promise<boolean>,
   message: string,
   timeoutMs: number,
 ): Promise<void> => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (check()) return;
+    if (await check()) return;
     await wait(50);
   }
   failure(`${message} within ${timeoutMs} ms`);
@@ -496,6 +528,194 @@ const runCase = async (
         "timeoutMs" in step && step.timeoutMs !== undefined ? step.timeoutMs : left;
       if (stepBudget <= 0) failure(`case budget exhausted at a ${step.kind} step`);
       switch (step.kind) {
+        case "replicaSync": {
+          const call = async (target: string, method: string, body: unknown) => {
+            const response = await api(
+              running.port,
+              token2,
+              `/v1/bots/${target}/replica/${method}`,
+              { method: "POST", body },
+            );
+            if (response.status !== 200)
+              failure(`incremental ${method} answered ${response.status}`);
+            return response.json();
+          };
+          const created = await api(running.port, token2, "/v1/bots", {
+            method: "POST",
+            body: { title: "incremental passive peer" },
+          });
+          if (created.status !== 201) failure("could not create incremental peer");
+          const target = ((await created.json()) as { bot: { id: string } }).bot.id;
+          const binding = (await call(botId, "status", {})) as { sharedBotId: string };
+          await call(target, "bind", { sharedBotId: binding.sharedBotId });
+          const before = model.requests.length;
+          let after = 0;
+          let head = "";
+          let hasMore = true;
+          do {
+            const page = pageSchema.parse(await call(botId, "pull", { after, limit: 128 }));
+            await call(target, "apply", { page });
+            await call(target, "apply", { page });
+            for (const event of page.events) if (event.body.kind === "head") head = event.body.head;
+            after = page.nextAfter;
+            hasMore = page.hasMore;
+          } while (hasMore);
+          if (model.requests.length !== before || head.length !== 64)
+            failure("incremental receive executed or failed to materialize");
+          const requestId = `incremental_eval_${++requestSeq}`;
+          const params = { head, requestId, text: step.text };
+          await call(target, "run", params);
+          await waitUntil(
+            async () =>
+              ((await call(target, "status", { requestId })) as { submission?: { status: string } })
+                .submission?.status === "done",
+            "incremental local run",
+            stepBudget,
+          );
+          await call(target, "run", params);
+          if (model.requests.length !== before + 1) failure("incremental run did not execute once");
+          const output = pageSchema.parse(await call(target, "pull", { after: 0, limit: 128 }));
+          if (
+            !output.events.some(
+              (event) =>
+                event.body.kind === "entry" &&
+                event.body.content.kind === "pi.assistant" &&
+                JSON.stringify(event.body.content.model).includes(step.contains),
+            )
+          )
+            failure("incremental output not in durable outbox");
+          const empty = pageSchema.parse(await call(botId, "pull", { after, limit: 128 }));
+          if (empty.events.length !== 0) failure("old source history was published again");
+          break;
+        }
+        case "replicaRun": {
+          const path = `/v1/bots/${botId}/replica`;
+          const call = async (method: string, body: unknown) => {
+            const response = await api(running.port, token2, `${path}/${method}`, {
+              method: "POST",
+              body,
+            });
+            if (response.status !== 200) failure(`replica ${method} answered ${response.status}`);
+            return response.json();
+          };
+          let bundle: HistoryBundle | ResourceCarrier;
+          if (step.fresh === true) {
+            if (step.root !== true || step.resources !== true)
+              failure("fresh resources require ordinary root selection");
+            if (view.rows.length !== 0 || model.requests.length !== 0)
+              failure("fresh resource fixture already has chat history or provider work");
+            const status = (await call("status", {})) as { sharedBotId: string; heads: unknown[] };
+            if (status.heads.length !== 0) failure("fresh root already has history heads");
+            await call("bind", { sharedBotId: status.sharedBotId });
+            const resources = resourceSchema
+              .array()
+              .parse(
+                JSON.parse(
+                  await readFile(
+                    new URL("../../../fixtures/bots-sync/resources.v1.json", import.meta.url),
+                    "utf8",
+                  ),
+                ),
+              );
+            for (const resource of resources) {
+              const path = join(root, "bots", botId, "workspace", resource.name);
+              await mkdir(dirname(path), { recursive: true });
+              await writeFile(path, Buffer.from(resource.base64, "base64"));
+              if (!(await readFile(path)).equals(Buffer.from(resource.base64, "base64")))
+                failure("fresh original file bytes changed");
+            }
+            bundle = validateResourceCarrier(
+              await call("export", { kind: "resources", resources }),
+            );
+          } else {
+            const original = validateBundle(
+              JSON.parse(
+                await readFile(
+                  new URL("../../../fixtures/bots-sync/history.v1.json", import.meta.url),
+                  "utf8",
+                ),
+              ),
+            );
+            const { head: _sourceHead, ...payload } = original;
+            const localPayload = {
+              ...payload,
+              agent: { ...payload.agent, model: { provider: "magpie", modelId: "eval-model" } },
+              ...(step.resources === true
+                ? {
+                    resources: resourceSchema
+                      .array()
+                      .parse(
+                        JSON.parse(
+                          await readFile(
+                            new URL(
+                              "../../../fixtures/bots-sync/resources.v1.json",
+                              import.meta.url,
+                            ),
+                            "utf8",
+                          ),
+                        ),
+                      ),
+                  }
+                : {}),
+            };
+            bundle = { ...localPayload, head: hash(localPayload) };
+          }
+          const before = model.requests.length;
+          await call("import", { bundle });
+          await call("import", { bundle });
+          const inventory = (await call("receipts", { after: 0, limit: 128 })) as {
+            items: { id: number; head: string }[];
+          };
+          if (
+            step.fresh === true
+              ? inventory.items.length !== 0
+              : !inventory.items.some(
+                  (item) => item.head === bundle.head && Number.isSafeInteger(item.id),
+                )
+          )
+            failure("saved full carrier missing from recovery inventory");
+          if (model.requests.length !== before)
+            failure("passive import/inventory executed a model");
+          const requestId = `replica_eval_${++requestSeq}`;
+          const params = { head: bundle.head, requestId, text: step.text };
+          const run = () =>
+            step.root === true ? view.send(step.text, requestId, bundle.head) : call("run", params);
+          await run();
+          await waitUntil(
+            async () => {
+              if (step.root === true) return view.settled(requestId) === "done";
+              const status = (await call("status", { requestId })) as {
+                submission: { status: string } | null;
+              };
+              return status.submission?.status === "done";
+            },
+            "the local replica run to settle",
+            stepBudget,
+          );
+          if (step.root !== true) await call("run", params);
+          if (model.requests.length !== before + 1)
+            failure("local replica run did not execute exactly once");
+          if (step.resources === true) {
+            const request = model.requests[before];
+            if (request?.resourceVersion !== hash(bundle.resources) || !request.completeSkill)
+              failure(
+                "the provider did not receive the selected AGENTS and complete skill binding",
+              );
+          }
+          const result = (await call(
+            "export",
+            step.root === true ? {} : { branch: requestId },
+          )) as HistoryBundle;
+          if (
+            !result.entries.some(
+              (entry) =>
+                entry.kind === "pi.assistant" &&
+                JSON.stringify(entry.model).includes(step.contains),
+            )
+          )
+            failure("replica output was not durably exportable");
+          break;
+        }
         case "chat": {
           requestSeq += 1;
           const requestId = `r_eval_${String(requestSeq).padStart(4, "0")}`;

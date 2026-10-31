@@ -1,0 +1,8 @@
+{
+  "type": "send",
+  "requestId": "r_resource_selected_001",
+  "text": "Use my selected complete package",
+  "resourceHead": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "whenBusy": "followUp",
+  "trace": "tr_resource_selected_001"
+}

@@ -1,11 +1,17 @@
 // The daemon's HTTP surface and its upgrade (docs/bots/PROTOCOL.md "HTTP endpoints"):
 // ready checks and the catalog, with the bearer token checked before anything else runs.
+
 import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
+import { z } from "zod";
 import { DirectoryError } from "../core/BotDirectory.ts";
 import type { BotRegistry } from "../core/BotRegistry.ts";
 import type { ConversationService } from "../core/ConversationService.ts";
+import { cacheListInput, cachePublishInput, cacheReceiveInput } from "../core/DeviceSyncCache.ts";
+import { type SyncConnectionsApi, syncConnectionInput } from "../core/DeviceSyncConnections.ts";
+import { syncObjectApplyInput, syncObjectPullInput } from "../core/DeviceSyncObjects.ts";
+import { deviceSyncInput, type SyncApi, syncPullInput } from "../core/DeviceSyncPort.ts";
 import {
   BOT_SHAPES,
   BOT_TINTS,
@@ -14,6 +20,7 @@ import {
   ClassifiedFailure,
   isThinkingLevel,
 } from "../core/domain.ts";
+import { MAX_REPLICA_BODY_BYTES } from "../core/RuntimePort.ts";
 import { declareEvent } from "../log/events.ts";
 import type { Log } from "../log/log.ts";
 import type { ServerEvent } from "../protocol/frames.ts";
@@ -31,6 +38,8 @@ const Events = {
 } as const;
 
 export type ServerOptions = {
+  readonly sync?: SyncApi;
+  readonly syncConnections?: SyncConnectionsApi;
   /** Host configuration identity, not a credential or authorization decision. */
   readonly deviceSocket?: string;
   readonly token: string;
@@ -94,13 +103,13 @@ const json = (response: ServerResponse, status: number, body: unknown): void => 
   response.end(text);
 };
 
-const readBody = async (request: IncomingMessage): Promise<unknown> => {
+const readBody = async (request: IncomingMessage, maxBytes = 8 * 1024): Promise<unknown> => {
   const chunks: Buffer[] = [];
   let bytes = 0;
   for await (const chunk of request) {
     const buffer = chunk as Buffer;
     bytes += buffer.length;
-    if (bytes > 8 * 1024) throw new Error("body too large");
+    if (bytes > maxBytes) throw new Error("body too large");
     chunks.push(buffer);
   }
   if (bytes === 0) return undefined;
@@ -441,6 +450,461 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
       return;
     }
     try {
+      const relayMatch =
+        /^\/v1\/bots\/([A-Za-z0-9_-]+)\/sync\/relay\/(register|discover|pull|ack|receipts|status-report|status-read)$/.exec(
+          path,
+        );
+      if (relayMatch && request.method === "POST") {
+        if (request.headers.origin !== undefined) {
+          json(response, 403, {
+            error: { kind: "auth_failed", message: "origin is not accepted" },
+          });
+          return;
+        }
+        const sync = options.sync;
+        if (!sync?.relayRegister || !sync.relayDiscover || !sync.relayPull) {
+          json(response, 409, {
+            error: { kind: "invalid_command", message: "relay synchronization is not configured" },
+          });
+          return;
+        }
+        const trace = `tr_http_${++sequence}`,
+          botId = relayMatch[1] as string;
+        const input = await readBody(request);
+        try {
+          let result: unknown;
+          if (relayMatch[2] === "pull")
+            result = await sync.relayPull(botId, syncPullInput.parse(input), trace);
+          else if (relayMatch[2] === "ack") {
+            if (!sync.relayAck) throw new Error("sync_unconfigured");
+            result = await sync.relayAck(botId, input, trace);
+          } else if (relayMatch[2] === "receipts") {
+            if (!sync.relayReceipts) throw new Error("sync_unconfigured");
+            result = await sync.relayReceipts(botId, input, trace);
+          } else if (relayMatch[2] === "status-report") {
+            if (!sync.statusReport) throw new Error("sync_unconfigured");
+            result = await sync.statusReport(botId, input, trace);
+          } else if (relayMatch[2] === "status-read") {
+            if (!sync.statusRead) throw new Error("sync_unconfigured");
+            result = await sync.statusRead(botId, input, trace);
+          } else {
+            z.strictObject({}).parse(input);
+            result =
+              relayMatch[2] === "register"
+                ? await sync.relayRegister(botId, trace)
+                : await sync.relayDiscover(botId, trace);
+          }
+          json(response, 200, result);
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            json(response, 400, {
+              error: { kind: "invalid_command", message: "invalid relay selector" },
+            });
+            return;
+          }
+          if (!(error instanceof ClassifiedFailure)) throw error;
+          json(response, error.failure.kind === "auth_failed" ? 403 : 503, {
+            error: { kind: error.failure.kind, message: error.message, failure: error.failure.id },
+            trace,
+          });
+        }
+        return;
+      }
+      const cacheMatch = /^\/v1\/bots\/([A-Za-z0-9_-]+)\/sync\/cache\/(publish|list|receive)$/.exec(
+        path,
+      );
+      if (cacheMatch !== null && request.method === "POST") {
+        if (request.headers.origin !== undefined) {
+          json(response, 403, {
+            error: { kind: "auth_failed", message: "origin is not accepted" },
+          });
+          return;
+        }
+        const sync = options.sync;
+        if (!sync?.cachePublish || !sync.cacheList || !sync.cacheReceive) {
+          json(response, 409, {
+            error: { kind: "invalid_command", message: "cache synchronization is not configured" },
+          });
+          return;
+        }
+        let body: unknown;
+        try {
+          body = await readBody(request);
+        } catch {
+          json(response, 400, {
+            error: { kind: "invalid_command", message: "invalid cache request" },
+          });
+          return;
+        }
+        const trace = `tr_http_${++sequence}`,
+          botId = cacheMatch[1] as string;
+        try {
+          let result: unknown;
+          if (cacheMatch[2] === "publish") {
+            const parsed = cachePublishInput.safeParse(body);
+            if (!parsed.success) {
+              json(response, 400, {
+                error: { kind: "invalid_command", message: "invalid cache publish selector" },
+              });
+              return;
+            }
+            result = await sync.cachePublish(botId, parsed.data, trace);
+          } else if (cacheMatch[2] === "list") {
+            const parsed = cacheListInput.safeParse(body);
+            if (!parsed.success) {
+              json(response, 400, {
+                error: { kind: "invalid_command", message: "invalid cache list selector" },
+              });
+              return;
+            }
+            result = await sync.cacheList(botId, parsed.data, trace);
+          } else {
+            const parsed = cacheReceiveInput.safeParse(body);
+            if (!parsed.success) {
+              json(response, 400, {
+                error: { kind: "invalid_command", message: "invalid cache object id" },
+              });
+              return;
+            }
+            result = await sync.cacheReceive(botId, parsed.data, trace);
+          }
+          json(response, 200, result);
+        } catch (error) {
+          if (!(error instanceof ClassifiedFailure)) throw error;
+          const kind = error.failure.kind;
+          json(
+            response,
+            kind === "auth_failed"
+              ? 403
+              : kind === "unknown_bot"
+                ? 404
+                : kind === "invalid_command"
+                  ? 400
+                  : 503,
+            { error: { kind, message: error.message, failure: error.failure.id }, trace },
+          );
+        }
+        return;
+      }
+      const connectionMatch =
+        /^\/v1\/bots\/([A-Za-z0-9_-]+)\/sync\/connections(?:\/([a-fA-F0-9-]{36}))?$/.exec(path);
+      if (connectionMatch && ["GET", "PUT", "DELETE"].includes(request.method ?? "")) {
+        if (request.headers.origin !== undefined) {
+          json(response, 403, {
+            error: { kind: "auth_failed", message: "origin is not accepted" },
+          });
+          return;
+        }
+        if (!options.syncConnections) {
+          json(response, 409, {
+            error: { kind: "invalid_command", message: "device synchronization is not configured" },
+          });
+          return;
+        }
+        const trace = `tr_http_${++sequence}`,
+          botId = connectionMatch[1] as string,
+          peerId = connectionMatch[2];
+        if (peerId && !deviceSyncInput.shape.peerDeviceId.safeParse(peerId).success) {
+          json(response, 400, { error: { kind: "invalid_command", message: "invalid sync peer" } });
+          return;
+        }
+        try {
+          let result: unknown;
+          if (request.method === "GET" && !peerId)
+            result = await options.syncConnections.list(botId, trace);
+          else if (request.method === "DELETE" && peerId)
+            result = await options.syncConnections.remove(botId, peerId.toLowerCase(), trace);
+          else if (request.method === "PUT" && peerId) {
+            let input: unknown;
+            try {
+              input = await readBody(request);
+            } catch {
+              input = undefined;
+            }
+            const parsed = syncConnectionInput.safeParse(input);
+            if (!parsed.success) {
+              json(response, 400, {
+                error: { kind: "invalid_command", message: "invalid sync connection" },
+              });
+              return;
+            }
+            result = await options.syncConnections.put(
+              botId,
+              peerId.toLowerCase(),
+              parsed.data,
+              trace,
+            );
+          } else {
+            json(response, 405, {
+              error: { kind: "invalid_command", message: "invalid connection method" },
+            });
+            return;
+          }
+          json(response, 200, result);
+        } catch (error) {
+          if (!(error instanceof ClassifiedFailure)) throw error;
+          const kind = error.failure.kind;
+          json(
+            response,
+            kind === "auth_failed"
+              ? 403
+              : kind === "unknown_bot"
+                ? 404
+                : kind === "invalid_command"
+                  ? 400
+                  : kind === "limit_exceeded"
+                    ? 409
+                    : 503,
+            { error: { kind, message: error.message, failure: error.failure.id }, trace },
+          );
+        }
+        return;
+      }
+      const objectMatch = /^\/v1\/bots\/([A-Za-z0-9_-]+)\/sync\/objects\/(pull|apply)$/.exec(path);
+      if (objectMatch !== null && request.method === "POST") {
+        if (request.headers.origin !== undefined) {
+          json(response, 403, {
+            error: { kind: "auth_failed", message: "origin is not accepted" },
+          });
+          return;
+        }
+        const sync = options.sync;
+        if (!sync?.pullObject || !sync.applyObject) {
+          json(response, 409, {
+            error: { kind: "invalid_command", message: "device synchronization is not configured" },
+          });
+          return;
+        }
+        let body: unknown;
+        try {
+          body = await readBody(request);
+        } catch {
+          json(response, 400, {
+            error: { kind: "invalid_command", message: "invalid sync object request" },
+          });
+          return;
+        }
+        const trace = `tr_http_${++sequence}`,
+          botId = objectMatch[1] as string;
+        try {
+          let result: unknown;
+          if (objectMatch[2] === "pull") {
+            const parsed = syncObjectPullInput.safeParse(body);
+            if (!parsed.success) {
+              json(response, 400, {
+                error: { kind: "invalid_command", message: "invalid sync object selector" },
+              });
+              return;
+            }
+            result = await sync.pullObject(botId, parsed.data, trace);
+          } else {
+            const parsed = syncObjectApplyInput.safeParse(body);
+            if (!parsed.success) {
+              json(response, 400, {
+                error: { kind: "invalid_command", message: "invalid sync object id" },
+              });
+              return;
+            }
+            result = await sync.applyObject(botId, parsed.data.objectId, trace);
+          }
+          json(response, 200, result);
+        } catch (error) {
+          if (!(error instanceof ClassifiedFailure)) throw error;
+          const kind = error.failure.kind;
+          json(
+            response,
+            kind === "auth_failed"
+              ? 403
+              : kind === "unknown_bot"
+                ? 404
+                : kind === "invalid_command"
+                  ? 400
+                  : 503,
+            { error: { kind, message: error.message, failure: error.failure.id }, trace },
+          );
+        }
+        return;
+      }
+      const pullMatch = /^\/v1\/bots\/([A-Za-z0-9_-]+)\/sync\/pull$/.exec(path);
+      if (
+        (path === "/v1/sync/status" && request.method === "GET") ||
+        (pullMatch !== null && request.method === "POST")
+      ) {
+        if (request.headers.origin !== undefined) {
+          json(response, 403, {
+            error: { kind: "auth_failed", message: "origin is not accepted" },
+          });
+          return;
+        }
+        if (options.sync === undefined) {
+          json(response, 409, {
+            error: { kind: "invalid_command", message: "device synchronization is not configured" },
+          });
+          return;
+        }
+        if (pullMatch === null) json(response, 200, options.sync.status());
+        else {
+          let body: unknown;
+          try {
+            body = await readBody(request);
+          } catch {
+            json(response, 400, {
+              error: { kind: "invalid_command", message: "invalid sync pull request" },
+            });
+            return;
+          }
+          const parsed = syncPullInput.safeParse(body);
+          if (!parsed.success) {
+            json(response, 400, {
+              error: { kind: "invalid_command", message: "invalid sync pull request" },
+            });
+            return;
+          }
+          const trace = `tr_http_${++sequence}`;
+          try {
+            json(
+              response,
+              200,
+              await options.sync.pull(pullMatch[1] as string, parsed.data, trace),
+            );
+          } catch (error) {
+            if (!(error instanceof ClassifiedFailure)) throw error;
+            const kind = error.failure.kind;
+            json(
+              response,
+              kind === "auth_failed"
+                ? 403
+                : kind === "unknown_bot"
+                  ? 404
+                  : kind === "invalid_command"
+                    ? 400
+                    : 503,
+              { error: { kind, message: error.message, failure: error.failure.id }, trace },
+            );
+          }
+        }
+        return;
+      }
+      const syncMatch = /^\/v1\/bots\/([A-Za-z0-9_-]+)\/sync\/access$/.exec(path);
+      if (syncMatch !== null && request.method === "POST") {
+        if (request.headers.origin !== undefined) {
+          json(response, 403, {
+            error: { kind: "auth_failed", message: "origin is not accepted" },
+          });
+          return;
+        }
+        let body: unknown;
+        try {
+          body = await readBody(request);
+        } catch {
+          json(response, 400, {
+            error: { kind: "invalid_command", message: "invalid sync access request" },
+          });
+          return;
+        }
+        const parsed = deviceSyncInput.safeParse(body);
+        if (!parsed.success) {
+          json(response, 400, {
+            error: { kind: "invalid_command", message: "invalid sync access request" },
+          });
+          return;
+        }
+        const trace = `tr_http_${++sequence}`;
+        try {
+          json(
+            response,
+            200,
+            await registry.syncAccess(syncMatch[1] as string, parsed.data, trace),
+          );
+        } catch (error) {
+          if (!(error instanceof ClassifiedFailure)) throw error;
+          const kind = error.failure.kind;
+          json(
+            response,
+            kind === "auth_failed"
+              ? 403
+              : kind === "unknown_bot"
+                ? 404
+                : kind === "invalid_command"
+                  ? 400
+                  : 503,
+            { error: { kind, message: error.message, failure: error.failure.id }, trace },
+          );
+        }
+        return;
+      }
+      const tombstones = /^\/v1\/replica\/tombstones\/(pull|apply)$/.exec(path);
+      if (tombstones !== null && request.method === "POST") {
+        if (request.headers.origin !== undefined) {
+          json(response, 403, {
+            error: { kind: "auth_failed", message: "origin is not accepted" },
+          });
+          return;
+        }
+        let params: unknown;
+        try {
+          params = await readBody(request, MAX_REPLICA_BODY_BYTES);
+        } catch {
+          json(response, 400, {
+            error: { kind: "invalid_command", message: "invalid or oversized tombstone request" },
+          });
+          return;
+        }
+        const method = tombstones[1] as "pull" | "apply";
+        const result = await registry.tombstones(method, params, `tr_http_${++sequence}`);
+        if (method === "apply") broadcastCatalog();
+        json(response, 200, result);
+        return;
+      }
+      const replicaMatch =
+        /^\/v1\/bots\/([A-Za-z0-9_-]+)\/replica\/(export|import|run|status|bind|pull|apply|receipts|heads|head|merge|context)$/.exec(
+          path,
+        );
+      if (replicaMatch !== null && request.method === "POST") {
+        const method = replicaMatch[2] as
+          | "export"
+          | "import"
+          | "run"
+          | "status"
+          | "bind"
+          | "pull"
+          | "apply"
+          | "receipts"
+          | "heads"
+          | "head"
+          | "merge"
+          | "context";
+        let params: unknown;
+        try {
+          params = await readBody(request, MAX_REPLICA_BODY_BYTES);
+        } catch {
+          json(response, 400, {
+            error: {
+              kind: "invalid_command",
+              message: "invalid or oversized history request (8 MiB maximum)",
+            },
+          });
+          return;
+        }
+        const trace = `tr_http_${++sequence}`;
+        const ready =
+          method === "heads" || method === "head" || method === "merge" || method === "context";
+        json(
+          response,
+          200,
+          ready
+            ? await (await registry.readyReplica(replicaMatch[1] as string, trace)).command(
+                method,
+                params,
+              )
+            : await registry.replica(replicaMatch[1] as string, {
+                method,
+                params,
+                trace,
+              }),
+        );
+        return;
+      }
       if (path === "/v1/settings" && request.method === "GET") {
         json(response, 200, {
           settings: options.settings?.public() ?? {

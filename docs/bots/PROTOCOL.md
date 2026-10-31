@@ -98,6 +98,11 @@ version, the instance id, the pid and a bot count, never bot content.
 | `POST` | `/v1/bots` | `{ "title", "label"?, "appearance"? }` — `appearance` is `{ "shape", "tint" }` | `201 { "bot": BotSummary }` |
 | `PATCH` | `/v1/bots/:id` | `{ "title"?, "label"?, "appearance"?, "groupId"?, "model"?, "thinkingLevel"? }` — a label of `""` and a `groupId` of `null` clear their field | `{ "bot": BotSummary }` |
 | `DELETE` | `/v1/bots/:id` | — | `204` |
+| `POST` | `/v1/bots/:id/replica/export` | `{ "head"?, "branch"?, "resources"? }` | immutable version-1 full history bundle |
+| `POST` | `/v1/bots/:id/replica/import` | `{ "bundle": HistoryBundle }` | `{ "head": SHA256 }`; passive, atomic and idempotent |
+| `POST` | `/v1/bots/:id/replica/run` | `{ "head", "requestId", "text" }` | `{ "branch": requestId, "submission": Submission }`; new local run only |
+| `POST` | `/v1/bots/:id/replica/status` | `{ "requestId" }` | `{ "branch"?, "submission": Submission or null }` |
+| `POST` | `/v1/bots/:id/replica/receipts` | `{ "after": safe nonnegative integer, "limit"?: 1..128 }` | `{ "items": [{ "id": DocumentId, "head": SHA256 }], "nextAfter", "hasMore" }`; local full-carrier inventory |
 | `POST` | `/v1/groups` | `{ "title" }` | `{ "group": BotGroup }` |
 | `PATCH` | `/v1/groups/:id` | `{ "title" }` | `{ "group": BotGroup }` |
 | `PUT` | `/v1/groups/order` | `{ "ids": [string] }` — every group once, in display order | `{ "groups": [BotGroup] }` |
@@ -741,7 +746,8 @@ Shared verbatim with `err.kind` in the daemon log and the client's
 
 ## Fixtures
 
-`fixtures/bots-protocol/` holds one frame per file, pretty-printed, used by both
+`fixtures/bots-protocol/` holds one frame (or an explicitly named HTTP metadata sample)
+per file, pretty-printed, used by both
 sides.
 
 | File | Direction |
@@ -755,7 +761,10 @@ sides.
 | `agent.server.json` | live agent configuration |
 | `status.server.json`, `submission.server.json`, `submission.connection.server.json` | run state and the connection-scoped duplicate reply |
 | `bots.server.json`, `error.server.json`, `error-rejected.server.json`, `version-mismatch.server.json` | catalog, runtime failure, definite rejection, exempt handshake failure |
-| `send.client.json`, `abort.client.json`, `recover.client.json`, `resync.client.json` | commands |
+| `send.client.json`, `send.resources.client.json`, `abort.client.json`, `recover.client.json`, `resync.client.json` | commands |
+| `sync-proof.http.json` | fixed-domain typed mutual proof and shared Node/CryptoKit signing bytes, validated by the independent Bots codec |
+| `sync-objects-v1/canonical.json` | typed durable object/descriptor/envelope signing bytes verified by Node, Bots and Swift CryptoKit |
+| `sync-access.http.json` | version1 sync access request/response metadata, checked by the independent Bot and Registry codecs |
 | `ping.client.json`, `pong.server.json` | liveness |
 | `entities.json` | `BotSummary`, `Message` (user, assistant with a tool call, tool), `InboxItem` samples |
 
@@ -782,3 +791,507 @@ before attaching it to the same operation; it never treats transport success as
 human confirmation.
 The helper canonicalizes all approval UUID fields to lowercase at decoding, so
 the displayed operation, signed bytes and service verification use the same IDs.
+
+
+### P0 full-history carrier
+
+The four authenticated loopback `replica` endpoints carry full user/model content in
+`HistoryBundle` and `run.text`; they are separate from WebSocket UI carriers (I9).
+Their dedicated body cap is 8 MiB, with malformed/oversized input returning
+`400 invalid_command`; ordinary API and WebSocket limits remain unchanged. Other
+methods are not accepted. New local run input retains the existing 8000-code-point
+limit and `[A-Za-z0-9_-]{8,64}` request ID grammar; failures use the normal `f_` identity.
+The same registry owns runtime opens and holds a lease
+through each request. Failed/runtime-uncertain requests do not change targets or IDs.
+
+[The normative bundle](../../fixtures/bots-sync/history.v1.json) retains original
+SDK entries and provenance. Its head is SHA-256 of UTF-8 `JSON.stringify` of the
+validated v1 envelope without `head`: the schema fixes known field order while
+original model/data object insertion order is retained. There is no recursive
+key sorting; SDK section order changes prompt text and therefore changes the head.
+Receipt re-export retains that order. The earlier unpublished sorted P0 encoding
+is not accepted through a compatibility path. Full validation and
+compatibility rules are in [RUNTIME.md](RUNTIME.md#p0-local-history-handoff).
+No fragment or unsupported bundle may be claimed as a complete runnable head;
+P0 rejects nested SDK tool history, and retained-but-uninstalled instruction/skill
+resources prevent continuation. There are no new WebSocket commands, shared-device
+signing calls, cloud transport or Swift UI in this slice.
+
+
+### P1 local incremental replica log
+
+The same authenticated `/v1/bots/:id/replica/*` POST boundary adds `bind`, `pull`,
+`apply`, and `status {}`. Ordinary HTTP/WebSocket limits and client behavior do not
+change. `bind {sharedBotId: UUID}` associates an empty local Bot directory with the
+explicit shared identity; it cannot reassign populated state. There is no name matching.
+
+`pull {after,limit?,source?}` selects a stream `{replicaId,epoch}` (default local source),
+up to 128 events and **8 MiB of UTF-8 JSON including the complete apply `{page}` wrapper**.
+The [normative page](../../fixtures/bots-sync/page.v1.json) contains version1, sharedBotId,
+source, advertised `range {from,to}`, events `{seq,body}`, `nextAfter` and `hasMore`.
+The position advances only for events actually returned. Single-event overflow is an
+explicit refusal; it leaves the source event/gap intact. Forwarding keeps the original
+source/epoch/seq, including A→B→C duplicates. SDK cursors are not wire positions.
+
+Bodies are immutable `entry`, `resource`, `head` or passive `run` facts. Entry facts
+retain original replica/conversation/entry/task provenance, full kind/model/data/edit
+content and dependency references. Their ref is SHA-256 of JSON.stringify({origin});
+resource refs hash JSON.stringify({resource}). Automatic SDK receipts reference these manifests and preserve a bounded fork/ID map;
+they do not embed the old bodies. A validated matching materialized prefix can be forked
+and only the new suffix appended. Explicit P0 carriers keep their full-bundle API.
+Head manifests carry the v1 source/parents/
+agent metadata and ordered entry aliases `{id,conversationId,byTaskId?,head?,ref,targets?}`
+plus resource refs. The parallel targets array must exactly match edits. Reconstructed
+head digests use the P0 validated-envelope encoding; model/data insertion order remains
+semantic. New heads reference old fact bodies instead of retransmitting them in full.
+
+`apply {page}` first commits deduplicated incoming events, then materializes complete
+heads with public SDK passive append. A foreign `run` fact is historical evidence only;
+it never enters local intents, a task queue or provider session. Same stream/sequence or
+original fact ID with different content is refused. Missing dependencies wait without
+advancing applied; semantic protocol errors retain a blocked source position and return
+invalid_command. That source cannot acquire an applied ACK for the bad sequence or block
+other complete local heads. Unverified heads are never globally indexed.
+
+A complete explicit P0 carrier remains self-contained when its `parents` only names
+ancestor summaries; separate parent receipts are unnecessary for its run or re-export.
+After upgrade, a selected complete P0 SDK receipt is validated/indexed on demand without
+re-import, warming export or passive execution. Missing causal parents/facts in a new
+incremental manifest still prevent applied acknowledgment. A validated fixed head also
+bounds nonterminal ancestor checks for its independent continuation; all-ancestor nested
+tool refusal remains unchanged.
+
+`status {}` reports binding, each stream's known maximum, contiguous received/applied
+positions, actual retained intervals, optional `{error:{seq,code:"invalid_history"}}`,
+and validated materialized heads. A received maximum is not an applied receipt. No field
+claims cloud-cached or physical delivery. Epoch replacement/backup rotation, retention
+pruning and directory tombstones remain planned.
+
+Both ordinary local input and `run {head,requestId,text}` persist a fixed local intent
+and source event in one replica transaction before same-ID SDK admission. Retries fix
+mode/head/text/whenBusy, including an original null root head. Recovery uses only this
+local ledger and SDK's idempotent admission; 8000 code points and 8..64 legal ID characters
+remain unchanged. P0 public carrier limits remain enforced while internal reconstructed
+histories can exceed one page. No device, cloud, Swift or automatic peer transport is
+introduced by these local API methods.
+
+### Saved-history recovery inventory
+
+`receipts {after,limit?}` enumerates complete `bots.replica.import` P0 carriers in the
+current Bot's session. `limit` defaults to 128 and bounds newly **checked documents**,
+including compact/empty records with no full carrier. Metadata is scanned with the public
+SDK API; bodies are read and validated one at a time. `nextAfter` advances to the last
+checked persistent DocumentId even for an empty result page. SDK cursors stay inside the
+request. This position is neither source sequence nor peer-applied acknowledgment.
+
+Each returned family key must equal the validated complete carrier's head, with a supported
+receipt version and visible conversation/entry mappings. Malformed carriers fail closed;
+SQLite/SDK failures propagate. A raw enumeration I/O failure seals that local Harness via
+public close (SDK SessionEnd.closed); the original error remains storage_failed at the
+runtime boundary. Subsequent commands and in-flight raw results are refused before further
+consumption, including empty/compact pages. Protocol errors, StorageRequestError and real
+caller cancellation do not close a healthy instance. The response exposes only document
+IDs/heads, never carrier bodies. The existing Bearer auth, Bot isolation, strict request fields and 8 MiB boundary
+apply. The [normative summary](../../fixtures/bots-sync/receipts.v1.json) includes a checked
+compact record after its returned complete carrier; a nextAfter beyond an item is expected.
+Multiple inventory requests do not freeze a Bot snapshot.
+
+To restore saved history, create a fresh local Bot, bind its saved sharedBotId, import the
+explicitly selected complete carriers (including standalone P0 branches with summarized
+parents), and apply the retained original source pages/ranges. A new replicaId/epoch is
+stable across target restart; old facts retain their original identities and sequences.
+Pages alone cannot cover legacy complete SDK receipts without source events. Missing pages
+remain gaps; bad carriers cannot replace a complete head. Neither foreign pending nor active
+run facts enter local queues. A user starts continuation with a new request ID only after
+the selected head is ready. This is explicit passive recovery, not detection of an unannounced
+live-directory rollback or permission to copy/resume an active session database.
+
+
+### P1 permanent directory tombstones
+
+Authenticated POST /v1/replica/tombstones/pull accepts strict
+{after: nonnegative safe integer, limit?: 1..128}, default128, and returns
+{items:[{sharedBotId: UUID}],nextAfter,hasMore}. The cursor is this daemon root's
+append-only deduplicated set position, never a history source/epoch/sequence or ACK.
+POST /v1/replica/tombstones/apply accepts strict {items:[{sharedBotId: UUID}]} with
+1..128 items, validates every item before writing, and idempotently retains/forwards
+the facts. No local Bot ID, path or credentials are accepted. Both use the existing
+Bearer/Origin checks and 8 MiB body cap; malformed/oversized input is invalid_command.
+Apply success means marks are saved and affected local runtime entry points are sealed;
+close/cleanup failure is an honest failure, while saved marks remain irreversible.
+Deletion wins over bind, old pages, P0 import and run for the destination binding;
+P0 carrier content cannot supply or infer sharedBotId. New shared identities remain usable.
+Local DELETE cleans only aliases of the target's actual shared binding after close;
+an unbound legacy Bot has none. Another identity's pending deletion/quarantine cannot
+turn that successful DELETE into failure or suppress its catalog broadcast.
+The normative tombstones.v1.json fixture contains only immutable shared identity facts.
+Only these new root routes reject any Origin header; existing replica routes retain
+their earlier behavior. A subscribed WebSocket can hold deletion in quarantine until
+its original lease ends. Apply returns failure in that case, retains the mark and does
+not move an owned database. Its subsequent recover command cannot execute or reopen the
+deleted identity; the existing unknown-Bot refusal/close semantics apply.
+
+
+## Fixed-head resource manifest (P2 local slice)
+
+The existing ordered `HistoryBundle.resources` array is the complete selected file manifest;
+no endpoint or body/page limit changes. `name` is a nonempty relative POSIX file path.
+Instructions entries contain valid UTF-8 AGENTS text; skill entries use
+`skills/<package>/SKILL.md` and the complete selected package files below that directory
+(scripts, references, assets, including binary files). Every selected package needs a
+nonempty UTF-8 SKILL.md. Attachments retain arbitrary bytes. Manifest order determines
+instruction/skill presentation order; relative package dependencies must be supplied in
+this manifest, with no automatic workspace discovery, remote fetch or dependency install.
+
+Duplicate paths, file/directory conflicts, traversal/absolute paths, symlink escapes,
+missing skill descriptors and invalid selected text reject **run**, while a structurally
+valid original history carrier remains retainable/exportable. Base64/SHA integrity remains
+validated on import/apply. Files are immutable version data, not executable authorization;
+script bytes can be invoked explicitly with native bash and an interpreter. Selected
+versions coexist at local paths exposed in the model's resource section. No global latest
+selection is introduced. Existing no-resource bundle encoding/head digests stay unchanged.
+
+## Ordinary root resource selection (P2 local slice)
+
+`send` adds optional `resourceHead`, a lowercase SHA256 digest of a complete local resource
+manifest or locally ready history head. Invocation/SubmitInput carry the same selector. It selects only that head's complete
+resource manifest, retaining this root's history, agent/model, local cwd and credentials.
+No selector on a new ID means legacy unselected resources. A same-ID retry omitting the
+selector reuses its durable choice; an explicitly different selector is a binding conflict.
+Every persisted root intent binds `whenBusy`, including refused and already admitted IDs.
+Retries must keep that mode even when omitting `resourceHead`; only a legacy omitted
+mode normalizes to the existing `followUp` default. Core stored-record lookups validate
+this binding before returning a known SDK admission. A matching retry keeps the original
+choice and can retry a refused input once its original mode permits admission.
+The ordinary frame/text/queue limits and replica page limits do not change. Local edits
+are captured through existing export{resources} as a new immutable head; no global latest.
+Resource metadata never becomes user display content.
+
+For local edits while the root is busy, replica export accepts `{head, resources}` with
+a complete fixed ready head and a complete ordered replacement resource manifest. It
+derives a new local head with that fixed head as parent, preserving immutable history,
+Agent and original provenance; it neither reads the current busy tail nor executes work.
+The same base and ordered files re-export deterministically. `head+branch`, unknown or
+incomplete bases are refused. Existing compact facts and complete legacy P0 receipts
+are supported; the explicit full carrier retains its 8MiB limit. New facts/manifests
+publish under the local source, preserving the original entry/task origins.
+
+
+### First resources on an empty Bot
+
+Replica export accepts strict `{kind:"resources",resources:[...]}` for a nonempty complete
+ordered package, or `{kind:"resources",head}` to re-export it. The complete carrier is
+`{version:1,kind:"resources",head,resources}`. It contains no history, Agent, source runtime
+or local device binding. Its head is SHA256 of `{kind:"resource_manifest",resources:[refs]}`;
+each ordered ref is the existing resource fact key. Resource bytes retain their original
+base64/SHA integrity and the existing 8MiB explicit-carrier limit. Branch/history selectors
+and replacement resources cannot be combined with resource-only re-export.
+
+Import accepts this explicitly tagged carrier through the existing `{bundle}` envelope.
+Capture publishes resource facts followed by one immutable `resource_manifest` fact on
+the bound local source. Passive import stores the same complete facts; incremental apply
+cannot apply a manifest until every ordered ref resolves to a valid resource fact. Repeated
+capture/import and duplicate/reordered pages are idempotent and never admit work. Bind an
+empty replica to its intended sharedBotId before capture/outbox. Resource-only heads select
+packages for ordinary send/Invocation; they cannot be used as history run/fork parents or
+weaken P0 entries.min(1), tail or missing-history-dependency checks. Empty/malformed carriers
+are invalid_command. Existing history formats, caps, tombstones and queue rules are unchanged.
+
+
+## P3 local synchronization access metadata
+
+POST /v1/bots/:id/sync/access is protected by the daemon bearer, loopback Origin
+policy and existing body limit. Strict body is {peerDeviceId,purpose:"replica.read"}.
+The daemon resolves sharedBotId from this Bot's actual persisted local replica binding
+and applies the existing tombstone guard; no request-supplied group/shared identity is
+accepted. It calls an independently injected, Bots-owned DeviceSyncPort version1 over
+the existing private socket. No runtime admission or historical/resource payload is sent.
+
+The port offers identity() and access({sharedBotId,peerDeviceId,purpose}). Registry must
+verify current device session, same nonempty group and target-to-caller explicit grant,
+including both epoch/credential versions. It returns bound identity/authorization/peer
+Tailscale endpoint metadata only. It never returns tokens/private keys. Socket callers
+cannot grant/revoke/publish. Missing integration, authorization or Registry failure is a
+refusal, not an authorized empty result. Existing local chat/native execution is unchanged.
+
+The normative metadata sample is `fixtures/bots-protocol/sync-access.http.json`.
+Device UUIDs accepted by this new sync request are canonicalized to lowercase by
+the Bots-owned codec. Classified sync refusals return `{error:{kind,message,failure},trace}`:
+403 authorization, 404 deleted/unknown Bot, 400 malformed/unbound/changed scope,
+503 Registry/private-service unavailable or invalid metadata. A completed cross-process
+lookup is rechecked against the current local binding/tombstone before a 200 response.
+
+
+## P4 first authenticated one-page pull
+
+This additive local slice uses the existing daemon bearer, rejects any Origin header,
+keeps management HTTP on loopback and leaves default queues unchanged:
+
+- GET /v1/sync/status returns version1, instance, pid, device-socket binding digest,
+  ready, actualPort|null and selfDigest|null. Readiness certifies the current Self
+  socket set is bound, not publication, authentication or physical connectivity.
+- POST /v1/bots/:id/sync/pull accepts only {peerDeviceId,source?,after,limit?}.
+  source is {replicaId,epoch}, after is nonnegative, limit defaults128 and is1...128.
+  Shared identity comes from the actual local binding. URLs, IPs, tokens and group
+  claims are not accepted. The response is {page,applied}, preserving the original page.
+  Failure uses the existing {error:{kind,message,failure},trace} shape/status mapping.
+
+A requires its current access(B), while B independently requires B's current grant to A
+through read-only sync.peer.authorize. A reciprocal grant is not required. Registry and
+private-service failures refuse the exchange; no local directory fallback authorizes it.
+Only the new private authorize result adds configured registryOrigin; P3 codecs are unchanged.
+
+The dedicated listener exposes only POST /v1/sync/challenge and /v1/sync/page. Challenge
+input is strict version1/sharedBotId/readerDeviceId/readerNonce/readerEphemeral. Both endpoints
+reject Origin and all management/run routes. A challenge is consumed once, expires within60s,
+and belongs to one daemon generation; at most128 unexpired challenges are held in memory.
+Challenge JSON is capped8192 bytes. The private DeviceChannel remains512KiB and transports
+only typed identity/proof/Self metadata, never history pages.
+
+Both helper signatures use eagle-bots-sync-proof-v1 plus canonical typed JSON. The proof
+contains version1, registryOrigin, role(reader/server), purpose(replica.read), sharedBotId,
+reader/server current identity(publicKey/deviceId/groupId/membershipEpoch/credentialVersion),
+readerNonce/serverNonce/generation/sessionId, expiresAt and both32-byte X25519 public keys.
+Nonces and keys are canonical base64url. The helper validates its configured origin and own
+identity, exact fields and <=60s expiry, then constructs signing bytes itself. No payload or
+digest signing entry is exposed. Node checks current directional access before and after the
+helper wait; peers verify signatures using current Registry keys and recheck identity/grant
+across page preparation/decryption awaits. No identity snapshot is a reusable bearer token.
+Expiry is rechecked after the final asynchronous authorization/binding checks and at the
+actual challenge/request/page/apply use point, including ready-directory and replica-command
+queue waits. A proof that entered within its lifetime cannot be used after that lifetime.
+The internal use guard also checks the original exchange generation/closed state after those
+waits. It is not a wire parameter or SDK extension. Once apply is admitted at receive within
+the lifetime, the existing atomic apply/drain completion remains; no later cancellation is added.
+
+X25519 feeds SHA256 HKDF with SHA256(full server-role canonical proof transcript) as salt
+and SHA256(full AAD) as info. AAD is the full domain+canonical proof, direction and sequence0;
+it is never truncated. AES256-GCM has independent reader/server keys, random12-byte nonce,
+16-byte tag and strict sequence0. Encrypted frame cap is ceil(8MiB*4/3)+16384 bytes; decrypted
+page remains <=8MiB and <=128 events, with all prior source/epoch/seq/dependency checks.
+Ephemeral session keys are not cache/resource keys. One-page pull does not implement CF
+fallback, durable encryption envelopes, automatic switching or72h caching.
+
+Both sides require an existing healthy held runtime. Sync uses short serialized leases
+and the same handle identity, never BotRegistry.replica's touch/open/recover behavior.
+Cold, unavailable, closing, deleted or rebound instances refuse. Explicit local recovery
+retains ownership of pending work. No lease spans the remote exchange; binding/tombstone
+and instance are checked again before local page reads/apply. B rejects multiple aliases
+for the same sharedBotId. Passive apply never submits or resumes local/foreign work.
+
+DaemonConfig.syncPort, --sync-port and BOTS_SYNC_PORT are optional, disabled by default;
+zero selects an OS port. sync.endpoints.self returns bounded actual Self addresses plus
+SHA256(JSON.stringify(sorted unique addresses)). Only Tailscale IPv4/IPv6 ranges are accepted.
+The listener binds the whole current set to the same actual port or remains unready; no
+wildcard/LAN listener, partial publication or forced Tailscale installation/login is added.
+The trusted parent alone publishes {syncPort,expectedSelfDigest?}, or null to withdraw.
+Node serializes only these writers in management receive order through discovery and the
+Registry write, including failures. Digest mismatch withdraws stale endpoints and refuses.
+App status reads verify owned pid/instance/socket binding; stale generations cannot dispatch.
+Ready positive publication is reconfirmed through the current Node session on each existing
+polling round; only unchanged withdrawal is deduplicated. Identity changes never relax Registry
+matching or digest checks. Poll/request/retry timing does not promise a fixed success deadline.
+Shutdown invalidates generation/access immediately and begins the original local HTTP/drain/
+registry cleanup while unfinished private Self discovery drains within the unchanged total budget.
+Late Self results cannot make the closed listener ready. Header/body transport I/O uses the
+existing network/internal failure mapping; size, JSON and crypto refusals remain protocol failures.
+Normal public application quit awaits bounded withdrawal and close, records confirmed or
+unknown, then replies exactly once. Unexpected owned exit invalidates its generation and
+withdraws; adopted processes use the previously verified OS process-start identity if health
+becomes unavailable. Unconfirmed withdrawal never blocks exit indefinitely or claims success.
+
+
+## P4 immutable encrypted page objects (additive v1)
+
+Loopback bearer/no-Origin POST `/v1/bots/:id/sync/objects/pull` accepts exactly one selector:
+`{peerDeviceId,source?,after,limit?}` or `{peerDeviceId,objectId}`. Mixed/unknown fields reject.
+It returns `{version:1,objectId,stored:true,applied:false,cipherDigest}` only after a complete
+immutable local result is durable. `/sync/objects/apply` strictly accepts `{objectId}` and
+resolves only the already stored capability bound to this exact local Bot/replica/epoch/sharedBot.
+It returns `{version:1,objectId,applied:<original replica.apply result>}`. Public callers cannot
+supply an issuer pin,URL,IP,management token or remote body to offline apply. Existing sync/pull
+and replica Page/SDK formats are unchanged; synchronization remains ready-only and passive.
+
+Remote `/v1/sync/object` uses the existing one-use mutual proof exchange and an encrypted strict
+selector including the current recipient descriptor. The response is `{carrier,receipt,trace}`.
+Carrier is `{version:1,manifest,descriptor,ciphertext,envelope}`; cipher appears once outside the
+small ephemeral AEAD receipt. Receipt binds current sessionId,requestDigest,objectId and complete
+publisher/issuer/recipient plus manifest/envelope/descriptor/cipher digests. Both ends recheck
+current directional grants,time,generation and local binding at final use. An old signed object
+alone is never evidence of a current authorized network exchange.
+
+Manifest signs version/purpose/Registry origin,publisher,sharedBot,keyEpoch1,keyId,objectId,
+source,advertised range,actual included seq/eventDigest,nextAfter/hasMore,pageDigest,nonce and
+cipherDigest. ObjectId is the digest of controlled version/purpose,publisherDeviceId,sharedBot,
+keyEpoch,source,pageDigest, independent of encryption randomness and recipient signatures.
+Page plaintext and event digests retain the original Page JSON.stringify model/data insertion
+order. The32-byte per-object DEK/96-bit nonce encrypt with full header AAD; wrapping uses a
+separate persistent X25519 key and a signed directed envelope bound to the complete manifest,
+issuer/recipient identities and signed descriptors. Logical slots compare verified unsigned
+descriptor bodies: another valid signature does not replace the original envelope/descriptor.
+
+Plaintext remains8MiB/128events. Cipher is at most8MiB+16 bytes; the object JSON frame permits
+its base64url encoding plus64KiB metadata. Private512KiB/vault4096B limits do not change.
+`fixtures/bots-protocol/sync-objects-v1/canonical.json` contains actual CryptoKit signatures
+and exact shared Node/Swift canonical metadata texts; it contains no private key or DEK.
+
+## P4 explicit encrypted cache (additive v1)
+
+Loopback authenticated POST `/v1/bots/:id/sync/cache/publish` accepts the same strict
+page-or-object selector as objects/pull. `/sync/cache/list` accepts
+`{peerDeviceId,source:{replicaId,epoch},after,limit?}` (limit1–128, default128).
+`/sync/cache/receive` accepts only `{peerDeviceId,objectId}`. Receive durably stores a
+fully verified object/pin and returns stored:true,applied:false; explicit objects/apply
+remains separate. No caller endpoint, authority, pin or external body is accepted.
+
+The independent Sync Worker accepts POST `/v1/cache/publish`, `/list`, `/get` with
+strict version1/operation/sharedBotId/peerDeviceId plus carrier, source/after/limit,
+or objectId respectively. Dedicated metadata authority is obtained through the
+private `sync.cache.authority` port; Worker recomputes its digest from actual fields
+and verifies operation, namespace, both current identities and directional grant via
+Registry RPC. Publish uses uploader B's session; list/get use reader A's session and
+never require B online or its former session. `sync.key.publish {}` publishes only
+the helper's durable descriptor; lookup requires current B→A authorization.
+
+Existing signed carrier/page bytes and all8MiB/128/private512KiB limits remain.
+cloudCached:true certifies a verified immutable R2 cipher and committed metadata
+references, not peer application or execution. Empty pages return cloudCached:false.
+Lists are bounded, report expired/pending/unavailable gaps and always complete:false;
+they do not advance an applied cursor. Event identity and immutable72h clocks,
+pending recovery and physical deletion are specified in [SYNC-CACHE.md](SYNC-CACHE.md).
+
+### Automatic connections on an existing ready binding
+
+Bearer-authenticated loopback GET `/v1/bots/:id/sync/connections` returns version1,
+actual replica status and explicit preferences. PUT `/sync/connections/:peerDeviceId`
+accepts only `{direction:"publish"|"receive"|"both",source?:{replicaId,epoch}}`;
+DELETE disables that preference. Origin headers are rejected. The daemon captures
+the actual complete local binding, never opens a replica or creates reverse grants.
+The maximum is32 preferences across the daemon. `publish` independently caches
+local facts for authorized pulls; it is not proactive direct-send.
+
+Local cache publish results add the acknowledged immutable manifest's `page`
+metadata `{objectId,source,included,nextAfter,hasMore}`. Bounded cache list results
+add `nextAfter`, the last actual selected/inspected SQL sequence (empty keeps after).
+Whole-object included is not a query-window or applied cursor. Received/applied
+remain actual ReplicaStore facts; peerApplied is always unknown here.
+Attempt signals/guards and connection timing callbacks are internal only.
+Optional preference storage faults pause automatic work and return503/storage_failed
+without stopping daemon startup or native run. Original bytes are not repaired or
+overwritten. The owned preference can retain one pendingApply objectId per
+connection after complete cache storage and before apply; it is retried through
+the existing local stored-object path before online work and cleared on success.
+This is private persistence, not a new peer/wire cursor or applied acknowledgment.
+Detailed fallback, stable return and bounded expiry recovery are in
+[SYNC-AUTO.md](SYNC-AUTO.md).
+
+### Online-holder relay and delivery-associated receipts (additive v1)
+
+Private typed `sync.relay.authority` and Registry `/sync/relay/authority` introduce
+only `register|discover|exchange|ack|receipts`, purpose `replica.relay`. Each short
+metadata authority binds operation, actual request digest, sharedBot, current full
+identity/session and directed holder→reader grant; it is separate from cache
+publish/list/get. No session token, generic signer or remote management bearer.
+
+The independent Worker adds GET WebSocket `/v1/relay/connect?sharedBotId=...` and
+POST `/v1/relay/{discover,exchange,ack,receipts}`. The bounded first socket message
+registers complete holder binding, original-source actual coverage, connection
+generation and authority. Renewal of that same socket/identity/binding/generation
+preserves an in-flight page; replacement/close does not. After DO restart, stored
+advertisements cannot make a holder online. Every page uses the existing fresh
+one-use challenge/proof/AEAD object exchange, not a reusable crypto session.
+
+Local bearer/no-Origin POST `/v1/bots/:id/sync/relay/register` and `/discover` accept
+`{}`; `/pull` accepts the existing peer/source/after/limit page selector; `/ack`
+accepts `{peerDeviceId,delivery:{requestId,sessionId,objectId,source}}`; `/receipts`
+accepts `{peerDeviceId}`. No caller binding, applied cursor, authority or endpoint
+is accepted at the local ACK boundary. It reads complete persistent ready status.
+The original source is explicit for holder history; a holder creates its own
+publisher transfer object without changing original event bytes or writing R2.
+
+ACK binds current holder/receiver identities, complete receiverBinding and original
+source, the actual request/session/object reference, received/applied/available.
+Applied can lag received and does not imply execution. Same complete-key metadata
+is idempotent/monotonic; an old receiver epoch cannot represent a new one. Receipt
+read uses holder→reader permission, without reverse grant. Unknown remains unknown.
+Only current-authorized explicit410 `sync_relay_delivery_unavailable` can discard
+an obsolete pending ACK reference; generic expiry/auth/binding/SQL failures cannot.
+The connection status field peerApplied and direct/cache sender confirmation are
+still unknown in this slice. See SYNC-RELAY for limits and the following status slice.
+
+### Authenticated persistent status (additive v1)
+
+`sync.relay.authority` adds distinct `status-report|status-read` operations under
+the existing replica.relay purpose. Each binds the complete actual request digest,
+operation, namespace/session and current holder→receiver identities/grant. A report
+uses the receiver session; an independent read uses the holder session. Neither
+requires a reverse data-read grant or reuses a cache/other relay operation ticket.
+
+Local bearer/no-Origin POST `/v1/bots/:id/sync/relay/status-report` and `/status-read`
+accept only `{peerDeviceId}`. Report reconstructs the same ready handle's durable
+status, not caller cursors/binding. Worker POST `/v1/relay/status-report` accepts
+`{version:1,operation,sharedBotId,peerDeviceId,binding,streams}`; streams contains
+at most128 unique `{source:{replicaId,epoch},received,applied}` entries with
+0<=applied<=received. Binding is the complete receiver
+`{localBotId,sharedBotId,replicaId,epoch}`. The response is
+`{version:1,recorded:true}`. Worker recomputes the digest and rechecks authorization
+at the metadata use point. No object/delivery reference is required for plain direct.
+
+Worker status-read accepts `{version:1,operation,sharedBotId,peerDeviceId}` and
+returns `{version:1,snapshots,hasMore}` with at most128 snapshots. Each includes
+registryOrigin,sharedBotId,complete holder/receiver identities,binding,original
+source,actual received/applied and server recordedAt. The exact complete key is
+idempotent/monotonic; an old binding or source epoch remains separate history.
+Reports are current receiver statements, not independent proofs of execution.
+
+Automatic receive/both reports and publish/both reads use one independent bounded
+metadata action. Connection peerApplied is `"unknown"` until a nonempty authenticated
+read, then `{version:1,current:"unknown",authenticatedAt,snapshots,hasMore}`.
+Current receiver binding stays unknown; snapshots never imply a new instance's
+progress, complete history or native run. A failed refresh retains the last
+timestamped authenticated snapshot. CloudCached and local received/applied remain
+separate. No report is added to offline applyObject; failed reporting cannot undo
+apply or block inbound/upload/native work. Details are in [SYNC-STATUS.md](SYNC-STATUS.md).
+
+
+## Native fixed-head contexts and merge (P5 additive slice)
+
+The same authenticated `/v1/bots/:id/replica/*` POST boundary adds:
+
+| Method | Strict request | Response |
+| --- | --- | --- |
+| `heads` | `{after?:nonnegative safe integer,limit?:1..128}` | `{items:[{head,parents,source,ready,entries,resources,resourceHead}],nextAfter,hasMore}`; defaults0/128, metadata only, existing8MiB page bound |
+| `head` | `{head:SHA256}` | one head's metadata and `resourceFiles:[{ref,name?,kind?,sha256?}]`; no resource bodies |
+| `context` | `{contextId,head?:SHA256,resourceHead?:SHA256}` | `{contextId,seedHead,resourceHead,tip}`; absent head reads an existing identity, present immutable ready seed creates it idempotently |
+| `merge` | `{preview:true,heads:[SHA256,SHA256]}` | bounded `conflicts:[{origin,options:[{head,action,messageCount,digest}]}]` and `resources:[{name,versions:[{sha256,kind,heads}]}]` |
+| `merge` | `{requestId,heads:[SHA256,SHA256],choices?:[{origin,head}],resources?:[{name,sha256}]}` | `{head}`; two ready immutable parents, idempotent on the complete request binding |
+
+Head paging visits actual changed head records and preserves readiness updates;
+`receipts` remains the older complete-carrier inventory. Context IDs follow the
+existing invocation-ID syntax. A context fixes its seed and initial resources;
+its current tip changes only as its own durable SDK conversation evolves. Merge
+retains both logical parent heads, deduplicates common full original origins,
+and requires explicit replace/omit and same-path different-resource choices.
+Original parent raw entries/resources remain immutable. Each effective visible
+message is one typed derived entry, with persistent original-origin, selected-edit,
+group/order and tool-call/result mapping. Explicit omissions keep a mapping.
+Later old-origin edits are passively retained and rederived into a complete ordered
+immutable group; no opaque multi-message marker or passive provider work is used.
+
+`subscribe` adds optional `contextId`; the connection remains fixed to one Bot
+and that context until closed. `send` adds the same optional field alongside
+`resourceHead`. Omission retains root behavior. History, entry lookup, submission
+status, watch, abort, export and retry follow the captured context, including
+reconnection. A connection cannot send into a different context. Bot-wide running,
+capacity, shared Harness, and existing followUp/steer queue rules remain in force.
+Each context has its own rendered event stream; a whole-Bot observer is used only
+where a lifecycle wait really needs all contexts.
+
+Before sending, Outbox atomically retains contextId/resourceHead/whenBusy with
+the original requestId. Switching selection cannot retarget pending work; retry
+uses the captured selection. Durable terminal metadata retains these fields and
+is committed in the same file write that removes the pending entry. A root
+connection never reconciles another context's pending work. Native selection,
+resource choices and two-head merge feed the existing composer and bearer/socket
+paths. The incoming selector's trusted management contract is SYNC-NATIVE.md;
+it grants no management access to the Bot socket.

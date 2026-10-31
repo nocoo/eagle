@@ -45,7 +45,11 @@ import type { UsageMeter } from "../../tools/usage.ts";
 import { openWorkspace } from "../../tools/workspace.ts";
 import { FailureClassifier, type Minted } from "./classify.ts";
 import { entryMessageId } from "./convert.ts";
+import { HistoryReplica } from "./HistoryReplica.ts";
+import { RESOURCE_EXTENSION } from "./HistoryResources.ts";
 import { convertSubmission, EventMapper } from "./mapEvents.ts";
+import { readReplicaBinding } from "./ReplicaStore.ts";
+import { ReplicaSync } from "./ReplicaSync.ts";
 
 const Events = {
   openStart: declareEvent("runtime.open.start"),
@@ -63,6 +67,7 @@ const Events = {
   recoverStart: declareEvent("runtime.recover.start"),
   recoverOk: declareEvent("runtime.recover.ok"),
   taskRetryOk: declareEvent("runtime.task.retry.ok"),
+  taskRetryFail: declareEvent("runtime.task.retry.fail"),
   taskAbortOk: declareEvent("runtime.task.abort.ok"),
   recoverFail: declareEvent("runtime.recover.fail"),
   closeStart: declareEvent("runtime.close.start"),
@@ -74,6 +79,9 @@ const Events = {
   piSessionClosed: declareEvent("pi.session.closed"),
   toolsRefreshOk: declareEvent("runtime.tools.refresh.ok"),
   toolsRefreshFail: declareEvent("runtime.tools.refresh.fail"),
+  replicaStart: declareEvent("runtime.replica.start"),
+  replicaOk: declareEvent("runtime.replica.ok"),
+  replicaFail: declareEvent("runtime.replica.fail"),
 } as const;
 
 /** The subset of `HarnessSettings` the adapter decides; pi fills in the rest. */
@@ -162,12 +170,17 @@ export class PiDurableRuntime implements RuntimePort {
     this.#options = options;
   }
 
+  readReplicaBinding(spec: Pick<RuntimeBotSpec, "id" | "dir">) {
+    return readReplicaBinding(join(spec.dir, "replica.sqlite"), spec.id);
+  }
+
   async open(spec: RuntimeBotSpec): Promise<RuntimeHandle> {
     const log = this.#options.log;
     const started = performance.now();
     log.emit("info", "runtime", Events.openStart, { trace: spec.trace, botId: spec.id });
     const classifier = new FailureClassifier({ now: this.#options.now ?? Date.now });
     let handle: PiRuntimeHandle | undefined;
+    let starting: { harness: Harness; replica: ReplicaSync } | undefined;
     // A park discovered by `open()`'s recovery has no handle yet, so its report is
     // buffered and replayed rather than dropped.
     const pending: ReportInfo[] = [];
@@ -234,7 +247,58 @@ export class PiDurableRuntime implements RuntimePort {
             : { thinkingLevel: spec.thinkingLevel as ModelThinkingLevel }),
         },
       });
-      await root.configure({ extensions: installed }, BACKGROUND_CONTEXT);
+      const history = new HistoryReplica(
+        harness,
+        root.id,
+        spec.id,
+        workspace.root,
+        registry,
+        storage,
+        spec.dir,
+      );
+      await root.configure(
+        {
+          extensions: [
+            ...installed,
+            ...registry
+              .snapshot()
+              .installed()
+              .filter((extension) => extension.name === RESOURCE_EXTENSION),
+          ],
+        },
+        BACKGROUND_CONTEXT,
+      );
+      let replicaFailureEpisode = 0;
+      const replica = new ReplicaSync(
+        join(spec.dir, "replica.sqlite"),
+        spec.id,
+        await history.replicaId(),
+        harness,
+        root.id,
+        history,
+        (cause) => {
+          const known = classifier.sessionEpisode();
+          const failure =
+            cause instanceof ClassifiedFailure
+              ? cause.failure
+              : (
+                  known ??
+                  classifier.classify(
+                    `replica:scan:${++replicaFailureEpisode}`,
+                    "storage_failed",
+                    "runtime",
+                  )
+                ).classification.failure;
+          log.emit(known === undefined ? "error" : "warn", "runtime", Events.replicaFail, {
+            trace: spec.trace,
+            botId: spec.id,
+            failure,
+            origin: known === undefined,
+          });
+        },
+      );
+      starting = { harness, replica };
+      await replica.start();
       handle = new PiRuntimeHandle({
         spec,
         harness,
@@ -242,6 +306,7 @@ export class PiDurableRuntime implements RuntimePort {
         classifier,
         options: this.#options,
         registry,
+        replica,
       });
       handle.attachTaskGraph(await harness.taskGraph(BACKGROUND_CONTEXT));
       harness.closed.then((end) => handle?.sessionEnd(end));
@@ -249,6 +314,18 @@ export class PiDurableRuntime implements RuntimePort {
       // `open()` already recovered; resuming only enables scheduling (RUNTIME.md).
       harness.resume();
     } catch (cause) {
+      if (starting !== undefined) {
+        // Seal the SDK before closing its replica; failure cleanup must retain the original cause.
+        const closed = [
+          ...(await Promise.allSettled([starting.harness.close(BACKGROUND_CONTEXT)])),
+          ...(await Promise.allSettled([starting.replica.close()])),
+        ];
+        const cleanupErrors = closed.flatMap((result) =>
+          result.status === "rejected" ? [result.reason] : [],
+        );
+        if (cleanupErrors.length > 0 && cause instanceof Error)
+          Object.defineProperty(cause, "cleanupErrors", { value: cleanupErrors });
+      }
       const minted = classifier.classify("open", "storage_failed", "runtime");
       log.emit("error", "runtime", Events.openFail, {
         trace: spec.trace,
@@ -291,9 +368,18 @@ type HandleOptions = {
   readonly classifier: FailureClassifier;
   readonly options: PiRuntimeOptions;
   readonly registry: Registry;
+  readonly replica: ReplicaSync;
+  readonly contextId?: string;
+  readonly owner?: PiRuntimeHandle;
 };
 
 class PiRuntimeHandle implements RuntimeHandle {
+  readonly #handleOptions: HandleOptions;
+  readonly #contextId: string | undefined;
+  readonly #owner: PiRuntimeHandle | undefined;
+  readonly #contexts = new Map<string, Promise<PiRuntimeHandle>>();
+  readonly #reportContexts = new Map<ConversationId, PiRuntimeHandle>();
+  readonly #replica: ReplicaSync;
   readonly #registry: Registry;
   #toolGroups: readonly string[];
 
@@ -307,8 +393,8 @@ class PiRuntimeHandle implements RuntimeHandle {
   readonly #subscriptions = new Map<(event: RuntimeEvent) => void, Subscription>();
   /** Failure identities already announced: the channels double-report one episode. */
   readonly #announced = new Set<string>();
-  /** Failures that happened before anyone was listening, delivered on the first subscribe. */
-  readonly #undelivered: Extract<RuntimeEvent, { type: "error" }>[] = [];
+  /** Includes explicit SDK conversations whose local handle has not been registered yet. */
+  readonly #undelivered = new Map<ConversationId, Extract<RuntimeEvent, { type: "error" }>[]>();
   /** Submission ledger: both ids resolve, and settlement does not remove the entry. */
   readonly #submissionIds = new Map<string, string>();
   /** The reverse edge, so an id found in a snapshot can be resolved to its send. */
@@ -330,6 +416,10 @@ class PiRuntimeHandle implements RuntimeHandle {
   #resubscribed = false;
 
   constructor(options: HandleOptions) {
+    this.#handleOptions = options;
+    this.#contextId = options.contextId;
+    this.#owner = options.owner;
+    this.#replica = options.replica;
     this.#spec = options.spec;
     this.#harness = options.harness;
     this.#rootId = options.rootId;
@@ -347,6 +437,82 @@ class PiRuntimeHandle implements RuntimeHandle {
         ? {}
         : { maxMessageBytes: options.options.maxMessageBytes }),
     });
+  }
+
+  async #conversation() {
+    const conversation = await this.#harness.conversation(this.#rootId, BACKGROUND_CONTEXT);
+    if (conversation === undefined) throw new Error("missing local conversation");
+    return conversation;
+  }
+
+  async context(contextId: string, trace: string): Promise<RuntimeHandle> {
+    if (this.#owner !== undefined) return this.#owner.context(contextId, trace);
+    const existing = this.#contexts.get(contextId);
+    if (existing !== undefined) return existing;
+    const pending = (async () => {
+      const rootId = await this.#replica.conversationId(contextId);
+      const child = new PiRuntimeHandle({ ...this.#handleOptions, rootId, contextId, owner: this });
+      this.#reportContexts.set(rootId, child);
+      const undelivered = this.#undelivered.get(rootId) ?? [];
+      this.#undelivered.delete(rootId);
+      for (const event of undelivered) child.#announce(event);
+      child.attachTaskGraph(await this.#harness.taskGraph(BACKGROUND_CONTEXT));
+      return child;
+    })();
+    this.#contexts.set(contextId, pending);
+    try {
+      return await pending;
+    } catch (cause) {
+      this.#contexts.delete(contextId);
+      if (cause instanceof ClassifiedFailure) {
+        this.#options.log.emit("error", "runtime", Events.replicaFail, {
+          trace,
+          botId: this.#spec.id,
+          failure: cause.failure,
+          origin: true,
+        });
+        throw cause;
+      }
+      const minted =
+        this.#classifier.sessionEpisode() ??
+        this.#classifier.classify(`context:${contextId}`, "storage_failed", "runtime");
+      this.#logFailure(minted, trace, Events.replicaFail, "runtime");
+      throw new ClassifiedFailure(
+        minted.classification.failure,
+        "runtime",
+        "context is unavailable",
+        { cause },
+      );
+    }
+  }
+
+  async replica(command: Parameters<NonNullable<RuntimeHandle["replica"]>>[0]): Promise<unknown> {
+    const fields = { trace: command.trace, botId: this.#spec.id };
+    this.#options.log.emit("info", "runtime", Events.replicaStart, fields);
+    try {
+      const result = await this.#replica.command(command);
+      this.#options.log.emit("info", "runtime", Events.replicaOk, fields);
+      return result;
+    } catch (cause) {
+      if (cause instanceof ClassifiedFailure) {
+        this.#options.log.emit("error", "runtime", Events.replicaFail, {
+          ...fields,
+          failure: cause.failure,
+          origin: true,
+        });
+        throw cause;
+      }
+      const minted =
+        this.#classifier.sessionEpisode() ??
+        this.#classifier.classify("replica", "storage_failed", "runtime");
+      this.#logFailure(minted, command.trace, Events.replicaFail, "runtime");
+      throw new ClassifiedFailure(
+        minted.classification.failure,
+        "unknown",
+        "replica storage failed",
+        { cause },
+      );
+    }
   }
 
   /** The committed view without publishing anything. */
@@ -401,6 +567,11 @@ class PiRuntimeHandle implements RuntimeHandle {
   }
 
   async submit(input: SubmitInput): Promise<Submission> {
+    if (this.#owner === undefined && input.contextId !== undefined)
+      return (await this.context(input.contextId, input.trace)).submit(input);
+    const conflictingContext = input.contextId !== undefined && input.contextId !== this.#contextId;
+    if (this.#contextId !== undefined && input.contextId === undefined)
+      input = { ...input, contextId: this.#contextId };
     const log = this.#options.log;
     const started = performance.now();
     // The admission commit can be published before `submit` returns, so the request id
@@ -414,15 +585,28 @@ class PiRuntimeHandle implements RuntimeHandle {
       reqId: input.requestId,
     });
     try {
-      const root = await this.#harness.root(BACKGROUND_CONTEXT);
-      const admitted = await root.submit(
-        {
-          type: "input",
-          content: input.text,
-          requestId: input.requestId,
-          whenBusy: input.whenBusy,
-        },
-        BACKGROUND_CONTEXT,
+      if (conflictingContext)
+        throw new ClassifiedFailure(
+          this.#classifier.classify(
+            `context-conflict:${input.requestId}`,
+            "invalid_command",
+            "runtime",
+          ).classification.failure,
+          "not_admitted",
+          "context binding conflict",
+        );
+      const root = await this.#conversation();
+      const admitted = await this.#replica.root(input, (entry) =>
+        root.submit(
+          {
+            type: "input",
+            content: input.text,
+            requestId: input.requestId,
+            whenBusy: input.whenBusy,
+            ...(entry === undefined ? {} : { entry }),
+          },
+          BACKGROUND_CONTEXT,
+        ),
       );
       // F24: admission starts the run, so the record read here can already be `done`.
       const record = await admitted.status(BACKGROUND_CONTEXT);
@@ -457,7 +641,16 @@ class PiRuntimeHandle implements RuntimeHandle {
       });
       return converted;
     } catch (cause) {
-      if (cause instanceof ClassifiedFailure) throw cause;
+      if (cause instanceof ClassifiedFailure) {
+        log.emit("error", "runtime", Events.submitFail, {
+          trace: input.trace,
+          botId: this.#spec.id,
+          reqId: input.requestId,
+          failure: cause.failure,
+          origin: true,
+        });
+        throw cause;
+      }
       const busy = cause instanceof Error && cause.name === "ConversationBusy";
       const minted = busy
         ? this.#classifier.refusedBusy()
@@ -484,19 +677,63 @@ class PiRuntimeHandle implements RuntimeHandle {
    * settled key from duplicate detection (TRIGGERS.md §3.2).
    */
   async submission(
-    key: { submissionId: string } | { requestId: string },
+    key: Parameters<RuntimeHandle["submission"]>[0],
   ): Promise<Submission | undefined> {
+    if (this.#owner === undefined && "requestId" in key && key.contextId !== undefined)
+      return (await this.context(key.contextId, key.retry?.trace ?? this.#spec.trace)).submission(
+        key,
+      );
+    if ("requestId" in key && key.retry !== undefined)
+      key = {
+        ...key,
+        retry: {
+          ...key.retry,
+          ...(this.#contextId === undefined ? {} : { contextId: this.#contextId }),
+        },
+      };
+    if ("requestId" in key && key.retry !== undefined) {
+      try {
+        this.#replica.checkRootRetry({
+          requestId: key.requestId,
+          whenBusy: key.retry.whenBusy,
+          ...(this.#contextId === undefined ? {} : { contextId: this.#contextId }),
+        });
+      } catch (cause) {
+        if (cause instanceof ClassifiedFailure) {
+          this.#options.log.emit("error", "runtime", Events.submitFail, {
+            trace: key.retry.trace,
+            botId: this.#spec.id,
+            reqId: key.requestId,
+            failure: cause.failure,
+            origin: true,
+          });
+          throw cause;
+        }
+        const minted =
+          this.#classifier.sessionEpisode() ?? this.#classifier.operationFailed("submit", cause);
+        this.#logFailure(minted, key.retry.trace, Events.submitFail, "runtime");
+        throw new ClassifiedFailure(
+          minted.classification.failure,
+          "unknown",
+          minted.classification.message,
+          { cause },
+        );
+      }
+    }
     const id = "submissionId" in key ? key.submissionId : this.#submissionIds.get(key.requestId);
     if (id !== undefined) {
       const found = await this.#harness.submission(Number(id) as never, BACKGROUND_CONTEXT);
       if (found !== undefined) {
         const record = await found.status(BACKGROUND_CONTEXT);
+        if (record.conversationId !== this.#rootId) return undefined;
         return convertSubmission(record as never);
       }
     }
     if ("submissionId" in key) return undefined;
     const inspection = await this.#harness.inspect(BACKGROUND_CONTEXT);
-    const live = inspection.submissions.find((item) => item.requestId === key.requestId);
+    const live = inspection.submissions.find(
+      (item) => item.requestId === key.requestId && item.conversationId === this.#rootId,
+    );
     if (live !== undefined) return convertSubmission(live);
     const stored = await this.#durableSubmission(key.requestId);
     if (stored === undefined) return undefined;
@@ -509,7 +746,7 @@ class PiRuntimeHandle implements RuntimeHandle {
   /** The durable index of a settled admission, for a key this process never admitted. */
   async #durableSubmission(requestId: string) {
     try {
-      const root = await this.#harness.root(BACKGROUND_CONTEXT);
+      const root = await this.#conversation();
       return await root.commit(
         (tx) => tx.submissionByRequest(this.#rootId, requestId),
         BACKGROUND_CONTEXT,
@@ -553,7 +790,7 @@ class PiRuntimeHandle implements RuntimeHandle {
   /** One entry, read by its own id: no paging, no window, so an old answer stays reachable. */
   async entryById(entryId: string): Promise<Message | undefined> {
     try {
-      const root = await this.#harness.root(BACKGROUND_CONTEXT);
+      const root = await this.#conversation();
       const page = await root.entries(
         {
           order: "ascending",
@@ -583,7 +820,7 @@ class PiRuntimeHandle implements RuntimeHandle {
   }
 
   async #history(input: { beforeEntryId?: string; limit: number }): Promise<RuntimeHistory> {
-    const root = await this.#harness.root(BACKGROUND_CONTEXT);
+    const root = await this.#conversation();
     const before = input.beforeEntryId;
     const collected: Message[] = [];
     let cursor: Cursor | undefined;
@@ -618,7 +855,7 @@ class PiRuntimeHandle implements RuntimeHandle {
     const log = this.#options.log;
     log.emit("info", "runtime", Events.abortStart, { trace, botId: this.#spec.id });
     try {
-      const root = await this.#harness.root(BACKGROUND_CONTEXT);
+      const root = await this.#conversation();
       await root.abort(BACKGROUND_CONTEXT);
       log.emit("info", "runtime", Events.abortOk, {
         trace,
@@ -642,6 +879,7 @@ class PiRuntimeHandle implements RuntimeHandle {
     const log = this.#options.log;
     log.emit("info", "runtime", Events.recoverStart, { trace, botId: this.#spec.id });
     try {
+      await this.#replica.prepareResources();
       // An escalated listener stops reattaching itself; `recover` is the explicit retry,
       // and it re-attaches before it retries parked work.
       for (const state of this.#subscriptions.values()) {
@@ -679,12 +917,35 @@ class PiRuntimeHandle implements RuntimeHandle {
     model: { provider: string; modelId: string },
     _trace: string,
   ): Promise<void> {
-    const root = await this.#harness.root(BACKGROUND_CONTEXT);
+    const root = await this.#conversation();
     await root.configure({ model }, BACKGROUND_CONTEXT);
   }
 
   /** Runs one parked task again; the graph then reports it as live work. */
   async retryTask(taskId: string, trace: string): Promise<void> {
+    try {
+      await this.#replica.prepareResources();
+    } catch (cause) {
+      if (cause instanceof ClassifiedFailure) {
+        this.#options.log.emit("error", "runtime", Events.taskRetryFail, {
+          trace,
+          botId: this.#spec.id,
+          failure: cause.failure,
+          origin: true,
+        });
+        throw cause;
+      }
+      const minted =
+        this.#classifier.sessionEpisode() ??
+        this.#classifier.classify(`retry:resources:${trace}`, "storage_failed", "runtime");
+      this.#logFailure(minted, trace, Events.taskRetryFail, "runtime");
+      throw new ClassifiedFailure(
+        minted.classification.failure,
+        "runtime",
+        minted.classification.message,
+        { cause },
+      );
+    }
     // The caller validated the wire id; crossing to TaskId is the only work left here.
     await this.#harness.retryTask(taskIdOf(taskId), BACKGROUND_CONTEXT);
     this.#options.log.emit("info", "runtime", Events.taskRetryOk, {
@@ -731,8 +992,14 @@ class PiRuntimeHandle implements RuntimeHandle {
 
   async refreshTools(trace: string): Promise<void> {
     try {
-      const extensions = selectToolExtensions(this.#registry, this.#toolGroups);
-      const root = await this.#harness.root(BACKGROUND_CONTEXT);
+      const extensions = [
+        ...selectToolExtensions(this.#registry, this.#toolGroups),
+        ...this.#registry
+          .snapshot()
+          .installed()
+          .filter((extension) => extension.name === RESOURCE_EXTENSION),
+      ];
+      const root = await this.#conversation();
       await root.configure({ extensions }, BACKGROUND_CONTEXT);
       this.#options.log.emit("info", "runtime", Events.toolsRefreshOk, {
         trace,
@@ -753,11 +1020,31 @@ class PiRuntimeHandle implements RuntimeHandle {
 
   /** Settings changed the reasoning level: the conversation follows without a reopen. */
   async configureThinkingLevel(thinkingLevel: string, _trace: string): Promise<void> {
-    const root = await this.#harness.root(BACKGROUND_CONTEXT);
+    const root = await this.#conversation();
     await root.configure(
       { thinkingLevel: thinkingLevel as ModelThinkingLevel },
       BACKGROUND_CONTEXT,
     );
+  }
+
+  async outstanding(trace: string): Promise<readonly Submission[]> {
+    try {
+      const inspection = await this.#harness.inspect(BACKGROUND_CONTEXT);
+      return inspection.submissions
+        .map((record) => convertSubmission(record))
+        .filter((record): record is Submission => record !== undefined);
+    } catch (cause) {
+      if (cause instanceof ClassifiedFailure) throw cause;
+      const minted =
+        this.#classifier.sessionEpisode() ?? this.#classifier.operationFailed("submit", cause);
+      this.#logFailure(minted, trace, Events.submitFail, "runtime");
+      throw new ClassifiedFailure(
+        minted.classification.failure,
+        "runtime",
+        minted.classification.message,
+        { cause },
+      );
+    }
   }
 
   async busy(): Promise<{ run: boolean; tasks: boolean }> {
@@ -767,9 +1054,16 @@ class PiRuntimeHandle implements RuntimeHandle {
 
   /** Resolves `timeout` without dropping the handle: the close keeps joining. */
   async close(trace: string, deadlineMs: number): Promise<"closed" | "timeout"> {
+    if (this.#owner !== undefined) return this.#owner.close(trace, deadlineMs);
     const log = this.#options.log;
     log.emit("info", "runtime", Events.closeStart, { trace, botId: this.#spec.id });
-    this.#closing ??= this.#harness.close(BACKGROUND_CONTEXT);
+    this.#closing ??= (async () => {
+      try {
+        await this.#replica.close();
+      } finally {
+        await this.#harness.close(BACKGROUND_CONTEXT);
+      }
+    })();
     const closing = this.#closing;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<"timeout">((resolve) => {
@@ -816,8 +1110,23 @@ class PiRuntimeHandle implements RuntimeHandle {
 
   /** `HarnessOptions.onReport`, off the Session line; the channel never mints by itself. */
   report(info: ReportInfo): void {
+    const conversationId =
+      ("task" in info ? info.task?.conversationId : undefined) ??
+      ("conversationId" in info ? info.conversationId : undefined);
+    const context =
+      conversationId === undefined ? undefined : this.#reportContexts.get(conversationId);
+    if (context !== undefined) {
+      context.report(info);
+      return;
+    }
     const minted = this.#classifier.report(info, this.#currentEpisode);
-    const trace = this.#runTrace ?? this.#spec.trace;
+    const trace =
+      conversationId !== undefined && conversationId !== this.#rootId
+        ? this.#spec.trace
+        : (this.#runTrace ??
+          (this.#contextId === undefined
+            ? this.#spec.trace
+            : (this.#admitting[0] ?? this.#lastTrace ?? this.#spec.trace)));
     const log = this.#options.log;
     if (minted === undefined) {
       log.emit("warn", "pi", Events.piReport, {
@@ -829,13 +1138,16 @@ class PiRuntimeHandle implements RuntimeHandle {
     }
     this.#logFailure(minted, trace, Events.piReport, "pi");
     const task = "task" in info ? info.task : undefined;
-    this.#announce({
-      type: "error",
-      trace,
-      failure: minted.classification.failure,
-      message: minted.classification.message,
-      ...(task === undefined ? {} : { taskId: String(task.id) }),
-    });
+    this.#announce(
+      {
+        type: "error",
+        trace,
+        failure: minted.classification.failure,
+        message: minted.classification.message,
+        ...(task === undefined ? {} : { taskId: String(task.id) }),
+      },
+      conversationId,
+    );
   }
 
   /**
@@ -899,6 +1211,7 @@ class PiRuntimeHandle implements RuntimeHandle {
   async #activeRecords(): Promise<Submission[]> {
     const inspection = await this.#harness.inspect(BACKGROUND_CONTEXT);
     return inspection.submissions
+      .filter((record) => record.conversationId === this.#rootId)
       .map((record) => convertSubmission(record))
       .filter((record): record is Submission => record !== undefined);
   }
@@ -1183,11 +1496,13 @@ class PiRuntimeHandle implements RuntimeHandle {
   }
 
   /** One `error` event per failure identity, whatever channel reported it first. */
-  #announce(event: Extract<RuntimeEvent, { type: "error" }>): void {
+  #announce(event: Extract<RuntimeEvent, { type: "error" }>, conversationId = this.#rootId): void {
     if (this.#announced.has(event.failure.id)) return;
     this.#announced.add(event.failure.id);
-    if (this.#subscriptions.size === 0) {
-      this.#undelivered.push(event);
+    if (conversationId !== this.#rootId || this.#subscriptions.size === 0) {
+      const undelivered = this.#undelivered.get(conversationId) ?? [];
+      undelivered.push(event);
+      this.#undelivered.set(conversationId, undelivered);
       return;
     }
     this.#broadcast(event);
@@ -1195,8 +1510,9 @@ class PiRuntimeHandle implements RuntimeHandle {
 
   /** Delivers what failed while nobody was listening, now that somebody is. */
   #flushUndelivered(state: Subscription): void {
-    if (this.#undelivered.length === 0) return;
-    for (const event of this.#undelivered.splice(0)) this.#deliver(state, event);
+    const undelivered = this.#undelivered.get(this.#rootId) ?? [];
+    this.#undelivered.delete(this.#rootId);
+    for (const event of undelivered) this.#deliver(state, event);
   }
 
   /**

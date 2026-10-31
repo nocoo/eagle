@@ -48,6 +48,7 @@ public struct ResyncState: Sendable {
 /// everything it observes becomes a `ConversationEvent`.
 public final class ConversationSocket: NSObject {
   public let botId: String
+  public let contextId: String?
   public let events: AsyncStream<ConversationEvent>
 
   private let url: URL
@@ -77,9 +78,11 @@ public final class ConversationSocket: NSObject {
     baseURL: URL,
     token: String,
     botId: String,
+    contextId: String? = nil,
     configuration: URLSessionConfiguration = .default
   ) {
     self.botId = botId
+    self.contextId = contextId
     self.token = token
     self.url = baseURL.appendingPathComponent("/v1/socket")
     self.configuration = configuration
@@ -136,8 +139,13 @@ public final class ConversationSocket: NSObject {
 
   // MARK: - Commands
 
-  public func send(text: String, requestId: String, whenBusy: BusyMode, trace: String) throws {
-    enqueue(try Wire.send(requestId: requestId, text: text, whenBusy: whenBusy, trace: trace))
+  public func send(
+    text: String, requestId: String, whenBusy: BusyMode, resourceHead: String? = nil, trace: String
+  ) throws {
+    enqueue(
+      try Wire.send(
+        requestId: requestId, text: text, whenBusy: whenBusy, contextId: contextId,
+        resourceHead: resourceHead, trace: trace))
   }
 
   public func abort(trace: String) throws {
@@ -235,7 +243,8 @@ public final class ConversationSocket: NSObject {
         continuation.yield(.catalog(catalog))
       }
       continuation.yield(.connection(.ready))
-      enqueue(try? Wire.subscribe(botId: botId, trace: Identifiers.trace("sub")))
+      enqueue(
+        try? Wire.subscribe(botId: botId, contextId: contextId, trace: Identifiers.trace("sub")))
       return
     }
     if let rev = decoded.rev {
@@ -498,9 +507,10 @@ public final class BotsConnection: ConversationPort {
     self.token = token
   }
 
-  public func open(botId: String) -> AsyncStream<ConversationEvent> {
+  public func open(botId: String, contextId: String? = nil) -> AsyncStream<ConversationEvent> {
     socket?.close()
-    let created = ConversationSocket(baseURL: baseURL, token: token, botId: botId)
+    let created = ConversationSocket(
+      baseURL: baseURL, token: token, botId: botId, contextId: contextId)
     socket = created
     created.start()
     return created.events
@@ -515,31 +525,33 @@ public final class BotsConnection: ConversationPort {
     guard let requestId = context.requestId else {
       throw ClientError("the send has no request id")
     }
-    let socket = try require(botId)
+    let socket = try require(botId, contextId: context.contextId)
     try socket.send(
       text: text,
       requestId: requestId,
       whenBusy: whenBusy,
+      resourceHead: context.resourceHead,
       trace: context.trace
     )
   }
 
   public func abort(context: CommandContext, botId: String) async throws {
-    try require(botId).abort(trace: context.trace)
+    try require(botId, contextId: context.contextId).abort(trace: context.trace)
   }
 
   public func recover(context: CommandContext, botId: String) async throws {
-    try require(botId).recover(trace: context.trace)
+    try require(botId, contextId: context.contextId).recover(trace: context.trace)
   }
 
   public func resync(context: CommandContext, botId: String) async throws {
-    try require(botId).resync(trace: context.trace)
+    try require(botId, contextId: context.contextId).resync(trace: context.trace)
   }
 
   public func loadHistory(before messageId: String, context: CommandContext, botId: String)
     async throws
   {
-    try require(botId).loadHistory(before: messageId, limit: 50, trace: context.trace)
+    try require(botId, contextId: context.contextId).loadHistory(
+      before: messageId, limit: 50, trace: context.trace)
   }
 
   public func close() {
@@ -547,9 +559,9 @@ public final class BotsConnection: ConversationPort {
     socket = nil
   }
 
-  private func require(_ botId: String) throws -> ConversationSocket {
+  private func require(_ botId: String, contextId: String?) throws -> ConversationSocket {
     guard let socket else { throw ClientError("there is no connection") }
-    guard socket.botId == botId else {
+    guard socket.botId == botId && socket.contextId == contextId else {
       throw ClientError("the connection now belongs to another bot")
     }
     // Between the close and the new handshake the socket cannot carry a command; a

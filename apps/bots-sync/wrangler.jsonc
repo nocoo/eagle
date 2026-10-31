@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "eagle-bots-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-19",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "durable_objects": { "bindings": [{ "name": "SYNC", "class_name": "SyncCache" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SyncCache"] }],
+  "r2_buckets": [{ "binding": "CIPHERS", "bucket_name": "bots-sync-ciphers" }],
+  "services": [
+    { "binding": "REGISTRY", "service": "eagle-devices", "entrypoint": "SyncCacheRegistry" }
+  ],
+  "vars": { "REGISTRY_ORIGIN": "https://devices.example.com" }
+}

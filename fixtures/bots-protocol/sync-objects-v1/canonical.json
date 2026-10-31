@@ -1,0 +1,136 @@
+{
+  "descriptor": {
+    "version": 1,
+    "purpose": "replica.wrap",
+    "registryOrigin": "http://127.0.0.1:58396",
+    "deviceId": "31d74f32-0d43-4b95-98ae-d4d227e05351",
+    "publicKey": "MCowBQYDK2VwAyEAdo6CFqnjRHyaVYsTaHABXsza4iXTKHCvX_COmzeZGfg",
+    "credentialVersion": 1,
+    "keyId": "457ae4bc75157c0cb9f587b8769bf35f32e8430d5f902f031236fe7f49dd54a5",
+    "wrappingPublicKey": "CVrQoAV98N4AyfTEP0ZvhTx4CfYn9zeqHvrV_WnEmXw",
+    "signature": "chQ1I9e7rVk4Ri3idmqigApMVrJhk5uATojDAv9yi0rvuBrr8V2zym1E9CaUOcFkrfUmEvfIFu9GMBfQeuMKAw"
+  },
+  "manifest": {
+    "version": 1,
+    "purpose": "replica.page",
+    "registryOrigin": "http://127.0.0.1:58396",
+    "publisher": {
+      "deviceId": "31d74f32-0d43-4b95-98ae-d4d227e05351",
+      "publicKey": "MCowBQYDK2VwAyEAdo6CFqnjRHyaVYsTaHABXsza4iXTKHCvX_COmzeZGfg",
+      "groupId": "2843fccf-3ba9-436c-a468-bed3fd41d446",
+      "membershipEpoch": 1,
+      "credentialVersion": 1
+    },
+    "sharedBotId": "fbe15bce-037d-4cb4-b4f9-f586b0979053",
+    "keyEpoch": 1,
+    "keyId": "f31ef32faf37f4669ecebf4e0b4e773b7cc0e2ccd218df856f84ecb2f5265250",
+    "objectId": "4762416412037e5491f501b9a404bfce277d3797a4bc77ae6e560496c2993836",
+    "source": {
+      "replicaId": "a29267fd-5ad2-456a-bf1b-98b9ed3e574e",
+      "epoch": "7e911c58-5866-40a5-b356-68b483969aa8"
+    },
+    "range": {
+      "from": 1,
+      "to": 7
+    },
+    "included": [
+      {
+        "seq": 1,
+        "eventDigest": "b031739ac2c94ab025e885a167ad286d446a338cc1635128419d70fdecd6e780"
+      },
+      {
+        "seq": 2,
+        "eventDigest": "f9646f8f12ed2c985bb0b4f9db8c3fe27a232596e5a04ef818e906f1845e7399"
+      },
+      {
+        "seq": 3,
+        "eventDigest": "ab558457fc51da1a479b3db43f77aa2db1ef173f2fc934c199e5645604b93807"
+      },
+      {
+        "seq": 4,
+        "eventDigest": "e4ad5fa6b2a71297bc9699bbbd121d653cae13d10e572c5094e2ea194ddb1e5d"
+      },
+      {
+        "seq": 5,
+        "eventDigest": "787f748f24ba85ca7dad06748c1d1442dd2455b1d7a4fb436f5074c4ecb35650"
+      },
+      {
+        "seq": 6,
+        "eventDigest": "a9e045802ebf1d5ef0ea92c49bef55795a52e2335bc01c74c1f8a99067d8f9dd"
+      },
+      {
+        "seq": 7,
+        "eventDigest": "bef0c668cbd38e42e56a728aabb8d86daff41b429bffe9c52fa68bdce9f65382"
+      }
+    ],
+    "nextAfter": 7,
+    "hasMore": false,
+    "pageDigest": "16cad517d9380ef224d61f2aa881a185994f65b40ca37a575c74ed3596f3f463",
+    "nonce": "QUR0sgqR8nY0Vxu4",
+    "cipherDigest": "e0936cec58ae7f5fb251b7d387942be42637964e6220e333c9fa4f081df4d2c0",
+    "signature": "UEtSSROun1G9EEktok0oxIzzdxLpFwGpKr6KZ7rE9OzdPDPw_vQ5NNAp1g6EiM_mJ0ZS4s_BTCVwgdT45taOBw"
+  },
+  "envelope": {
+    "version": 1,
+    "purpose": "replica.key",
+    "registryOrigin": "http://127.0.0.1:58396",
+    "publisher": {
+      "deviceId": "31d74f32-0d43-4b95-98ae-d4d227e05351",
+      "publicKey": "MCowBQYDK2VwAyEAdo6CFqnjRHyaVYsTaHABXsza4iXTKHCvX_COmzeZGfg",
+      "groupId": "2843fccf-3ba9-436c-a468-bed3fd41d446",
+      "membershipEpoch": 1,
+      "credentialVersion": 1
+    },
+    "issuer": {
+      "deviceId": "31d74f32-0d43-4b95-98ae-d4d227e05351",
+      "publicKey": "MCowBQYDK2VwAyEAdo6CFqnjRHyaVYsTaHABXsza4iXTKHCvX_COmzeZGfg",
+      "groupId": "2843fccf-3ba9-436c-a468-bed3fd41d446",
+      "membershipEpoch": 1,
+      "credentialVersion": 1
+    },
+    "recipient": {
+      "deviceId": "808df670-39ee-414a-a6cc-4851311b5c04",
+      "publicKey": "MCowBQYDK2VwAyEA3SCVbJszs_M4TSaD4IAeBXzjH8q0tgk8fVkCS-3PeLc",
+      "groupId": "2843fccf-3ba9-436c-a468-bed3fd41d446",
+      "membershipEpoch": 1,
+      "credentialVersion": 1
+    },
+    "issuerDescriptor": {
+      "version": 1,
+      "purpose": "replica.wrap",
+      "registryOrigin": "http://127.0.0.1:58396",
+      "deviceId": "31d74f32-0d43-4b95-98ae-d4d227e05351",
+      "publicKey": "MCowBQYDK2VwAyEAdo6CFqnjRHyaVYsTaHABXsza4iXTKHCvX_COmzeZGfg",
+      "credentialVersion": 1,
+      "keyId": "457ae4bc75157c0cb9f587b8769bf35f32e8430d5f902f031236fe7f49dd54a5",
+      "wrappingPublicKey": "CVrQoAV98N4AyfTEP0ZvhTx4CfYn9zeqHvrV_WnEmXw",
+      "signature": "0Q_FPjgimFDjiyPKfUErMamcutcTQR-Upjn3Efw3D_0xySa4QHELTkY101IC7wZgPD2K_GwtfU3bObLNZGU_BA"
+    },
+    "recipientDescriptor": {
+      "version": 1,
+      "purpose": "replica.wrap",
+      "registryOrigin": "http://127.0.0.1:58396",
+      "deviceId": "808df670-39ee-414a-a6cc-4851311b5c04",
+      "publicKey": "MCowBQYDK2VwAyEA3SCVbJszs_M4TSaD4IAeBXzjH8q0tgk8fVkCS-3PeLc",
+      "credentialVersion": 1,
+      "keyId": "b8a9793285613b4f0e65158280bf748f5d08abbe2677f4a834b58a63ee8cf324",
+      "wrappingPublicKey": "l5X1NtL1ibsa_AhpKX7-O4Ean0TZgVOPe51EcjYNMTY",
+      "signature": "JwSWxdDd3q6P9y1PK3zIiIUCmOph2rDmKNKj9Dz87ojPx4kJ_ZQS3wiPn66JUytqngDXMDuCGl6Xfxov3rekCw"
+    },
+    "sharedBotId": "fbe15bce-037d-4cb4-b4f9-f586b0979053",
+    "keyEpoch": 1,
+    "keyId": "f31ef32faf37f4669ecebf4e0b4e773b7cc0e2ccd218df856f84ecb2f5265250",
+    "objectId": "4762416412037e5491f501b9a404bfce277d3797a4bc77ae6e560496c2993836",
+    "manifestDigest": "22801e525226ea0f5bbd4788b6d5b7cddd18c169db502bc8f18f28e8e465ea37",
+    "ephemeral": "KSWAJAqd_OnnyBNp4ACUDMLTzGUDgFvB_YTZ060xFHc",
+    "nonce": "CoD3HtleLONz4JNS",
+    "ciphertext": "TWgXO0tQj2HiqrAc_Q4eE9QFLGgjnzDWbdef8AMyjv0",
+    "tag": "XQG7BN7_NoL1BMqKOTSBvg",
+    "signature": "w58owCnAfFe2iqLGsVSmZK6CKSnfRtARH4btR-vasg1beBFYndhEgAG9ANYVKZuvoVOFF7krGyMzM2Oevj3RCA"
+  },
+  "canonical": {
+    "descriptor": "eagle-bots-wrap-descriptor-v1\n{\"credentialVersion\":1,\"deviceId\":\"31d74f32-0d43-4b95-98ae-d4d227e05351\",\"keyId\":\"457ae4bc75157c0cb9f587b8769bf35f32e8430d5f902f031236fe7f49dd54a5\",\"publicKey\":\"MCowBQYDK2VwAyEAdo6CFqnjRHyaVYsTaHABXsza4iXTKHCvX_COmzeZGfg\",\"purpose\":\"replica.wrap\",\"registryOrigin\":\"http://127.0.0.1:58396\",\"version\":1,\"wrappingPublicKey\":\"CVrQoAV98N4AyfTEP0ZvhTx4CfYn9zeqHvrV_WnEmXw\"}",
+    "manifest": "eagle-bots-page-manifest-v1\n{\"cipherDigest\":\"e0936cec58ae7f5fb251b7d387942be42637964e6220e333c9fa4f081df4d2c0\",\"hasMore\":false,\"included\":[{\"eventDigest\":\"b031739ac2c94ab025e885a167ad286d446a338cc1635128419d70fdecd6e780\",\"seq\":1},{\"eventDigest\":\"f9646f8f12ed2c985bb0b4f9db8c3fe27a232596e5a04ef818e906f1845e7399\",\"seq\":2},{\"eventDigest\":\"ab558457fc51da1a479b3db43f77aa2db1ef173f2fc934c199e5645604b93807\",\"seq\":3},{\"eventDigest\":\"e4ad5fa6b2a71297bc9699bbbd121d653cae13d10e572c5094e2ea194ddb1e5d\",\"seq\":4},{\"eventDigest\":\"787f748f24ba85ca7dad06748c1d1442dd2455b1d7a4fb436f5074c4ecb35650\",\"seq\":5},{\"eventDigest\":\"a9e045802ebf1d5ef0ea92c49bef55795a52e2335bc01c74c1f8a99067d8f9dd\",\"seq\":6},{\"eventDigest\":\"bef0c668cbd38e42e56a728aabb8d86daff41b429bffe9c52fa68bdce9f65382\",\"seq\":7}],\"keyEpoch\":1,\"keyId\":\"f31ef32faf37f4669ecebf4e0b4e773b7cc0e2ccd218df856f84ecb2f5265250\",\"nextAfter\":7,\"nonce\":\"QUR0sgqR8nY0Vxu4\",\"objectId\":\"4762416412037e5491f501b9a404bfce277d3797a4bc77ae6e560496c2993836\",\"pageDigest\":\"16cad517d9380ef224d61f2aa881a185994f65b40ca37a575c74ed3596f3f463\",\"publisher\":{\"credentialVersion\":1,\"deviceId\":\"31d74f32-0d43-4b95-98ae-d4d227e05351\",\"groupId\":\"2843fccf-3ba9-436c-a468-bed3fd41d446\",\"membershipEpoch\":1,\"publicKey\":\"MCowBQYDK2VwAyEAdo6CFqnjRHyaVYsTaHABXsza4iXTKHCvX_COmzeZGfg\"},\"purpose\":\"replica.page\",\"range\":{\"from\":1,\"to\":7},\"registryOrigin\":\"http://127.0.0.1:58396\",\"sharedBotId\":\"fbe15bce-037d-4cb4-b4f9-f586b0979053\",\"source\":{\"epoch\":\"7e911c58-5866-40a5-b356-68b483969aa8\",\"replicaId\":\"a29267fd-5ad2-456a-bf1b-98b9ed3e574e\"},\"version\":1}",
+    "envelope": "eagle-bots-key-envelope-signature-v1\n{\"ciphertext\":\"TWgXO0tQj2HiqrAc_Q4eE9QFLGgjnzDWbdef8AMyjv0\",\"ephemeral\":\"KSWAJAqd_OnnyBNp4ACUDMLTzGUDgFvB_YTZ060xFHc\",\"issuer\":{\"credentialVersion\":1,\"deviceId\":\"31d74f32-0d43-4b95-98ae-d4d227e05351\",\"groupId\":\"2843fccf-3ba9-436c-a468-bed3fd41d446\",\"membershipEpoch\":1,\"publicKey\":\"MCowBQYDK2VwAyEAdo6CFqnjRHyaVYsTaHABXsza4iXTKHCvX_COmzeZGfg\"},\"issuerDescriptor\":{\"credentialVersion\":1,\"deviceId\":\"31d74f32-0d43-4b95-98ae-d4d227e05351\",\"keyId\":\"457ae4bc75157c0cb9f587b8769bf35f32e8430d5f902f031236fe7f49dd54a5\",\"publicKey\":\"MCowBQYDK2VwAyEAdo6CFqnjRHyaVYsTaHABXsza4iXTKHCvX_COmzeZGfg\",\"purpose\":\"replica.wrap\",\"registryOrigin\":\"http://127.0.0.1:58396\",\"signature\":\"0Q_FPjgimFDjiyPKfUErMamcutcTQR-Upjn3Efw3D_0xySa4QHELTkY101IC7wZgPD2K_GwtfU3bObLNZGU_BA\",\"version\":1,\"wrappingPublicKey\":\"CVrQoAV98N4AyfTEP0ZvhTx4CfYn9zeqHvrV_WnEmXw\"},\"keyEpoch\":1,\"keyId\":\"f31ef32faf37f4669ecebf4e0b4e773b7cc0e2ccd218df856f84ecb2f5265250\",\"manifestDigest\":\"22801e525226ea0f5bbd4788b6d5b7cddd18c169db502bc8f18f28e8e465ea37\",\"nonce\":\"CoD3HtleLONz4JNS\",\"objectId\":\"4762416412037e5491f501b9a404bfce277d3797a4bc77ae6e560496c2993836\",\"publisher\":{\"credentialVersion\":1,\"deviceId\":\"31d74f32-0d43-4b95-98ae-d4d227e05351\",\"groupId\":\"2843fccf-3ba9-436c-a468-bed3fd41d446\",\"membershipEpoch\":1,\"publicKey\":\"MCowBQYDK2VwAyEAdo6CFqnjRHyaVYsTaHABXsza4iXTKHCvX_COmzeZGfg\"},\"purpose\":\"replica.key\",\"recipient\":{\"credentialVersion\":1,\"deviceId\":\"808df670-39ee-414a-a6cc-4851311b5c04\",\"groupId\":\"2843fccf-3ba9-436c-a468-bed3fd41d446\",\"membershipEpoch\":1,\"publicKey\":\"MCowBQYDK2VwAyEA3SCVbJszs_M4TSaD4IAeBXzjH8q0tgk8fVkCS-3PeLc\"},\"recipientDescriptor\":{\"credentialVersion\":1,\"deviceId\":\"808df670-39ee-414a-a6cc-4851311b5c04\",\"keyId\":\"b8a9793285613b4f0e65158280bf748f5d08abbe2677f4a834b58a63ee8cf324\",\"publicKey\":\"MCowBQYDK2VwAyEA3SCVbJszs_M4TSaD4IAeBXzjH8q0tgk8fVkCS-3PeLc\",\"purpose\":\"replica.wrap\",\"registryOrigin\":\"http://127.0.0.1:58396\",\"signature\":\"JwSWxdDd3q6P9y1PK3zIiIUCmOph2rDmKNKj9Dz87ojPx4kJ_ZQS3wiPn66JUytqngDXMDuCGl6Xfxov3rekCw\",\"version\":1,\"wrappingPublicKey\":\"l5X1NtL1ibsa_AhpKX7-O4Ean0TZgVOPe51EcjYNMTY\"},\"registryOrigin\":\"http://127.0.0.1:58396\",\"sharedBotId\":\"fbe15bce-037d-4cb4-b4f9-f586b0979053\",\"tag\":\"XQG7BN7_NoL1BMqKOTSBvg\",\"version\":1}"
+  }
+}

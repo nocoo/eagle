@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 import type { BotAppearance, BotGroup, BotRecord, ToolGroup } from "./domain.ts";
 import { BOT_ID_PATTERN, isToolGroup, MAX_BOT_GROUPS, MAX_GROUP_TITLE_CHARS } from "./domain.ts";
+import { type Tombstone, tombstoneSchema } from "./Tombstones.ts";
 
 export type DirEntry = { readonly name: string; isDirectory(): boolean };
 
@@ -45,6 +46,8 @@ const GROUP_ID_PATTERN = /^g_[A-Za-z0-9_-]{6,}$/;
 type CatalogState = {
   readonly bots: readonly BotConfig[];
   readonly groups: readonly BotGroup[];
+  readonly tombstones: readonly Tombstone[];
+  readonly cleanup: Readonly<Record<string, string>>;
 };
 
 const isGroupRecord = (value: unknown): value is BotGroup =>
@@ -70,6 +73,7 @@ const withGroup = (bot: BotConfig, groupId: string | undefined): BotConfig => {
 
 export type ReconcileResult = {
   readonly finishedDeletes: readonly string[];
+  readonly failedDeletes: readonly string[];
   readonly orphanedTrash: readonly string[];
 };
 
@@ -157,7 +161,39 @@ export class BotDirectory {
   }
 
   async load(): Promise<readonly BotConfig[]> {
-    return (await this.#readCatalog()).bots;
+    const state = await this.#readCatalog();
+    return state.bots.filter((bot) => state.cleanup[bot.id] === undefined);
+  }
+
+  async tombstones(after: number, limit: number) {
+    const { tombstones } = await this.#readCatalog();
+    const items = tombstones.slice(after, after + limit);
+    const nextAfter = after + items.length;
+    return { items, nextAfter, hasMore: nextAfter < tombstones.length };
+  }
+
+  async isDeleted(sharedBotId: string): Promise<boolean> {
+    return (await this.#readCatalog()).tombstones.some((item) => item.sharedBotId === sharedBotId);
+  }
+
+  async markDeleted(
+    items: readonly Tombstone[],
+    cleanup: Readonly<Record<string, string>>,
+  ): Promise<void> {
+    await this.#serial(async () => {
+      const state = await this.#readCatalog();
+      const deleted = new Set(state.tombstones.map((item) => item.sharedBotId));
+      const added = items.filter((item) => {
+        if (deleted.has(item.sharedBotId)) return false;
+        deleted.add(item.sharedBotId);
+        return true;
+      });
+      await this.#writeCatalog({
+        ...state,
+        tombstones: [...state.tombstones, ...added],
+        cleanup: { ...state.cleanup, ...cleanup },
+      });
+    });
   }
 
   async loadGroups(): Promise<readonly BotGroup[]> {
@@ -170,7 +206,8 @@ export class BotDirectory {
     try {
       body = await this.#fs.readFile(this.catalogPath);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { bots: [], groups: [] };
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        return { bots: [], groups: [], tombstones: [], cleanup: {} };
       throw new DirectoryError("storage_failed", "cannot read catalog", { cause: error });
     }
     let parsed: unknown;
@@ -213,7 +250,30 @@ export class BotDirectory {
         bot.groupId === undefined || ids.has(bot.groupId) ? bot : withGroup(bot, undefined),
       );
     }
-    return { bots: kept, groups: groups as readonly BotGroup[] };
+    const tombstones = parsed.tombstones ?? [];
+    if (
+      !Array.isArray(tombstones) ||
+      tombstones.some((item) => !tombstoneSchema.safeParse(item).success)
+    )
+      throw new DirectoryError("corrupt_catalog", "invalid tombstones");
+    const deleted = new Set((tombstones as Tombstone[]).map((item) => item.sharedBotId));
+    if (deleted.size !== tombstones.length)
+      throw new DirectoryError("corrupt_catalog", "duplicate tombstone");
+    const cleanup = parsed.cleanup ?? {};
+    if (
+      !isObject(cleanup) ||
+      Object.entries(cleanup).some(
+        ([id, shared]) =>
+          !BOT_ID_PATTERN.test(id) || typeof shared !== "string" || !deleted.has(shared),
+      )
+    )
+      throw new DirectoryError("corrupt_catalog", "invalid tombstone cleanup mapping");
+    return {
+      bots: kept,
+      groups: groups as readonly BotGroup[],
+      tombstones: tombstones as Tombstone[],
+      cleanup: cleanup as Record<string, string>,
+    };
   }
 
   async #writeAll(bots: readonly BotConfig[]): Promise<void> {
@@ -226,13 +286,13 @@ export class BotDirectory {
     }
     // Called from inside the serial queue already; reading the groups here keeps the
     // membership and the bot list in one atomic write without a nested acquire.
-    const { groups } = await this.#readCatalog();
-    return this.#writeCatalog({ bots, groups });
+    const state = await this.#readCatalog();
+    return this.#writeCatalog({ ...state, bots });
   }
 
   async #writeCatalog(state: CatalogState): Promise<void> {
     const temp = `${this.catalogPath}.${randomUUID()}.tmp`;
-    const body = `${JSON.stringify({ version: CATALOG_VERSION, bots: state.bots, groups: state.groups }, null, 2)}\n`;
+    const body = `${JSON.stringify({ version: CATALOG_VERSION, bots: state.bots, groups: state.groups, ...(state.tombstones.length === 0 ? {} : { tombstones: state.tombstones }), ...(Object.keys(state.cleanup).length === 0 ? {} : { cleanup: state.cleanup }) }, null, 2)}\n`;
     try {
       await this.#fs.writeFile(temp, body, 0o600);
       await this.#fs.rename(temp, this.catalogPath);
@@ -384,7 +444,7 @@ export class BotDirectory {
         throw new DirectoryError("limit_exceeded", "the catalog holds too many groups");
       }
       const group: BotGroup = { id: `g_${randomUUID()}`, title: clean };
-      await this.#writeCatalog({ bots: state.bots, groups: [...state.groups, group] });
+      await this.#writeCatalog({ ...state, bots: state.bots, groups: [...state.groups, group] });
       return group;
     });
   }
@@ -403,6 +463,7 @@ export class BotDirectory {
       if (index === -1) throw new DirectoryError("group_not_found", `no group ${id}`);
       const renamed = { ...(state.groups[index] as BotGroup), title: clean };
       await this.#writeCatalog({
+        ...state,
         bots: state.bots,
         groups: state.groups.map((group, position) => (position === index ? renamed : group)),
       });
@@ -421,6 +482,7 @@ export class BotDirectory {
         throw new DirectoryError("group_not_empty", "the group still holds bots");
       }
       await this.#writeCatalog({
+        ...state,
         bots: state.bots,
         groups: state.groups.filter((group) => group.id !== id),
       });
@@ -441,7 +503,7 @@ export class BotDirectory {
         throw new DirectoryError("invalid_groups", "the order must list every group once");
       }
       const ordered = ids.map((id) => state.groups.find((group) => group.id === id) as BotGroup);
-      await this.#writeCatalog({ bots: state.bots, groups: ordered });
+      await this.#writeCatalog({ ...state, bots: state.bots, groups: ordered });
       return ordered;
     });
   }
@@ -461,6 +523,7 @@ export class BotDirectory {
         updatedAt: at,
       };
       await this.#writeCatalog({
+        ...state,
         bots: state.bots.map((bot, position) => (position === index ? updated : bot)),
         groups: state.groups,
       });
@@ -470,44 +533,80 @@ export class BotDirectory {
 
   async remove(id: string): Promise<void> {
     await this.#serial(async () => {
-      const bots = await this.load();
-      if (!bots.some((bot) => bot.id === id)) {
+      const state = await this.#readCatalog();
+      if (!state.bots.some((bot) => bot.id === id) && state.cleanup[id] === undefined) {
         throw new DirectoryError("unknown_bot", `bot ${id} does not exist`);
       }
-      try {
-        await this.#fs.mkdir(`${this.#root}/trash`, { recursive: true });
-        await this.#fs.rename(this.botDir(id), this.trashDir(id));
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        const sourceGone = !(await this.#exists(this.botDir(id)));
-        const trashed = await this.#exists(this.trashDir(id));
-        if (!trashed && (await this.#exists(this.trashDir(id)))) {
-          throw new DirectoryError("storage_failed", `trash path for ${id} is not a directory`);
-        }
-        if (!(code === "ENOENT" && sourceGone && trashed)) {
-          throw new DirectoryError("storage_failed", `cannot move bot ${id} to trash`, {
-            cause: error,
-          });
-        }
-      }
-      await this.#writeAll(bots.filter((bot) => bot.id !== id));
+      await this.#moveToTrash(id);
+      const cleanup = { ...state.cleanup };
+      delete cleanup[id];
+      await this.#writeCatalog({
+        ...state,
+        bots: state.bots.filter((bot) => bot.id !== id),
+        cleanup,
+      });
     });
+  }
+
+  async #moveToTrash(id: string): Promise<void> {
+    try {
+      await this.#fs.mkdir(`${this.#root}/trash`, { recursive: true });
+      await this.#fs.rename(this.botDir(id), this.trashDir(id));
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const sourceGone = !(await this.#exists(this.botDir(id)));
+      const trashed = await this.#exists(this.trashDir(id));
+      if (!trashed && (await this.#exists(this.trashDir(id)))) {
+        throw new DirectoryError("storage_failed", `trash path for ${id} is not a directory`);
+      }
+      if (!(code === "ENOENT" && sourceGone && trashed)) {
+        throw new DirectoryError("storage_failed", `cannot move bot ${id} to trash`, {
+          cause: error,
+        });
+      }
+    }
   }
 
   async reconcile(): Promise<ReconcileResult> {
     return this.#serial(async () => {
-      const bots = await this.load();
+      const state = await this.#readCatalog();
+      const bots = state.bots;
+      const cleanup = { ...state.cleanup };
+      const completed: string[] = [];
+      const failedDeletes: string[] = [];
+      for (const id of Object.keys(cleanup)) {
+        try {
+          await this.#moveToTrash(id);
+          delete cleanup[id];
+          completed.push(id);
+        } catch (error) {
+          if (!(error instanceof DirectoryError) || error.reason !== "storage_failed") throw error;
+          failedDeletes.push(id);
+        }
+      }
       const trashed = new Set(await this.#list(`${this.#root}/trash`));
       const present = new Set(await this.#list(`${this.#root}/bots`));
-      const finishedDeletes = bots
-        .filter((bot) => !present.has(bot.id) && trashed.has(bot.id))
-        .map((bot) => bot.id);
+      const finishedDeletes = [
+        ...new Set([
+          ...completed,
+          ...bots
+            .filter(
+              (bot) => cleanup[bot.id] === undefined && !present.has(bot.id) && trashed.has(bot.id),
+            )
+            .map((bot) => bot.id),
+        ]),
+      ];
       if (finishedDeletes.length > 0) {
-        await this.#writeAll(bots.filter((bot) => !finishedDeletes.includes(bot.id)));
+        await this.#writeCatalog({
+          ...state,
+          bots: bots.filter((bot) => !finishedDeletes.includes(bot.id)),
+          cleanup,
+        });
       }
       const catalogIds = new Set(bots.map((bot) => bot.id));
       return {
         finishedDeletes,
+        failedDeletes,
         orphanedTrash: [...trashed].filter((name) => !catalogIds.has(name)).sort(),
       };
     });

@@ -65,7 +65,7 @@ test("an admission without a connection keeps the bot open and lets it idle-clos
     // The warm-up open takes no lease, so at 0 ms it closes again: the admission starts
     // from a cold bot, which is the case a schedule and a webhook actually meet.
     await waitFor(
-      () => stack.registry.handleOf(botId) === undefined,
+      () => scripted.closes.length > 0 && stack.registry.handleOf(botId) === undefined,
       "the warm-up open to idle-close",
     );
     const openedBefore = stack.opens();

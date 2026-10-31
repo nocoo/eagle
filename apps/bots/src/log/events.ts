@@ -19,6 +19,18 @@ export type Outcome = (typeof OUTCOMES)[number];
 
 /** Declared names, one per emit site. `stage 4` asserts this equals the doc table. */
 export const EVENTS = {
+  "core.sync.start": true,
+  "core.sync.ok": true,
+  "core.sync.fail": true,
+  "runtime.sync.start": true,
+  "runtime.sync.ok": true,
+  "runtime.sync.fail": true,
+  "core.replica.start": true,
+  "core.replica.ok": true,
+  "core.replica.fail": true,
+  "runtime.replica.start": true,
+  "runtime.replica.ok": true,
+  "runtime.replica.fail": true,
   "transport.conn.open.ok": true,
   "transport.conn.open.reject": true,
   "transport.conn.close.ok": true,
@@ -87,6 +99,7 @@ export const EVENTS = {
   "runtime.abort.ok": true,
   "runtime.abort.fail": true,
   "runtime.task.retry.ok": true,
+  "runtime.task.retry.fail": true,
   "runtime.task.abort.ok": true,
   "runtime.recover.start": true,
   "runtime.recover.ok": true,

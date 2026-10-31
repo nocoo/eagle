@@ -133,6 +133,34 @@ struct DeviceServiceHostTests {
     try await clean(host)
   }
 
+  @Test("sync management crosses the trusted Host but remains forbidden on the Bot socket")
+  func syncManagement() async throws {
+    let host = try host()
+    try await ready(host)
+    do {
+      for method in ["sync.share", "sync.incoming", "sync.endpoints.publish"] {
+        // Node errors follow Host admission; incoming {} is a valid default request.
+        do {
+          _ = try await host.call(method, params: .object([:]))
+          Issue.record("this offline management request must return a Node error")
+        } catch {
+          #expect(error is DevicePortError, "expected Node rejection, got \(error)")
+          #expect((error as? DevicePortError)?.code == "device_service_failed")
+        }
+        await #expect(throws: DevicePortError.self) {
+          try await DeviceLocalPort(path: host.socketPath).call(method, params: .object([:]))
+        }
+      }
+      await #expect(throws: DeviceHostError.self) {
+        try await host.call("sync.unknown", params: .object([:]))
+      }
+    } catch {
+      try await clean(host)
+      throw error
+    }
+    try await clean(host)
+  }
+
   @Test("only an attached App confirmation signs a complete typed service approval")
   func confirmation() async throws {
     let host = try host()

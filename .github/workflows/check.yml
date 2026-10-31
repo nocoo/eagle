@@ -7,6 +7,17 @@ concurrency:
   group: check-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  bots-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: apps/bots-sync/package-lock.json
+      - run: npm --prefix apps/bots-sync ci
+      - run: npm --prefix apps/bots-sync run check
   test:
     runs-on: ubuntu-latest
     steps:
@@ -36,8 +47,10 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             apps/bots/package-lock.json
+            apps/bots-sync/package-lock.json
       - run: npm ci
       - run: npm --prefix apps/bots ci
+      - run: npm --prefix apps/bots-sync ci
       - run: npm --workspace @nocoo/eagle-agent run build
       - run: npm run test:devices
       - run: swift build --package-path apps/macos

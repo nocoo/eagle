@@ -37,6 +37,7 @@ public struct InspectorColumn: View {
   private let onCommitName: ((String) -> Void)?
   private let onCommitLabel: ((String) -> Void)?
   private let computerContent: AnyView?
+  private let libraryContent: AnyView?
 
   public init(
     name: String,
@@ -61,7 +62,8 @@ public struct InspectorColumn: View {
     onEditFace: (() -> Void)? = nil,
     onCommitName: ((String) -> Void)? = nil,
     onCommitLabel: ((String) -> Void)? = nil,
-    computerContent: AnyView? = nil
+    computerContent: AnyView? = nil,
+    libraryContent: AnyView? = nil
   ) {
     self.name = name
     self.subtitle = subtitle
@@ -86,6 +88,7 @@ public struct InspectorColumn: View {
     self.onCommitName = onCommitName
     self.onCommitLabel = onCommitLabel
     self.computerContent = computerContent
+    self.libraryContent = libraryContent
   }
 
   public var body: some View {
@@ -158,6 +161,8 @@ public struct InspectorColumn: View {
   @ViewBuilder private var content: some View {
     if tab == .computer, let computerContent {
       computerContent
+    } else if tab == .library, let libraryContent {
+      libraryContent
     } else {
       ForEach(sections) { section in
         InspectorSectionView(

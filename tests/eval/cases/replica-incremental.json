@@ -1,0 +1,20 @@
+{
+  "id": "replica-incremental",
+  "title": "Passive incremental history followed by one independent local run",
+  "kind": "local-replica",
+  "model": {
+    "script": [
+      { "text": "source original output" },
+      { "text": "independent target output" }
+    ]
+  },
+  "steps": [
+    { "kind": "chat", "text": "source original input" },
+    {
+      "kind": "replicaSync",
+      "text": "continue on target",
+      "contains": "independent target output"
+    }
+  ],
+  "expect": { "noErrors": true, "modelRequests": { "max": 2 } }
+}

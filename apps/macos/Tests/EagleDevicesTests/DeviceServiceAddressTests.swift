@@ -42,6 +42,33 @@ struct DeviceServiceAddressTests {
     #expect(DeviceServiceAddress.saved(defaults) == nil)
   }
 
+  @Test(
+    "invalid profiles have no address store", arguments: ["", String(repeating: "x", count: 81)])
+  func invalidProfile(profile: String) {
+    #expect(DeviceServiceAddress.save("https://refused.example.com", profile: profile) == nil)
+    #expect(DeviceServiceAddress.saved(profile: profile) == nil)
+  }
+
+  @Test("system control exposes only its validated bundle profile without starting a helper")
+  @MainActor func boundProfile() throws {
+    let bundle = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: bundle) }
+    #expect(DeviceSystemControl(bundle: bundle).serviceProfile == nil)
+    let resources = bundle.appendingPathComponent("Contents/Resources")
+    try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+    for profile in ["address-owned-" + UUID().uuidString, "", String(repeating: "x", count: 81)] {
+      let config = DeviceHostConfiguration(
+        version: 1, profile: profile, baseUrl: "",
+        machServiceName: "ai.hexly.eagle.devices.test",
+        launchAgentPlist: "ai.hexly.eagle.devices.test.plist")
+      try JSONEncoder().encode(config).write(
+        to: resources.appendingPathComponent("DeviceHost.json"))
+      #expect(
+        DeviceSystemControl(bundle: bundle).serviceProfile
+          == (profile.hasPrefix("address-owned-") ? profile : nil))
+    }
+  }
+
   @Test("a configuration with no origin is unconfigured, not invalid")
   func unconfiguredBundle() throws {
     var config = DeviceHostConfiguration(

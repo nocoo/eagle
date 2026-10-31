@@ -138,14 +138,19 @@ public enum Wire {
     )
   }
 
-  public static func subscribe(botId: String, trace: String) throws -> Data {
-    try JSONEncoder().encode(Subscribe(type: "subscribe", botId: botId, trace: trace))
+  public static func subscribe(botId: String, contextId: String? = nil, trace: String) throws
+    -> Data
+  {
+    try JSONEncoder().encode(
+      Subscribe(type: "subscribe", botId: botId, contextId: contextId, trace: trace))
   }
 
   public static func send(
     requestId: String,
     text: String,
     whenBusy: BusyMode,
+    contextId: String? = nil,
+    resourceHead: String? = nil,
     trace: String
   ) throws -> Data {
     try JSONEncoder().encode(
@@ -154,6 +159,7 @@ public enum Wire {
         requestId: requestId,
         text: text,
         whenBusy: whenBusy.rawValue,
+        contextId: contextId, resourceHead: resourceHead,
         trace: trace
       )
     )
@@ -242,11 +248,11 @@ public enum Wire {
   }
 
   struct UsageFrame: Decodable {
-  let rev: Int
-  let usage: Usage
-}
+    let rev: Int
+    let usage: Usage
+  }
 
-struct TasksFrame: Decodable {
+  struct TasksFrame: Decodable {
     let rev: Int
     let tasks: [TaskSummary]
   }
@@ -291,6 +297,7 @@ struct TasksFrame: Decodable {
   struct Subscribe: Encodable {
     let type: String
     let botId: String
+    let contextId: String?
     let trace: String
   }
 
@@ -299,6 +306,8 @@ struct TasksFrame: Decodable {
     let requestId: String
     let text: String
     let whenBusy: String
+    let contextId: String?
+    let resourceHead: String?
     let trace: String
   }
 

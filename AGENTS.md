@@ -38,6 +38,7 @@ apps/bots-macos   Bots client logic (SPM package: BotsCore/BotsTransport/BotsFea
 packages/contracts  shared zod contracts and pure helpers (private, not published)
 packages/agent    @nocoo/eagle-agent, published to npm
 apps/bots         Bots daemon: independent product, not a workspace member
+apps/bots-sync    Independent encrypted-cache Worker/DO/R2, own package and lock
 docs/bots         Bots contracts; fixtures/bots-protocol holds the wire samples
 tests             one Node/Playwright suite at the root, spanning all packages
 scripts           live verification and deployment entry points
@@ -84,6 +85,9 @@ published tarball stays self-contained and its `bin` path is unchanged.
 
 ## Setup and commands
 
+For a blocked locked npm install, follow [locked npm recovery](docs/NPM-RECOVERY.md)
+and the installed npm-locked-recovery skill; preserve locks and normal lifecycle/checks.
+
 Run from the root with Node.js 24+ and npm; CI uses Node 26. Actual collection
 requires Herdr, but documentation checks do not run the installed live Agent.
 Use the machine-approved registry. Ignored `apps/web/.dev.vars` holds `AGENT_SIGNING_KEY`
@@ -124,6 +128,9 @@ product that lives in this repository:
   which depends on nothing from Eagle; the Eagle app depends on it and hosts the
   Bots group in the main window (`apps/macos/Sources/EagleFeatures/BotsWorkspace.swift`).
   The dependency direction is one way: Eagle → Bots logic, never back.
+- `apps/bots-sync` also stays outside root workspaces and root Biome. Its own
+  `npm run check` covers strict types, check-only lint, Miniflare tests and dry-run
+  build; its Registry connection is a named service-binding RPC, not source imports.
 - Documentation is the contract and precedes code: `docs/bots/PRODUCT.md`,
   `ARCHITECTURE.md`, `PROTOCOL.md`, `RUNTIME.md`, `OBSERVABILITY.md`,
   `TESTING.md`, with [PLAN.md](docs/bots/PLAN.md) owning what is built and what is
@@ -139,9 +146,11 @@ product that lives in this repository:
 - Layer attribution is part of correctness: every crossing logs its layer with
   the shared `trace`, the innermost failure is the only error logged, and the
   diagnosis recipes in `docs/bots/OBSERVABILITY.md` are asserted by tests.
-- Phase 1 is chat only. Tools, tasks, usage, raw entries, agent settings and
-  bot-to-bot conversation stay behind protocol capability flags and are not
-  rendered; they are not deleted or stubbed out.
+- Phase 1 began with chat only. Current documented capabilities include tools,
+  tasks, usage, peer exchanges and reported pull requests; preserve their runtime,
+  journals and client presentation. Historical phase-1 exclusions do not hide or
+  remove those delivered features. Raw entries and agent settings retain their
+  respective protocol capability boundaries.
 
 ## Quality contract and current evidence
 

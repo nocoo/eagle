@@ -30,6 +30,59 @@ final class CatalogTests: XCTestCase {
     return (model, catalog, conversation)
   }
 
+  func testHeadSelectionPersistsContextAndResourcesWithoutRetargetingPendingWork() async throws {
+    let catalog = FakeCatalog()
+    let replica = SelectionReplica()
+    let store = OutboxStore(directory: outboxDirectory)
+    func app() -> AppViewModel {
+      AppViewModel(
+        catalog: catalog,
+        conversation: ConversationViewModel(conversation: FakeConversation(), outbox: store),
+        outbox: store, replicas: replica)
+    }
+    let model = app()
+    await model.createBot(title: "历史选择")
+    let bot = try XCTUnwrap(model.selection)
+    await model.loadHeads()
+    XCTAssertEqual(model.heads.map(\.head), [replica.head])
+    await model.selectHead(replica.head)
+    let original = try XCTUnwrap(model.conversation.contextId)
+    XCTAssertEqual(model.conversation.resourceHead, replica.resource)
+    try store.add(
+      OutboxEntry(
+        botId: bot, requestId: "selected_pending", text: "原选择", contextId: original,
+        resourceHead: replica.resource))
+    model.selectRootContext()
+    XCTAssertNil(model.conversation.contextId)
+    XCTAssertEqual(try store.entries(for: bot).first?.contextId, original)
+    await model.selectHead(replica.head)
+    let selected = try XCTUnwrap(model.conversation.contextId)
+    let restarted = app()
+    await restarted.start()
+    XCTAssertEqual(restarted.conversation.contextId, selected)
+    XCTAssertEqual(restarted.conversation.resourceHead, replica.resource)
+    XCTAssertEqual(restarted.selectedHead, replica.head)
+    XCTAssertEqual(try store.entries(for: bot).first?.contextId, original)
+    await restarted.selectResourceHead(replica.otherHead)
+    XCTAssertEqual(restarted.headDetail?.head, replica.otherHead)
+    await restarted.selectResourceHead(nil)
+    XCTAssertEqual(
+      restarted.headDetail?.head, replica.head,
+      "following the context restores its actual resource detail")
+    await restarted.prepareMerge(heads: [replica.head, replica.otherHead])
+    try Data("corrupt selection storage".utf8).write(
+      to: outboxDirectory.appendingPathComponent("outbox.json"))
+    await restarted.merge(choices: [], resources: [])
+    XCTAssertNotNil(
+      restarted.historyError,
+      "a successful list refresh must not erase a failed durable merge selection")
+    restarted.selectRootContext()
+    XCTAssertEqual(
+      restarted.conversation.contextId, selected,
+      "a failed durable selection cannot switch the live composer")
+    XCTAssertNotNil(restarted.historyError)
+  }
+
   func testCreateSelectsTheNewBot() async throws {
     let (model, catalog, _) = makeModel()
     await model.refresh()
@@ -619,5 +672,63 @@ final class AppPathsTests: XCTestCase {
     let attributes = try FileManager.default.attributesOfItem(atPath: directory.path)
     XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o700)
     XCTAssertTrue(AppPaths.supportDirectory.path.contains("ai.hexly.bots"))
+  }
+}
+
+private final class SelectionReplica: ReplicaPort, @unchecked Sendable {
+  let head = String(repeating: "a", count: 64)
+  let otherHead = String(repeating: "c", count: 64)
+  let resource = String(repeating: "b", count: 64)
+  private func decode<T: Decodable>(_ value: [String: Any], as: T.Type) throws -> T {
+    try JSONDecoder().decode(T.self, from: JSONSerialization.data(withJSONObject: value))
+  }
+  func loadReplicaBinding(botId: String) async throws -> ReplicaBinding {
+    try await bindReplica(botId: botId, sharedBotId: "owned-shared")
+  }
+  func bindReplica(botId: String, sharedBotId: String) async throws -> ReplicaBinding {
+    try decode(
+      [
+        "localBotId": botId, "sharedBotId": sharedBotId, "replicaId": "owned-replica",
+        "epoch": "owned-epoch",
+      ], as: ReplicaBinding.self)
+  }
+  func configureSync(botId: String, peerDeviceId: String, direction: ReplicaSyncDirection?)
+    async throws
+  {}
+  func loadHeads(botId: String, after: Int) async throws -> ReplicaHeadPage {
+    try decode(
+      [
+        "items": [
+          [
+            "head": head, "parents": [],
+            "source": ["replicaId": "replica", "botId": botId, "conversationId": 1], "ready": true,
+            "entries": 2, "resources": [resource], "resourceHead": resource,
+          ]
+        ], "nextAfter": 1, "hasMore": false,
+      ], as: ReplicaHeadPage.self)
+  }
+  func loadHead(botId: String, head: String) async throws -> ReplicaHeadDetail {
+    try decode(
+      ["head": head, "parents": [], "ready": true, "resourceHead": resource, "resourceFiles": []],
+      as: ReplicaHeadDetail.self)
+  }
+  func createContext(botId: String, contextId: String, head: String, resourceHead: String?)
+    async throws -> ReplicaContext
+  {
+    try decode(
+      ["contextId": contextId, "seedHead": head, "resourceHead": resourceHead ?? resource],
+      as: ReplicaContext.self)
+  }
+  func loadContext(botId: String, contextId: String) async throws -> ReplicaContext {
+    try await createContext(botId: botId, contextId: contextId, head: head, resourceHead: resource)
+  }
+  func previewMerge(botId: String, heads: [String]) async throws -> ReplicaMergePreview {
+    try decode(["conflicts": [], "resources": []], as: ReplicaMergePreview.self)
+  }
+  func mergeHeads(
+    botId: String, heads: [String], requestId: String, choices: [ReplicaMergeChoice],
+    resources: [ReplicaResourceChoice]
+  ) async throws -> ReplicaMerge {
+    try decode(["head": head], as: ReplicaMerge.self)
   }
 }

@@ -1,0 +1,25 @@
+{
+  "id": "fresh-resources",
+  "title": "空Bot在首条真实普通输入前捕获完整AGENTS与技能资源",
+  "kind": "replica",
+  "notes": "Real daemon/SQLite; zero history/model requests before explicit kind:resources capture, passive duplicate import and empty history-receipt inventory. First ordinary WS input must deliver the selected complete package/version to the real provider request. Native relative script/file bytes and source-offline dual-daemon execution are asserted by the e2e fixture.",
+  "toolGroups": ["core", "coding"],
+  "model": {
+    "script": [{ "text": "fresh resources loaded before first turn" }]
+  },
+  "steps": [
+    {
+      "kind": "replicaRun",
+      "resources": true,
+      "root": true,
+      "fresh": true,
+      "text": "first real chat uses selected resources",
+      "contains": "fresh resources loaded before first turn"
+    }
+  ],
+  "expect": {
+    "toolsCalled": [],
+    "noErrors": true,
+    "modelRequests": { "max": 1 }
+  }
+}

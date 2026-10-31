@@ -1,0 +1,32 @@
+{
+  "request": {
+    "version": 1,
+    "registryOrigin": "https://device.example",
+    "role": "reader",
+    "purpose": "replica.read",
+    "sharedBotId": "44444444-4444-4444-8444-444444444444",
+    "reader": {
+      "deviceId": "11111111-1111-4111-8111-111111111111",
+      "publicKey": "MCowBQYDK2VwAyEAGwSPCGHujAbBPB_VKCs1lc4iHNhA5oMitMQqmXmbWrc",
+      "groupId": "33333333-3333-4333-8333-333333333333",
+      "membershipEpoch": 1,
+      "credentialVersion": 1
+    },
+    "server": {
+      "deviceId": "22222222-2222-4222-8222-222222222222",
+      "publicKey": "MCowBQYDK2VwAyEAQZC-RhWrs9C6Oog5u1Guux45Bwd-7NemM5PGiljUXaY",
+      "groupId": "33333333-3333-4333-8333-333333333333",
+      "membershipEpoch": 1,
+      "credentialVersion": 1
+    },
+    "readerNonce": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+    "serverNonce": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI",
+    "generation": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM",
+    "sessionId": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ",
+    "expiresAt": 1800000060000,
+    "readerEphemeral": "maurkchq4duPyyiktQaHLbirgF1gKMJbF3EjpSqrdww",
+    "serverEphemeral": "CrjRcf4GbM-d4xkrlTKN0OPpy-_eyqA2r7YhgXi_djE"
+  },
+  "signingPayload": "eagle-bots-sync-proof-v1\n{\"expiresAt\":1800000060000,\"generation\":\"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM\",\"purpose\":\"replica.read\",\"reader\":{\"credentialVersion\":1,\"deviceId\":\"11111111-1111-4111-8111-111111111111\",\"groupId\":\"33333333-3333-4333-8333-333333333333\",\"membershipEpoch\":1,\"publicKey\":\"MCowBQYDK2VwAyEAGwSPCGHujAbBPB_VKCs1lc4iHNhA5oMitMQqmXmbWrc\"},\"readerEphemeral\":\"maurkchq4duPyyiktQaHLbirgF1gKMJbF3EjpSqrdww\",\"readerNonce\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"registryOrigin\":\"https://device.example\",\"role\":\"reader\",\"server\":{\"credentialVersion\":1,\"deviceId\":\"22222222-2222-4222-8222-222222222222\",\"groupId\":\"33333333-3333-4333-8333-333333333333\",\"membershipEpoch\":1,\"publicKey\":\"MCowBQYDK2VwAyEAQZC-RhWrs9C6Oog5u1Guux45Bwd-7NemM5PGiljUXaY\"},\"serverEphemeral\":\"CrjRcf4GbM-d4xkrlTKN0OPpy-_eyqA2r7YhgXi_djE\",\"serverNonce\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"sessionId\":\"BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ\",\"sharedBotId\":\"44444444-4444-4444-8444-444444444444\",\"version\":1}",
+  "signature": "kCuHPk9PkltEVe3mVd-G5lMg74i23c3C9ZmcphSFKYmgwZTsghxRqi8ETGXQoxpRmQRjQcuy9zDst09K9QQBBA"
+}

@@ -5,6 +5,7 @@ import test from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels, type FauxResponseStep } from "@earendil-works/pi-ai";
 import { createRegistry, defineExtension, Harness } from "@earendil-works/pi-durable";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type { RuntimeEvent, RuntimeHandle } from "../../src/core/RuntimePort.ts";
 import {
@@ -264,13 +265,55 @@ test("native read accepts a local absolute path outside the default working dire
   }
 });
 
-test("native bash timeout keeps collected output and returns a model-visible failure", async () => {
+test("native bash timeout keeps collected output and returns a model-visible failure", async (t) => {
   const bench = await createBench();
+  const exec = NodeExecutionEnv.prototype.exec;
+  const wallTimeout = globalThis.setTimeout;
+  const wallClearTimeout = globalThis.clearTimeout;
+  let received = "";
+  t.mock.method(
+    NodeExecutionEnv.prototype,
+    "exec",
+    async function (
+      this: NodeExecutionEnv,
+      ...[command, options, context]: Parameters<typeof exec>
+    ) {
+      assert.equal(options?.timeout, 0.05);
+      // Shell startup is not bounded by 50ms; advance the real SDK's timer after real output.
+      t.mock.timers.enable({ apis: ["setTimeout"] });
+      let advanced = false;
+      const advance = () => {
+        if (advanced) return;
+        advanced = true;
+        t.mock.timers.tick(50);
+        t.mock.timers.reset();
+      };
+      const guard = wallTimeout(advance, 5_000);
+      try {
+        return await exec.call(
+          this,
+          command,
+          {
+            ...options,
+            onOutput: (...args) => {
+              options?.onOutput?.(...args);
+              received += args[0];
+              if (received.includes("before-timeout")) advance();
+            },
+          },
+          context,
+        );
+      } finally {
+        wallClearTimeout(guard);
+        t.mock.timers.reset();
+      }
+    },
+  );
   try {
     const handle = await bench.runtime.open(bench.spec());
     const { events } = await settle(handle, bench, [
       assistant(
-        [toolCall("bash", { command: "printf before-timeout >&2; sleep 2", timeout: 0.05 })],
+        [toolCall("bash", { command: "printf before-timeout >&2; exec sleep 2", timeout: 0.05 })],
         { stopReason: "toolUse" },
       ),
       text("timed out"),
@@ -279,6 +322,7 @@ test("native bash timeout keeps collected output and returns a model-visible fai
       .flatMap((event) => (event.type === "append" ? event.message.blocks : []))
       .find((block) => block.type === "toolResult");
     assert.ok(result?.type === "toolResult");
+    assert.equal(received, "before-timeout", "the real onOutput callback received stderr");
     assert.equal(result.isError, true);
     assert.match(result.text, /before-timeout/);
     assert.match(result.text, /timed out/i);

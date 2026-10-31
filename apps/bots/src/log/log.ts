@@ -59,6 +59,8 @@ const redact = (value: string, secrets: readonly string[] = []): string => {
 // Per-event detail whitelist. An event without an entry carries only framework keys,
 // so a record can never borrow another event's fields.
 const DETAIL_SCHEMA: Readonly<Record<string, readonly string[]>> = {
+  "runtime.sync.fail": ["reason", "providerCode"],
+  "core.sync.fail": ["propagated"],
   "transport.auth.fail": ["reason"],
   "transport.conn.open.ok": ["count"],
   "transport.conn.open.fail": ["reason"],

@@ -52,7 +52,7 @@ public struct GatewayProbe: Decodable, Sendable, Equatable {
 
 /// The catalog over HTTP (docs/bots/PROTOCOL.md, "HTTP endpoints"). Every call carries the
 /// bearer token; a 401 is an authentication failure, never a retry.
-public final class CatalogHTTPClient: CatalogPort, Sendable {
+public final class CatalogHTTPClient: CatalogPort, ReplicaPort, Sendable {
   private let baseURL: URL
   private let token: String
   private let session: URLSession
@@ -276,6 +276,73 @@ public final class CatalogHTTPClient: CatalogPort, Sendable {
     AsyncStream { continuation in
       continuation.finish()
     }
+  }
+
+  public func loadReplicaBinding(botId: String) async throws -> ReplicaBinding {
+    try await request(
+      path: "/v1/bots/\(botId)/replica/status", method: "POST", body: [:], as: ReplicaBinding.self)
+  }
+
+  public func bindReplica(botId: String, sharedBotId: String) async throws -> ReplicaBinding {
+    try await request(
+      path: "/v1/bots/\(botId)/replica/bind", method: "POST", body: ["sharedBotId": sharedBotId],
+      as: ReplicaBinding.self)
+  }
+
+  public func configureSync(botId: String, peerDeviceId: String, direction: ReplicaSyncDirection?)
+    async throws
+  {
+    _ = try await raw(
+      path: "/v1/bots/\(botId)/sync/connections/\(peerDeviceId)",
+      method: direction == nil ? "DELETE" : "PUT",
+      body: direction.map { ["direction": $0.rawValue] })
+  }
+
+  public func loadHeads(botId: String, after: Int = 0) async throws -> ReplicaHeadPage {
+    try await request(
+      path: "/v1/bots/\(botId)/replica/heads", method: "POST",
+      body: ["after": after, "limit": 128], as: ReplicaHeadPage.self)
+  }
+
+  public func loadHead(botId: String, head: String) async throws -> ReplicaHeadDetail {
+    try await request(
+      path: "/v1/bots/\(botId)/replica/head", method: "POST", body: ["head": head],
+      as: ReplicaHeadDetail.self)
+  }
+
+  public func createContext(botId: String, contextId: String, head: String, resourceHead: String?)
+    async throws -> ReplicaContext
+  {
+    var body: [String: Any] = ["contextId": contextId, "head": head]
+    if let resourceHead { body["resourceHead"] = resourceHead }
+    return try await request(
+      path: "/v1/bots/\(botId)/replica/context", method: "POST", body: body, as: ReplicaContext.self
+    )
+  }
+
+  public func loadContext(botId: String, contextId: String) async throws -> ReplicaContext {
+    try await request(
+      path: "/v1/bots/\(botId)/replica/context", method: "POST", body: ["contextId": contextId],
+      as: ReplicaContext.self)
+  }
+
+  public func mergeHeads(
+    botId: String, heads: [String], requestId: String, choices: [ReplicaMergeChoice],
+    resources: [ReplicaResourceChoice]
+  ) async throws -> ReplicaMerge {
+    let body: [String: Any] = [
+      "heads": heads, "requestId": requestId,
+      "choices": try JSONSerialization.jsonObject(with: JSONEncoder().encode(choices)),
+      "resources": try JSONSerialization.jsonObject(with: JSONEncoder().encode(resources)),
+    ]
+    return try await request(
+      path: "/v1/bots/\(botId)/replica/merge", method: "POST", body: body, as: ReplicaMerge.self)
+  }
+
+  public func previewMerge(botId: String, heads: [String]) async throws -> ReplicaMergePreview {
+    try await request(
+      path: "/v1/bots/\(botId)/replica/merge", method: "POST",
+      body: ["heads": heads, "preview": true], as: ReplicaMergePreview.self)
   }
 
   private struct ErrorPayload: Decodable {

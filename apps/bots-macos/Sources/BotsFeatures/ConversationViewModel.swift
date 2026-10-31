@@ -33,6 +33,9 @@ public final class ConversationViewModel: ObservableObject {
   private let now: () -> Date
   private var eventsTask: Task<Void, Never>?
   private var selectedBotId: String?
+  private var selectionGeneration = UUID()
+  @Published public private(set) var contextId: String?
+  @Published public private(set) var resourceHead: String?
   /// The outbox is reconciled after the first snapshot of the selected bot, never after
   /// the handshake: a send before the subscription exists is refused as `not_admitted`.
   private var reconciled = false
@@ -73,10 +76,17 @@ public final class ConversationViewModel: ObservableObject {
 
   /// Connects to a bot and replaces the transcript with its snapshot. Selecting the same bot
   /// again is a no-op, so a list refresh does not reconnect.
-  public func select(botId: String) {
-    if selectedBotId == botId, eventsTask != nil { return }
+  public func select(botId: String, contextId: String? = nil, resourceHead: String? = nil) {
+    if selectedBotId == botId, self.contextId == contextId, eventsTask != nil {
+      self.resourceHead = resourceHead
+      return
+    }
     eventsTask?.cancel()
+    selectionGeneration = UUID()
     selectedBotId = botId
+    self.contextId = contextId
+    self.resourceHead = resourceHead
+    isSending = false
     reconciled = false
     hasSnapshot = false
     state = ConversationState(botId: botId)
@@ -86,7 +96,7 @@ public final class ConversationViewModel: ObservableObject {
     }
     connection = .connecting
     errorBanner = nil
-    let stream = conversation.open(botId: botId)
+    let stream = conversation.open(botId: botId, contextId: contextId)
     eventsTask = Task { [weak self] in
       for await event in stream {
         guard let self, !Task.isCancelled else { return }
@@ -101,13 +111,14 @@ public final class ConversationViewModel: ObservableObject {
     guard let botId = selectedBotId else { return }
     eventsTask?.cancel()
     eventsTask = nil
-    select(botId: botId)
+    select(botId: botId, contextId: contextId, resourceHead: resourceHead)
   }
 
   public func disconnect() {
     eventsTask?.cancel()
     eventsTask = nil
     selectedBotId = nil
+    selectionGeneration = UUID()
     conversation.close()
     connection = .stopped
     hasSnapshot = false
@@ -124,39 +135,58 @@ public final class ConversationViewModel: ObservableObject {
     guard !text.isEmpty, connection == .ready, let botId = selectedBotId else { return }
     let requestId = Identifiers.request()
     draft = ""
-    send(text: text, requestId: requestId, botId: botId, optimistic: true, inserting: inserting)
+    send(
+      entry: OutboxEntry(
+        botId: botId, requestId: requestId, text: text, whenBusy: inserting ? .steer : .followUp,
+        contextId: contextId, resourceHead: resourceHead), optimistic: true)
   }
 
   /// Retrying keeps the original requestId, which is how it is recovered, including after a
   /// restart of the app (`OutboxStore`).
   public func retry(_ entry: OutboxEntry) {
+    guard selectedBotId == entry.botId, contextId == entry.contextId else {
+      errorBanner = "请先打开这条消息所属的会话，再重试。"
+      return
+    }
     refused.remove(entry.requestId)
-    send(text: entry.text, requestId: entry.requestId, botId: entry.botId, optimistic: true)
+    send(entry: entry, optimistic: true)
+  }
+
+  private func isCurrentSelection(_ generation: UUID, botId: String, context: CommandContext)
+    -> Bool
+  {
+    selectionGeneration == generation && selectedBotId == botId && contextId == context.contextId
   }
 
   public func abort() {
     guard let botId = selectedBotId else { return }
-    let context = CommandContext.command("abort")
+    let context = CommandContext.command("abort", contextId: contextId)
+    let generation = selectionGeneration
     Task { [weak self] in
+      guard let self else { return }
       do {
-        try await self?.conversation.abort(context: context, botId: botId)
+        try await self.conversation.abort(context: context, botId: botId)
       } catch {
-        self?.errorBanner = Self.describe(error)
+        guard self.isCurrentSelection(generation, botId: botId, context: context) else { return }
+        self.errorBanner = Self.describe(error)
       }
     }
   }
 
   public func recover() {
     guard let botId = selectedBotId else { return }
-    let context = CommandContext.command("recover")
+    let context = CommandContext.command("recover", contextId: contextId)
+    let generation = selectionGeneration
     Task { [weak self] in
       guard let self else { return }
       do {
         try await self.conversation.recover(context: context, botId: botId)
+        guard self.isCurrentSelection(generation, botId: botId, context: context) else { return }
         // Only a command that reached the daemon clears the parked state: a recover
         // dropped while reconnecting must leave the affordance in place.
         self.parked = false
       } catch {
+        guard self.isCurrentSelection(generation, botId: botId, context: context) else { return }
         self.errorBanner = Self.describe(error)
       }
     }
@@ -166,12 +196,15 @@ public final class ConversationViewModel: ObservableObject {
     guard let oldest = state.messages.first(where: { !$0.isOptimistic })?.id,
       let botId = selectedBotId
     else { return }
-    let context = CommandContext.command("history")
+    let context = CommandContext.command("history", contextId: contextId)
+    let generation = selectionGeneration
     Task { [weak self] in
+      guard let self else { return }
       do {
-        try await self?.conversation.loadHistory(before: oldest, context: context, botId: botId)
+        try await self.conversation.loadHistory(before: oldest, context: context, botId: botId)
       } catch {
-        self?.errorBanner = Self.describe(error)
+        guard self.isCurrentSelection(generation, botId: botId, context: context) else { return }
+        self.errorBanner = Self.describe(error)
       }
     }
   }
@@ -187,17 +220,14 @@ public final class ConversationViewModel: ObservableObject {
 
   // MARK: - Sending
 
-  private func send(
-    text: String,
-    requestId: String,
-    botId: String,
-    optimistic: Bool,
-    inserting: Bool = false
-  ) {
+  private func send(entry: OutboxEntry, optimistic: Bool) {
+    let text = entry.text
+    let requestId = entry.requestId
+    let botId = entry.botId
     // The entry is stored before the frame is written; if it cannot be stored, nothing is
     // sent and the draft comes back (PROTOCOL.md, client duties 1).
     do {
-      try outbox.add(OutboxEntry(botId: botId, requestId: requestId, text: text))
+      try outbox.add(entry)
     } catch {
       draft = text
       errorBanner = "无法保存待发送的消息，消息没有发出。"
@@ -211,20 +241,25 @@ public final class ConversationViewModel: ObservableObject {
       )
     }
     inFlight[requestId] = text
-    let context = CommandContext.send(requestId)
+    let context = CommandContext.send(
+      requestId, contextId: entry.contextId, resourceHead: entry.resourceHead)
     Task { [weak self] in
       guard let self else { return }
       do {
         try await self.conversation.send(
           text,
-          whenBusy: inserting ? .steer : .followUp,
+          whenBusy: entry.whenBusy,
           context: context,
           botId: botId
         )
-        self.isSending = false
+        if self.selectedBotId == botId && self.contextId == entry.contextId {
+          self.isSending = false
+        }
       } catch {
-        self.isSending = false
-        self.errorBanner = Self.describe(error)
+        if self.selectedBotId == botId && self.contextId == entry.contextId {
+          self.isSending = false
+          self.errorBanner = Self.describe(error)
+        }
       }
     }
   }
@@ -253,13 +288,11 @@ public final class ConversationViewModel: ObservableObject {
       return
     }
     for entry in entries
-    where !refused.contains(entry.requestId)
+    where entry.contextId == contextId && !refused.contains(entry.requestId)
       && !durableRefusals.contains(entry.requestId)
     {
       send(
-        text: entry.text,
-        requestId: entry.requestId,
-        botId: entry.botId,
+        entry: entry,
         optimistic: !state.messages.contains { $0.requestId == entry.requestId }
       )
     }
@@ -291,7 +324,7 @@ public final class ConversationViewModel: ObservableObject {
       errorBanner = "本地结算记录暂时读不出来。"
       return
     }
-    for record in stored where record.botId == botId {
+    for record in stored where record.botId == botId && record.contextId == contextId {
       state = Reducer.applySubmission(
         Submission(
           id: record.submissionId,
@@ -346,7 +379,9 @@ public final class ConversationViewModel: ObservableObject {
         inFlight.removeValue(forKey: record.requestId)
         // The terminal record is stored in the same atomic write that removes the entry
         // (PROTOCOL.md, client duties 2); a placement in a snapshot is not a settlement.
-        try? outbox.settle(record, botId: selectedBotId ?? "")
+        do { try outbox.settle(record, botId: selectedBotId ?? "", contextId: contextId) } catch {
+          errorBanner = "本地结算记录未保存，消息会以原身份重新核对。"
+        }
       }
     case .history(let page):
       state = Reducer.apply(.history(page: page), to: state)

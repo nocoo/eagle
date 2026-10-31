@@ -1,5 +1,89 @@
 # Retrospective
 
+## 2026-10-31 — Recover the new independent Worker lock without changing versions
+
+The new Bots Sync Worker lock resolved undici7.29.0/sharp0.35.4, while the root's
+existing overrides resolve7.30.1/0.35.5. Offline ci then stopped at missing nested
+undici7.29.1 metadata. A root cache hit could not establish this independent
+package's locked inputs. The raw ENOTCACHED/install/type/fixture failures remain
+in `.local/sync-p4-cf72h-cache/`; none is called a product behavior red.
+
+One platform inventory reused original cache entries by SRI, fetched only missing
+original tarballs through the task's approved registry, verified all54 package
+identities/locked SRI and rebuilt registry-specific metadata. Normal ci then ran
+both workerd postinstall versions and esbuild and exited0. The independent,
+root and Bots lock bytes remained unchanged throughout recovery; no version was
+selected just to hit cache, no global policy changed and ignore-scripts was not
+accepted as an install. [The project runbook](docs/NPM-RECOVERY.md) records the
+actual receipt/lock hashes and repeatable boundary. Full runtime/build/gate
+claims remain bound to their own subsequent command receipts.
+
+## 2026-10-30 — Establish admission before losing a device-operation response
+
+The first normal push of Bots commit `265b0db` stopped in the root pre-push
+tests: the lost-response fixture queried its original operation ID but received
+`unknown` instead of `completed` (259/260 passed). Browser and Swift checks had
+not started. The original log remains in
+`.local/sync-p2-root-resources/ordinary-root-push.log`.
+
+Closing the request socket did not establish execution admission. A controlled
+public GET-before-RUN diagnostic reproduced a sent outgoing-request row with no
+operation row or output file: the later run became a query under the existing
+uncertain-operation rules. The isolated seven-test diagnostic and one diagnostic
+root run passed; neither captured the first hook failure's precise interleaving.
+This evidence establishes a missing fixture precondition, not a demonstrated
+loss of an already admitted operation.
+
+The fixture repair keeps the response connection open while the real command
+writes its original `x`, then blocks that command on an owned release file.
+Only after observing `x` does the test destroy the reply connection and release
+the command. Admission observation and original-ID completion share the original
+100 attempts with 10ms waits. Cleanup releases the command and destroys the
+socket even after an assertion failure. The completed result, repeated-ID output,
+one-execution file bytes and all permission/pairing assertions remain intact.
+Production dispatch, journal behavior, limits and hooks do not change.
+The ignored proposal and the tracked repair each passed all seven tests. Root
+types and check-only lint also passed on the repaired bytes. Independent delta
+Review remains pending; full root, browser and Swift gates belong to the next
+normal pre-push. The first failed push is retained; no second push has run.
+
+## 2026-10-30 — Synchronize collected-output timeout tests with actual output
+
+The P0 Bots check passed 649 ordinary tests but its coverage run failed the
+unchanged bash timeout fixture: the result contained the 0.05-second timeout
+diagnostic without `before-timeout`. A bounded serial check then failed the same
+assertion in its ordinary run. Both failures remain in `.local/sync-p0/`.
+
+pi-durable 1.4.0 starts that deadline immediately after spawn, before any output
+arrives; it still waits for child exit and flushes before settling. The fixture
+assumed the shell would run its first printf within 50ms. The test now forwards
+the real NodeExecutionEnv output to the real tool collector, then advances the
+controlled 50ms timer after the marker actually arrives. A real watchdog prevents
+a missing-output hang. Harness, SQLite, shell execution, timeout cleanup and all
+original result assertions remain real; no production timeout changed. The
+failures alone did not establish loss of already-collected output.
+
+A later full check received the marker followed by bash's legitimate `Killed: 9`
+diagnostic for its sleep child; the added full-string callback assertion rejected
+that output (`section-order-bots-check-verified.log`). An intermediate marker-only
+assertion did not prove complete callback retention. The fixture now uses
+`printf ...; exec sleep 2`, replacing the shell instead of leaving a parent shell
+to report the killed child, and restores the exact callback assertion. It still
+uses the real SDK/SQLite/Harness, real I/O and kill cleanup, the controlled whole
+setTimeout API and the unchanged 50ms deadline. The original model-visible output
+and timeout assertions remain unchanged.
+
+## 2026-10-30 — Await consumed events before draining sidebar publication
+
+The sync baseline pre-push failed the sidebar preview test: 60ms after an empty
+snapshot was emitted, the old Chinese preview was still visible. Emitting to the
+fixture's AsyncStream, consuming that event and publishing shell state are separate
+scheduled steps. The test now waits for each snapshot or connection state to be
+consumed, then drains scheduled publication before asserting the original preview,
+reconnect preservation and empty-snapshot clearing. Production code, timeouts and
+the assertions are unchanged; the original failure remains in
+`.local/sync-baseline/push-portable-node.log`.
+
 ## 2026-10-21 — Accept the minifier's actual string syntax
 
 The additional production UI verifier recognized quoted onboarding versions but
@@ -890,6 +974,66 @@ execution mode and gates remain unchanged. The local verification compiles the
 fixture and checks formatting without running the interactive probe while the
 user tests the installed App. The next normal CI run supplies runtime evidence.
 
+
+## 2026-10-31 — sync PR clean-install fixture assumptions
+
+PR #1's first Check run41198863922 failed at two test prerequisites: the root-only
+Linux job could not find the independent Sync Wrangler executable, and the macOS
+device file allocated temporary children before creating `.local`. A root fixture
+already used the root-installed Wrangler for the first Worker; the second bundle
+now uses that same tool. The owning test files create their private parent. No CI
+install, lockfile, threshold or product behavior changes.
+
+Clean-copy validation also exposed two local verification assumptions. Long copy
+paths produced Unix socket startup failures (92-byte real DeviceService path ready,
+113-byte path failed/EINVAL); a short owned copy resolved that validation artifact
+without extending timeouts. Its full root check then exposed a native SDK fixture
+under root tests that pulled independent Bots dependencies into root typechecking.
+Moving it into Bots' existing strictly checked test/support and updating the sole
+Swift caller preserves both product isolation and type coverage. Original failures,
+full logs and input maps remain under `.local/sync-ci-fixture/`; old physical and
+accepted product findings are unchanged. The next normal push supplies CI evidence.
+
+
+The next natural run41201022762/headf629 passed Linux (269/269 and browser191/11
+original conditional skips), Sync Worker26/26, devices33/33 and Swift build. Its
+native focus fixture then hit its unchanged60-second process deadline:41 checks
+had passed, stdout was incomplete, and format/coverage were not reached. Original
+stage markers show hover alone used17.938 seconds; its13 intermediate move points
+had no assertions but each ran a full20-round settle before another final settle.
+The narrow fixture candidate retains all moves and the endpoint's full settling
+and subsequent selection checks, removing only intermediate repeated waits.
+All42 checks and original15/60-second deadlines stay. Full47-input compilation
+passes; runtime success remains for the next normal CI, without a manual rerun.
+A no-window clock comparison did not support timer-tolerance attribution; an
+idle-loop observer failed a private-event consumption control and was not adopted.
+Original timeout and diagnostic failures remain under `.local/sync-ci-focus/`.
+
+
+### 2026-10-31 — explicit permission prerequisites after the upstream merge
+
+The fixed upstream8674 changes a fresh device from implicit allow to always-ask.
+The sync integration fixtures still assumed the old initial decision: the complete
+33-test suite produced three tool-settlement timeouts and five tool-error failures
+on the first merged input. Preserve that red and the stronger product default.
+The test-owned Node service and Swift Host now receive an explicit trusted allow
+before the tool-path scenarios; on each startup the Swift fixture explicitly sets
+all-approve if the current mode differs. This setup does not prove permission
+persistence across restarts or bypass the Bot port or live policy.
+The original full suite, owner checks and normal hooks validate the merged input.
+
+
+### 2026-10-31 — helper address ownership after composition integration
+
+The upstream Settings address used the App defaults, but P5's owned composition
+uses root-specific defaults and the helper read standard preferences. Saving in
+one process therefore did not configure the other. The signed helper profile now
+owns the address domain; the real control exposes that read-only profile and both
+processes use it. Same-profile Bot roots intentionally share the helper origin,
+while registration/pairing/Outbox keep their existing storage. The full Swift red
+and green use private domains and an independent preferences reader, without
+starting a live helper or changing daily data.
+
 During the 0.15.2 release, the shell's inherited Herdr pane identifiers pointed
 to another workspace. A split using `--current` opened an empty pane there; it
 was closed immediately, without running a command in it. The active agent list
@@ -903,3 +1047,14 @@ release still pointed to 0.15.1; no affected client was observed. The release
 was then published and both endpoints agreed. Before the next app release,
 coordinate the automatic deployment with publication so the downloadable asset
 is public before the update endpoint advertises it; do not bypass the hooks.
+
+
+### 2026-10-31 — fixture approval ownership when integrating the next upstream point
+
+The common sync tool fixture explicitly approved tools during readiness. The next
+upstream device-Bots case instead asserts fresh always-ask before making its own
+approval. Their first complete-file merge red is an ownership collision between
+fixture prerequisites, not a reason to weaken the production permission default.
+That case now defers common approval and keeps its original assertions/decision;
+the other tool fixtures keep their existing setup. The first645 CI compiler crash
+and the next input's upstream Xcode selection remain separate execution evidence.

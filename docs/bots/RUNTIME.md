@@ -14,6 +14,231 @@ transport and no `rev`.
 
 ## Verified facts
 
+### P0 local history handoff
+
+The authenticated loopback daemon exposes `POST /v1/bots/:id/replica/{export,import,run,status}`.
+This is a local P0 entry point, not device authentication, a cloud transport or a UI projection.
+Each request has a dedicated 8 MiB JSON cap; other HTTP limits remain unchanged.
+
+- `export {}` reads **all** fork-aware raw entries in ascending 128-entry pages in a
+  public Harness transaction, together with the agent state. Active/parked tasks prevent
+  declaring a complete head. P0 also rejects `pi.tool` tasks whose input kind is `nested`:
+  their full results live in task-scoped `NestedCallDoc`, not original transcript entries.
+  The scan includes every fork ancestor, conservatively rejecting an ancestor's nested
+  work even if it is newer than the fork point. No bounded `nestedCalls` summary is treated
+  as a full result. The current production registry does not expose nested execution;
+  a future caller needs passive facts archival before this restriction can be removed.
+  `export {branch:requestId}` selects a local continuation;
+  `export {head}` reads an already pinned immutable snapshot.
+- The version-1 bundle fixes `engine:pi-durable@1.4.0`, source replica/Bot/conversation,
+  parent head hashes, original entries (including model/data/head/edits/byTaskId), per-entry
+  original provenance, agent choices and resource bytes. `head` is SHA-256 of the UTF-8
+  `JSON.stringify` encoding of the **validated v1 envelope without head**. The schema
+  fixes known envelope/entry/agent/resource field order; original objects inside model
+  and data retain their insertion order. Keys are never recursively sorted: SDK system
+  sections render in insertion order, and different section orders require different
+  heads. Pinned receipts use the same order-preserving JSON encoding. The normative
+  fixture follows this schema order; the earlier unpublished, sorted P0 format has no
+  compatibility layer. Resources carry name, kind, SHA-256 and canonical base64;
+  inline model attachments remain intact. P0 preserves supplied resource versions;
+  it does not add AGENTS/skill discovery or installation (P2).
+- `import {bundle}` verifies the complete hash, resource bytes and backward references.
+  One public `commit` creates an ownerless conversation, appends entries with local
+  `head`/`edits.target` mappings, and saves the original bundle/mapping/receipt atomically.
+  **No submit, resume, task creation, queue or ProviderDoc transfer occurs in import.**
+  Original task ownership remains provenance; it is never attached to a local task.
+  Repeated import returns the same `{head}`, including after process restart.
+- `run {head,requestId,text}` creates a fresh local fork from that complete head.
+  Input uses the existing invocation limit of 8000 Unicode code points and request IDs
+  matching `[A-Za-z0-9_-]{8,64}`; the 8 MiB history carrier does not widen these limits.
+  The durable request binding fixes head and text before admission; the same ID cannot
+  change them. Workspace cwd maps to this Bot's local workspace; model credentials and
+  provider session are local. Missing required extensions reject continuation. Bundles
+  containing instructions/skill resources remain blocked until their installation is
+  implemented in P2; retaining bytes alone does not certify that their version is active.
+  It then submits a **new local input** under the same ID and returns `{branch,submission}`.
+  `status {requestId}` queries that local admission after uncertainty. Independent IDs
+  from the same head create independent branches; neither replaces the other.
+- Outputs stay in the SDK's durable original entries. Export scans committed storage,
+  rather than relying on a streaming callback, so an exit after output commit and before
+  export does not lose it. A fork intent committed before admission is retried using the
+  same branch and SDK request ID. Imported active work is never resumed.
+
+P0 does not copy an active database, a provider session, another replica's active
+queue, model credentials or workspace files. Unsupported bundle versions fail closed;
+unknown original entry kinds/data are retained rather than silently removed.
+
+Current P0 evidence uses Node **26.9.0**, independently of the older SDK fact probes
+below: `test/runtime/history-replica.test.ts` checks 220+ raw records, reset, compaction,
+head/edits remapping, independently reconstructed context, same-head A/B runs and branch
+exchange/re-import into a clean third SQLite. Provider requests are compared with an
+actual A continuation from the same head: original messages stay in order; public pi-ai
+system replay checks effective instructions, every section and complete ordered tool
+declarations. Only cwd is mapped; new local system-message creation is distinguished
+from unchanged imported records. `test/e2e/history-replica.test.ts` exercises real daemon
+authentication, leases and the dedicated body cap. `test/crash/history-replica.test.ts`
+uses SIGKILL after output, import, fork-intent and actual input-admission commits.
+The saved local red/green logs are under `.local/sync-p0/`; full gate results are recorded
+in PLAN/checkpoint when run. None of these proves cloud or physical multi-Mac behavior.
+
+### P1 first local incremental slice (in progress)
+
+Each local Bot owns a separate `replica.sqlite` next to `session.sqlite`. Its binding
+contains an immutable local Bot ID, shared Bot UUID, replica UUID and source epoch UUID.
+A new Bot starts a unique shared identity; authenticated `replica/bind {sharedBotId}`
+can join an empty local replica explicitly, never by display name. A populated binding
+cannot be silently reassigned. Explicit passive restoration to a fresh incarnation is described below; in-place epoch
+rotation, unannounced rollback detection and directory tombstones remain planned.
+
+Additive authenticated loopback methods use the existing history body cap:
+
+- `pull {after,limit?,source?}` returns at most 128 original source-log events, with
+  source `{replicaId,epoch}` and the retained sequence range. `after` is an integer
+  position, never a persisted SDK Cursor. Forwarding retains the original stream IDs.
+  Iteration stops at the encoded byte budget: the complete JSON `{page: ...}` apply
+  body, including source/range/wrapper, is at most 8 MiB. `nextAfter` advances only
+  over delivered events. An oversized single event refuses the page, retaining the
+  event and source gap rather than advancing past it.
+- `apply {page}` durably deduplicates bounded incoming pages; the same stream/sequence
+  with different content fails closed. Known maximum, continuous received and continuous
+  applied positions differ. A receipt advances applied only after dependencies and any
+  selected head's passive SDK materialization have actually committed. Remote run intents
+  are facts only; they never enter the local recovery/admission queue.
+- `status {}` returns the explicit binding, stream positions and complete materialized
+  heads. Existing `status {requestId}` and the P0 baseline methods keep their behavior.
+  Local `run {head,requestId,text}` saves its fixed intent and outbox event in one replica
+  transaction before using the same P0 request ID for SDK admission.
+
+`subscribeCommits` only marks dirty and schedules a short asynchronous scan. Durable
+recovery scans committed entries by ascending `minEntryId` in 128-entry pages; SDK
+publication order and callback delivery do not certify outbox persistence. New entry
+facts carry original entry/task provenance once; head manifests reference those facts
+instead of retransmitting full historical model/data. Passive imports retain their source
+mapping and are not republished as new local entries. The SDK and replica databases have
+no joint transaction: durable local intents, idempotent SDK admission/materialization and
+commit rescanning close the gaps. A short commit callback only queues work; scan reads
+all original pages, then checks terminal tasks, tail and AgentDoc in one SDK transaction
+before publishing a head for that same cutoff. Missing references/resources remain
+incomplete. Schema-valid but semantically invalid incoming histories block only their
+source at the rejected sequence (`invalid_history`); raw events remain durable, applied
+never crosses that sequence, and other complete local heads remain runnable after restart.
+Resource base64/SHA-256 integrity is checked before a fact or applied position is shared,
+even without a referencing head. Unverified manifests do not occupy global head keys. SQLite/I/O/SDK failures retain their
+storage/session classification rather than being quarantined as protocol errors.
+
+Native heads use a public SDK bounded fork at the original committed tail, without
+appending source entries. Both pin and run fork explicitly restore the selected complete
+AgentDoc, because SDK `asOf` resolves the tail entry's commit sequence (a later configure
+may have no entry). ProviderDoc and inbox retain SDK `fork: initial`. Automatic P1 SDK
+receipts store only this fixed conversation, original/local ID map and immutable manifest
+reference; full model/data/resource bytes live in ReplicaStore facts. Explicit P0 carrier
+export/import alone retain a complete SDK receipt bundle for the existing API.
+
+A selected complete P0 SDK receipt must remain directly runnable after upgrade when
+replica.sqlite is still empty: validate its carrier and existing ID map on demand,
+then index it without passive re-append or requiring separate parent receipts. A complete
+carrier contains its ancestors even when `parents` only names their heads. Validated
+fixed parent heads bound task checks for a continuation; later source tasks cannot
+invalidate that already-fixed context. The branch's own unverified range still requires
+terminal tasks. The conservative unsupported-nested check still inspects every ancestor,
+including beyond the fixed parent boundary; only the nonterminal-task check is bounded.
+
+Incoming heads reuse the longest already materialized complete prefix whose ordered
+original fact refs and relative head/edit dependencies match. A bounded fork preserves
+that prefix, then public append adds only the suffix with remapped references. The chosen
+head's full agent config is fixed explicitly. This covers sequential history and inherited
+single-prefix branches; there is no generic multi-parent merge. A history without a
+matching prefix must materialize its initial facts once. Per-head aliases/manifest metadata
+still grow with history; no constant-space or arbitrary-merge claim follows.
+
+Internal head integrity checks retain schema, SHA-256, resource SRI, origin and head/edit
+reference validation independently of the P0 public carrier cap. Cumulative raw history
+can exceed 8 MiB through multiple bounded pages, and its passive materialization and local
+continuation have no P0 carrier cap. Public P0 import/export still enforce that cap.
+Local head assembly and validation currently use complete history in memory; this is neither constant-space reconstruction nor P4 chunked baseline transfer.
+Resource bytes can be retained; instruction/skill installation remains P2 and still blocks
+continuation when required. An explicit baseline resource version stays attached to later
+incremental heads until another explicit version is selected.
+
+Current P1 local evidence runs on Node **26.9.0** with pi-durable **1.4.0**:
+`test/{runtime,e2e,crash}/replica-sync.test.ts`. Final gate/review evidence is recorded
+separately in TESTING/PLAN; table or endpoint existence alone does not establish delivery.
+
+This slice is local only. Resource installation (P2), device authorization (P3), cloud,
+Tailscale, encrypted cache (P4), UI/merge experience (P5) and physical Macs are not certified.
+
+### Passive recovery from saved records
+
+The supported recovery target is a newly created local Bot directory with a fresh
+session.sqlite and replica.sqlite. Keep the saved database/records unchanged; never
+open a copied active session and then change its identity. The normal fresh-runtime
+identity supplies a new replicaId and epoch, stable after restart. Bind this empty
+target to the saved sharedBotId, import selected complete P0 carriers (including legacy
+SDK receipts without source-log events), then apply saved original source pages through
+the existing authenticated methods. Preserve all original stream/epoch/seq/provenance;
+incoming run facts remain passive and never become local recovery intents.
+
+The authenticated `receipts {after,limit?}` endpoint enumerates legacy full carriers via
+public Storage.scanDocuments/document at the existing storage-owner boundary. It reports
+persistent DocumentId/head summaries only. The limit bounds checked documents, including
+compact/empty receipts; continuation advances over them without a persisted SDK cursor.
+`export {head}` reads the selected full carrier. Enumeration validates hash/SRI, family key,
+supported version and actual visible entry mapping through Harness.commit/Tx reads;
+Session failure guards and storage errors are retained. Raw metadata/body reads check the
+public Session before and after each read, including empty/compact pages. An I/O error
+is rethrown unchanged and immediately seals this Harness via public close; no later or
+in-flight read result is consumed. SDK 1.4.0 exposes no public guarded raw-document scan
+or fail method: this path ends as SessionEnd.closed, not a fabricated SDK failed reason.
+The adapter retains one storage_failed origin/identity and propagates later rejections;
+queued/background scans stop when the Session closes and reopen can fill committed facts.
+Cleanup checks the actual Session-close notification when its queued final scan executes,
+so an earlier queued receipt I/O failure cannot trigger another scan/failure origin.
+A healthy normal close still performs the final committed-fact scan.
+Protocol validation, StorageRequestError and a read's actual canceled Context do not seal
+a healthy Harness. Only the raw call is caught; integrity errors remain protocol errors.
+It does not create source events for compact/P0-only receipts or promise a multi-request
+frozen inventory.
+
+Pages alone need not cover P0-imported history. The caller must retain complete carriers
+for those selected heads and all necessary original pages, including unsent branches;
+do not invent missing sequence numbers. Each page keeps the 128-event/8 MiB limit;
+cumulative history may be larger. Use applied positions and readiness of the explicitly
+selected heads to identify gaps. Duplicate import/apply is idempotent, and a partial new
+target can reopen and continue receiving records. Only a new user request runs locally;
+ordinary crash restart of the original instance retains same-ID intent recovery.
+
+This composes existing local APIs, not a general backup format or automatic detection
+of unannounced directory rollback. Directory tombstones, shared catalogue recovery and
+resource installation remain later slices. Tests distinguish existing-path verification
+from any actual failure requiring implementation.
+
+
+### Shared deletion lifecycle
+
+RuntimePort.readReplicaBinding({id,dir}) reads existing replica.sqlite read-only,
+validates its local owner and binding, and never opens Harness or constructs ReplicaStore.
+Missing file means uninitialized; corrupt/mismatched bindings and I/O fail closed.
+Successful close (including the healthy final fact scan) precedes local mark/move.
+A known root tombstone prevents runtime open/recovery and all replica operations on
+the destination binding; incoming run facts never revive it. Active handles retain
+the ordinary lease-drain deadline and quarantine until actually closed.
+
+Binding read failures isolate the affected Bot before SDK recovery; a post-open read
+failure closes or quarantines the newly acquired owner instead of leaking it. A saved
+cleanup mapping stays hidden when its move keeps failing, including newly discovered
+aliases; healthy Bots still open. Root catalog failures retain the global fail-closed
+boundary. Existing WS leases may delay cleanup to quarantine, with no active DB move.
+Recover checks the owner lease at serialized execution time; a close retry cannot
+unseal the immutable shared identity. This slice proves local behavior only.
+Current tombstone evidence uses Node 26.9.0/pi-durable 1.4.0, independently of the
+earlier SDK probe baseline below: authenticated dual-daemon history/trash comparisons,
+per-Bot startup isolation, actual socket recover refusal and owned SIGKILL recovery.
+Its complete Bots/check/crash/eval/perf counts and candidate hashes live in TESTING
+and .local/sync-p1-tombstones; no network, UI or physical-Mac claim follows.
+
+
+### Earlier SDK probe baseline
+
 Established with `@earendil-works/pi-durable@1.4.0` on Node 26.12.0 unless the
 evidence says upstream source. Probe scripts and inputs are listed in
 [Evidence](#evidence) so each claim can be reproduced or narrowed.
@@ -610,3 +835,130 @@ excluded from every number here.
    (`pi.live`), §9.3–9.4 (views, agent events) and `CHANGELOG.md`.
 4. Update the fact table if any of F1–F21 changed; the pin bump commit names the
    facts that changed.
+
+
+## Fixed-head resource installation and loading (P2 first slice contract)
+
+Before a fixed-head run is admitted, validate its complete ordered manifest, write every
+file to a private staging directory under the Bot's resource root, then atomically rename
+the complete directory into a content-addressed version. Never overwrite workspace files
+or follow a symlink. An installation failure admits no model/tool work. Reuse an existing
+version only after verifying its original bytes; preserve failed/incomplete installations
+as non-ready rather than consuming substituted/truncated contents. Temp+rename does not
+claim power-loss durability.
+
+A public conversation document pins only the immutable version reference for each local
+branch; resource facts remain the original byte store and shared versions are not copied
+per head/run. A public extension section reads the branch pin via PromptInput.read and
+adds selected AGENTS/skill text plus local file paths, retaining original instructions
+and ordered system/tool history. Before **any** start-time pending submit (which resumes
+the whole SDK scheduler), validate every existing local branch pin and installed version.
+Explicit recover/retry also checks readiness before scheduler work is enabled. Ordinary
+renderer/hook exceptions are not a fail-closed gate: SDK reports them and may keep shown
+text. The renderer consumes only a prevalidated pinned version. Foreign run facts never
+create local pins, queues or tasks. Ordinary root-chat/edit/queued selection is next.
+
+Concurrent directory creation accepts only EEXIST followed by lstat confirming a real
+directory. A staging rename collision (EEXIST/ENOTEMPTY) is accepted only after validating
+the complete winner's exact file set, original hashes and no symlinks. No global installation
+queue coordinates versions. Known installation I/O before branch pin/admission retains its
+original cause as storage_failed + not_admitted and rejects the durable local intent; disk
+repair/reopen cannot turn that refused request into work. Startup resource preflight failure
+closes this newly opened SDK owner first, then its replica store, preserving the original
+failure instead of logging a cleanup origin.
+
+A same-head/requestId/text retry first checks the fixed run mapping and the actual SDK
+submission on the public Session transaction line. An existing submission returns its
+current branch/status without installation, submit or scheduler resume, even if resource
+files were damaged after admission or the replica admitted receipt was lost. A branch pin
+alone is not admission: without an SDK submission, recovery and new requests still pass
+the complete resource preflight. Conflicting head/text for the same ID is refused before
+any retry can change that binding.
+
+Warm task retry verifies resources before asking the SDK to retry. A preflight failure
+crosses runtime.task.retry.fail once with the command trace: existing classified errors
+are rethrown intact, filesystem I/O is storage_failed with the original cause. This does
+not reclassify errors from the later SDK retry operation or alter HTTP retry semantics.
+
+## Ordinary root queued resource versions
+
+Ordinary input remains on the original root and SDK Inbox. Before first local admission,
+resolve a ready resourceHead, completely validate/install its manifest, and persist the
+selector/version in the original local intent/outbox. Each SDK input carries only the
+immutable selection/version in SubmissionDraft.entry kind/data. Do not change root
+ResourcePin when queueing: the production section derives the current run's fixed version
+from public LiveDoc, Harness.submission and Tx placed-entry reads, using only prevalidated content.
+
+Active and queued versions survive edits, later version admissions and restart. Startup
+prevalidates all active/queued selections before any pending submit or global resume.
+For ledger-pending root intents, first query public Tx.submissionByRequest: a real SDK
+receipt is reconciled without reinstalling its now-idle resources. Genuine unsubmitted
+intents still all preflight before any submit; active/Inbox versions always preflight.
+Known accepted same-ID retries return the real SDK record without installation, submit or
+resume; genuine pending/new IDs still preflight and known refusal rejects the intent.
+Root intent `whenBusy` remains immutable after refusal or admission (legacy omission
+means `followUp`). Both root admission and core admission lookup check the persisted mode
+before querying/returning an existing SDK record; plain status lookup remains read-only.
+A changed mode cannot queue work while the original intent/outbox still names another mode.
+The admission-only retry-binding read has the submit failure boundary: an existing
+ClassifiedFailure is rethrown intact; raw ReplicaStore/SQLite failures reuse the submit
+session episode or operation classifier and retain the original cause with unknown
+disposition. This does not change pure status or the subsequent SDK record lookup.
+Steer inherits the active version when omitted; explicit different versions are refused,
+as are queued steer/followUp combinations that the unchanged default SDK boundary could
+merge with different versions. Distinct followUp versions remain FIFO one-at-a-time.
+User append/live/history/snapshot projection recognizes the selected user entry kind and
+exposes only the original user text/request mapping. No resource body is copied per input.
+
+Root section resolution reads LiveDoc.run.inputs[0], calls the public
+Harness.submission(id).status() outside a transaction, then reads its immutable entry
+through a separate Harness.commit/Tx.entry. It never uses internal methods, a nested
+Harness call in Tx, or wait/resume. The first input survives tool/compaction children.
+After async installation, root admission re-reads current Live/Inbox on the serial line;
+if the observed first input changed while resolving metadata, read it again before
+checking. New steer matches the active version and every queued input; new followUp
+matches every queued steer, including legacy empty resource versions in both directions.
+
+Runtime open and tool-group reconfiguration retain the resource extension alongside the
+selected tool extensions; an unselected legacy round renders no resource section. This
+preserves the active version after tool children and crash reopen without changing queue
+modes, failure policy, restart limits or task recovery.
+
+
+## First package on a fresh empty root
+
+Resource-only export/import uses immutable resource facts plus one ordered resource_manifest
+fact in replica.sqlite, with existing source events/outbox and no SDK history receipt,
+conversation fork, user/model entry, submission or queue work. A complete manifest is the
+first resourceHead resolution path; existing ready history heads remain the fallback.
+The installer accepts resources alone and the original per-input selection, section and
+startup preflight remain shared with ordinary root admission. No local cwd, model, credentials
+or permissions are supplied by the carrier. Re-export is content-stable across replicas.
+
+Only a real local input installs/selects the package and creates the first user turn.
+Missing refs are unapplied gaps; corrupt packages and installation I/O refuse admission
+under the existing not_admitted/rejected-intent boundary. Active/Inbox/true pending versions
+still preflight before any submit/global resume; actual SDK duplicates keep their established
+shortcut. Full bodies remain immutable facts rather than being copied into run intents.
+
+
+## P5 durable context and contribution mapping
+
+HistoryReplica uses the public SDK create/fork/append/context/defineEntry APIs
+for local contexts and two-parent merge. The immutable ready seed, mutable tip,
+and selected resource head are distinct. A durable context identity reopens
+the same SDK conversation; request lookup/admission/retry and event/history reads
+use that captured identity rather than retargeting the root. Local contexts share
+the original Harness and overall Bot busy/lifecycle limits.
+
+Merge produces one `bots.merge.contribution` per effective message, with full
+original origin, selected edit relation, parent-entry provenance, ordered group
+index/size and explicit tool-call ID mapping. An omitted contribution retains
+an addressable zero-message member. Parent entries/receipts are unchanged. A
+subsequent edit of an old origin is retained in its own passive fork, and the
+same merge constructor rebuilds the effective ordered group before presentation.
+Expansion or shrinking cannot hide later messages in `model[0]`, move tool
+results to the tail or discard the current system-section baseline. The existing
+EventMapper/Wire path recognizes the typed contributions. Preview and merge
+materialization admit no model/tool/task work; only explicit composer submission
+uses the native SDK runtime and the selected local resources.

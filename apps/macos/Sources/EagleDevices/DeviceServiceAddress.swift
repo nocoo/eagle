@@ -1,7 +1,8 @@
+import CryptoKit
 import Foundation
 
 /// The relay origin this Mac talks to. A published App ships none: the person names the service
-/// they run, and the choice lives in their defaults rather than in the bundle.
+/// they run. Apps and helpers with the same signed profile share that choice.
 public enum DeviceServiceAddress {
   public static let defaultsKey = "eagle.deviceServiceAddress"
 
@@ -26,13 +27,28 @@ public enum DeviceServiceAddress {
     }
   }
 
-  public static func saved(_ defaults: UserDefaults = .standard) -> String? {
+  public static func saved(_ defaults: UserDefaults) -> String? {
     defaults.string(forKey: defaultsKey).flatMap(normalize)
+  }
+
+  public static func saved(profile: String) -> String? {
+    profileDefaults(profile).flatMap(saved)
+  }
+
+  @discardableResult
+  public static func save(_ value: String, profile: String) -> String? {
+    profileDefaults(profile).flatMap { save(value, defaults: $0) }
+  }
+
+  private static func profileDefaults(_ profile: String) -> UserDefaults? {
+    guard !profile.isEmpty, profile.utf8.count <= 80 else { return nil }
+    let digest = SHA256.hash(data: Data(profile.utf8)).map { String(format: "%02x", $0) }.joined()
+    return UserDefaults(suiteName: "ai.hexly.eagle.devices.address." + digest)
   }
 
   /// Stores the normalized origin, or clears the choice when the value is not usable.
   @discardableResult
-  public static func save(_ value: String, defaults: UserDefaults = .standard) -> String? {
+  public static func save(_ value: String, defaults: UserDefaults) -> String? {
     guard let origin = normalize(value) else {
       defaults.removeObject(forKey: defaultsKey)
       return nil

@@ -31,6 +31,30 @@ Three rules make that possible, and each is tested:
 Client-side layers use the same vocabulary: `client.ui`, `client.vm`,
 `client.transport` (`os.Logger`, subsystem `ai.hexly.bots`).
 
+The independent encrypted-cache Worker/DO uses `runtime.sync.fail` as the sole
+error origin for its refusal. Worker forwarding retains the bounded incoming
+trace/Bot context; returned failure ID/kind/layer is propagated by Bots as the
+existing ClassifiedFailure at warn, without a second error origin. R2 I/O/corrupt
+storage and Cache DO SQL reads are storage_failed, Registry RPC transport/internal
+SQL faults are internal, and protocol/crypto/
+authorization refusal is auth_failed. Original causes stay local; logs/wire never
+include authority, descriptor, cipher, plaintext or raw upstream error text.
+Header context must match the existing bounded trace/Bot grammar. Local metadata
+port denials retain their original cause and auth_failed origin.
+
+Automatic turns originate `tr_auto_<uuid-without-hyphens>` and use the same Bot,
+failure ID and origin propagation through existing sync crossings. Actual fetch
+or body I/O keeps its transport cause; active abort and remote bounded refusals
+are distinct. A preference storage failure has one runtime.sync.fail origin;
+initial read failures use tr_sync_preferences before any Bot is selected, and
+management exposes that retained failure rather than logging another origin.
+Only sync is paused; the original preference file is preserved and native work
+retains its lifecycle. No preference bytes or unbounded error text enter logs.
+The controller's own saved/current complete-binding refusal emits one
+runtime.sync.fail origin at that comparison, with the same automatic trace and
+Bot. A pending local apply retry retains the original lower-layer failure/cause;
+the turn catch neither remints nor logs a second error origin.
+
 ## Trace ownership
 
 | Originator | Trace shape | Example |
@@ -70,8 +94,8 @@ asserts bidirectional equality between constants and uses; before that it assert
 | --- | --- |
 | transport | `transport.conn.open.ok`, `transport.conn.open.reject`, `transport.conn.close.ok`, `transport.conn.close.end`, `transport.auth.fail`, `transport.frame.recv.ok`, `transport.frame.send.ok`, `transport.frame.send.drop` — a frame that cannot be decoded is `protocol.*`, not a second transport record |
 | protocol | `protocol.decode.fail`, `protocol.encode.fail`, `protocol.limit.fail`, `protocol.version.fail`, `protocol.command.start`, `protocol.command.ok`, `protocol.command.fail` — `ok` means decoded, validated and dispatched (not "succeeded"); `fail` is a propagated refusal after dispatch, or the origin record when no layer below classified the failure |
-| core | `core.catalog.load.ok`, `core.catalog.load.fail`, `core.catalog.write.ok`, `core.catalog.write.fail`, `core.bot.resolve.fail`, `core.bot.open.start`, `core.bot.open.ok`, `core.bot.open.fail`, `core.bot.close.ok`, `core.bot.close.fail`, `core.bot.close.degrade` (quarantine), `core.subscribe.start`, `core.subscribe.ok`, `core.subscribe.fail`, `core.submit.start`, `core.submit.ok`, `core.submit.fail`, `core.history.start`, `core.history.ok`, `core.history.fail`, `core.hub.publish.ok`, `core.hub.coalesce.ok`, `core.hub.snapshot.ok`, `core.hub.degrade`, `core.singleton.start`, `core.singleton.ok`, `core.singleton.fail`, `core.origin.replay.degrade` (an unreadable origin record line), `core.recovery.start`, `core.recovery.bot.ok`, `core.recovery.bot.fail`, `core.recovery.ok`, `core.delete.start`, `core.delete.ok`, `core.delete.fail`, `core.reconcile.ok`, `core.group.write.ok` |
-| runtime | `runtime.device.start`, `runtime.device.ok`, `runtime.device.fail`, `runtime.open.start`, `runtime.open.ok`, `runtime.open.fail`, `runtime.subscribe.start`, `runtime.subscribe.ok`, `runtime.subscribe.fail`, `runtime.submit.start`, `runtime.submit.ok`, `runtime.submit.fail`, `runtime.abort.start`, `runtime.abort.ok`, `runtime.abort.fail`, `runtime.recover.start`, `runtime.task.retry.ok`, `runtime.task.abort.ok`, `runtime.recover.ok`, `runtime.recover.fail`, `runtime.tools.refresh.ok`, `runtime.tools.refresh.fail`, `runtime.close.start`, `runtime.close.ok`, `runtime.close.fail`, `runtime.watch.end.ok`, `runtime.failure.classify` |
+| core | `core.sync.start`, `core.sync.ok`, `core.sync.fail`, `core.replica.start`, `core.replica.ok`, `core.replica.fail`, `core.catalog.load.ok`, `core.catalog.load.fail`, `core.catalog.write.ok`, `core.catalog.write.fail`, `core.bot.resolve.fail`, `core.bot.open.start`, `core.bot.open.ok`, `core.bot.open.fail`, `core.bot.close.ok`, `core.bot.close.fail`, `core.bot.close.degrade` (quarantine), `core.subscribe.start`, `core.subscribe.ok`, `core.subscribe.fail`, `core.submit.start`, `core.submit.ok`, `core.submit.fail`, `core.history.start`, `core.history.ok`, `core.history.fail`, `core.hub.publish.ok`, `core.hub.coalesce.ok`, `core.hub.snapshot.ok`, `core.hub.degrade`, `core.singleton.start`, `core.singleton.ok`, `core.singleton.fail`, `core.origin.replay.degrade` (an unreadable origin record line), `core.recovery.start`, `core.recovery.bot.ok`, `core.recovery.bot.fail`, `core.recovery.ok`, `core.delete.start`, `core.delete.ok`, `core.delete.fail`, `core.reconcile.ok`, `core.group.write.ok` |
+| runtime | `runtime.sync.start`, `runtime.sync.ok`, `runtime.sync.fail`, `runtime.replica.start`, `runtime.replica.ok`, `runtime.replica.fail`, `runtime.device.start`, `runtime.device.ok`, `runtime.device.fail`, `runtime.open.start`, `runtime.open.ok`, `runtime.open.fail`, `runtime.subscribe.start`, `runtime.subscribe.ok`, `runtime.subscribe.fail`, `runtime.submit.start`, `runtime.submit.ok`, `runtime.submit.fail`, `runtime.abort.start`, `runtime.abort.ok`, `runtime.abort.fail`, `runtime.recover.start`, `runtime.task.retry.ok`, `runtime.task.retry.fail`, `runtime.task.abort.ok`, `runtime.recover.ok`, `runtime.recover.fail`, `runtime.tools.refresh.ok`, `runtime.tools.refresh.fail`, `runtime.close.start`, `runtime.close.ok`, `runtime.close.fail`, `runtime.watch.end.ok`, `runtime.failure.classify` |
 | pi | `pi.report`, `pi.session.closed` |
 
 `*.start` pairs with exactly one `*.ok|fail` per layer reached. A layer that is
@@ -285,3 +309,158 @@ identity at the external port boundary (pi does not carry the submission trace h
 The adapter logs one start and outcome, never operation arguments, output, pairing
 codes or credentials. A refused/failed external receipt is one runtime extension
 failure; its full operation receipt remains in the conversation, outside logs.
+
+P0 history handoff logs `core.replica` and `runtime.replica` start/outcome with the
+HTTP trace and local botId only. Bundle contents, prompts, resource bytes and provider
+credentials are never log fields. The runtime alone logs an originating error; core
+records propagation. See RUNTIME.md for passive-import and continuation boundaries.
+
+
+P1 local bind/pull/apply/status reuse the `core.replica` / `runtime.replica` crossing
+catalog and request trace. Background entry scans report through `runtime.replica.fail`
+using the Bot-open trace, failure identity and botId only; a repeated failed scan episode
+is logged once until a successful scan. An existing failed SDK session is propagation
+(warn), not a newly minted error. Body text, entry data, model/tool inputs, resources and
+page payloads never enter these logs. A blocked source's status records only sequence and
+stable invalid_history code; durable receipt position still stays before the rejected fact.
+
+Saved-history `receipts` inventory uses the same replica crossing trace and origin/error
+classification; it adds no body-bearing log event. Its output is head/DocumentId metadata,
+not an applied ACK. Storage read failures propagate instead of being logged as missing
+history or silently returning an empty inventory.
+
+Receipt enumeration raw I/O errors retain one runtime storage_failed identity. Public
+close seals this instance without inventing a pi session_failed report (SDK reports
+SessionEnd.closed); later command failures propagate at warn, including cleanup. Existing
+SDK-guarded failures still use their original pi/runtime session episode. No raw error
+message is logged. Invalid protocol/cursor reads and actual cancellation do not close a
+healthy Session or claim a new SDK failed state.
+
+Root tombstone commands reuse core.replica start/outcome without a local Bot ID or body.
+A directory cleanup failure originates at core.delete.fail; the root command propagates
+the same identity at warn. Startup records each failed Bot cleanup at core.delete.fail
+with reason startup while reporting only successful moves in core.reconcile.ok. Root
+catalog I/O remains core.catalog.load.fail and stops startup. A cached socket's refused
+recover uses core.bot.resolve.fail and the original command trace, followed by the same
+failure identity at protocol.command.fail warn. Shared IDs, paths and history stay out
+of these records.
+
+
+Fixed-head resource preflight uses existing runtime.replica.fail / runtime.open.fail
+crossings. Invalid selected manifests are invalid_command + not_admitted; known install
+I/O before pin/admission is storage_failed + not_admitted with the original I/O cause.
+The runtime is the sole error origin, outer crossings retain that failure identity, and
+resource text, bytes, full file paths and package bodies are never log details. Closing a
+failed startup owner does not mint a second cleanup failure or claim SDK reason failed.
+
+A warm task-retry resource preflight refusal records runtime.task.retry.fail at its sole
+runtime error origin, with the HTTP command trace and Bot identity. Existing classified
+validation failures retain their identity and cause; raw filesystem I/O becomes
+storage_failed with its original cause. No package text, manifest or full local path is
+logged. This boundary covers resource preflight only; the existing SDK task-retry behavior
+is otherwise unchanged.
+
+Ordinary root resource selection uses existing runtime.submit start/outcome and core/protocol
+crossings with the original trace/Bot. Manifest/install refusal is not_admitted; pre-admission
+filesystem I/O is storage_failed with its cause. Exactly one error origin is recorded and
+outer layers propagate the same failure. Selector metadata, manifests, text and full local
+package paths are absent from log details. An accepted same-ID lookup emits no new failure.
+
+Ordinary admission's checked request-ID lookup validates the durable `whenBusy` binding
+before the core stored-record shortcut. A conflict uses `runtime.submit.fail` once with
+the incoming command trace/Bot/request and the original classified failure identity;
+outer layers propagate it. Pure status lookup does not perform admission validation.
+
+Raw SQLite failures while checking an admission retry binding use the existing submit
+classifier/session episode and runtime.submit.fail, keeping the command trace/Bot and
+original cause. The first occurrence owns the single error origin; a repeated episode
+propagates the same failure ID at warn. Existing ClassifiedFailure identity/cause remain
+intact. No raw SQLite message, table name, package text or local path is logged. This
+boundary covers only the retry-binding read, not pure status or later SDK lookups.
+
+
+Resource-only capture/import/apply keeps the existing runtime.replica start/outcome and
+core.replica crossings; it adds no event or history/admission log. First ordinary input
+uses the same runtime.submit failure boundary as history-backed resource selection.
+Missing refs remain an unapplied gap, never a successful complete manifest. Integrity or
+install refusal preserves the original classification/cause and sole error origin; logs
+do not include ordered refs, manifest bodies, resource bytes or full installation paths.
+
+P3 sync access uses the HTTP trace and Bot id across core and the private-device
+adapter. `runtime.sync.fail` owns one failure for a refused/unavailable Registry
+request or invalid metadata response; `core.sync.fail` propagates that same identity
+at warn level. Binding/storage/tombstone refusals originate in core before or after
+the remote await. Logs contain only bounded reason codes, never metadata bodies,
+endpoints, tokens, private keys or local socket paths. The endpoint returns its
+trace and failure id on classified failure. Authorization failure never becomes an
+offline directory fallback. No SDK submission is made by this route.
+
+
+P4 authenticated pull reuses runtime.sync.start/ok/fail for the actual exchange and private
+metadata calls, and core.sync.fail for ready-only/binding refusals. Each request carries the
+same trace across the dedicated HTTP handshake/page route; an innermost ClassifiedFailure
+keeps its failure identity through remote response and local HTTP propagation. Outer layers
+record propagation, not a second error origin. Local ready-binding I/O is storage_failed;
+missing directional authorization is auth_failed and network-unreachable remains distinct.
+Logs carry no proof payload/signature, keys, plaintext pages/resources, tokens or local socket
+paths. Listener bind failure uses listener_error/sync_bind_failed and does not prevent local
+chat startup. Parent OSLog records publication/withdrawal unconfirmed without metadata bodies.
+A quit reply/process exit is not proof of confirmed endpoint withdrawal; unknown stays unknown
+on a late callback. Owned CLI/TCP fixtures establish protocol behavior, not physical connectivity.
+Response-body stream I/O, including a truncated body after successful headers, retains
+sync_network_unreachable/internal and the original nested I/O cause (local HTTP503); it does
+not become auth_failed403. Size/JSON/crypto validation remains outside that I/O catch. Internal
+use-point guard failures keep their original cause with one runtime auth_failed origin; they
+are not storage failures. Remote failures accept the existing protocol FAILURE_ID grammar,
+including adapter classifier identities; B retains the only error origin and A propagates the
+same failure id as a warning with the shared trace and its own local Bot id.
+Positive endpoint reconfirmation uses the current trusted Node session,
+and a late Self reply after shutdown cannot claim renewed readiness/publication.
+
+
+Durable object pull/apply use the existing runtime.sync start/ok/fail trace and original local Bot
+context. Their four typed private crossings preserve the same trace; no cipher/page/key,signature
+payload,pin body or private filesystem path is logged. File open/read/stage/file-fsync/link/dir-fsync
+failures are classified at the object storage boundary as storage_failed, preserving the original
+native cause and one error origin; outer crossings only warn with the same failure identity.
+Complete malformed signature/digest/AEAD/protocol data remains auth_failed. Offline local apply
+success does not certify peer delivery,cloud caching or model/tool execution. Network body I/O
+and original direct-page failure propagation retain their previously delivered behavior.
+
+## Online-holder relay attribution
+
+Relay retains the existing runtime.sync start/ok/fail trace and actual local Bot.
+A holder's strictly validated classified no-body failure propagates through Worker
+and receiver with its original failure identity: the holder is the only error
+origin. It does not go through a second successful-body final authorization that
+could mint a different failure. Successful encrypted bodies always undergo final
+current Registry authorization, expiry and holder-generation checks before supply.
+Malformed holder failures are rejected at the owning Worker boundary.
+
+Registry and owning relay-DO SQL exec/result-materialization faults retain the
+original local cause and return503 (Registry RPC unavailable/internal; DO storage
+failure), never directory gap/auth403. ACK and receipt promises are awaited inside
+the owning DO catch. Logs/wire contain only bounded code/failure/trace/Bot, never
+SQL text, raw error message, authority, descriptor, cipher, page or key. Outer
+ClassifiedFailure crossings warn without creating another error origin. The local
+owned fault assertions inspect cause directly; production logs do not expose it.
+
+Relay delivery receipt means actual persistent apply progress for its complete
+receiver/source key. It is distinct from cloudCached, stored, native completion
+and all-path sender status. The latter remains unknown until its next slice.
+
+All-path status-report/status-read reuse runtime.sync.fail and existing HTTP/private
+metadata crossings with one trace and actual Bot. Their real DO SQL faults return
+503/storage_failed with the original owned cause; Registry SQL uses its existing
+RPC-unavailable/internal503 path. Worker is the sole error origin for its classified
+failure and Bots propagates the same failure at warn. Local ready/configuration
+refusals retain their owning failure. Logs/wire contain no SQL text, authority,
+status body or raw error message.
+
+The independent automatic metadata action may fail while direct/cache apply and
+native work succeed. Unknown or the last authenticated exact-key/timestamped
+snapshot remains visible; missing refresh is not a new confirmation. Received and
+applied stay distinct during real materialization failure. Actual transport loss
+after a Worker commit is retryable from persistent status, without body download,
+apply/provider replay or a second failure origin. Complete malformed JSON remains
+protocol/auth failure and is not labeled transport I/O.

@@ -16,6 +16,8 @@ export type Invocation = {
   /** Caller-owned and durable: pi dedupes by it inside one conversation, across restarts. */
   readonly requestId: string;
   readonly text: string;
+  readonly contextId?: string;
+  readonly resourceHead?: string;
   readonly origin: InvocationOrigin;
   readonly whenBusy?: BusyMode;
   readonly trace: string;
@@ -28,6 +30,7 @@ export interface InvocationPort {
   submission(query: {
     readonly botId: string;
     readonly requestId: string;
+    readonly contextId?: string;
   }): Promise<Submission | undefined>;
   /** Delivers the current run state on attach, then transitions. Never opens the bot. */
   observe(botId: string, sink: (running: boolean) => void): { detach(): void };

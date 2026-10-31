@@ -2,6 +2,7 @@ import BotsCore
 import BotsFeatures
 import BotsTransport
 import Combine
+import EagleDevices
 import Foundation
 import Testing
 
@@ -13,6 +14,115 @@ import Testing
 @MainActor
 @Suite("Bots window", .serialized)
 struct BotsWindowTests {
+  @Test("owned native head selection and merge feed the original composer and actual SDK")
+  func nativeContextChain() async throws {
+    let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("../../../../").standardizedFileURL
+    let fixture = Process()
+    let output = Pipe()
+    let input = Pipe()
+    let errors = Pipe()
+    fixture.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    fixture.arguments = ["node", "apps/bots/test/support/native-context.fixture.ts"]
+    fixture.currentDirectoryURL = repository
+    fixture.standardOutput = output
+    fixture.standardInput = input
+    fixture.standardError = errors
+    try fixture.run()
+    defer {
+      try? input.fileHandleForWriting.close()
+      if fixture.isRunning { fixture.waitUntilExit() }
+    }
+    func response() throws -> DeviceJSON {
+      var line = Data()
+      while line.last != 10 {
+        let chunk = output.fileHandleForReading.availableData
+        guard !chunk.isEmpty else {
+          fixture.waitUntilExit()
+          let stderr =
+            String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+          throw ClientError("owned fixture exited \(fixture.terminationStatus): \(stderr)")
+        }
+        line.append(chunk)
+      }
+      return try JSONDecoder().decode(DeviceJSON.self, from: line)
+    }
+    let info = try response()
+    let root = try #require(info["root"]?.string)
+    let port = Int(try #require(info["port"]?.number))
+    let bot = try #require(info["bot"]?.string)
+    let headValues = info["heads"]?.array?.compactMap(\.string)
+    let heads = try #require(headValues)
+    let settings = BotsSettings(rootPath: root, port: String(port))
+    let bots = BotsWorkspaceViewModel(settings: settings, gatewayProbe: { true })
+    await bots.start()
+    defer { bots.disconnect() }
+    bots.select(bot)
+    try await waitUntil(timeout: 10) { bots.connection == .ready }
+    let history = try #require(bots.history)
+    await history.loadHeads()
+    #expect(heads.allSatisfy { head in history.heads.contains { $0.head == head && $0.ready } })
+    await history.prepareMerge(heads: heads)
+    let preview = try #require(history.mergePreview)
+    #expect(preview.conflicts.isEmpty)
+    let file = try #require(preview.resources.first { $0.name == "AGENTS.md" })
+    let version = try #require(file.versions.first { $0.heads.contains(heads[0]) })
+    await history.merge(
+      choices: [], resources: [ReplicaResourceChoice(name: file.name, sha256: version.sha256)])
+    #expect(history.historyError == nil)
+    let selected = try #require(history.conversation.contextId)
+    try await waitUntil(timeout: 10) {
+      let text = String(describing: bots.entries)
+      return bots.connection == .ready && text.contains("left 分支原文") && text.contains("right 分支原文")
+    }
+    func evidence() throws -> DeviceJSON {
+      try input.fileHandleForWriting.write(
+        contentsOf: JSONEncoder().encode(
+          DeviceJSON.object(["method": .string("evidence"), "contextId": .string(selected)]))
+          + Data([10]))
+      return try response()
+    }
+    let passive = try evidence()
+    #expect(passive["calls"] == info["baselineCalls"], "selection and merge admit no provider work")
+    bots.setDraft("从原生 composer 继续")
+    bots.send()
+    let outbox = OutboxStore(directory: settings.clientDirectory)
+    let pending = try #require(try outbox.entries(for: bot).first)
+    #expect(pending.contextId == selected)
+    #expect(pending.resourceHead == history.conversation.resourceHead)
+    try await waitUntil(timeout: 10) {
+      String(describing: bots.entries).contains("原生合并继续完成")
+        && (try? outbox.entries(for: bot).isEmpty) == true
+    }
+    let settled = try #require(
+      try outbox.settledRequests().first { $0.requestId == pending.requestId })
+    #expect(settled.contextId == selected && settled.status == .done)
+    let result = try evidence()
+    #expect(result["calls"]?.number == (info["baselineCalls"]?.number ?? 0) + 1)
+    let provider =
+      String(data: try JSONEncoder().encode(result["providerInputs"]), encoding: .utf8) ?? ""
+    #expect(provider.contains("left 分支原文") && provider.contains("right 分支原文"))
+    let activeResources =
+      String(data: try JSONEncoder().encode(result["providerResources"]), encoding: .utf8) ?? ""
+    #expect(
+      activeResources.contains("left native instructions")
+        && !activeResources.contains("right native instructions"),
+      "the current SDK system sections use the selected resource; historical sections stay in their original contributions"
+    )
+    #expect(result["originalParentsUnchanged"] == .array([.bool(true), .bool(true)]))
+    #expect(result["originalToolBytes"] == .string("original native tool bytes"))
+    #expect(result["records"] == .array([]))
+    bots.disconnect()
+    let reopened = BotsWorkspaceViewModel(settings: settings, gatewayProbe: { true })
+    await reopened.start()
+    defer { reopened.disconnect() }
+    reopened.select(bot)
+    try await waitUntil(timeout: 10) { String(describing: reopened.entries).contains("原生合并继续完成") }
+    #expect(reopened.history?.conversation.contextId == selected)
+    #expect(
+      try evidence()["calls"] == result["calls"], "reopening does not replay provider/tool work")
+  }
+
   private func waitUntil(
     timeout: TimeInterval = 2,
     _ condition: () -> Bool
@@ -103,7 +213,7 @@ struct BotsWindowTests {
 
   @Test("sidebar previews use the last received chat text rather than lifecycle state")
   func sidebarPreview() async throws {
-    let (bots, _, port, _) = try await window()
+    let (bots, app, port, _) = try await window()
     #expect(bots.items.first?.subtitle == "")
     port.emit(
       .snapshot(
@@ -120,14 +230,23 @@ struct BotsWindowTests {
               id: "tool", role: .tool, state: .complete, createdAt: "x",
               blocks: [.text("tool output")]),
           ])))
-    try await Task.sleep(for: .milliseconds(60))
+    // Emitting queues the event; drain shell publication only after the model consumes it.
+    try await waitUntil {
+      app.conversation.hasSnapshot && app.conversation.state.messages.last?.id == "tool"
+    }
+    await bots.awaitScheduledPublishDrain()
     #expect(bots.items.first?.subtitle == "可以正常轮询。 下一行")
     port.emit(.connection(.reconnecting(attempt: 1)))
-    try await Task.sleep(for: .milliseconds(60))
+    try await waitUntil { app.conversation.connection == .reconnecting(attempt: 1) }
+    await bots.awaitScheduledPublishDrain()
     #expect(bots.items.first?.subtitle == "可以正常轮询。 下一行")
     port.emit(.connection(.ready))
     port.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
-    try await Task.sleep(for: .milliseconds(60))
+    try await waitUntil {
+      app.conversation.connection == .ready && app.conversation.hasSnapshot
+        && app.conversation.state.messages.isEmpty
+    }
+    await bots.awaitScheduledPublishDrain()
     #expect(bots.items.first?.subtitle == "")
   }
 
@@ -579,7 +698,7 @@ final class StubConversation: ConversationPort {
   private var continuation: AsyncStream<ConversationEvent>.Continuation?
   private var pending: [ConversationEvent] = []
 
-  func open(botId: String) -> AsyncStream<ConversationEvent> {
+  func open(botId: String, contextId: String? = nil) -> AsyncStream<ConversationEvent> {
     opens += 1
     continuation?.finish()
     continuation = nil

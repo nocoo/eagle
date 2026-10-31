@@ -4,6 +4,19 @@ import { connect, type Socket } from "node:net";
 import { dirname, isAbsolute } from "node:path";
 
 const METHODS = new Set([
+  "sync.identity",
+  "sync.access",
+  "sync.peer.authorize",
+  "sync.proof",
+  "sync.key.descriptor",
+  "sync.key.publish",
+  "sync.key.lookup",
+  "sync.cache.authority",
+  "sync.relay.authority",
+  "sync.key.seal",
+  "sync.key.envelope",
+  "sync.key.open",
+  "sync.endpoints.self",
   "status",
   "directory",
   "execute",

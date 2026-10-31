@@ -29,11 +29,18 @@ import { PROTOCOL_VERSION } from "./version.ts";
 
 export type ClientCommand =
   | { readonly type: "hello"; readonly protocolVersion: number; readonly client: string }
-  | { readonly type: "subscribe"; readonly botId: string; readonly trace: string }
+  | {
+      readonly type: "subscribe";
+      readonly botId: string;
+      readonly contextId?: string;
+      readonly trace: string;
+    }
   | {
       readonly type: "send";
       readonly requestId: string;
       readonly text: string;
+      readonly resourceHead?: string;
+      readonly contextId?: string;
       readonly whenBusy: "followUp" | "steer" | "reject";
       readonly trace: string;
     }
@@ -298,7 +305,12 @@ export function decodeCommand(raw: Record<string, unknown>): ClientCommand {
         client: str(ctx, raw.client, "client"),
       };
     case "subscribe":
-      return { type, botId: str(ctx, raw.botId, "botId"), trace: str(ctx, raw.trace, "trace") };
+      return {
+        type,
+        botId: str(ctx, raw.botId, "botId"),
+        ...(raw.contextId === undefined ? {} : { contextId: str(ctx, raw.contextId, "contextId") }),
+        trace: str(ctx, raw.trace, "trace"),
+      };
     case "send": {
       // Only an omitted whenBusy defaults; an explicit null is a client bug.
       const whenBusy =
@@ -309,6 +321,10 @@ export function decodeCommand(raw: Record<string, unknown>): ClientCommand {
         type,
         requestId: str(ctx, raw.requestId, "requestId"),
         text: anyStr(ctx, required(ctx, raw, "text"), "text"),
+        ...(raw.contextId === undefined ? {} : { contextId: str(ctx, raw.contextId, "contextId") }),
+        ...(raw.resourceHead === undefined
+          ? {}
+          : { resourceHead: str(ctx, raw.resourceHead, "resourceHead") }),
         whenBusy,
         trace: str(ctx, raw.trace, "trace"),
       };

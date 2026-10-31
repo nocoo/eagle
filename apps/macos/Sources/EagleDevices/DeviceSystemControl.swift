@@ -4,6 +4,7 @@ import ServiceManagement
 
 @MainActor public protocol DeviceControl: AnyObject {
   var socketPath: String? { get }
+  var serviceProfile: String? { get }
   func start(
     confirm: @escaping @MainActor @Sendable (DeviceApprovalRequest) async -> Bool) async throws
   func retryStart(
@@ -14,6 +15,7 @@ import ServiceManagement
 }
 
 extension DeviceControl {
+  public var serviceProfile: String? { nil }
   public func retryStart(
     confirm: @escaping @MainActor @Sendable (DeviceApprovalRequest) async -> Bool
   ) async throws {
@@ -30,6 +32,7 @@ extension DeviceControl {
   private var client: DeviceXPCClient?
   private let log = Logger(subsystem: "ai.hexly.eagle.devices", category: "background")
   public var socketPath: String? { configuration?.socketPath }
+  public var serviceProfile: String? { configuration?.profile }
   public init(bundle: URL = Bundle.main.bundleURL, defaults: UserDefaults = .standard) {
     self.bundle = bundle
     self.defaults = defaults

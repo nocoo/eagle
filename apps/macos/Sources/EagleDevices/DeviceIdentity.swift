@@ -66,6 +66,49 @@ public struct DeviceIdentity: Sendable {
     return try key.signature(for: Data(payload.utf8)).base64URL
   }
 
+  public func signSyncProof(
+    _ request: SyncProofRequest, serviceOrigin: String, now: Int64
+  ) throws -> String {
+    let payload = try request.signingPayload(
+      serviceOrigin: serviceOrigin, deviceId: deviceId, publicKey: publicKey, now: now)
+    return try key.signature(for: Data(payload.utf8)).base64URL
+  }
+
+  public func wrappingDescriptor(
+    key: DeviceWrappingKey, serviceOrigin: String, credentialVersion: Int64
+  ) throws -> DeviceJSON {
+    try key.requireOwner(self, serviceOrigin: serviceOrigin)
+    guard credentialVersion > 0, credentialVersion <= 9_007_199_254_740_991 else {
+      throw DeviceIdentityError.invalidPayload
+    }
+    var fields: [String: DeviceJSON] = [
+      "version": .number(1), "purpose": .string("replica.wrap"),
+      "registryOrigin": .string(serviceOrigin), "deviceId": .string(deviceId),
+      "publicKey": .string(publicKey), "credentialVersion": .number(Double(credentialVersion)),
+      "keyId": .string(key.keyId), "wrappingPublicKey": .string(key.publicKey),
+    ]
+    let payload = "eagle-bots-wrap-descriptor-v1\n" + (try DeviceJSON.object(fields).canonical())
+    fields["signature"] = .string(try self.key.signature(for: Data(payload.utf8)).base64URL)
+    return .object(fields)
+  }
+
+  func signPageManifest(_ manifest: DevicePageManifest) throws -> DeviceJSON {
+    guard case .object(var fields) = manifest.value else {
+      throw DeviceIdentityError.invalidPayload
+    }
+    fields["signature"] = .string(
+      try key.signature(for: Data(manifest.signingPayload(identity: self).utf8)).base64URL)
+    return .object(fields)
+  }
+  func signKeyEnvelope(_ envelope: DeviceKeyEnvelope) throws -> DeviceJSON {
+    guard case .object(var fields) = envelope.value else {
+      throw DeviceIdentityError.invalidPayload
+    }
+    fields["signature"] = .string(
+      try key.signature(for: Data(envelope.signingPayload(identity: self).utf8)).base64URL)
+    return .object(fields)
+  }
+
   /// Called only after the trusted App confirms this exact immutable request.
   public func approve(_ request: DeviceApprovalRequest, now: Int64) throws -> DeviceApproval {
     try request.validate(sourceDeviceId: deviceId, now: now)

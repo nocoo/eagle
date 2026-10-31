@@ -213,3 +213,61 @@ struct DeviceIdentityTests {
     ]).decoded(DeviceApprovalRequest.self)
   }
 }
+
+extension DeviceIdentityTests {
+  @Test("typed sync proof matches Node bytes and refuses wrong owners, scope, fields and time")
+  func syncProof() throws {
+    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("../../../../fixtures/bots-protocol/sync-proof.http.json")
+      .standardized
+    let fixture = try JSONDecoder().decode(DeviceJSON.self, from: Data(contentsOf: url))
+    let request = try #require(fixture["request"])
+    let now = Int64(try #require(request["expiresAt"]?.number)) - 30000
+    let origin = try #require(request["registryOrigin"]?.string)
+    let reader = try #require(request["reader"])
+    let payload = try SyncProofRequest(request).signingPayload(
+      serviceOrigin: origin, deviceId: try #require(reader["deviceId"]?.string),
+      publicKey: try #require(reader["publicKey"]?.string), now: now)
+    #expect(payload == fixture["signingPayload"]?.string)
+    let publicText = try #require(reader["publicKey"]?.string)
+    let publicData = try #require(Data(base64URL: publicText))
+    let signatureText = try #require(fixture["signature"]?.string)
+    let signatureData = try #require(Data(base64URL: signatureText))
+    let publicKey = try Curve25519.Signing.PublicKey(rawRepresentation: publicData.dropFirst(12))
+    #expect(publicKey.isValidSignature(signatureData, for: Data(payload.utf8)))
+    let own = try DeviceIdentity.loadOrCreate(profile: "sync", vault: MemoryVault())
+    guard case .object(var fields) = request, case .object(var local) = reader else {
+      throw DeviceIdentityError.invalidPayload
+    }
+    local["deviceId"] = .string(own.deviceId)
+    local["publicKey"] = .string(own.publicKey)
+    fields["reader"] = .object(local)
+    let typed = try SyncProofRequest(.object(fields))
+    let signature = try own.signSyncProof(typed, serviceOrigin: origin, now: now)
+    let ownKey = try Curve25519.Signing.PublicKey(
+      rawRepresentation: (try #require(Data(base64URL: own.publicKey))).dropFirst(12))
+    #expect(
+      ownKey.isValidSignature(
+        try #require(Data(base64URL: signature)),
+        for: Data(
+          try typed.signingPayload(
+            serviceOrigin: origin, deviceId: own.deviceId, publicKey: own.publicKey, now: now
+          ).utf8)))
+    for (field, value) in [
+      ("role", DeviceJSON.string("server")), ("purpose", .string("execute")),
+      ("sharedBotId", .string("bad")), ("readerNonce", .string("short")),
+      ("expiresAt", .number(Double(now))), ("expiresAt", .number(Double(now) + 60001)),
+      ("registryOrigin", .string("https://other.example")), ("payload", .string("arbitrary")),
+      ("server", .object(local)),
+    ] {
+      var wrong = fields
+      wrong[field] = value
+      #expect(throws: (any Error).self) {
+        try own.signSyncProof(SyncProofRequest(.object(wrong)), serviceOrigin: origin, now: now)
+      }
+    }
+    #expect(throws: (any Error).self) {
+      try own.signRegistration(payload, serviceOrigin: origin, now: now)
+    }
+  }
+}

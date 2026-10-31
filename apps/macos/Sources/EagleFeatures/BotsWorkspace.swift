@@ -153,6 +153,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
   private let gatewayProbe: @MainActor () async -> Bool?
   private let presenter = BotsPresenter()
   private var app: AppViewModel?
+  var history: AppViewModel? { app }
   private var connectionTask: Task<Void, Never>?
   private var connectionGeneration = UUID()
   private var rows: [SidebarBotRow] = []
@@ -194,7 +195,8 @@ final class BotsWorkspaceViewModel: ObservableObject {
       conversation: ConversationViewModel(conversation: connection, outbox: outbox),
       outbox: outbox,
       triggers: TriggerHTTPClient(baseURL: settings.baseURL, token: token),
-      peers: PeerHTTPClient(baseURL: settings.baseURL, token: token)
+      peers: PeerHTTPClient(baseURL: settings.baseURL, token: token),
+      replicas: catalog
     )
   }
 

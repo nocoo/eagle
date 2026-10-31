@@ -6,6 +6,8 @@ import Foundation
 /// lost when the app closes before the client has stored it (PROTOCOL.md, client duties 2).
 public struct SettledRequest: Codable, Sendable, Equatable, Identifiable {
   public var botId: String
+  public var contextId: String?
+  public var resourceHead: String?
   /// The submission the record belongs to: ranking is keyed on it (`I14`).
   public var submissionId: String
   public var requestId: String
@@ -20,9 +22,12 @@ public struct SettledRequest: Codable, Sendable, Equatable, Identifiable {
   public init(
     botId: String,
     record: Submission,
-    at: String = ISO8601DateFormatter().string(from: Date())
+    at: String = ISO8601DateFormatter().string(from: Date()),
+    contextId: String? = nil, resourceHead: String? = nil
   ) {
     self.botId = botId
+    self.contextId = contextId
+    self.resourceHead = resourceHead
     submissionId = record.id
     requestId = record.requestId
     status = record.status
@@ -38,6 +43,8 @@ public struct SettledRequest: Codable, Sendable, Equatable, Identifiable {
 /// terminal record is stored in the same atomic write that removes its entry.
 public struct OutboxEntry: Codable, Sendable, Equatable, Identifiable {
   public var botId: String
+  public var contextId: String?
+  public var resourceHead: String?
   public var requestId: String
   public var text: String
   public var whenBusy: BusyMode
@@ -50,13 +57,28 @@ public struct OutboxEntry: Codable, Sendable, Equatable, Identifiable {
     requestId: String,
     text: String,
     whenBusy: BusyMode = .followUp,
-    createdAt: String = ISO8601DateFormatter().string(from: Date())
+    createdAt: String = ISO8601DateFormatter().string(from: Date()),
+    contextId: String? = nil, resourceHead: String? = nil
   ) {
     self.botId = botId
+    self.contextId = contextId
+    self.resourceHead = resourceHead
     self.requestId = requestId
     self.text = text
     self.whenBusy = whenBusy
     self.createdAt = createdAt
+  }
+}
+
+public struct ReplicaSelection: Codable, Sendable, Equatable {
+  public let contextId: String?
+  public let seedHead: String?
+  public let resourceHead: String?
+
+  public init(contextId: String?, seedHead: String?, resourceHead: String?) {
+    self.contextId = contextId
+    self.seedHead = seedHead
+    self.resourceHead = resourceHead
   }
 }
 
@@ -66,20 +88,27 @@ private struct OutboxDocument: Codable {
   /// Requests the daemon refused: they are never replayed, even if their entry could not
   /// be removed in the same write.
   var refused: [String]
+  var selections: [String: ReplicaSelection]
 
-  init(entries: [OutboxEntry] = [], settled: [SettledRequest] = [], refused: [String] = []) {
+  init(
+    entries: [OutboxEntry] = [], settled: [SettledRequest] = [], refused: [String] = [],
+    selections: [String: ReplicaSelection] = [:]
+  ) {
     self.entries = entries
     self.settled = settled
     self.refused = refused
+    self.selections = selections
   }
 
-  private enum CodingKeys: String, CodingKey { case entries, settled, refused }
+  private enum CodingKeys: String, CodingKey { case entries, settled, refused, selections }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     entries = try container.decode([OutboxEntry].self, forKey: .entries)
     settled = try container.decodeIfPresent([SettledRequest].self, forKey: .settled) ?? []
     refused = try container.decodeIfPresent([String].self, forKey: .refused) ?? []
+    selections =
+      try container.decodeIfPresent([String: ReplicaSelection].self, forKey: .selections) ?? [:]
   }
 }
 
@@ -123,14 +152,32 @@ public final class OutboxStore {
 
   public func settledRequests() throws -> [SettledRequest] { try reload().settled }
 
+  public func selection(for botId: String) throws -> ReplicaSelection? {
+    try reload().selections[botId]
+  }
+
+  public func select(_ selection: ReplicaSelection?, for botId: String) throws {
+    Self.lock.lock()
+    defer { Self.lock.unlock() }
+    var document = try Self.read(fileURL)
+    document.selections[botId] = selection
+    try persist(document)
+  }
+
   public func refusedRequests() throws -> [String] {
     try Set(reload().refused).union(fallbackRefusals()).sorted()
   }
 
   public func add(_ entry: OutboxEntry) throws {
     try mutate { entries, settled, refused in
+      if let previous = entries.first(where: { $0.requestId == entry.requestId }) {
+        guard previous.botId == entry.botId, previous.contextId == entry.contextId,
+          previous.resourceHead == entry.resourceHead, previous.text == entry.text,
+          previous.whenBusy == entry.whenBusy
+        else { throw ClientError("the request selection changed") }
+        return (entries, settled, refused)
+      }
       var next = entries
-      next.removeAll { $0.requestId == entry.requestId }
       next.append(entry)
       return (next, settled, refused)
     }
@@ -190,12 +237,20 @@ public final class OutboxStore {
   }
 
   /// Removes the entry only after its terminal record is in the same atomic write.
-  public func settle(_ record: Submission, botId: String) throws {
+  public func settle(_ record: Submission, botId: String, contextId: String? = nil) throws {
     try mutate { entries, settled, refused in
       var next = entries
       next.removeAll { $0.requestId == record.requestId }
       var records = settled.filter { $0.requestId != record.requestId }
-      records.append(SettledRequest(botId: botId, record: record))
+      let previous = entries.first { $0.requestId == record.requestId }
+      guard previous == nil || (previous?.botId == botId && previous?.contextId == contextId) else {
+        throw ClientError("the settlement belongs to another context")
+      }
+      let existing = settled.first { $0.requestId == record.requestId }
+      records.append(
+        SettledRequest(
+          botId: botId, record: record, contextId: contextId,
+          resourceHead: previous?.resourceHead ?? existing?.resourceHead))
       if records.count > Self.settledLimit {
         records.removeFirst(records.count - Self.settledLimit)
       }
@@ -216,14 +271,14 @@ public final class OutboxStore {
   /// Read-modify-write under the process lock. A read or decode failure fails the
   /// mutation and leaves the file untouched.
   private func mutate(
-    _ change: ([OutboxEntry], [SettledRequest], [String]) -> (
+    _ change: ([OutboxEntry], [SettledRequest], [String]) throws -> (
       [OutboxEntry], [SettledRequest], [String]
     )
   ) throws {
     Self.lock.lock()
     defer { Self.lock.unlock() }
     let document = try Self.read(fileURL)
-    let (entries, settled, refused) = change(
+    let (entries, settled, refused) = try change(
       document.entries,
       document.settled,
       document.refused
@@ -231,7 +286,9 @@ public final class OutboxStore {
     self.cache = entries
     self.settled = settled
     self.refused = refused
-    try persist()
+    try persist(
+      OutboxDocument(
+        entries: entries, settled: settled, refused: refused, selections: document.selections))
   }
 
   private static func read(_ url: URL) throws -> OutboxDocument {
@@ -253,15 +310,13 @@ public final class OutboxStore {
     throw ClientError("the outbox file is unreadable")
   }
 
-  private func persist() throws {
+  private func persist(_ document: OutboxDocument) throws {
     try FileManager.default.createDirectory(
       at: directory,
       withIntermediateDirectories: true,
       attributes: [.posixPermissions: 0o700]
     )
-    let data = try JSONEncoder().encode(
-      OutboxDocument(entries: cache, settled: settled, refused: refused)
-    )
+    let data = try JSONEncoder().encode(document)
     try data.write(to: fileURL, options: [.atomic])
     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
   }

@@ -1,15 +1,132 @@
 // The composition root: one daemon over one root, wired from configuration, closed cleanly.
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { createServer as createSocketServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { readConfig } from "../src/config.ts";
 import { startDaemon } from "../src/main.ts";
 import { readGateway, writeGateway } from "../src/server/gateway.ts";
 import { waitFor } from "./support/pi.ts";
+
+test("close and SIGTERM start local cleanup while real private Self I/O is held", async (t) => {
+  for (const mode of ["close", "SIGTERM"] as const)
+    await t.test(mode, async () => {
+      const root = await mkdtemp("/tmp/bots-self-close-");
+      const socketPath = join(root, "device.sock");
+      const sockets: Socket[] = [];
+      const releases: (() => void)[] = [];
+      let held!: () => void;
+      const selfRequested = new Promise<void>((resolve) => {
+        held = resolve;
+      });
+      const socketServer = createSocketServer((socket) => {
+        sockets.push(socket);
+        let text = "";
+        socket.on("data", (bytes) => {
+          text += bytes.toString();
+          if (!text.includes("\n")) return;
+          const request = JSON.parse(text.slice(0, text.indexOf("\n"))) as {
+            requestId: string;
+            method: string;
+          };
+          assert.equal(request.method, "sync.endpoints.self");
+          releases.push(() =>
+            socket.end(
+              JSON.stringify({
+                requestId: request.requestId,
+                result: {
+                  version: 1,
+                  addresses: ["100.64.1.1"],
+                  digest: createHash("sha256")
+                    .update(JSON.stringify(["100.64.1.1"]))
+                    .digest("hex"),
+                },
+              }) + "\n",
+            ),
+          );
+          held();
+        });
+      });
+      await new Promise<void>((resolve) => socketServer.listen(socketPath, resolve));
+      await chmod(socketPath, 0o600);
+      const script = join(root, "owned.mjs");
+      await writeFile(
+        script,
+        `
+import {createInterface} from 'node:readline';
+import {readConfig} from ${JSON.stringify(new URL("../src/config.ts", import.meta.url).href)};
+import {startDaemon} from ${JSON.stringify(new URL("../src/main.ts", import.meta.url).href)};
+const daemon=await startDaemon(readConfig({argv:['--root',${JSON.stringify(root)},'--port','0','--sync-port','0'],env:{BOTS_DEVICE_SOCKET:${JSON.stringify(socketPath)}}}));
+console.log(JSON.stringify({port:daemon.port}));
+for await(const line of createInterface({input:process.stdin})){
+ if(line==='close'){await daemon.close();console.log(JSON.stringify({closed:true,ready:daemon.sync.status().ready}));break;}
+}
+`,
+      );
+      const child = spawn(
+        process.execPath,
+        mode === "SIGTERM"
+          ? [
+              new URL("../scripts/serve.ts", import.meta.url).pathname,
+              "--root",
+              root,
+              "--port",
+              "0",
+              "--sync-port",
+              "0",
+            ]
+          : [script],
+        {
+          env: { ...process.env, BOTS_DEVICE_SOCKET: socketPath },
+          stdio: ["pipe", "pipe", "pipe"],
+        },
+      );
+      const lines = createInterface({ input: child.stdout });
+      let stderr = "";
+      child.stderr.on("data", (bytes) => {
+        stderr += bytes.toString();
+      });
+      const exited = new Promise<number | null>((resolve) => child.once("exit", resolve));
+      let cleanupStarted = false;
+      try {
+        const first = await lines[Symbol.asyncIterator]().next();
+        const ready = JSON.parse(first.value as string) as { port: number };
+        assert.equal((await fetch(`http://127.0.0.1:${ready.port}/v1/health`)).status, 200);
+        await selfRequested;
+        if (mode === "SIGTERM") child.kill("SIGTERM");
+        else child.stdin.end("close\n");
+        for (let i = 0; i < 50; i++) {
+          try {
+            await fetch(`http://127.0.0.1:${ready.port}/v1/health`);
+          } catch {
+            cleanupStarted = true;
+            break;
+          }
+          await delay(10);
+        }
+      } finally {
+        for (const release of releases) release();
+        const code = await exited;
+        lines.close();
+        for (const socket of sockets) socket.destroy();
+        await new Promise<void>((resolve) => socketServer.close(() => resolve()));
+        await rm(root, { recursive: true, force: true });
+        assert.equal(code, 0, stderr);
+      }
+      assert.equal(
+        cleanupStarted,
+        true,
+        "local HTTP cleanup starts before releasing Self, within the original shutdown budget",
+      );
+    });
+});
 
 test("saved gateway credentials authorize model requests on every daemon boot", async () => {
   const root = await mkdtemp(join(tmpdir(), "bots-saved-gateway-"));

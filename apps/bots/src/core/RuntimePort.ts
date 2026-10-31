@@ -15,6 +15,8 @@ import type {
   Usage,
 } from "./domain.ts";
 
+export { INVOCATION_ID, MAX_INVOCATION_TEXT } from "./Invocation.ts";
+
 export type RuntimeEvent = { readonly trace: string } & (
   | { readonly type: "append"; readonly message: Message; readonly replaces?: string }
   | { readonly type: "delta"; readonly messageId: string; readonly changes: readonly DeltaChange[] }
@@ -60,6 +62,8 @@ export type RuntimeBotSpec = {
 export type SubmitInput = {
   readonly requestId: string;
   readonly text: string;
+  readonly contextId?: string;
+  readonly resourceHead?: string;
   readonly whenBusy: BusyMode;
   readonly trace: string;
 };
@@ -74,14 +78,53 @@ export type RuntimeHistory = {
   readonly hasMore: boolean;
 };
 
+/** P0's dedicated local history body limit; ordinary API/frame limits are unchanged. */
+export const MAX_REPLICA_BODY_BYTES = 8 * 1024 * 1024;
+
 export interface RuntimeHandle {
+  /** Local P0 history handoff; passive import is distinct from a new local run. */
+  replica?(command: {
+    readonly method:
+      | "export"
+      | "import"
+      | "run"
+      | "status"
+      | "bind"
+      | "pull"
+      | "apply"
+      | "receipts"
+      | "merge"
+      | "heads"
+      | "head"
+      | "context";
+    readonly params: unknown;
+    readonly trace: string;
+    /** Internal synchronization use-point check; never accepted from wire params. */
+    readonly guard?: () => void;
+    readonly expectedBinding?: {
+      localBotId: string;
+      sharedBotId: string;
+      replicaId: string;
+      epoch: string;
+    };
+  }): Promise<unknown>;
   refreshTools(trace: string): Promise<void>;
+  /** A durable local context on this same open Harness; never opens another runtime. */
+  context?(contextId: string, trace: string): Promise<RuntimeHandle>;
+  /** Read-only persisted queued/placed work across this Bot's shared Harness, including unopened contexts. */
+  outstanding?(trace: string): Promise<readonly Submission[]>;
   /** Atomic: the view at attachment plus every later commit, with nothing lost between. */
   subscribe(trace: string, sink: (event: RuntimeEvent) => void): Promise<RuntimeSubscription>;
   /** Idempotent by requestId; returns the submission's current record. */
   submit(input: SubmitInput): Promise<Submission>;
   submission(
-    key: { submissionId: string } | { requestId: string },
+    key:
+      | { submissionId: string }
+      | {
+          requestId: string;
+          contextId?: string;
+          retry?: Pick<SubmitInput, "whenBusy" | "trace" | "contextId">;
+        },
   ): Promise<Submission | undefined>;
   /** One committed message by entry id: how a peer reads the answer it was pointed at. */
   entryById?(entryId: string): Promise<Message | undefined>;
@@ -112,5 +155,10 @@ export interface RuntimeHandle {
 }
 
 export interface RuntimePort {
+  readReplicaBinding?(
+    spec: Pick<RuntimeBotSpec, "id" | "dir">,
+  ): Promise<
+    { sharedBotId: string; localBotId?: string; replicaId?: string; epoch?: string } | undefined
+  >;
   open(spec: RuntimeBotSpec): Promise<RuntimeHandle>;
 }

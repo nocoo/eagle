@@ -29,6 +29,175 @@ final class ConversationTests: XCTestCase {
     model.select(botId: "b_1")
   }
 
+  func testLateCommandFailuresCannotOverwriteAnotherSelectionOrAReopenedContext() async throws {
+    for command in ["abort", "recover", "history"] {
+      for returnsToOriginal in [false, true] {
+        let (model, fake, _) = makeModel()
+        model.select(botId: "b_1", contextId: "command_original")
+        fake.emit(.connection(.ready))
+        fake.emit(
+          .snapshot(
+            ConversationSnapshot(
+              botId: "b_1",
+              messages: [
+                Message(
+                  id: "e_old", role: .user, state: .complete, createdAt: "x", blocks: [.text("old")]
+                )
+              ])))
+        try await waitUntil { model.hasSnapshot }
+        var release: CheckedContinuation<Void, any Error>?
+        fake.commandGate = { name in
+          XCTAssertEqual(name, command)
+          try await withCheckedThrowingContinuation { release = $0 }
+        }
+        if command == "abort" {
+          model.abort()
+        } else if command == "recover" {
+          model.recover()
+        } else {
+          model.loadOlder()
+        }
+        try await waitUntil { release != nil }
+        model.select(botId: "b_1", contextId: "command_other")
+        if returnsToOriginal { model.select(botId: "b_1", contextId: "command_original") }
+        fake.emit(
+          .error(
+            kind: .taskParked, disposition: .runtime, message: "current selection failure",
+            failure: "f_current", requestId: nil))
+        try await waitUntil { model.errorBanner != nil }
+        let current = model.errorBanner
+        release?.resume(throwing: ClientError("late old command failure"))
+        try await waitUntil { fake.finishedCommands.contains(command) }
+        await Task.yield()
+        XCTAssertEqual(
+          model.errorBanner, current,
+          "\(command), return=\(returnsToOriginal): stale failure cannot replace current selection")
+        XCTAssertTrue(model.parked)
+        model.disconnect()
+      }
+    }
+  }
+
+  func testLateRecoverSuccessCannotClearTheCurrentSelectionParkedState() async throws {
+    for returnsToOriginal in [false, true] {
+      let (model, fake, _) = makeModel()
+      model.select(botId: "b_1", contextId: "recover_original")
+      var release: CheckedContinuation<Void, any Error>?
+      fake.commandGate = { _ in try await withCheckedThrowingContinuation { release = $0 } }
+      model.recover()
+      try await waitUntil { release != nil }
+      model.select(botId: "b_1", contextId: "recover_other")
+      if returnsToOriginal { model.select(botId: "b_1", contextId: "recover_original") }
+      fake.emit(
+        .error(
+          kind: .taskParked, disposition: .runtime, message: "current parked task",
+          failure: "f_current", requestId: nil))
+      try await waitUntil { model.parked }
+      let current = model.errorBanner
+      release?.resume()
+      try await waitUntil { fake.finishedCommands.contains("recover") }
+      await Task.yield()
+      XCTAssertTrue(
+        model.parked, "return=\(returnsToOriginal): old success cannot clear a new parked task")
+      XCTAssertEqual(model.errorBanner, current)
+      model.disconnect()
+    }
+  }
+
+  func testRootDoesNotReplayOutboxForAnotherDurableContext() async throws {
+    try FileManager.default.createDirectory(at: outboxDirectory, withIntermediateDirectories: true)
+    let rows = ["ctx_original_left", "ctx_original_right"].map { id in
+      [
+        "botId": "b_1", "requestId": "request_\(id)", "text": "pending \(id)",
+        "whenBusy": "followUp", "createdAt": "2026-10-31T08:00:00Z", "contextId": id,
+        "resourceHead": String(repeating: id.hasSuffix("left") ? "a" : "b", count: 64),
+      ]
+    }
+    let bytes = try JSONSerialization.data(withJSONObject: [
+      "entries": rows, "settled": [], "refused": [],
+    ])
+    try bytes.write(to: outboxDirectory.appendingPathComponent("outbox.json"))
+    let (model, fake, _) = makeModel()
+    ready(model)
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.hasSnapshot }
+    await Task.yield()
+    XCTAssertEqual(
+      fake.sent.count, 0, "a root snapshot cannot retarget another context's persisted requests")
+    XCTAssertEqual(
+      try Data(contentsOf: outboxDirectory.appendingPathComponent("outbox.json")), bytes)
+    model.disconnect()
+  }
+
+  func testTwoContextsPersistSelectionAcrossLostReplySwitchAndRestart() async throws {
+    let (model, fake, outbox) = makeModel()
+    let leftResource = String(repeating: "a", count: 64)
+    let rightResource = String(repeating: "b", count: 64)
+    let changedResource = String(repeating: "c", count: 64)
+    model.select(botId: "b_1", contextId: "context_left", resourceHead: leftResource)
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.hasSnapshot }
+    model.draft = "original left request"
+    model.send(inserting: true)
+    try await waitUntil { fake.sent.count == 1 }
+    let original = try XCTUnwrap(try outbox.entries(for: "b_1").first)
+    XCTAssertEqual(original.contextId, "context_left")
+    XCTAssertEqual(original.resourceHead, leftResource)
+    XCTAssertEqual(original.whenBusy, .steer)
+    XCTAssertEqual(fake.sent.first?.contextId, original.contextId)
+    XCTAssertEqual(fake.sent.first?.resourceHead, original.resourceHead)
+    model.select(botId: "b_1", contextId: "context_right", resourceHead: rightResource)
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.hasSnapshot }
+    XCTAssertEqual(fake.sent.count, 1, "switching cannot replay the lost reply in another context")
+    model.draft = "original right request"
+    model.send()
+    try await waitUntil { fake.sent.count == 2 }
+    let right = try XCTUnwrap(
+      try outbox.entries(for: "b_1").first { $0.contextId == "context_right" })
+    model.disconnect()
+    let persisted = OutboxStore(directory: outboxDirectory)
+    let nextFake = FakeConversation()
+    let restarted = ConversationViewModel(conversation: nextFake, outbox: persisted)
+    restarted.select(botId: "b_1", contextId: "context_left", resourceHead: changedResource)
+    nextFake.emit(.connection(.ready))
+    nextFake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { nextFake.sent.count == 1 }
+    XCTAssertEqual(nextFake.sent.first?.requestId, original.requestId)
+    XCTAssertEqual(nextFake.sent.first?.contextId, original.contextId)
+    XCTAssertEqual(
+      nextFake.sent.first?.resourceHead, leftResource,
+      "retry keeps its original resource, not current selection")
+    XCTAssertEqual(nextFake.busyModes, [.steer])
+    XCTAssertEqual(try persisted.entries(for: "b_1").count, 2)
+    nextFake.emit(
+      .submission(Submission(id: "s_context_left", requestId: original.requestId, status: .done)))
+    try await waitUntil { (try? persisted.entries(for: "b_1").count) == 1 }
+    let settled = try XCTUnwrap(try persisted.settledRequests().first)
+    XCTAssertEqual(settled.contextId, original.contextId)
+    XCTAssertEqual(settled.resourceHead, original.resourceHead)
+    restarted.select(botId: "b_1", contextId: "context_right", resourceHead: changedResource)
+    nextFake.emit(.connection(.ready))
+    nextFake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { nextFake.sent.count == 2 }
+    XCTAssertEqual(nextFake.sent.last?.requestId, right.requestId)
+    XCTAssertEqual(nextFake.sent.last?.contextId, "context_right")
+    XCTAssertEqual(nextFake.sent.last?.resourceHead, rightResource)
+    XCTAssertFalse(restarted.state.ranks.keys.contains("s_context_left"))
+    var retargeted = right
+    retargeted.contextId = "context_left"
+    XCTAssertThrowsError(try persisted.add(retargeted))
+    XCTAssertThrowsError(
+      try persisted.settle(
+        Submission(id: "s_wrong", requestId: right.requestId, status: .done), botId: "b_1",
+        contextId: "context_left"))
+    XCTAssertEqual(try persisted.entries(for: "b_1"), [right])
+    restarted.disconnect()
+  }
+
   func testAnAgentUpdatePreservesLoadedHistoryAndUnconfirmedSends() async throws {
     let (model, fake, outbox) = makeModel()
     ready(model)
@@ -256,19 +425,23 @@ final class FakeConversation: ConversationPort {
   struct Sent {
     let text: String
     let requestId: String
+    let contextId: String?
+    let resourceHead: String?
   }
 
   var sent: [Sent] = []
   var lastBotId: String?
   var recovered = 0
   var failRecover = false
+  var commandGate: ((String) async throws -> Void)?
+  var finishedCommands: [String] = []
   var aborted = 0
   var historyRequests: [String] = []
   private var continuation: AsyncStream<ConversationEvent>.Continuation?
 
   var busyModes: [BusyMode] = []
 
-  func open(botId: String) -> AsyncStream<ConversationEvent> {
+  func open(botId: String, contextId: String? = nil) -> AsyncStream<ConversationEvent> {
     AsyncStream { continuation in
       self.continuation = continuation
     }
@@ -284,19 +457,26 @@ final class FakeConversation: ConversationPort {
     context: CommandContext,
     botId: String
   ) async throws {
-    sent.append(Sent(text: text, requestId: context.requestId ?? ""))
+    sent.append(
+      Sent(
+        text: text, requestId: context.requestId ?? "", contextId: context.contextId,
+        resourceHead: context.resourceHead))
     busyModes.append(whenBusy)
     lastBotId = botId
   }
 
   func abort(context: CommandContext, botId: String) async throws {
     aborted += 1
+    defer { finishedCommands.append("abort") }
+    try await commandGate?("abort")
     lastBotId = botId
   }
 
   func recover(context: CommandContext, botId: String) async throws {
     if failRecover { throw ClientError("there is no connection") }
     recovered += 1
+    defer { finishedCommands.append("recover") }
+    try await commandGate?("recover")
     lastBotId = botId
   }
 
@@ -306,6 +486,8 @@ final class FakeConversation: ConversationPort {
 
   func loadHistory(before messageId: String, context: CommandContext, botId: String) async throws {
     historyRequests.append(messageId)
+    defer { finishedCommands.append("history") }
+    try await commandGate?("history")
     lastBotId = botId
   }
 

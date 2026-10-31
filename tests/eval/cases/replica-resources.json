@@ -1,0 +1,29 @@
+{
+  "id": "replica-resources",
+  "title": "完整资源固定版本被动导入、落盘并实际进入本机模型请求",
+  "kind": "replica",
+  "notes": "Real daemon/SQLite/Bearer HTTP and local scripted Responses provider. Full normative AGENTS/skill/scripts/references/assets/attachment manifest is retained, import stays passive, selected resource version and skill binding reach the actual provider, and same-ID retry is idempotent. Native relative script execution is independently asserted in the real two-daemon e2e and owned crash fixtures.",
+  "toolGroups": ["core", "coding"],
+  "model": {
+    "script": [
+      {
+        "text": "selected resource version loaded exactly once"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "replicaRun",
+      "resources": true,
+      "text": "use the selected complete local resources",
+      "contains": "selected resource version loaded exactly once"
+    }
+  ],
+  "expect": {
+    "toolsCalled": [],
+    "noErrors": true,
+    "modelRequests": {
+      "max": 1
+    }
+  }
+}

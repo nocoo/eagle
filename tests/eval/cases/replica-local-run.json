@@ -1,0 +1,20 @@
+{
+  "id": "replica-local-run",
+  "title": "完整历史被动导入后本机从指定 head 新开一轮",
+  "kind": "replica",
+  "notes": "Real daemon, SQLite, authenticated HTTP and local scripted provider. Passive full-carrier import and receipt inventory precede exactly one new local run; no foreign task/queue transfer.",
+  "toolGroups": ["core", "coding"],
+  "model": { "script": [{ "text": "replica continued exactly once" }] },
+  "steps": [
+    {
+      "kind": "replicaRun",
+      "text": "continue from the imported complete head",
+      "contains": "replica continued exactly once"
+    }
+  ],
+  "expect": {
+    "toolsCalled": [],
+    "noErrors": true,
+    "modelRequests": { "max": 1 }
+  }
+}

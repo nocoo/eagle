@@ -1,0 +1,30 @@
+{
+  "id": "root-resources",
+  "title": "普通root聊天从ready head选择完整资源并进入实际模型请求",
+  "kind": "replica",
+  "notes": "Real daemon/SQLite/Bearer import followed by ordinary WebSocket send on the same root Inbox. The actual provider receives the selected version and complete skill binding. Native scripts, FIFO interleaving, recovery and local edits are asserted separately in runtime/e2e/crash fixtures.",
+  "toolGroups": ["core", "coding"],
+  "model": {
+    "script": [
+      {
+        "text": "ordinary root resources loaded once"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "replicaRun",
+      "resources": true,
+      "root": true,
+      "text": "use selected resources on my ordinary root",
+      "contains": "ordinary root resources loaded once"
+    }
+  ],
+  "expect": {
+    "toolsCalled": [],
+    "noErrors": true,
+    "modelRequests": {
+      "max": 1
+    }
+  }
+}

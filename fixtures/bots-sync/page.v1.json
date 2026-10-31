@@ -1,0 +1,304 @@
+{
+  "version": 1,
+  "sharedBotId": "00000000-0000-4000-8000-000000000010",
+  "source": {
+    "replicaId": "00000000-0000-4000-8000-000000000001",
+    "epoch": "00000000-0000-4000-8000-000000000011"
+  },
+  "range": {
+    "from": 1,
+    "to": 8
+  },
+  "events": [
+    {
+      "seq": 1,
+      "body": {
+        "kind": "entry",
+        "origin": {
+          "replicaId": "00000000-0000-4000-8000-000000000001",
+          "conversationId": 1,
+          "entryId": 10
+        },
+        "content": {
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "原始指令",
+              "timestamp": 0,
+              "sections": {
+                "instructions": "first"
+              },
+              "toolsAdded": []
+            }
+          ]
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "seq": 2,
+      "body": {
+        "kind": "entry",
+        "origin": {
+          "replicaId": "00000000-0000-4000-8000-000000000001",
+          "conversationId": 1,
+          "entryId": 20
+        },
+        "content": {
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "保留工具输入",
+              "timestamp": 1
+            }
+          ]
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "seq": 3,
+      "body": {
+        "kind": "entry",
+        "origin": {
+          "replicaId": "00000000-0000-4000-8000-000000000001",
+          "conversationId": 1,
+          "entryId": 30,
+          "taskId": 7
+        },
+        "content": {
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "toolCall",
+                  "id": "call_original",
+                  "name": "write",
+                  "arguments": {
+                    "path": "out.txt",
+                    "content": "原始字节"
+                  },
+                  "namespace": "coding"
+                }
+              ],
+              "api": "faux",
+              "provider": "faux",
+              "model": "faux-1",
+              "usage": {
+                "input": 3,
+                "output": 2,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 5,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "toolUse",
+              "timestamp": 2
+            }
+          ]
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "seq": 4,
+      "body": {
+        "kind": "entry",
+        "origin": {
+          "replicaId": "00000000-0000-4000-8000-000000000001",
+          "conversationId": 1,
+          "entryId": 40,
+          "taskId": 8
+        },
+        "content": {
+          "kind": "pi.tool-result",
+          "model": [
+            {
+              "role": "toolResult",
+              "toolCallId": "call_original",
+              "toolName": "write",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "wrote out.txt"
+                }
+              ],
+              "details": {
+                "source": "original",
+                "unknown": ["保留", 1]
+              },
+              "isError": false,
+              "timestamp": 3
+            }
+          ],
+          "data": {
+            "diagnostic": "retained"
+          }
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "seq": 5,
+      "body": {
+        "kind": "entry",
+        "origin": {
+          "replicaId": "00000000-0000-4000-8000-000000000001",
+          "conversationId": 1,
+          "entryId": 50
+        },
+        "content": {
+          "kind": "pi.reset",
+          "model": [
+            {
+              "role": "user",
+              "content": "explicit handoff",
+              "timestamp": 4
+            }
+          ]
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "seq": 6,
+      "body": {
+        "kind": "entry",
+        "origin": {
+          "replicaId": "00000000-0000-4000-8000-000000000001",
+          "conversationId": 1,
+          "entryId": 60
+        },
+        "content": {
+          "kind": "example.edit",
+          "data": {
+            "original": "still available"
+          },
+          "edits": [
+            {
+              "action": "replace",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "replacement",
+                  "timestamp": 1
+                }
+              ]
+            }
+          ]
+        },
+        "dependencies": [
+          "fbf4cf297ed6acc5267cadc35485afb0960db10a535690c4b4c755504edeaba3"
+        ]
+      }
+    },
+    {
+      "seq": 7,
+      "body": {
+        "kind": "entry",
+        "origin": {
+          "replicaId": "00000000-0000-4000-8000-000000000001",
+          "conversationId": 1,
+          "entryId": 70
+        },
+        "content": {
+          "kind": "pi.compaction",
+          "model": [
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 5
+            }
+          ],
+          "data": {
+            "reason": "manual"
+          }
+        },
+        "dependencies": [
+          "bf4c98e3fdf5ed2df100c1a98838cec486e5dbf0e69052e206d17079ef9c38c2"
+        ]
+      }
+    },
+    {
+      "seq": 8,
+      "body": {
+        "kind": "head",
+        "head": "cbeba3a2c5b8c77e286d0629bf4c81a6f3d8f11de0f08fb655d5bba170848e2f",
+        "meta": {
+          "version": 1,
+          "engine": "pi-durable@1.4.0",
+          "source": {
+            "replicaId": "00000000-0000-4000-8000-000000000001",
+            "botId": "b_example",
+            "conversationId": 1
+          },
+          "parents": [],
+          "agent": {
+            "model": {
+              "provider": "faux",
+              "modelId": "faux-1"
+            },
+            "extensions": [],
+            "instructions": "latest instruction",
+            "cwd": "/source/workspace"
+          }
+        },
+        "entries": [
+          {
+            "id": 10,
+            "conversationId": 1,
+            "ref": "e56213dabdcab9848054d094b2d01d393ca8a2ca37bdd7637c9afb074b823c01"
+          },
+          {
+            "id": 20,
+            "conversationId": 1,
+            "ref": "fbf4cf297ed6acc5267cadc35485afb0960db10a535690c4b4c755504edeaba3"
+          },
+          {
+            "id": 30,
+            "conversationId": 1,
+            "byTaskId": 7,
+            "ref": "907bee86a0c37d3405fc68f54b92e10d0989179d0015cc8e3d6a2003e82f8e25"
+          },
+          {
+            "id": 40,
+            "conversationId": 1,
+            "byTaskId": 8,
+            "ref": "ec47f2bfbf772540077a38d72b4494cefed6faca51946e058a04bc0b84a9dcd2"
+          },
+          {
+            "id": 50,
+            "conversationId": 1,
+            "head": 50,
+            "ref": "bf4c98e3fdf5ed2df100c1a98838cec486e5dbf0e69052e206d17079ef9c38c2"
+          },
+          {
+            "id": 60,
+            "conversationId": 1,
+            "ref": "9a7ad35ea6e2036d45f374d25a3de614b0f50cf7622849835e7a7c45e95eba91",
+            "targets": [20]
+          },
+          {
+            "id": 70,
+            "conversationId": 1,
+            "head": 50,
+            "ref": "56b2129e0c65044468074d714c06f85bdfc94c691c456ec87a0bfa932a4e672f"
+          }
+        ],
+        "resources": []
+      }
+    }
+  ],
+  "nextAfter": 8,
+  "hasMore": false
+}

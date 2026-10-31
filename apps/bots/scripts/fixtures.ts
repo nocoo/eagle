@@ -2,8 +2,10 @@
 // the codec; `write` regenerates them after a documented protocol change.
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { deviceSyncAccess, deviceSyncInput, deviceSyncProof } from "../src/core/DeviceSyncPort.ts";
 import { encodeCommand, encodeServerEvent, serialize } from "../src/protocol/encode.ts";
 import { decodeCommand, decodeServerEvent } from "../src/protocol/frames.ts";
+import { proofPayload, verifyProof } from "../src/sync-crypto.ts";
 
 const dir = new URL("../../../fixtures/bots-protocol/", import.meta.url).pathname;
 const mode = process.argv[2] ?? "check";
@@ -14,6 +16,38 @@ const files = readdirSync(dir)
 
 let failures = 0;
 for (const name of files) {
+  if (name === "sync-proof.http.json") {
+    try {
+      const wire = JSON.parse(readFileSync(join(dir, name), "utf8"));
+      const request = deviceSyncProof.parse(wire.request);
+      if (
+        JSON.stringify(request) !== JSON.stringify(wire.request) ||
+        proofPayload(request) !== wire.signingPayload
+      )
+        throw new Error("sync proof does not round-trip");
+      verifyProof(request, wire.signature);
+    } catch (error) {
+      failures += 1;
+      console.error(`fixtures:check: ${name}: ${(error as Error).message}`);
+    }
+    continue;
+  }
+  if (name === "sync-access.http.json") {
+    const text = readFileSync(join(dir, name), "utf8");
+    const wire = JSON.parse(text);
+    try {
+      const value = {
+        request: deviceSyncInput.parse(wire.request),
+        response: deviceSyncAccess.parse(wire.response),
+      };
+      if (JSON.stringify(value) !== JSON.stringify(wire))
+        throw new Error("sync metadata does not round-trip");
+    } catch (error) {
+      failures += 1;
+      console.error(`fixtures:check: ${name}: ${(error as Error).message}`);
+    }
+    continue;
+  }
   if (name === "entities.json") {
     // Entity samples are decoded through their enclosing frames, never skipped.
     const entities = JSON.parse(readFileSync(join(dir, name), "utf8")) as Record<string, unknown>;

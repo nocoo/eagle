@@ -17,14 +17,17 @@ import Security
       var config = try DeviceHostConfiguration.load(bundle: bundle)
       // A published App ships no relay: the person's own choice in Settings wins, and an
       // unconfigured Mac parks here instead of contacting anything.
-      if let chosen = DeviceServiceAddress.saved() { config.baseUrl = chosen }
+      if let chosen = DeviceServiceAddress.saved(profile: config.profile) {
+        config.baseUrl = chosen
+      }
       let runtime = bundle.appendingPathComponent("Contents/Resources/DeviceRuntime")
-      let identity = try DeviceIdentity.loadOrCreate(profile: config.profile)
+      let vault = DeviceFileVault()
+      let identity = try DeviceIdentity.loadOrCreate(profile: config.profile, vault: vault)
       let host = DeviceServiceHost(
         identity: identity, configuration: config,
         node: runtime.appendingPathComponent("node"),
         entry: runtime.appendingPathComponent(
-          "agent/node_modules/@nocoo/eagle-agent/dist/agent/device-service.js"))
+          "agent/node_modules/@nocoo/eagle-agent/dist/agent/device-service.js"), vault: vault)
       let listener = NSXPCListener(machServiceName: config.machServiceName)
       let delegate = DeviceXPCServer(host: host, requiredPeer: requirement)
       listener.delegate = delegate

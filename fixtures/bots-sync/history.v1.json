@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "engine": "pi-durable@1.4.0",
+  "source": {
+    "replicaId": "00000000-0000-4000-8000-000000000001",
+    "botId": "b_example",
+    "conversationId": 1
+  },
+  "parents": [],
+  "entries": [
+    {
+      "id": 10,
+      "conversationId": 1,
+      "kind": "pi.system",
+      "model": [
+        {
+          "role": "system",
+          "content": "原始指令",
+          "timestamp": 0,
+          "sections": {
+            "instructions": "first"
+          },
+          "toolsAdded": []
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "conversationId": 1,
+      "kind": "pi.user",
+      "model": [
+        {
+          "role": "user",
+          "content": "保留工具输入",
+          "timestamp": 1
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "conversationId": 1,
+      "byTaskId": 7,
+      "kind": "pi.assistant",
+      "model": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "call_original",
+              "name": "write",
+              "arguments": {
+                "path": "out.txt",
+                "content": "原始字节"
+              },
+              "namespace": "coding"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 3,
+            "output": 2,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 5,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 2
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "conversationId": 1,
+      "byTaskId": 8,
+      "kind": "pi.tool-result",
+      "model": [
+        {
+          "role": "toolResult",
+          "toolCallId": "call_original",
+          "toolName": "write",
+          "content": [
+            {
+              "type": "text",
+              "text": "wrote out.txt"
+            }
+          ],
+          "details": {
+            "source": "original",
+            "unknown": ["保留", 1]
+          },
+          "isError": false,
+          "timestamp": 3
+        }
+      ],
+      "data": {
+        "diagnostic": "retained"
+      }
+    },
+    {
+      "id": 50,
+      "conversationId": 1,
+      "kind": "pi.reset",
+      "model": [
+        {
+          "role": "user",
+          "content": "explicit handoff",
+          "timestamp": 4
+        }
+      ],
+      "head": 50
+    },
+    {
+      "id": 60,
+      "conversationId": 1,
+      "kind": "example.edit",
+      "data": {
+        "original": "still available"
+      },
+      "edits": [
+        {
+          "target": 20,
+          "action": "replace",
+          "messages": [
+            {
+              "role": "user",
+              "content": "replacement",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 70,
+      "conversationId": 1,
+      "kind": "pi.compaction",
+      "model": [
+        {
+          "role": "user",
+          "content": "summary",
+          "timestamp": 5
+        }
+      ],
+      "data": {
+        "reason": "manual"
+      },
+      "head": 50
+    }
+  ],
+  "origins": {
+    "10": {
+      "replicaId": "00000000-0000-4000-8000-000000000001",
+      "conversationId": 1,
+      "entryId": 10
+    },
+    "20": {
+      "replicaId": "00000000-0000-4000-8000-000000000001",
+      "conversationId": 1,
+      "entryId": 20
+    },
+    "30": {
+      "replicaId": "00000000-0000-4000-8000-000000000001",
+      "conversationId": 1,
+      "entryId": 30,
+      "taskId": 7
+    },
+    "40": {
+      "replicaId": "00000000-0000-4000-8000-000000000001",
+      "conversationId": 1,
+      "entryId": 40,
+      "taskId": 8
+    },
+    "50": {
+      "replicaId": "00000000-0000-4000-8000-000000000001",
+      "conversationId": 1,
+      "entryId": 50
+    },
+    "60": {
+      "replicaId": "00000000-0000-4000-8000-000000000001",
+      "conversationId": 1,
+      "entryId": 60
+    },
+    "70": {
+      "replicaId": "00000000-0000-4000-8000-000000000001",
+      "conversationId": 1,
+      "entryId": 70
+    }
+  },
+  "agent": {
+    "model": {
+      "provider": "faux",
+      "modelId": "faux-1"
+    },
+    "extensions": [],
+    "instructions": "latest instruction",
+    "cwd": "/source/workspace"
+  },
+  "resources": [],
+  "head": "cbeba3a2c5b8c77e286d0629bf4c81a6f3d8f11de0f08fb655d5bba170848e2f"
+}

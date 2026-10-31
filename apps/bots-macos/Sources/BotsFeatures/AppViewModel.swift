@@ -25,19 +25,33 @@ public final class AppViewModel: ObservableObject {
   /// The trigger detail and switch; nil in a test that never opens the surface.
   private let triggers: TriggerPort?
   private var outbox: OutboxStore
+  private let replicas: ReplicaPort?
+  @Published public private(set) var heads: [ReplicaHead] = []
+  @Published public private(set) var headsHaveMore = false
+  @Published public private(set) var historyError: String?
+  @Published public private(set) var historyLoading = false
+  @Published public private(set) var selectedHead: String?
+  @Published public private(set) var headDetail: ReplicaHeadDetail?
+  @Published public private(set) var mergePreview: ReplicaMergePreview?
+  private var headCursor = 0
+  private var historyGeneration = UUID()
+  private var mergeParents: [String] = []
+  private var mergeRequestId: String?
 
   public init(
     catalog: CatalogPort,
     conversation: ConversationViewModel,
     outbox: OutboxStore,
     triggers: TriggerPort? = nil,
-    peers: PeerPort? = nil
+    peers: PeerPort? = nil,
+    replicas: ReplicaPort? = nil
   ) {
     self.catalog = catalog
     self.conversation = conversation
     self.triggers = triggers
     self.peers = peers
     self.outbox = outbox
+    self.replicas = replicas
     conversation.onCatalog = { [weak self] catalog in
       self?.apply(catalog)
     }
@@ -263,9 +277,26 @@ public final class AppViewModel: ObservableObject {
   }
 
   public func select(_ botId: String) {
+    if selection != botId {
+      historyGeneration = UUID()
+      heads = []
+      headCursor = 0
+      headsHaveMore = false
+      historyLoading = false
+      mergePreview = nil
+      mergeParents = []
+      mergeRequestId = nil
+      headDetail = nil
+    }
     if selection != botId, !exchanges.isEmpty { exchanges = [] }
     selection = botId
-    conversation.select(botId: botId)
+    do {
+      let saved = try outbox.selection(for: botId)
+      selectedHead = saved?.seedHead
+      conversation.select(
+        botId: botId, contextId: saved?.contextId, resourceHead: saved?.resourceHead)
+      historyError = nil
+    } catch { historyError = describe(error) }
   }
 
   public func pendingOutbox(for botId: String) -> [OutboxEntry] {
@@ -308,6 +339,116 @@ public final class AppViewModel: ObservableObject {
 }
 
 extension AppViewModel {
+  public func loadHeads() async {
+    guard let replicas, let botId = selection, !historyLoading else { return }
+    let generation = historyGeneration
+    historyLoading = true
+    defer { if generation == historyGeneration { historyLoading = false } }
+    do {
+      let page = try await replicas.loadHeads(botId: botId, after: headCursor)
+      guard generation == historyGeneration, selection == botId else { return }
+      let ids = Set(page.items.map(\.head))
+      heads = Array((heads.filter { !ids.contains($0.head) } + page.items).suffix(128))
+      headCursor = page.nextAfter
+      headsHaveMore = page.hasMore
+      historyError = nil
+    } catch { if generation == historyGeneration { historyError = describe(error) } }
+  }
+
+  public func selectHead(_ head: String) async {
+    guard let replicas, let botId = selection else { return }
+    let generation = historyGeneration
+    do {
+      let detail = try await replicas.loadHead(botId: botId, head: head)
+      guard detail.ready else { throw ClientError("the history head is not ready") }
+      let context = try await replicas.createContext(
+        botId: botId, contextId: Identifiers.trace("context"), head: head,
+        resourceHead: detail.resourceHead)
+      guard generation == historyGeneration, selection == botId else { return }
+      try select(
+        ReplicaSelection(
+          contextId: context.contextId, seedHead: context.seedHead,
+          resourceHead: context.resourceHead?.isEmpty == false ? context.resourceHead : nil),
+        for: botId)
+      headDetail = detail
+      historyError = nil
+    } catch { if generation == historyGeneration { historyError = describe(error) } }
+  }
+
+  public func selectRootContext() {
+    guard let botId = selection else { return }
+    do {
+      try select(nil, for: botId)
+      headDetail = nil
+      historyError = nil
+    } catch { historyError = describe(error) }
+  }
+
+  public func selectResourceHead(_ head: String?) async {
+    guard let replicas, let botId = selection else { return }
+    let generation = historyGeneration
+    let capturedContext = conversation.contextId
+    do {
+      let detail: ReplicaHeadDetail?
+      if let target = head ?? selectedHead {
+        detail = try await replicas.loadHead(botId: botId, head: target)
+      } else {
+        detail = nil
+      }
+      guard detail?.ready != false else { throw ClientError("the resource head is not ready") }
+      guard generation == historyGeneration, selection == botId,
+        capturedContext == conversation.contextId
+      else { return }
+      try select(
+        ReplicaSelection(
+          contextId: capturedContext, seedHead: selectedHead,
+          resourceHead: head == nil ? nil : detail?.resourceHead), for: botId)
+      headDetail = detail
+      historyError = nil
+    } catch { if generation == historyGeneration { historyError = describe(error) } }
+  }
+
+  public func prepareMerge(heads: [String]) async {
+    guard let replicas, let botId = selection else { return }
+    let generation = historyGeneration
+    mergePreview = nil
+    mergeParents = []
+    mergeRequestId = nil
+    do {
+      let preview = try await replicas.previewMerge(botId: botId, heads: heads)
+      guard generation == historyGeneration, selection == botId else { return }
+      mergeParents = heads
+      mergeRequestId = Identifiers.request()
+      mergePreview = preview
+      historyError = nil
+    } catch { if generation == historyGeneration { historyError = describe(error) } }
+  }
+
+  public func merge(choices: [ReplicaMergeChoice], resources: [ReplicaResourceChoice]) async {
+    guard let replicas, let botId = selection, let requestId = mergeRequestId else { return }
+    let generation = historyGeneration
+    let parents = mergeParents
+    do {
+      let result = try await replicas.mergeHeads(
+        botId: botId, heads: parents, requestId: requestId, choices: choices, resources: resources)
+      guard generation == historyGeneration, selection == botId, mergeRequestId == requestId else {
+        return
+      }
+      await selectHead(result.head)
+      guard historyError == nil else { return }
+      await loadHeads()
+    } catch { if generation == historyGeneration { historyError = describe(error) } }
+  }
+
+  private func select(_ saved: ReplicaSelection?, for botId: String) throws {
+    try outbox.select(saved, for: botId)
+    historyGeneration = UUID()
+    historyLoading = false
+    selectedHead = saved?.seedHead
+    conversation.select(
+      botId: botId, contextId: saved?.contextId, resourceHead: saved?.resourceHead)
+  }
+
   /// One trigger's read-only detail for the inspector.
   public func triggerDetail(botId: String, triggerId: String) async throws -> TriggerDetail? {
     guard let triggers else { return nil }

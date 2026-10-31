@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -108,11 +109,13 @@ after(async () => {
 async function policyService(
   owner: Awaited<ReturnType<typeof identity>>,
   stateDirectory: string,
+  environment: NodeJS.ProcessEnv = process.env,
 ) {
   mkdirSync(stateDirectory, { recursive: true, mode: 0o700 });
   const socketPath = join(stateDirectory, "port.sock");
   const child = spawn(process.execPath, ["packages/agent/device-service.ts"], {
     stdio: ["pipe", "pipe", "pipe"],
+    env: environment,
   });
   const reader = createInterface({ input: child.stdout });
   const waiters = new Map<string, (message: Record<string, unknown>) => void>();
@@ -215,6 +218,414 @@ async function policyService(
     },
   };
 }
+
+test("paired private services expose current sync identity without treating execution policy as Bot sharing", async () => {
+  const [a, b] = await Promise.all([identity("sync-a"), identity("sync-b")]);
+  assert.notEqual(a.publicKey, b.publicKey);
+  const source = await policyService(a, join(root, "sync-a"));
+  const cli = join(root, "sync-cli");
+  mkdirSync(cli, { mode: 0o700 });
+  const binary = join(cli, "tailscale");
+  writeFileSync(
+    binary,
+    `#!/bin/sh\n[ "$1" = status ] && [ "$2" = --json ] || exit 2\nprintf '%s' '{"BackendState":"Running","Self":{"TailscaleIPs":["100.64.1.2","fd7a:115c:a1e0::12","100.64.1.2"]},"Peer":{"other":{"TailscaleIPs":["100.64.9.9"]}}}'\n`,
+  );
+  chmodSync(binary, 0o700);
+  const target = await policyService(b, join(root, "sync-b"), {
+    ...process.env,
+    PATH: `${cli}:${process.env.PATH}`,
+  });
+  try {
+    const invitation = await source.call("pairing.create", {});
+    assert.equal(invitation.error, undefined);
+    const joined = await target.call("pairing.redeem", {
+      requestId: randomUUID(),
+      code: (invitation.result as { code: string }).code,
+    });
+    assert.equal(joined.error, undefined);
+    const groupId = (joined.result as { groupId: string }).groupId;
+    assert.equal(typeof groupId, "string");
+    for (const [service, owner] of [
+      [source, a],
+      [target, b],
+    ] as const) {
+      const directory = (await service.port("directory")).result as {
+        localDeviceId: string;
+        groupId: string;
+        devices: {
+          deviceId: string;
+          publicKey: string;
+          membershipEpoch: number;
+          credentialVersion: number;
+        }[];
+      };
+      assert.equal(directory.localDeviceId, owner.deviceId);
+      assert.equal(directory.groupId, groupId);
+      assert.deepEqual(
+        directory.devices.map((d) => d.deviceId).sort(),
+        [a.deviceId, b.deviceId].sort(),
+      );
+      const current = directory.devices.find(
+        (d) => d.deviceId === owner.deviceId,
+      );
+      assert.equal(current?.publicKey, owner.publicKey);
+      assert.ok(
+        current && current.membershipEpoch > 0 && current.credentialVersion > 0,
+      );
+      assert.equal(
+        ((await service.port("status")).result as { localReady: boolean })
+          .localReady,
+        true,
+      );
+    }
+    const storage = await mf.unsafeGetDurableObjectStorage(
+      "eagle",
+      "DeviceRegistry",
+      { name: "registry" },
+    );
+    const sql = await storage.exec(
+      "SELECT deviceId,groupId,membershipEpoch,credentialVersion FROM devices WHERE deviceId IN (?,?) ORDER BY deviceId",
+      a.deviceId,
+      b.deviceId,
+    );
+    assert.equal(
+      JSON.stringify(sql).includes(groupId),
+      true,
+      "actual Registry SQLite retains the paired group",
+    );
+    const response = await source.port("sync.identity");
+    assert.equal(
+      (response.result as { version?: number } | undefined)?.version,
+      1,
+      JSON.stringify(response),
+    );
+    const sharedBotId = randomUUID();
+    const access = {
+      sharedBotId,
+      peerDeviceId: b.deviceId,
+      purpose: "replica.read",
+    };
+    const share = { sharedBotId, peerDeviceId: a.deviceId, enabled: true };
+    assert.equal(
+      (response.result as { identity: { deviceId: string } }).identity.deviceId,
+      a.deviceId,
+    );
+    assert.equal(
+      (await source.port("sync.access", access)).error,
+      "sync_not_shared",
+      "same-group all-approve never shares Bot history",
+    );
+    assert.equal(
+      (await source.port("sync.incoming", {})).error,
+      "management_requires_private_helper",
+    );
+    const emptyIncoming = await source.call("sync.incoming", {});
+    assert.equal(
+      emptyIncoming.error,
+      undefined,
+      "trusted incoming discovery reaches the actual Registry",
+    );
+    assert.deepEqual((emptyIncoming.result as { items: unknown[] }).items, []);
+    assert.equal(
+      (await target.port("sync.share", share)).error,
+      "management_requires_private_helper",
+    );
+    assert.equal(
+      (await target.port("sync.endpoints.publish", { syncPort: null })).error,
+      "management_requires_private_helper",
+    );
+    assert.equal((await target.call("sync.share", share)).error, undefined);
+    const grantsBefore = await storage.exec(
+      "SELECT * FROM sync_grants WHERE sharedBotId=?",
+      sharedBotId,
+    );
+    assert.equal((await target.call("sync.share", share)).error, undefined);
+    assert.deepEqual(
+      await storage.exec(
+        "SELECT * FROM sync_grants WHERE sharedBotId=?",
+        sharedBotId,
+      ),
+      grantsBefore,
+      "same explicit grant is idempotent",
+    );
+    const allowed = await source.port("sync.access", access);
+    assert.equal(allowed.error, undefined, JSON.stringify(allowed));
+    const metadata = allowed.result as {
+      local: { deviceId: string };
+      peer: { deviceId: string };
+      endpoints: unknown;
+    };
+    assert.equal(metadata.local.deviceId, a.deviceId);
+    assert.equal(metadata.peer.deviceId, b.deviceId);
+    assert.equal(metadata.endpoints, null);
+    const incoming = (await source.call("sync.incoming", {})).result as {
+      version: number;
+      local: unknown;
+      items: { sharedBotId: string; holder: unknown }[];
+      nextAfter: number;
+      hasMore: boolean;
+    };
+    assert.equal(incoming.version, 1);
+    assert.deepEqual(incoming.local, metadata.local);
+    assert.deepEqual(incoming.items, [{ sharedBotId, holder: metadata.peer }]);
+    assert.ok(incoming.nextAfter > 0);
+    assert.equal(incoming.hasMore, false);
+    const staleShare = randomUUID(),
+      laterShare = randomUUID();
+    await storage.exec(
+      "INSERT INTO sync_grants VALUES(?,?,?,?)",
+      b.deviceId,
+      staleShare,
+      a.deviceId,
+      "stale full identity",
+    );
+    await storage.exec(
+      "INSERT INTO sync_grants VALUES(?,?,?,?)",
+      b.deviceId,
+      laterShare,
+      a.deviceId,
+      JSON.stringify([metadata.peer, metadata.local]),
+    );
+    const staleWindow = (
+      await source.call("sync.incoming", {
+        after: incoming.nextAfter,
+        limit: 1,
+      })
+    ).result as typeof incoming;
+    assert.deepEqual(staleWindow.items, []);
+    assert.equal(staleWindow.hasMore, true);
+    assert.ok(
+      staleWindow.nextAfter > incoming.nextAfter,
+      "cursor advances over the actual inspected stale row",
+    );
+    const tailWindow = (
+      await source.call("sync.incoming", {
+        after: staleWindow.nextAfter,
+        limit: 1,
+      })
+    ).result as typeof incoming;
+    assert.deepEqual(tailWindow.items, [
+      { sharedBotId: laterShare, holder: metadata.peer },
+    ]);
+    assert.equal(tailWindow.hasMore, false);
+    await storage.exec(
+      "DELETE FROM sync_grants WHERE sharedBotId IN (?,?)",
+      staleShare,
+      laterShare,
+    );
+    await storage.exec(
+      "ALTER TABLE sync_grants RENAME TO owned_unavailable_sync_grants",
+    );
+    try {
+      const unavailable = await call("/sync/incoming", a.token, {});
+      assert.equal(unavailable.status, 503);
+      assert.deepEqual(unavailable.body, {
+        error: "sync_directory_storage_failed",
+      });
+      assert.equal(
+        (await source.call("sync.incoming", {})).error,
+        "sync_directory_storage_failed",
+        "real SQL failure is never an empty directory",
+      );
+    } finally {
+      await storage.exec(
+        "ALTER TABLE owned_unavailable_sync_grants RENAME TO sync_grants",
+      );
+    }
+    assert.deepEqual(
+      ((await source.call("sync.incoming", {})).result as typeof incoming)
+        .items,
+      incoming.items,
+    );
+    const beforePublish = Date.now();
+    assert.equal(
+      (await target.call("sync.endpoints.publish", { syncPort: 7015 })).error,
+      undefined,
+    );
+    const published = (await source.port("sync.access", access)).result as {
+      peer: unknown;
+      endpoints: {
+        identity: unknown;
+        publishedAt: number;
+        candidates: unknown[];
+      };
+    };
+    assert.deepEqual(published.endpoints.identity, published.peer);
+    assert.ok(
+      published.endpoints.publishedAt >= beforePublish &&
+        published.endpoints.publishedAt <= Date.now(),
+    );
+    assert.deepEqual(published.endpoints.candidates, [
+      { address: "100.64.1.2", port: 7015 },
+      { address: "fd7a:115c:a1e0::12", port: 7015 },
+    ]);
+    assert.equal(
+      (
+        await target.port("sync.access", {
+          ...access,
+          peerDeviceId: a.deviceId,
+        })
+      ).error,
+      "sync_not_shared",
+      "grant is directional",
+    );
+    assert.equal(
+      (
+        await source.port("sync.access", {
+          ...access,
+          sharedBotId: randomUUID(),
+        })
+      ).error,
+      "sync_not_shared",
+    );
+    const outsider = await identity("sync-outsider");
+    assert.equal(
+      (
+        await source.port("sync.access", {
+          ...access,
+          peerDeviceId: outsider.deviceId,
+        })
+      ).error,
+      "different_group",
+    );
+    for (const extra of [
+      { deviceId: b.deviceId },
+      { groupId },
+      { targetDeviceId: a.deviceId },
+      { purpose: "execute" },
+    ])
+      assert.equal(
+        (await call("/sync/access", a.token, { ...access, ...extra })).status,
+        400,
+      );
+    assert.equal((await call("/sync/access", "forged", access)).status, 401);
+    assert.equal(
+      (await target.call("sync.endpoints.publish", { syncPort: null })).error,
+      undefined,
+    );
+    const withdrawn = (await source.port("sync.access", access)).result as {
+      endpoints: {
+        publishedAt: number;
+        candidates: unknown[];
+        identity: { deviceId: string };
+      };
+    };
+    assert.deepEqual(withdrawn.endpoints.candidates, []);
+    assert.equal(withdrawn.endpoints.identity.deviceId, b.deviceId);
+    assert.ok(withdrawn.endpoints.publishedAt > 0);
+    assert.equal(
+      (
+        await target.call("sync.endpoints.publish", {
+          syncPort: 7015,
+          address: "100.64.0.1",
+        })
+      ).error,
+      "device_service_failed",
+    );
+    assert.equal(
+      (
+        await call("/sync/endpoints", a.token, {
+          deviceId: b.deviceId,
+          candidates: [],
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await call("/sync/endpoints", b.token, {
+          candidates: [{ address: "192.168.1.1", port: 7015 }],
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (await target.call("sync.share", { ...share, enabled: false })).error,
+      undefined,
+    );
+    assert.equal(
+      (await source.port("sync.access", access)).error,
+      "sync_not_shared",
+    );
+    await target.call("sync.share", share);
+    await storage.exec(
+      "UPDATE devices SET membershipEpoch=membershipEpoch+1 WHERE deviceId=?",
+      b.deviceId,
+    );
+    assert.equal(
+      (await source.port("sync.access", access)).error,
+      "sync_not_shared",
+      "current peer epoch invalidates grant and publication",
+    );
+    assert.deepEqual(
+      ((await source.call("sync.incoming", {})).result as typeof incoming)
+        .items,
+      [],
+      "old full-identity grants cannot be advertised as current",
+    );
+    await target.call("sync.share", share);
+    assert.equal(
+      (
+        (await source.port("sync.access", access)).result as {
+          endpoints: unknown;
+        }
+      ).endpoints,
+      null,
+    );
+    await storage.exec(
+      "UPDATE devices SET credentialVersion=credentialVersion+1 WHERE deviceId=?",
+      b.deviceId,
+    );
+    assert.equal(
+      (await source.port("sync.access", access)).error,
+      "sync_not_shared",
+      "peer credentials are rechecked on every access",
+    );
+    assert.equal(
+      (await target.call("sync.share", share)).error,
+      "revoked_session",
+    );
+    assert.equal((await target.call("sync.share", share)).error, undefined);
+    assert.equal((await source.port("sync.access", access)).error, undefined);
+    assert.equal(
+      (await source.call("member.remove", { deviceId: b.deviceId })).error,
+      undefined,
+    );
+    assert.equal(
+      (await source.port("sync.access", access)).error,
+      "different_group",
+    );
+    const rejoin = await source.call("pairing.create", {});
+    assert.equal(
+      (
+        await target.call("pairing.redeem", {
+          requestId: randomUUID(),
+          code: (rejoin.result as { code: string }).code,
+        })
+      ).error,
+      "revoked_session",
+    );
+    assert.equal(
+      (
+        await target.call("pairing.redeem", {
+          requestId: randomUUID(),
+          code: (rejoin.result as { code: string }).code,
+        })
+      ).error,
+      undefined,
+    );
+    assert.equal(
+      (await source.port("sync.access", access)).error,
+      "sync_not_shared",
+      "re-pair never resurrects old grant",
+    );
+    assert.equal((await target.call("sync.share", share)).error, undefined);
+    assert.equal((await source.port("sync.access", access)).error, undefined);
+  } finally {
+    await source.stop();
+    await target.stop();
+  }
+});
 
 test("private remote policy management confirms the real target, persists IDs and stays separate from execution", async () => {
   const [a, b, outsider] = await Promise.all([
@@ -1679,5 +2090,99 @@ test("caller authentication closure refreshes the cached session without an HTTP
   } finally {
     await cloud.close();
     await runtime.close();
+  }
+});
+
+test("sync decisions recheck current sessions, grant revocation and both peer bindings after a slow body", async () => {
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "DeviceRegistry",
+    { name: "registry" },
+  );
+  for (const change of [
+    "session",
+    "expiry",
+    "epoch",
+    "credential",
+    "grant",
+  ] as const) {
+    const [a, b] = await Promise.all([
+      identity(`sync-race-a-${change}`),
+      identity(`sync-race-b-${change}`),
+    ]);
+    await pair(a.token, await code(b.token));
+    const sharedBotId = randomUUID();
+    const share = { sharedBotId, peerDeviceId: a.deviceId, enabled: true };
+    assert.equal((await call("/sync/share", b.token, share)).status, 200);
+    const input = JSON.stringify({
+      sharedBotId,
+      peerDeviceId: b.deviceId,
+      purpose: "replica.read",
+    });
+    assert.equal(
+      (await call("/sync/access", a.token, JSON.parse(input))).status,
+      200,
+    );
+    const response = new Promise<{ status: number; body: string }>(
+      (done, reject) => {
+        const req = httpRequest(
+          new URL("/api/devices/v1/sync/access", awaitOrigin),
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${a.token}`,
+              "content-type": "application/json",
+            },
+          },
+          (res) => {
+            let body = "";
+            res.on("data", (part) => (body += part));
+            res.on("end", () => done({ status: res.statusCode ?? 0, body }));
+          },
+        );
+        req.on("error", reject);
+        req.write(input.slice(0, -1));
+        void (async () => {
+          await new Promise((resolve) => setTimeout(resolve, 70));
+          if (change === "session")
+            assert.equal(
+              (await call("/members/remove", b.token, { deviceId: a.deviceId }))
+                .status,
+              200,
+            );
+          if (change === "expiry")
+            await storage.exec(
+              "UPDATE sessions SET expires=0 WHERE deviceId=?",
+              a.deviceId,
+            );
+          if (change === "epoch")
+            await storage.exec(
+              "UPDATE devices SET membershipEpoch=membershipEpoch+1 WHERE deviceId=?",
+              b.deviceId,
+            );
+          if (change === "credential")
+            await storage.exec(
+              "UPDATE devices SET credentialVersion=credentialVersion+1 WHERE deviceId=?",
+              b.deviceId,
+            );
+          if (change === "grant")
+            assert.equal(
+              (await call("/sync/share", b.token, { ...share, enabled: false }))
+                .status,
+              200,
+            );
+          req.end("}");
+        })().catch((error) => {
+          req.destroy();
+          reject(error);
+        });
+      },
+    );
+    const result = await response;
+    assert.equal(
+      result.status,
+      change === "session" || change === "expiry" ? 401 : 403,
+      result.body,
+    );
   }
 });

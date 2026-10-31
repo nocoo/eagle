@@ -8,14 +8,347 @@ Status snapshot. The contracts live in
 lives. Update it whenever a stage closes.
 
 The current tool taxonomy, native extension integration and test-evidence map are
-in [Extensions and tools](EXTENSIONS-AND-TOOLS.md). That guide also
-specifies planned optional `memory`, `search` and `peers` groups and child-agent
-discovery. Those additions are not implemented or enabled by this plan update.
+in [Extensions and tools](EXTENSIONS-AND-TOOLS.md). The fixed upstream input includes
+bounded peer exchanges and per-bot pull-request journals/tools with client presentation;
+this integration preserves them alongside synchronization. Historical planned/phase-1
+wording does not disable those implemented capabilities.
+
+Fixed-content baseline integration is normally delivered as
+`ee26b2bb5d0ab2530156843898e9b86c8611fb70` / tree `92d79c1e`, preserving the
+sync chain and pinned upstream `182fc1f704774eb37bdbc11cde017f8ff61f1c1a`.
+Authoritative `.local/sync-upstream-content/content-delivery-final.json`
+SHA293f1f74 binds1018 originals; own remote/clean/ahead0/behind0 and both normal
+hooks were independently accepted. Exact root267/browser191+11 existing skips/
+Swift208/51/60 scopes belong to that delivery, not the next slice.
+
+P4 CF72h explicit cache is normally delivered as `abec9dbb` / tree `8fbe3651`.
+Lead/Root independently accepted own remote and clean/ahead0/behind0;
+`.local/sync-p4-cf72h-cache/cache-delivery-final.json` SHA069c8aed binds1552
+references, with the final itself protected by the next slice. Review P2#1's
+Cache DO and Registry SQL-read classification fixes are closed. All original
+failures and exact gate scopes remain unchanged.
+
+Automatic transport on that baseline adds local publish/receive/both preferences,
+direct-first receive, network-only cache fallback, stable authenticated return and
+independent cache upload for already shared, ready bound replicas:
+[SYNC-AUTO.md](SYNC-AUTO.md). [TESTING.md](TESTING.md) and this slice's independent
+source/candidate/delivery receipts bind the actual verification and delivery state.
+This slice does not claim relay/discovery/expired holder reread/peer-applied ACK,
+full P4 or P5/P6. No cloud deployment or physical Mac/App evidence is claimed.
+
+That automatic slice is normally delivered as `01d90a70` / tree `9c0949f3`;
+its authoritative auto-delivery-final.json SHAaecf6d49 binds1934 references with
+normal commit/hooks/push and independently verified own remote/clean0/0.
+The current finite slice is [SYNC-RELAY.md](SYNC-RELAY.md): authorized online holders,
+outbound relay, original-source discovery/missing-or-expired-cache reread and relay
+delivery-associated actual apply receipts. Review/Lead accepted source-v26ab23ace /
+candidate803c6f09 after the sole registration-ownership P2 closed. Normal delivery is
+`6575f53f` / tree `ca3ea404`, single parent `01d90a70`; own remote matches and main
+is clean/ahead0/behind0. Authoritative relay-delivery-final.json SHA5870b595 binds
+2439 references; the next slice protects its final itself as reference2440.
+Normal hooks and their exact counts/scopes are in that receipt and TESTING.
+Authenticated all-path status is normally delivered as `193f75bd` / tree
+`73695d14`, single parent `6575f53f`. The accepted source-v2 `863cd483` closes
+status-report/status-read and its transaction-boundary P2; final25b2ea37 binds
+normal hooks, exact own ref and clean/tracking0/0 at delivery. Receiver reports
+and holder reads retain exact identity/binding/source keys and a separate bounded
+metadata action; offline apply, retention and direct handshake signing stay intact.
+
+The first two-physical-Mac round is independently closed at API/SDK scope:
+physical finaldc9c65da binds actual6575 copies and A→B→A5/10/14/19-entry continuation,
+A offline/B continuation, A catch-up and daemon restarts, with passive execution0.
+It used no hand-copied history and does not certify native App behavior.
+The six physical scenarios in TESTING remain final sync-PR admission requirements.
+Scene5 is accepted only as the combination finalf5b7827b, whole-window6766880e
+and timing38377da4: genuine product direct over Tailscale DERP, owned Miniflare
+cache fallback and stable return, with exact path/counter/history evidence.
+The earlier Stopped/NeedsLogin facts are historical. Neither UDP P2P nor deployed
+CF is claimed, and Service does not change the user's Tailscale configuration.
+
+The active P5 contract is [SYNC-NATIVE.md](SYNC-NATIVE.md). Source-v6 `a4e8d4b3`
+and all three earlier P2 repairs are accepted; normal-v6 `3511bbd7` binds the
+actual affected Node checks. Physical concurrent branchesdc891c81 and owned-alarm
+scene6 `114d482d` + authority1b733989 are accepted at their actual v5 API/SDK
+scope: two physical Macs and a third empty isolated C on A, original A offline,
+online B relay supply, unchanged event clocks, actual R2 deletion and passive0.
+This is the bounded original-alarm deadline window, not real elapsed wall72h.
+
+A native selector/merge/composer plus same-identity App/daemon restart is now
+accepted at finite `a0ca410d` + input421f922c + passive7b7f6794 scope.
+The same original d693 merge is continued once with selected resources; complete
+SDK history/Outbox/selection/request survive restart and execution counts do not
+increase. Its actual source copy/modules/binaries are separately bound; supplement
+ee54bb0b limits the earlier instance-log prefix to its actual10:21:54 content.
+B's earlier bridge denial and AX trust rejection remain boundaryff597b09 history.
+After the user's exact-helper permission change, one public no-prompt trust read
+returns true through the same responsible host. Finite B receipt482935b0 binds
+real native selection of already-ready A head2f685a07, explicit same-head resources
+and one composer request r_421B189D…/submission171. Actual SDK/local skill completes,
+provider3→5; same-identity App5198→6962/daemon68572→6987 restart preserves complete
+export/Outbox/selection/request with no execution replay. A receives the complete
+new head e8f5a483/resources with passive execution0 from an actual before captured
+before B sends. All18 new execution records retain their real10exit0/8exit1;
+B pre-send interruption remains cause-not-assigned; recovery is not a claimed
+fix. Actual copy701/749 and native modules/binaries are separate from repository
+input stability. Review formally accepted this finite B scope and final docs/tree;
+P5 was normally delivered as5bfb7cc, with CI fixture follow-ups through60e4.
+No duplicate merge/send or denied-operation replay is used.
+Keep messages, inputs/outputs/tool results, attachments, AGENTS.md and full versioned
+skill bytes with actual local execution evidence. Shared-backend reachability and
+current directed grants require their own facts; the paired command bridge is not
+sync authorization. P5/P6 work follows the actual first broken hop. Create the sync
+PR only after all authorized goals and these scenarios pass; PR112 is now open
+for review against `nocoo/eagle:main`. Do not merge it.
+
+`182fc1f` is the historical common development baseline. The user authorized this
+integration of upstream8674a3ee followed by fixed19f4a00a for PR112; do not chase a moving
+upstream. Preserve all published sync commits; #109 monitoring remains closed.
+
+## 多端 Bot 整体实施计划（2026-10-30）
+
+当前方案：**各端独立运行，Tailscale 直连优先、Cloudflare 回退，云端增量最多缓存 3 天（72 小时）**。
+架构与 Orca 机制见 [SYNC-ARCHITECTURE.md](SYNC-ARCHITECTURE.md)，源码证据见
+[SYNC.md](SYNC.md)，设备行为见 [DEVICE-PAIRING.md](DEVICE-PAIRING.md)。
+P0 本地闭环已推 `c073ea19`；P1 首个本地增量切片已验证并正常推送 `c8d8fd4`；
+P1 恢复身份切片已正常推送 fdb8973；目录 tombstone 已验收并正常推送 60fa5e2；
+P2 fixed-head696f649, ordinary-root265b0db and independent repair9475e2e were delivered normally.
+Fresh first-package264cc9e/treeb40045 was delivered with own fork verified and clean/ahead0/behind0.
+Receipt .local/sync-p2-fresh-resources/fresh-delivery.json SHA29bbd80f retains the initial
+pre-commit formatting failure, accepted formatting delta, successful commit-attempt2 and
+first fresh push with complete normal hooks. P2 local resource boundaries are verified.
+P3 metadata foundation is normally delivered as460b60d/treee3a552c; HEAD/own fork were
+independently verified clean/ahead0/behind0. Its authoritative delivery receipt is
+.local/sync-p3-device-access/p3-delivery-final.json SHAd0eccb99; prior metadata receipts
+and all original evidence remain readable. Agent1.2.0 is unpublished source, onboarding1.0.0 unchanged.
+P4 first authenticated one-page pull/apply is normally delivered as4f7d035/tree959dece.
+Own remote and clean/ahead0/behind0 were verified; authoritative
+.local/sync-p4-authenticated-pull/p4-delivery-final.json SHA687f6650 binds194 historical
+and30 delivery originals, including actual normal commit/pre-push/root/browser/Swift scopes.
+Durable encrypted page objects and directed recipient envelopes are normally delivered as
+8b5ca36/tree20d3fe12 after independent Review. Authoritative
+.local/sync-p4-encrypted-objects/objects-delivery-final.json SHA072acfa9 binds289 historical
+and40 delivery originals,including settled trace correctiona40bae3e. Own remote and
+clean/ahead0/behind0 were verified. Source-v3,target-slot P2 closure,both22/23 fixture failures
+and the final normal gates retain their exact recorded scope; TESTING records the delivery.
+Future cache identity must preserve original source epoch/seq across repaging/forwarding;
+The explicit CF72h cache slice is delivered abec9dbb. Automatic transport on
+that baseline is delivered01d90a70 as SYNC-AUTO. Relay/discovery and its delivery ACK
+are in the current SYNC-RELAY slice; all-path status and physical/P5/P6 remain next.
+Historical candidate and per-event evidence below retains its original scope.
+
+
+本轮19:45 +0800：旧019ab/720候选与证据保留；Review新增无关identity quarantine污染DELETE的P2
+已取得真实HTTP红→绿，remove仅按主目标close后的实际binding清理同身份alias。新affected173/173、
+types/lint、Bots普通/coverage各722/722及crash9/9均exit0；不重复未改的eval/perf，其旧范围单列。
+该19:45候选随后已Review/Lead接受；60fa5e2正常commit/push exit0，root260、browser191/11既有条件排除、
+Swift287全绿并核远端clean。19:59起P2先补契约/真实双daemon红，不称完整P1/P2完成。
+
+P2 20:10过程记录：首HTTP红→绿1/1，版本交错/安全边界局部绿；安装I/O误留pending与
+启动owner泄漏已取真实red并窄修。affected首轮42/44、type绿、lint格式红、资源定向crash3/3；
+正在收并行安装与显式本机资源路径断言，不沿旧gate宣称本片最终绿。详见根CHECKPOINTS和.local/sync-p2-resources。
+
+P2 20:22候选：标准fs mkdir/rename竞争校验、独立run输入版本oracle和完整system本机路径映射
+已收口；affected46/46及分支fixture定点9/9，最终types/lint、Bots普通/coverage各734/734同套、
+crash10/10、三个对应eval各1例、perf1/1均exit0。首轮check733/734的并发provider序号假设红保留，
+fixture改按实际user输入回答，原分支断言不变。正冻结候选交独立Review；未commit/push，
+普通root聊天排队/编辑版本选择仍planned，不称完整P2或云/物理设备完成。
+
+P2 20:38 Review窄修：旧766f101与734/10证据保留；同ID已接纳重试的真实红已最小修为公开Tx
+核实际SDK submission，affected60/60、定向crash4/4绿。warm HTTP task retry资源预检无failure origin
+亦已实跑红，最小runtime.task.retry.fail边界及日志契约27/27绿；types/check-only lint通过。
+新生产字节的正常check/crash/三个对应eval待收，不借旧gate称最终绿；未commit/push，下一root片不写。
+
+P2 20:40最终窄修候选：同ID实际SDK接纳查询与warm retry资源预检唯一origin两项均真实红→绿。
+review-fixes-affected87/87、types/check-only lint、Bots普通/coverage各763/763同套、crash11/11、
+三个精确对应eval各1例均exit0，coverage95.89/89.27/91.57。最终source/test冻结，正绑定新tree与
+原log/exit交增量Review；旧766f/734/10及perf保留原scope，不虚称新跑。当前未commit/push，
+首片仍in progress；普通root后片、cloud/网络/物理设备未交付。
+
+### 开发基线与 PR 边界
+
+在自己的 fork [MashellHan/eagle](https://github.com/MashellHan/eagle) 开发。历史开发基线已合入
+`nocoo/main@d69359b` 与 [#109](https://github.com/nocoo/eagle/pull/109) 的 `165d154`，
+原 `bot-sync/base@165d154` 和全部已发布同步提交保留。#109 已于2026-10-30 19:58:52Z
+正常合并；其上游 merge commit `5d48ba0a` 的 parents 为 `d69359b`、`165d154`，
+tree 与 `165d154` 完全相同。在已交付干净节点 `8b5ca36` 后，实际 fetch 确认该最新
+`upstream/main`；merge-base 为 `165d154`，两者内容差异为空。
+本次基线整合的固定父系为同步父 `8b5ca36`、上游父 `5d48ba0a`，共同祖先为
+`165d154`；保留全部同步源码和已发布提交。实际正常提交与远端结果记录在
+`.local/sync-upstream-109` 的最终交付收据，准备或候选记录不代表远端交付。
+本地开发目录为 `/Users/mengxionghan/workspace/eagle-sync`，按仓库规则在本地 `main` 集成。
+
+复用 #109 的设备群/配对、helper 文件身份、后台服务、独立设备 Worker 和
+`SharedDevicePort`，以 [DEVICES.md](../DEVICES.md) 为契约。该 port 提供设备执行；
+同步身份、握手及密钥元数据通过独立版本化的 Bots `DeviceSyncPort` 接入。
+不重新实现设备底座，也不把现有注册 signer 当作通用签名接口。
+
+历史同步候选基于 `182fc1f704774eb37bdbc11cde017f8ff61f1c1a`；当前 PR112
+按授权先整合8674a3ee、再整合实际 main 的固定19f4a00a，复核祖先与同步 diff，不重复带入 #109。
+个人验证 PR 的 `bot-sync/base` 已从历史165d154正常快进至182；upstream PR 目标为 `main`。
+
+### 已确定的行为
+
+- 同一个 Bot 在 A、B 各有本地副本和运行时，可以同时执行；A 离线或云端不可达时，
+  已就绪的 B 仍使用本机已有上下文运行。
+- 共享一段对话，顺序接续已同步历史，并发保留分支。默认沿当前分支继续；
+  显式合并创建新上下文节点，保留双方原始记录。
+- Bot 定义、消息、工具结果、附件、压缩来源、Bot 专属 `AGENTS.md` 和完整技能包跨端
+  共享。每轮固定实际使用的资源版本；工作区、模型凭据和系统权限由执行设备提供。
+- 本机先保存并执行，再异步同步。历史导入不触发模型或工具，不复制另一设备的任务队列。
+- Tailscale 可达且通过应用身份验证时优先直连；失败自动回退 Cloudflare，恢复后稳定切回。
+  新增增量仍独立后台上传 3 天缓存，直连接收确认与云端缓存确认分别记录。
+- 安装后本机环境就绪；App 配对后对新增可管理在线设备请求 Always ask，用户仍可选择
+  All approve/Always ask/暂停。多 Bot 共用设备及按目标设备串行的要求继续有效。
+
+### 组件与数据归属
+
+| 组件 | 职责 |
+| --- | --- |
+| 本机副本库、运行库和资源目录 | 保存原始历史、分支、outbox、同步位置；独立执行并恢复本端 run |
+| 本机连接管理器与同步入口 | 群内发布 Tailscale 端点、验证对端身份、选择直连/中继并恢复订阅；共用事件与游标 |
+| 独立 Bots Sync Worker | 认证入口、出站 WSS 中转、缓存传输及在线副本补读 |
+| 现有 DeviceRegistry / 新增目录 Sync DO | 分别管理设备群与成员权限，以及共享 Bot 目录、副本位置和删除事实 |
+| 每 Bot 一个 Sync DO | 路由、去重与回执元数据、同步位置和限时对象引用；不存消息正文 |
+| R2 | 加密增量及临时大对象，最多 72 小时；不作长期历史库或完整基线仓库 |
+
+参考 Eagle 现有 LiveRelay 的鉴权、出站连接与转发机制，保持 Bots 独立构建和部署；
+不直接导入网站 Worker/Agent 源码，现有机器采集和日报保留规则由其原契约管理。
+Orca 固定基线为 `6b937c7e5f5a`；借鉴持久日志、游标补读、幂等回执、连接恢复和
+完整技能包。多端本地执行、分支合并与 3 天缓存由 Eagle 新增。
+
+Tailscale 直连进入本版范围；专用同步入口仅向 Tailscale 网络开放。未安装、未登录或
+不可达时直接使用云通道，不把 Tailscale 作为安装前置条件。建议直连等待 2.5 秒后
+启动中继竞争，中继期间每 15 秒探测并在稳定后切回；参数以实际验证调整。
+
+### 3 天缓存契约
+
+- 时间从**服务端首次缓存成功**算起，`expiresAt = firstCachedAt + 72h`，不是三个自然日。
+  读取、重试、重新分批或设备离线均不得刷新原事件/对象的到期时间。
+- input、output、工具记录和临时附件均遵守此上限；到期停止补发并删除对象。
+  正文不写入 DO SQLite、日志或追踪，不另存长期摘要/完整聊天基线。
+- 对象保存和校验成功后才发布带到期时间的引用；DO/R2 不假设联合事务。
+  区分本机已保存、云端已缓存及对端已应用；缓存 ACK 不能充当备份或执行完成证明。
+- 本机保留原始历史。缓存过期后，从任一持有数据的在线副本补齐，不绑定创建设备，
+  不靠反复上传旧历史延长云端保留期。
+- 新设备从在线副本取得基线与资源，再补增量。没有持有者在线时等待缺失数据；
+  已有可运行副本可以继续，待补齐的数据不会被静默省略。
+
+| 场景 | 必须达到的行为 |
+| --- | --- |
+| Tailscale 可达 / 不可达 / 使用中断开 | 认证后优先直连；失败回退、恢复后稳定切回，不重复消息或执行 |
+| 已具备基线，A/B 在缓存有效期内错峰上线 | B 取得缓存覆盖的增量，持久应用后继续 |
+| 缓存满 72 小时，A 或其他持有者在线 | 从在线副本补读，完整保留历史和分支 |
+| 缓存过期且没有持有者在线 | 标记缺口；B 仍可基于本机已有完整上下文新开 run |
+| 双端并发、重启或反复重传 | 不丢分支、不重复执行、不延长缓存保留期 |
+
+### 交付顺序与完成条件
+
+| 阶段 | 状态 | 交付内容 | 退出证据 |
+| --- | --- | --- | --- |
+| P0 — 契约与上下文验证 | local verified | 身份、因果关系、被动导入、资源版本、端点/握手、双路径游标与确认语义 | 两个独立 SQLite 重建等价上下文；导入零执行；接纳与导出之间的崩溃可恢复 |
+| P1 — 本地副本与分支 | in progress | 持久来源日志、outbox、ID 映射、缺口补读与本端恢复 | A 停止后 B 可运行；重复/乱序同步保留两支；不恢复其他端任务 |
+| P2 - resources | local verified | fixed-head696f649, ordinary-root265b0db/repair9475e2e and fresh264cc9e delivered normally | Complete local version loading; raw contents/tool associations retained |
+| P3 — 设备底座接入 | first metadata slice delivered460b60d | 复用 #109 的安装/配对/helper/权限；新增同步身份授权、Tailscale 端点发布和共享访问接口 | 现有设备能力保持有效；无 Tailscale 可走云通道；端点身份、群成员和同步权限真实生效 |
+| P4 — 直连、中转与 3 天缓存 | delivered through193f75bd: automatic direct/cache return, online-holder relay/discovery and all-path persistent status | 认证直连与连接切换、独立 Worker/DO/R2、端到端加密、密钥撤销、72 小时缓存与补读 | 本地双端和 Miniflare 验证直连失败回退、恢复切回、旧连接迟到、双路重复、ACK/到期/实际删除；读取与重传不续期 |
+| P5 — 原生多端流程 | source-v6/normal, finite A/B native/restart and final binding accepted; B pre-send cause-not-assigned | 有界目录、持久 context、两父合并/资源选择、同一原 composer/Outbox 与 owned composition | A/B 真实控件各一次接续、本机 SDK/skill、同身份 App/daemon 重启、完整历史/资源及零重放 |
+| P6 — 多机验证与交付 | six scenarios have separately scoped physical evidence; final Review/delivery/PR pending | 两台物理 Mac、按需隔离 C，API/SDK 并发、Tail DERP 上的 direct/cache 切换、owned alarm 到期补读 | 各收据保留其实际层级；不扩称 native 并发、真实墙钟72h、UDP P2P、发行信任或部署 CF |
+
+依赖：已集成 #109 基线 → P0 → P1/P2/P3 → P4 → P5 → P6。P3 尽早做物理双 Mac 验证；
+P6 验证最终候选，C/D 隔离实例证据与真实机器分开记录。
+原范围映射：D0/S0 → P0；D1–D4 → P3；D5 → P3/P6；S1–S2 → P1/P5；
+S3 → P2；S4 → P4/P5/P6。
+
+### 首个切片与验证要求
+
+P0 正常 push 与门禁证据在 `.local/sync-p0/push-c073ea1/`。P1 当前已接通独立
+replica.sqlite、committed entry补扫描、固定ID本地intent/outbox与鉴权pull/apply/status。
+局部真实SQLite、分页、被动转发、分支和SIGKILL已绿，累计历史可超过单页8MiB；
+2026-10-30 17:43 +0800 的本地候选正常Bots check普通/coverage各673/673（同套不累加）、
+types/lint、crash8/8、完整本地eval11/11、perf1/1均exit0。Review随后确认三项P2兼容缺陷：
+旧P0 receipt直接run、独立完整branch carrier、root后来busy阻断固定head的独立分支。
+真实9失败后窄修，18:03 +0800 新affected49/49、check普通/coverage各682/682、types/lint、
+crash8/8、对应P0/P1 eval各1/1、perf1/1均exit0。上述18:03候选随后完成最终Review，
+三项P2关闭；c8d8fd4/tree9cbac731已正常commit/pre-commit及push/pre-push exit0，远端已核对。
+首片已交付，不称完整P1完成。自动head采用bounded fork与紧凑receipt，连续外来head复用完整prefix；
+原compaction 5+5保持不变，旧正文/工具结果/资源写入次数未随三个增量增长。
+epoch轮换、目录tombstone、P2资源
+安装及后续云/设备/UI条件仍planned。本轮不重复网站、Swift或物理Mac的旧证据。
+
+当前恢复身份片只在fresh本地运行库组合bind/import/apply/run，保留sharedBotId并生成
+新replicaId/epoch；新增鉴权receipts摘要枚举覆盖无source_events的旧完整P0载体。
+证据位于.local/sync-p1-recovery；原fixture目录前置不足的红/空页日志保留并注明，
+正确directory.botDir种库、独立head真实export预检后在c8d生产快照重取路由红。
+局部恢复/枚举/Session guard六项绿，最终affected42/42、types/lint exit0；最终Bots check普通/
+coverage各688/688（同套不累加），crash8/8、对应eval各1/1、perf1/1全exit0。
+旧22路径候选tree4de501/receipt68475d已冻结保留。Review确认receipt枚举raw I/O未进入
+Session保护的P2，当前以公开close封闭实例做窄修：原I/O不变、后续/在途结果拒绝，
+不伪称SDK SessionEnd.failed；空/compact、取消/StorageRequestError、唯一日志身份与cleanup
+均补回归。旧688仅属旧候选；新receipt-review-affected51/51、types/lint、
+check普通/coverage各697/697、crash8/8、两对应eval各1/1、perf1/1均exit0。
+新receipt-io-candidate收据绑定相对4de501的tree/路径SHA和新日志，待增量Review；
+本片未提交/未push，正常hooks尚待验收后执行。大于8MiB用原分页，不放宽请求cap，
+不复制活动库；备份前未上传branch与独立P0 branch、原始system/provider顺序直接断言。
+
+eb874d最终Review仅余close队列交错P2：同轮排队receipts/close的真实red为14项12过2败，
+cleanup另铸第二error。现以独立Session-close通知状态在末次scan执行时判断；健康close仍
+把尚未进入后台扫描的committed原entry/body准确持久化一次。source/test已冻结并单独交窄审。
+19:03 +0800 新affected54/54、types/lint、Bots check普通/coverage各700/700（同套不累加）、
+crash8/8、两对应eval各1/1、perf1/1全exit0。receipt-close-queue-candidate记录相对eb874d
+的路径/tree/日志hash；旧eb874d/receipt-io-candidate及697 gate全部保留。仍未commit/push，
+等待此唯一P2增量Review及Lead验收；不编码下一tombstone切片或新增原生/网络验收。
+
+先完成 P0（以下为当时验证合同，交付状态以上方明确结论为准）：在隔离目录创建两个真实 SQLite，用受控 provider 生成包含工具结果、
+指令变化与压缩记录的历史，验证 B 被动导入、A 停止后 B 发起新 run、重启恢复及
+并发分支。仅允许明确的本地 ID、工作区路径和 provider 会话身份映射；
+不能用复制活动 SQLite、最近消息窗口或删除不支持内容来替代上下文保真。
+
+行为实现遵守严格 TDD，相关契约与 fixtures 同步更新，v1 保持 additive-only。
+Bots daemon、Bots Swift、同步服务分别运行正常门禁；最终交付还执行根
+`npm run check`、`npm run test:browser` 和 macOS 检查，不降低既有要求。
+缓存验收覆盖 72 小时到期前后、上传成功但引用发布失败、清理失败重试及有/无在线
+来源的补读；拒绝读取和实际对象删除分别取证。
+传输验收覆盖没有 Tailscale、端点不可达、握手失败、直连中断、稳定切回、旧回调和
+双路重复；直连不得绕过成员撤销，收到历史不得重跑工具，直连成功不能假报云缓存完成。
+
+分别测量本地接纳、模型首字、另一端可见和首次副本就绪的 p50/p95，保留
+[既有性能界限](TESTING.md#performance-measurement)，区分 Tailscale、云中继及切换耗时。
+记录实际 Tailscale 网络路径，不把 DERP 转发当作物理直达证明。DO 使用可休眠连接；
+临时对象批量写入，容量按滚动 72 小时新增量估算。Workers Paid $5/月起，
+R2 按用量计费且有独立免费额度，均共享账号额度；详见 [费率依据](SYNC.md#容量与费用基线)。
+
+2026-10-30 16:38 +08：P0 本地候选已接通受认证 daemon/Registry/SDK 入口。
+真实入口红测是 A 已完成工具写入后 export 返回 404（`.local/sync-p0/http-red.log`）；
+资源续跑、nested 兼容性及手动 run 边界均保留独立真实红绿。两份 SQLite、220+ 原记录、
+真实工具文件字节/结果、指令与有序工具声明、SDK 压缩、edits/head 映射、重启、A 关闭后
+B 续跑、A/B 同 head 独立执行与分支交换、第三库重新导入及四个实际 commit/SIGKILL
+窗口已覆盖。nested 历史明确拒绝完整导出；保存但未安装的指令/skill bytes 阻止续跑。
+P1 outbox/副本日志与 P2 AGENTS/skill 加载仍 planned。
+
+首轮 Bots check 642/642；最终收口后保留一次 coverage 与一次普通轮的既有 50ms
+shell 首输出时序失败，以及一次新增测试格式失败。独立 fixture 修复 `e690a83` 后的
+`bots-check-timeout-formatted.log` exit 0：常规与 coverage 各 649/649（不累加）、
+types/lint 通过；最终 P0 源码 crash 6/6、local-run eval 1/1。Bots Swift 首轮
+40+44+52=136 通过，之后 Swift 输入未变且未重复运行。当前尚待独立 Review 和正常
+pre-push；未 push。没有云端、Tailscale、物理双 Mac 或 App/UI 验证。
+
+2026-10-30 16:50 +08 follow-up：Review 的 sections 顺序/hash P1 与二次来源扫描 P2 已修。
+真实 receipt/B/C prompt 反转与不同顺序同 head 红测7失败，修后 runtime/API21通过；
+摘要改为验证后的 v1 envelope JSON.stringify，已知字段按schema、原model/data对象保留
+插入顺序；来源循环前仅建一次反向Map，branch→C断言原entry/task归属。保留两轮新测试
+readonly类型失败与一轮真实shell附加诊断红；独立test-only `d8f3bfe` 用exec sleep并保留
+全串断言。最终 `section-order-bots-check-exec.log` exit0、常规/coverage同套各657，
+types/lint通过；crash6、local-run eval1通过。Swift输入未变不重跑；独立Review与正常
+pre-push尚待完成、未push；P1–P6及云/物理Mac边界不变。
+
+通用 LAN 自动发现、Web/手机客户端、云托管运行、整工作区同步及未完成 run 的跨端接管
+留待后续；部署、发布及 App 替换按项目规则另行执行。
 
 ## 共享设备与配对重构（2026-10-29）
 
 用户最新要求替代旧 M0–M1 的“手填部署信息、每 Bot 机器授权”产品流程：
-安装并首次启动 Eagle 后本机环境自动就绪、默认 All approve；设备由整个 App 共享，
+安装并首次启动 Eagle 后本机环境自动就绪；固定上游82d6f0d的 App 配对流程对新加入、
+在线且支持 policy.manage 的机器请求 Always ask，失败时保留该机器实际报告的状态，
+不批量改写既有持久 policy。设备由整个 App 共享，
 通过默认 1 小时、最长 24 小时的单次配对码加入设备群。配对成功后的设备身份持续
 有效，直到撤销。App 内 menu 弹窗（含“会话状态、基础控件”等入口）必须能打开
 真实设置，不能只有系统状态栏/菜单栏入口；设置统一提供“设备”、配对和设备级
@@ -55,8 +388,9 @@ worktree；旧 `main@c34be59` 只作按需复用来源。当前尚未完成设�
 | D4 — 设备权限与恢复 | planned | All approve / Always ask / 暂停，设备端真实执行策略、审批绑定与过期、journal 去重及原 ID 恢复；不存在只改 UI 的权限模式 |
 | D5 — 安装与多设备交付 | planned | 完整门禁、签名安装包、真实 Mac A/B 联动与退出 UI 验收、补充 C/D 验证四成员群；真实硬件与隔离实例分别报告，部署/发布按具体操作授权执行 |
 
-首个贯通切片覆盖安装即用、默认 All approve、配对、A/B 双向执行和多 Bot 共享，
+首个贯通切片覆盖安装即用、配对后新机器的 Always ask 请求、A/B 双向执行和多 Bot 共享，
 尽早实测两台 Mac；并发执行、多路复用和复杂调度不作为本轮前置工作。
+执行 policy 不替代同步授权；跨设备同步仍独立核当前 B→A grant。
 
 工作分成 App/集成与设备服务两条不重叠的实现线。迭代遵守行为 TDD 并只跑受影响
 检查；完整候选统一执行仓库门禁，不建立额外验收脚本、重复评审或流程任务。
@@ -996,3 +1330,41 @@ its open, a baseline that raced a flushed delta, a release buffer that went live
 early, failures that lost their classification, snapshots that bypassed submission
 ranking, a resync reply that could be replayed after a newer frame, and a resync
 snapshot without its command trace.
+
+
+Physical first round now completes real A→B→A SDK continuation through5/10/14/19
+entries, offline B work/A cold recovery and dual-daemon restart with passive0.
+Exact6575 execution copies/helper inputs and real A-return call are bound by
+physical-first-round-final.json SHA dc9c65da9060faa5959bc5e384bae218b8467f8c51eec14b2915fdd94c2eba77.
+This is controlled-provider/API/SDK/local-tools scope over the owned shared HTTPS
+backend; composer, physical direct/switching and remaining PR scenarios stay open.
+All-path status is now normally delivered as193f75bd/tree73695d14, with accepted
+source863cd483 and final receipt25b2ea37. Both hooks/own ref/clean0/0 are verified.
+Next is physical scene5 over the genuine Tail Self routes supplied by Root,
+using only owned application endpoints/connection barriers and the isolated
+Miniflare backend. The closed6575 API/SDK history round remains unchanged.
+Scene5 uses a product Self-only listener (`BOTS_SYNC_PORT=0`), real mutual-auth
+pages, actual network refusal/cache fallback and two spaced full probes/30s
+stable return. No CLI inventory or Tail settings change; report Root's DERP
+scope honestly. Minimum native P5 and the remaining physical PR scenes follow.
+The short execution contract is `.local/sync-physical-scene5/CONTRACT.md`.
+
+
+Scene5 API/SDK execution on new owned193f copies now proves actual product
+Tail Self direct→owned R2 cache→stable direct. A original5/B continuation10,
+B cached continuation14 and final direct continuation18 entries preserve exact
+heads, raw bodies/origins/sections and six selected resource files. The final
+B native request completed once; later bridge output truncation affected only
+evidence retrieval and did not trigger a repeated run. B endpoint recovery to
+stable direct took34.691s, with complete mutual-auth probes22.307s apart and
+conservative observed cache residency79.055s. Passive execution delta0; actual
+provider calls A2/B6 and local runs A1/B3 account for the intended local runs.
+Receipt: `.local/sync-physical-scene5/physical-scene5-final.json`.
+The initial warmup has one relay exchange; it is retained, not counted as a
+relay history-supply pass. Cache completion uses two actual cache/get200 calls;
+returning direct/new head adds no cache/get or relay/exchange. Application direct
+uses genuine Tail addresses; Root observed DERP(tok), not proven UDP P2P. The
+fallback is isolated Miniflare/R2, not deployed CF. Actual A/B copies741/697,
+reused dependency paths and each native helper are separately bound. Native
+composer/context/merge P5 and remaining physical PR scenarios, including owned
+72h online-holder supply, remain open. No old6575 history/gates are rerun.

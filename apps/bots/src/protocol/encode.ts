@@ -300,12 +300,19 @@ export const encodeCommand = (command: ClientCommand): Wire => {
     case "hello":
       return { type: "hello", protocolVersion: command.protocolVersion, client: command.client };
     case "subscribe":
-      return { type: "subscribe", botId: command.botId, trace: command.trace };
+      return {
+        type: "subscribe",
+        botId: command.botId,
+        ...(command.contextId === undefined ? {} : { contextId: command.contextId }),
+        trace: command.trace,
+      };
     case "send":
       return {
         type: "send",
         requestId: command.requestId,
         text: command.text,
+        ...(command.contextId === undefined ? {} : { contextId: command.contextId }),
+        ...(command.resourceHead === undefined ? {} : { resourceHead: command.resourceHead }),
         whenBusy: command.whenBusy,
         trace: command.trace,
       };

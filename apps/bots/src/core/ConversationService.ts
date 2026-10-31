@@ -35,6 +35,7 @@ const Events = {
   subscribeStart: declareEvent("core.subscribe.start"),
   subscribeOk: declareEvent("core.subscribe.ok"),
   subscribeFail: declareEvent("core.subscribe.fail"),
+  resolveFail: declareEvent("core.bot.resolve.fail"),
   submitStart: declareEvent("core.submit.start"),
   submitOk: declareEvent("core.submit.ok"),
   submitFail: declareEvent("core.submit.fail"),
@@ -137,6 +138,9 @@ export class CommandError extends ClassifiedFailure {
 }
 
 type Bot = {
+  readonly contexts: Map<string, { ready: Promise<Bot>; view?: Bot }>;
+  scopeRoot: Bot | undefined;
+  contextId: string | undefined;
   /** Absent while the bot is unavailable: the view still renders, the run cannot. */
   handle: RuntimeHandle | undefined;
   degraded: { readonly reason: ErrorKind; readonly message: string } | undefined;
@@ -155,12 +159,17 @@ type Bot = {
 
 type Connection = {
   readonly botId: string;
+  readonly contextId?: string;
   state: "pending" | "live" | "closed";
   bot: Bot | undefined;
   hub: HubSubscription | undefined;
 };
 
-type FailEvent = typeof Events.subscribeFail | typeof Events.submitFail | typeof Events.historyFail;
+type FailEvent =
+  | typeof Events.subscribeFail
+  | typeof Events.submitFail
+  | typeof Events.historyFail
+  | typeof Events.resolveFail;
 
 export class ConversationService implements InvocationPort {
   readonly #open: OpenBot;
@@ -237,6 +246,7 @@ export class ConversationService implements InvocationPort {
     botId: string,
     trace: string,
     sink: HubSubscriber,
+    contextId?: string,
   ): Promise<{ readonly rev: number; readonly snapshot: ConversationSnapshot }> {
     this.#log?.emit("info", "core", Events.subscribeStart, {
       trace,
@@ -248,12 +258,18 @@ export class ConversationService implements InvocationPort {
     }
     // Reserve the id before opening, so a concurrent subscribe or a disconnect during the
     // open cannot slip past the one-bot-per-connection rule.
-    const connection: Connection = { botId, state: "pending", bot: undefined, hub: undefined };
+    const connection: Connection = {
+      botId,
+      ...(contextId === undefined ? {} : { contextId }),
+      state: "pending",
+      bot: undefined,
+      hub: undefined,
+    };
     this.#connections.set(connectionId, connection);
     let bot: Bot;
     try {
       bot = await this.#serializeView(botId, async () => {
-        const current = await this.#bot(botId, trace);
+        const current = await this.#bot(botId, trace, contextId);
         await current.handle?.refreshTools(trace);
         return current;
       });
@@ -266,7 +282,11 @@ export class ConversationService implements InvocationPort {
     if (connection.state !== "pending") {
       throw this.#cancelled(Events.subscribeFail, trace, botId, connectionId);
     }
-    if (bot.hub.subscriberCount >= MAX_SUBSCRIBERS_PER_BOT) {
+    if (
+      [...this.#connections.values()].filter(
+        (item) => item.botId === botId && item.state === "live",
+      ).length >= MAX_SUBSCRIBERS_PER_BOT
+    ) {
       // Refused, not closed: the connection can still be used for a different bot.
       this.#connections.delete(connectionId);
       throw this.#refuseWith(
@@ -326,6 +346,7 @@ export class ConversationService implements InvocationPort {
     connection.state = "closed";
     connection.hub?.detach();
     this.#connections.delete(connectionId);
+    if (connection.bot !== undefined) this.#pruneContext(connection.bot);
   }
 
   /**
@@ -340,6 +361,8 @@ export class ConversationService implements InvocationPort {
     try {
       this.#botOf(connectionId, input.requestId);
       botId = this.#connectionBot(connectionId) as string;
+      if (this.#connections.get(connectionId)?.contextId !== input.contextId)
+        throw this.#refuse("the send context differs from the subscription", input.requestId);
     } catch (error) {
       this.#record(
         Events.submitFail,
@@ -367,8 +390,9 @@ export class ConversationService implements InvocationPort {
   async submission(query: {
     readonly botId: string;
     readonly requestId: string;
+    readonly contextId?: string;
   }): Promise<Submission | undefined> {
-    const bot = await this.#bot(query.botId, query.requestId);
+    const bot = await this.#bot(query.botId, query.requestId, query.contextId);
     return bot.handle?.submission({ requestId: query.requestId });
   }
 
@@ -381,7 +405,8 @@ export class ConversationService implements InvocationPort {
     const observers = this.#observers.get(botId) ?? new Set<(running: boolean) => void>();
     this.#observers.set(botId, observers);
     observers.add(sink);
-    sink(this.#current.get(botId)?.snapshot.running ?? false);
+    const current = this.#current.get(botId);
+    sink(current !== undefined && this.#allViews(current).some((item) => item.snapshot.running));
     return {
       detach: () => {
         observers.delete(sink);
@@ -433,6 +458,8 @@ export class ConversationService implements InvocationPort {
       const record = await this.#admit(botId, {
         requestId: input.requestId,
         text: input.text,
+        ...(input.contextId === undefined ? {} : { contextId: input.contextId }),
+        ...(input.resourceHead === undefined ? {} : { resourceHead: input.resourceHead }),
         whenBusy: input.whenBusy ?? "followUp",
         trace: input.trace,
       });
@@ -542,6 +569,10 @@ export class ConversationService implements InvocationPort {
     if (!INVOCATION_ID.test(input.requestId)) {
       throw this.#refuse("the request id is malformed", input.requestId);
     }
+    if (input.resourceHead !== undefined && !/^[a-f0-9]{64}$/.test(input.resourceHead))
+      throw this.#refuse("the resource head is malformed", input.requestId);
+    if (input.contextId !== undefined && !INVOCATION_ID.test(input.contextId))
+      throw this.#refuse("the context id is malformed", input.requestId);
     if (Array.from(input.text).length > MAX_INVOCATION_TEXT) {
       throw this.#refuse(`text exceeds ${MAX_INVOCATION_TEXT} characters`, input.requestId);
     }
@@ -572,35 +603,51 @@ export class ConversationService implements InvocationPort {
     // Concurrent recovers must not attach a second watch to one handle: one serial
     // section per bot re-checks the state it saw before it acts.
     await this.#serializeView(bot.snapshot.botId, async () => {
-      if (bot.degraded !== undefined && bot.handle === undefined) {
-        const rebuilt = await this.#reopen(bot, connection.botId, trace);
-        // The snapshot first, then the catalog: a client learns the recovery from the
-        // frame that carries its content (PROTOCOL I1/I3).
-        bot.hub.publishSnapshot(rebuilt, trace);
-        bot.hub.drain();
-        // A second failure during the recovery must leave the catalog unavailable.
-        if (bot.degraded === undefined) {
-          this.#onRecovered?.(bot.snapshot.botId, rebuilt.running);
+      const botId = bot.snapshot.botId;
+      const leased = this.#lease?.acquire(botId);
+      if (leased === false)
+        throw this.#refuseWith(
+          Events.resolveFail,
+          trace,
+          botId,
+          connectionId,
+          "unknown_bot",
+          "not_admitted",
+          "the bot cannot recover right now",
+        );
+      try {
+        if (bot.degraded !== undefined && bot.handle === undefined) {
+          const rebuilt = await this.#reopen(bot, connection.botId, trace);
+          // The snapshot first, then the catalog: a client learns the recovery from the
+          // frame that carries its content (PROTOCOL I1/I3).
+          bot.hub.publishSnapshot(rebuilt, trace);
+          bot.hub.drain();
+          // A second failure during the recovery must leave the catalog unavailable.
+          if (bot.degraded === undefined) {
+            this.#onRecovered?.(bot.snapshot.botId, rebuilt.running);
+          }
+          return;
         }
-        return;
-      }
-      // A degraded-but-owned bot still has its handle: recover must ask that owner.
-      const handle = bot.handle ?? this.#handle(connectionId);
-      await handle.recover(trace);
-      if (bot.degraded !== undefined) {
-        // The harness survived; its watch was re-attached by the runtime. Re-render from
-        // the same owner rather than opening a second Harness over one sqlite file.
-        bot.detach?.();
-        const attached = await this.#attach(handle, bot.hub, trace, bot);
-        attached.release();
-        if (bot.degraded === undefined) {
-          this.#onRecovered?.(bot.snapshot.botId, bot.snapshot.running);
+        // A degraded-but-owned bot still has its handle: recover must ask that owner.
+        const handle = bot.handle ?? this.#handle(connectionId);
+        await handle.recover(trace);
+        if (bot.degraded !== undefined) {
+          // The harness survived; its watch was re-attached by the runtime. Re-render from
+          // the same owner rather than opening a second Harness over one sqlite file.
+          bot.detach?.();
+          const attached = await this.#attach(handle, bot.hub, trace, bot);
+          attached.release();
+          if (bot.degraded === undefined) {
+            this.#onRecovered?.(bot.snapshot.botId, bot.snapshot.running);
+          }
         }
+        // The retry ran: the snapshot no longer asks for one.
+        const { parked: _parked, ...rest } = bot.snapshot;
+        bot.snapshot = rest;
+        bot.hub.publishSnapshot(bot.snapshot, trace);
+      } finally {
+        if (leased === true) this.#lease?.release(botId);
       }
-      // The retry ran: the snapshot no longer asks for one.
-      const { parked: _parked, ...rest } = bot.snapshot;
-      bot.snapshot = rest;
-      bot.hub.publishSnapshot(bot.snapshot, trace);
     });
   }
 
@@ -608,7 +655,10 @@ export class ConversationService implements InvocationPort {
   async #reopen(bot: Bot, botId: string, trace: string): Promise<ConversationSnapshot> {
     // The dead handle's watch is gone with it; keep the view, replace the runtime behind it.
     bot.detach?.();
-    const handle = await this.#open(botId, trace);
+    const owner = await this.#open(botId, trace);
+    const handle =
+      bot.contextId === undefined ? owner : await owner.context?.(bot.contextId, trace);
+    if (handle === undefined) throw this.#refuse("runtime has no contexts");
     // Attached onto the same object: the event closure, the connection and the cache all
     // keep pointing at one view, and the hub keeps its subscribers.
     const attached = await this.#attach(handle, bot.hub, trace, bot);
@@ -691,13 +741,16 @@ export class ConversationService implements InvocationPort {
   async #admit(botId: string, input: SubmitInput): Promise<Submission> {
     // A port caller may be the first thing to touch this bot: open (and recover) it here,
     // outside the serial section, so an unavailable bot still answers with its view.
-    await this.#bot(botId, input.requestId);
+    await this.#bot(botId, input.requestId, input.contextId);
     return this.#serialize(botId, async () => {
-      const bot = await this.#bot(botId, input.requestId);
+      const bot = await this.#bot(botId, input.requestId, input.contextId);
       const handle = this.#handleOfBot(bot, input.requestId);
       let stored: Submission | undefined;
       try {
-        stored = await handle.submission({ requestId: input.requestId });
+        stored = await handle.submission({
+          requestId: input.requestId,
+          retry: { whenBusy: input.whenBusy, trace: input.trace },
+        });
       } catch (cause) {
         if (cause instanceof ClassifiedFailure) throw cause;
         throw new CommandError(
@@ -714,7 +767,9 @@ export class ConversationService implements InvocationPort {
         if (stored.status === "done" || stored.status === "unanswered") {
           bot.reserved.delete(input.requestId);
         }
-        return stored;
+        return input.resourceHead === undefined && input.contextId === undefined
+          ? stored
+          : handle.submit(input);
       }
       // A reservation already visible as pending is the same admission, not a second one.
       // An expired one is released only after the runtime says it is not outstanding:
@@ -738,13 +793,24 @@ export class ConversationService implements InvocationPort {
           bot.reserved.set(requestId, now);
         }
       }
-      const unlisted = [...bot.reserved.keys()].filter(
-        (requestId) => !bot.snapshot.pending.some((record) => record.requestId === requestId),
-      ).length;
-      if (
-        bot.snapshot.pending.length + unlisted >= MAX_PENDING ||
-        bot.snapshot.inbox.length >= MAX_INBOX
-      ) {
+      const root = bot.scopeRoot ?? bot;
+      const views = this.#allViews(root);
+      // Views are projections, not the durable admission catalog: a cold context need not
+      // have a view. Union its persisted records with reservations whose commit is unknown.
+      const durable = (await this.#handleOfBot(root).outstanding?.(input.trace)) ?? [];
+      const pending = new Set(
+        durable.map((record) => record.requestId || `submission:${record.id}`),
+      );
+      const inbox = new Set(
+        durable.filter((record) => record.status === "queued").map((record) => record.id),
+      );
+      for (const view of views) {
+        for (const record of view.snapshot.pending)
+          pending.add(record.requestId || `submission:${record.id}`);
+        for (const requestId of view.reserved.keys()) pending.add(requestId);
+        for (const item of view.snapshot.inbox) inbox.add(item.id);
+      }
+      if (pending.size >= MAX_PENDING || inbox.size >= MAX_INBOX) {
         throw new CommandError(
           this.#mint("limit_exceeded"),
           "not_admitted",
@@ -756,7 +822,7 @@ export class ConversationService implements InvocationPort {
       try {
         // The bot can become unavailable while the record lookup awaited: the handle this
         // section captured may be dead by now, so availability is re-checked here.
-        const live = await this.#bot(botId, input.requestId);
+        const live = await this.#bot(botId, input.requestId, input.contextId);
         if (live.degraded !== undefined || live.handle !== handle) {
           bot.reserved.delete(input.requestId);
           throw new CommandError(
@@ -863,6 +929,9 @@ export class ConversationService implements InvocationPort {
 
   /** One place publishes a run-state change: the catalog and every invocation observer. */
   #emitRunning(botId: string, running: boolean): void {
+    const current = this.#current.get(botId);
+    if (current !== undefined)
+      running = this.#allViews(current).some((item) => item.snapshot.running);
     this.#onRunning?.(botId, running);
     for (const sink of [...(this.#observers.get(botId) ?? [])]) sink(running);
   }
@@ -958,11 +1027,11 @@ export class ConversationService implements InvocationPort {
     return connection.bot;
   }
 
-  async #bot(botId: string, trace: string): Promise<Bot> {
+  async #bot(botId: string, trace: string, contextId?: string): Promise<Bot> {
     try {
       const bot = await this.#resolveBot(botId, trace);
       this.#current.set(botId, bot);
-      return bot;
+      return contextId === undefined ? bot : this.#contextBot(bot, contextId, trace);
     } catch (error) {
       // A bot that is gone must not keep answering `observe` from a stale view.
       if (error instanceof ClassifiedFailure && error.failure.kind === "unknown_bot") {
@@ -970,6 +1039,70 @@ export class ConversationService implements InvocationPort {
       }
       throw error;
     }
+  }
+
+  #allViews(root: Bot): Bot[] {
+    return [
+      root,
+      ...[...root.contexts.values()].flatMap((slot) =>
+        slot.view === undefined ? [] : [slot.view],
+      ),
+    ];
+  }
+
+  #pruneContext(bot: Bot): void {
+    const root = bot.scopeRoot;
+    if (
+      root === undefined ||
+      bot.contextId === undefined ||
+      bot.hub.subscriberCount > 0 ||
+      bot.snapshot.running ||
+      bot.snapshot.pending.length > 0 ||
+      bot.snapshot.inbox.length > 0 ||
+      bot.reserved.size > 0
+    )
+      return;
+    if (root.contexts.get(bot.contextId)?.view === bot) {
+      bot.detach?.();
+      root.contexts.delete(bot.contextId);
+    }
+  }
+
+  #contextBot(root: Bot, contextId: string, trace: string): Promise<Bot> {
+    if (!INVOCATION_ID.test(contextId)) throw this.#refuse("the context id is malformed");
+    const existing = root.contexts.get(contextId);
+    if (existing !== undefined) return existing.ready;
+    const pending = (async () => {
+      const owner = this.#handleOfBot(root);
+      const handle = await owner.context?.(contextId, trace);
+      if (handle === undefined) throw this.#refuse("runtime has no contexts");
+      let bot: Bot | undefined;
+      let refreshing = false;
+      const hub = new EventHub(root.snapshot.botId, trace, {
+        ...this.#hubOptions,
+        onDegrade: () => {
+          if (bot === undefined || refreshing) return;
+          refreshing = true;
+          try {
+            bot.hub.publishSnapshot(bot.snapshot, trace);
+          } finally {
+            refreshing = false;
+          }
+        },
+      });
+      bot = await this.#attach(handle, hub, trace, undefined, root, contextId);
+      bot.origins = root.origins;
+      if (bot.origins !== undefined) bot.snapshot = this.#withOrigins(bot.snapshot, bot.origins);
+      const slot = root.contexts.get(contextId);
+      if (slot !== undefined) slot.view = bot;
+      bot.release();
+      return bot;
+    })();
+    root.contexts.set(contextId, { ready: pending });
+    pending.catch(() => {
+      if (root.contexts.get(contextId)?.ready === pending) root.contexts.delete(contextId);
+    });
+    return pending;
   }
 
   async #resolveBot(botId: string, trace: string): Promise<Bot> {
@@ -1055,6 +1188,9 @@ export class ConversationService implements InvocationPort {
       const reason = classified?.failure.kind ?? "storage_failed";
       const message = classified?.message ?? "the bot could not be opened";
       return {
+        contexts: new Map(),
+        scopeRoot: undefined,
+        contextId: undefined,
         handle: undefined,
         degraded: { reason, message },
         hub,
@@ -1076,7 +1212,14 @@ export class ConversationService implements InvocationPort {
     }
   }
 
-  async #attach(handle: RuntimeHandle, hub: EventHub, trace: string, target?: Bot): Promise<Bot> {
+  async #attach(
+    handle: RuntimeHandle,
+    hub: EventHub,
+    trace: string,
+    target?: Bot,
+    scopeRoot?: Bot,
+    contextId?: string,
+  ): Promise<Bot> {
     const buffered: RuntimeEvent[] = [];
     let ready = false;
     let bot: Bot;
@@ -1135,6 +1278,7 @@ export class ConversationService implements InvocationPort {
       hub.publish(
         event.type === "snapshot" && next !== event.value ? { ...event, value: next } : event,
       );
+      this.#pruneContext(bot);
     };
     const ranks: SubmissionRanks = new Map();
     const subscription = await handle.subscribe(trace, (event) => {
@@ -1146,8 +1290,11 @@ export class ConversationService implements InvocationPort {
     });
     seedRanks(ranks, subscription.snapshot.pending);
     bot = target ?? ({} as Bot);
-    this.#live.set(hub.botId, bot);
+    if (scopeRoot === undefined && target?.scopeRoot === undefined) this.#live.set(hub.botId, bot);
     Object.assign(bot, {
+      contexts: target?.contexts ?? new Map(),
+      scopeRoot: scopeRoot ?? target?.scopeRoot,
+      contextId: contextId ?? target?.contextId,
       handle,
       degraded: undefined,
       hub,

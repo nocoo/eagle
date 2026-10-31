@@ -8,6 +8,10 @@ import type { Level } from "./log/log.ts";
 export type DaemonConfig = {
   /** Optional host-owned, version-1 private device port. No credentials. */
   readonly deviceSocket?: string;
+  /** Separate Self-only sync listener; absent disables listening, zero selects a port. */
+  readonly syncPort?: number;
+  /** Trusted dedicated cache service, never selected by an HTTP caller. */
+  readonly syncCacheOrigin?: string;
   /** Canonical root: the catalog, the token, the logs and every bot directory. */
   readonly root: string;
   /** Loopback service port. */
@@ -74,7 +78,31 @@ export const readConfig = (input: ConfigInput = {}): DaemonConfig => {
       port = portNumber(value, DEFAULT_PORT);
     }
   }
+  const selectedSyncPort = argv.includes("--sync-port")
+    ? argv[argv.indexOf("--sync-port") + 1]
+    : env.BOTS_SYNC_PORT;
+  const syncCacheOrigin = env.BOTS_SYNC_CACHE_ORIGIN;
+  if (syncCacheOrigin !== undefined) {
+    const url = new URL(syncCacheOrigin);
+    if (
+      url.origin !== syncCacheOrigin ||
+      url.username ||
+      url.password ||
+      (url.protocol !== "https:" &&
+        !(url.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(url.hostname)))
+    )
+      throw new Error("BOTS_SYNC_CACHE_ORIGIN needs an HTTPS origin or owned loopback HTTP");
+  }
+  if (
+    (argv.includes("--sync-port") || selectedSyncPort !== undefined) &&
+    (selectedSyncPort === undefined ||
+      !/^\d+$/.test(selectedSyncPort) ||
+      Number(selectedSyncPort) > 65535)
+  )
+    throw new Error("--sync-port needs a port from0 to65535");
   return {
+    ...(selectedSyncPort === undefined ? {} : { syncPort: Number(selectedSyncPort) }),
+    ...(syncCacheOrigin === undefined ? {} : { syncCacheOrigin }),
     ...(env.BOTS_DEVICE_SOCKET === undefined ? {} : { deviceSocket: env.BOTS_DEVICE_SOCKET }),
     root,
     port,

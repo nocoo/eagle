@@ -130,6 +130,7 @@ test("the standalone deployment builds only device code and binds only its two S
   assert.deepEqual(bundle[1].exports.sort(), [
     "DeviceExecution",
     "DeviceRegistry",
+    "SyncCacheRegistry",
     "default",
   ]);
   assert.deepEqual(Object.keys(await mf.getBindings()).sort(), [

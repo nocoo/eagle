@@ -36,12 +36,16 @@ export function validateCommand(command: ClientCommand): ClientCommand {
       return command;
     case "subscribe":
       check(command.botId, BOT_ID, "botId");
+      if (command.contextId !== undefined) check(command.contextId, REQUEST_ID, "contextId");
       check(command.trace, TRACE_ID, "trace");
       return command;
     case "send": {
       check(command.requestId, REQUEST_ID, "requestId");
+      if (command.contextId !== undefined) check(command.contextId, REQUEST_ID, "contextId");
       check(command.trace, TRACE_ID, "trace");
       // Characters, not bytes: the contract caps user text in code points.
+      if (command.resourceHead !== undefined)
+        check(command.resourceHead, /^[a-f0-9]{64}$/, "resourceHead");
       if (Array.from(command.text).length > MAX_SEND_TEXT) {
         throw new FrameError("invalid_command", `text exceeds ${MAX_SEND_TEXT} characters`);
       }

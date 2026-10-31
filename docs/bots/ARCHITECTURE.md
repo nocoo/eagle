@@ -520,3 +520,167 @@ the innermost layer rather than a generic wrapper.
 - Swift: `ObservableObject` and the `LocalState` shim (no SwiftUI macros), because
   Command Line Tools must build the app; tests and the coverage gate need the
   Xcode toolchain, as in `apps/macos/Scripts`.
+
+
+## P0 local handoff boundary
+
+`server/http` authenticates and bounds the four additive `replica` endpoints;
+`BotRegistry.replica` holds the ordinary Bot lease and delegates through
+`RuntimeHandle.replica`. `runtime/pi/HistoryReplica` uses only public SDK APIs:
+fork-aware entry/task reads and atomic Harness transactions. It preserves the original
+bundle and local entry map in session-scoped SDK documents, creating ownerless passive
+conversations. Original task IDs are provenance, never local scheduler ownership.
+Explicit continuation has a durable head/text/request binding and a fresh local fork.
+The SDK's existing admission/scheduling/recovery executes that new input.
+
+This is the P0 cross-SQLite validation slice. Separate replica logs/outbox and causal
+incremental transport remain P1; resource installation is P2. Task-scoped nested results
+are not archived by P0, so a complete export rejects nested calls in the selected
+conversation or any fork ancestor. No foreign task, ProviderDoc, queue or active database
+is copied, and no SharedDevicePort dependency or general synchronization engine is added.
+
+
+## P1 local incremental boundary
+
+`ReplicaSync` joins the runtime's existing submission/history calls to a separate per-Bot
+`ReplicaStore` (`replica.sqlite`). The SDK owns session.sqlite; its public commit listener
+only queues an asynchronous, ascending entry-ID scan. Source facts/cursors, local intent+
+outbox and incoming deduplication are replica transactions. There is no transaction spanning
+both databases. Fixed SDK request IDs and passive import receipts repair the intervening
+crash windows; only local intents recover execution. Imported provider/task documents are
+never created, and imported entry provenance is forwarded without a new local origin.
+
+Native heads pin bounded public SDK forks; automatic SDK receipts hold only manifest
+references/ID maps. Incoming matching complete prefixes fork and append only their suffix,
+while initial unrelated history materializes once. Agent config is explicitly restored at
+both pin and run, including configure commits after the tail; ProviderDoc/inbox stay initial.
+Head manifests reference durable facts; dependencies gate passive SDK materialization and
+peer-applied positions. Incoming protocol-invalid sources remain retained/blocked separately
+from other runnable heads. This is a local incremental API, with complete local assembly
+cost, not a cloud baseline/cache or a generic transport. P2 installation, P3 device binding,
+P4 transport/cache, P5 UI/merge and P1 epoch/tombstone follow-ups retain their planned scope.
+
+Passive recovery composes bind/import/apply/run in a newly created local runtime. The only
+new surface is a full-carrier summary inventory: HistoryReplica receives public Storage
+scanDocuments/document from PiDurableRuntime's existing owner. Entry-map validation stays
+on Harness.commit/Tx.scanEntries so it observes conversation visibility and the Session's
+serial/failure guard. Metadata cursors remain request-local; HTTP after uses DocumentId.
+No database/queue/provider session is copied, no new epoch setter is introduced, and legacy
+carriers without source events are exported explicitly rather than reissued as local facts.
+
+
+## P1 directory tombstones
+
+Root catalog.json owns an append-only deduplicated tombstone set of {sharedBotId}.
+Local cleanup mappings stay beside it, never on the wire. All catalog/group mutations
+preserve both. After the ordinary lease drain/close succeeds, deletion reads the actual
+replica binding through RuntimePort.readReplicaBinding without opening an SDK runtime.
+It atomically saves the tombstone/cleanup mapping before moving the directory to trash.
+Mark failure cannot move data; a saved mark fences all aliases even when cleanup fails.
+Startup reconciles pending cleanup before opening/resuming any runtime. Existing rename
+atomicity is process-crash protection, not an explicit fsync/power-loss guarantee.
+Root tombstone pull/apply is independent of a deleted local Bot ID. Bind and deletion
+are ordered at the registry boundary; incoming deletion closes the entry door before
+waiting for existing leases/close, retaining the existing timeout/quarantine rules.
+An existing WebSocket holds its lease until it closes; apply can therefore time out
+honestly with a saved tombstone and an unmoved active database. A later successful
+quarantine close does not remove that tombstone. Socket recover acquires the same owner
+lease inside its serialized callback, before reopening or retrying any work, and releases
+it in finally. Cached subscriptions cannot revive a deleted Bot.
+Reconciliation isolates individual pending directory-move failures, keeps their cleanup
+mappings hidden from runtime startup and reports only successful deletes as finished.
+Newly discovered bound aliases follow that same path. Root catalog read/validation/write
+failures still stop startup; they are not classified as individual cleanup failures.
+After the requested local delete succeeds, alias cleanup is limited to that target's
+actual shared binding read after close. An unrelated tombstoned/quarantined owner must
+not change this delete's result or catalog broadcast. An unbound legacy target has no
+shared aliases to clean. Same-identity aliases still retain the ordinary close/failure
+and trash-preservation rules.
+
+
+## Fixed-head resources (P2 first local slice)
+
+History resources remain immutable replica facts. The runtime alone installs complete
+selected manifests into per-Bot content-addressed version directories and pins a version
+reference with the public SDK conversation-document API. The extension's ordered section
+uses committed branch reads; installation/readiness validation happens before run admission
+and before any startup pending-submit/global scheduler resume. It does not install code
+extensions from packages, change local cwd/credentials/permissions or add network services.
+Ordinary chat resource selection/local edits and fresh first-package loading are delivered
+as recorded in PLAN; they reuse these immutable resources and per-input pins.
+
+
+## P3 device synchronization port
+
+Core owns DeviceSyncPort version1 and metadata domain types. A daemon-owned adapter
+uses the private DeviceChannel JSONL transport and its own strict codec, importing no
+Eagle source/contracts. Composition injects the optional port into BotRegistry; its
+metadata HTTP operation reads the actual local binding without starting the SDK and
+uses existing deletion guards. RuntimeHandle, pi-durable and execution journals do not
+participate. Device service/Registry own authenticated membership/grant decisions;
+private helper management owns grant and candidate publication writes. No synchronization
+request uses the device directory's offline-local presentation fallback.
+
+Sync access snapshots the real binding under the existing directory serialization, releases
+that serialization during the private-service request, then rechecks binding and deletion
+under it before returning. It never leases/opens a Harness or blocks ordinary local input.
+
+
+## P4 durable object ownership
+
+Bots owns its version1 key codec,immutable SyncObjectStore and authenticated object delivery
+composition. DeviceSyncPort carries only typed key metadata across the existing private socket;
+Swift helper/vault alone retains wrapping private keys. Bots imports no Eagle contracts or
+Worker/Agent source. A global owned `sync-objects/v1/<objectId>.json` contains the complete cipher,
+signed manifest,descriptor,envelope and fixed accepted identity pin; the record also binds all
+four actual local replica identity fields. Recipient slots are append-only under that object.
+No plaintext DEK enters replica DB,Registry or logs, and ciphertext does not enter the vault.
+
+ReadyReplica.publish is an internal synchronous first-winner admission seam, not a public
+transaction API. Staging and full winner verification remain outside the short lease; actual
+exclusive link is fenced against directory/binding/handle/tombstone and lifetime changes.
+Local stored apply uses the existing runtime command actual-use guard and passive receive;
+network readiness cannot invalidate that offline capability. Ordinary open/recover and SDK
+scheduling retain their existing contract. No cache,transport retry or new execution queue exists.
+
+## Online-holder relay ownership
+
+Bots owns its own finite relay schemas/SyncRelay adapter and automatic ready-only
+composition. The independent Bots Sync Worker owns bounded in-memory encrypted
+forwarding plus holder/delivery/receipt metadata in the existing per-sharedBot DO.
+Its only Registry dependency is the named metadata-authority RPC, never source
+imports from Eagle. Swift/helper carries typed identity/auth/proof metadata only.
+No plaintext baseline/body or private key enters DO metadata, and relay never
+writes R2 or renews the72h event clock.
+
+Relay transport generation and one-use challenges are independent of direct Self
+readiness. Both share original closed/full-binding/tombstone/time/current-grant
+and actual publish/receive admission fences. The automatic cloud candidate tries
+relay only for a truthful cache gap or absent baseline; it remains one inbound
+candidate beside at most one complete direct probe, with independent upload.
+Source coverage is an authorized hint; pages retain original source events and
+resource pins. Existing local full-source drain handles cross-source dependencies.
+
+One pendingApply objectId and one associated pendingReceipt per preference suffice
+for cold local retry and lost ACK recovery. Local apply precedes network work;
+current-authorized explicit delivery-unavailable can release only ACK waiting.
+No generic queue, scheduler, crypto session, drain API or new reverse grant.
+This slice reports only relay-associated receipts; all-path status follows before P5.
+
+## All-path persistent status ownership
+
+The additive status-report/status-read path uses existing metadata authority and
+named Registry RPC. The current receiver rebuilds bounded source progress from
+the same ReadyReplica durable status; the holder independently reads exact-key
+snapshots under the original holder→receiver grant. Worker persists metadata only,
+keyed by registry/sharedBot/full identities/receiver binding/original source; it
+does not touch bodies, R2 or retention. Receiver reports are authenticated statements,
+not Worker-verifiable direct receipts or remote execution proof.
+
+AutomaticSync owns a single independent metadata action beside inbound and upload.
+Original configuration/ready/attempt guards apply after authority waits and at send;
+close cancels it, while direct Self loss does not disable legitimate cloud status.
+No persistent ACK queue or core/drain API is introduced: restart reports the actual
+DB again without another get/apply. Local offline apply keeps its fixed-pin path.
+Sender connection status preserves full timestamped snapshots and keeps the
+receiver's current binding unknown. See SYNC-STATUS for the exact bounded schema.

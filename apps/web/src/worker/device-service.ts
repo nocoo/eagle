@@ -11,6 +11,20 @@ export type DeviceServiceEnv = {
   BUILD_REVISION: string;
 };
 
+/** Fixed service-binding metadata RPC; public fetch never exposes this verifier. */
+export class SyncCacheRegistry extends WorkerEntrypoint<DeviceServiceEnv> {
+  checkRelayAuthority(input: unknown) {
+    return this.env.DEVICE_REGISTRY.getByName("registry").checkRelayAuthority(
+      input,
+    );
+  }
+  checkCacheAuthority(input: unknown) {
+    return this.env.DEVICE_REGISTRY.getByName("registry").checkCacheAuthority(
+      input,
+    );
+  }
+}
+
 export default {
   fetch(request, env) {
     const path = new URL(request.url).pathname;
@@ -45,3 +59,5 @@ export default {
     return deviceJSON({ error: "not_found" }, 404);
   },
 } satisfies ExportedHandler<DeviceServiceEnv>;
+
+import { WorkerEntrypoint } from "cloudflare:workers";

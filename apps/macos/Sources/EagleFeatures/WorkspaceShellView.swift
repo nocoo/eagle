@@ -10,10 +10,10 @@ public struct WorkspaceShellView: View {
   @StateObject private var inspector: InspectorViewModel
   @StateObject private var layout: ShellLayoutViewModel
   @StateObject private var account = AccountMenuViewModel()
-  @StateObject private var settings = SettingsViewModel()
-  @StateObject private var daemon = BotsDaemonSupervisor.shared
-  @StateObject private var devices = DeviceSettingsViewModel.shared
-  @StateObject private var bots = BotsWorkspaceViewModel()
+  @StateObject private var settings: SettingsViewModel
+  @StateObject private var daemon: BotsDaemonSupervisor
+  @StateObject private var devices: DeviceSettingsViewModel
+  @StateObject private var bots: BotsWorkspaceViewModel
   @StateObject private var chrome = SidebarChromeViewModel()
   @State private var showsAccountMenu = false
   @State private var showsBotCreate = false
@@ -31,12 +31,17 @@ public struct WorkspaceShellView: View {
     chat: BotChatViewModel = BotChatViewModel(),
     inspector: InspectorViewModel = InspectorViewModel(),
     layout: ShellLayoutViewModel = ShellLayoutViewModel(),
+    composition: BotsComposition = .live,
     onShowGallery: @escaping (@escaping () -> Void) -> Void = { _ in }
   ) {
     _list = StateObject(wrappedValue: list)
     _chat = StateObject(wrappedValue: chat)
     _inspector = StateObject(wrappedValue: inspector)
     _layout = StateObject(wrappedValue: layout)
+    _settings = StateObject(wrappedValue: SettingsViewModel(botsSettings: composition.settings))
+    _daemon = StateObject(wrappedValue: composition.supervisor)
+    _devices = StateObject(wrappedValue: composition.devices)
+    _bots = StateObject(wrappedValue: BotsWorkspaceViewModel(settings: composition.settings))
     self.onShowGallery = onShowGallery
   }
 
@@ -280,7 +285,9 @@ public struct WorkspaceShellView: View {
             DeviceInspectorView(model: devices) {
               settings.selection = .machines
               showsSettings = true
-            })
+            }),
+          libraryContent: selectedIsBot
+            ? bots.history.map { AnyView(BotsHistoryInspector(model: $0)) } : nil
         )
         .sheet(isPresented: $showsBotFaceEditor) {
           if let face = bots.selectedFace {
