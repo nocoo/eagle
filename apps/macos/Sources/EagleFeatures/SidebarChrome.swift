@@ -11,9 +11,6 @@ final class SidebarChromeViewModel: ObservableObject {
   @Published private(set) var unread: Set<String> = []
   @Published private(set) var hidden: Set<String> = []
 
-  func isPinned(_ id: String) -> Bool { pinned.contains(id) }
-  func isUnread(_ id: String) -> Bool { unread.contains(id) }
-
   func togglePin(_ id: String) {
     if pinned.contains(id) { pinned.remove(id) } else { pinned.insert(id) }
   }

@@ -71,7 +71,6 @@ struct BotFacePicker: View {
 /// avatar. Apply writes the face to the daemon; the sidebar and inspector repaint from the
 /// catalog push.
 struct BotFaceEditorSheet: View {
-  let initial: BotFace.Style
   let onSave: (BotAppearance) -> Void
   let onCancel: () -> Void
 
@@ -83,7 +82,6 @@ struct BotFaceEditorSheet: View {
     onSave: @escaping (BotAppearance) -> Void,
     onCancel: @escaping () -> Void
   ) {
-    self.initial = initial
     self.onSave = onSave
     self.onCancel = onCancel
     _shape = State(initialValue: initial.shape)

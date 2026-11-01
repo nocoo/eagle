@@ -1,5 +1,4 @@
 import AppKit
-import BotsCore
 import BotsTransport
 import EagleDesign
 import EagleDevices
@@ -574,7 +573,6 @@ final class SnapshotHTTPStub: URLProtocol {
 @MainActor private final class SnapshotDeviceControl: DeviceControl {
   static let localID = "11111111-1111-4111-8111-111111111111"
   static let remoteID = "22222222-2222-4222-8222-222222222222"
-  var socketPath: String? { nil }
   var confirm: (@MainActor @Sendable (DeviceApprovalRequest) async -> Bool)?
   func start(
     confirm: @escaping @MainActor @Sendable (DeviceApprovalRequest) async -> Bool

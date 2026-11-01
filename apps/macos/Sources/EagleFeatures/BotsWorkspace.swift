@@ -495,10 +495,6 @@ final class BotsWorkspaceViewModel: ObservableObject {
     publish()
   }
 
-  func createBot() async {
-    await createBot(title: "", label: nil, appearance: .standard)
-  }
-
   /// A created bot is real immediately: the daemon writes it, the catalog returns it, and
   /// the sidebar selects it.
   func createBot(title: String, label: String?, appearance: BotAppearance) async {
@@ -598,11 +594,6 @@ final class BotsWorkspaceViewModel: ObservableObject {
   func dismissError() {
     app?.conversation.dismissError()
     app?.dismissError()
-    publish()
-  }
-
-  func refresh() async {
-    await app?.refresh()
     publish()
   }
 
@@ -975,17 +966,6 @@ struct BotsPresenter {
       }
     }
     return (paired, consumed)
-  }
-
-  func entries(for message: Message) -> [TranscriptEntry] {
-    let (paired, consumed) = pairTools([message])
-    return entries(
-      for: message,
-      paired: paired,
-      consumed: consumed,
-      running: false,
-      current: true
-    )
   }
 
   /// Every call id that belongs to a peer tool, so the call row and its result both stay out of

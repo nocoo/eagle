@@ -269,7 +269,6 @@ struct DeviceSettingsViewModelTests {
 
 @MainActor final class DeviceSettingsControlStub: DeviceControl {
   let domain = "EagleDeviceSettingsTests.\(UUID().uuidString)"
-  var socketPath: String? { "/test/access.sock" }
   var starts = 0
   var stops = 0
   var openedSettings = 0

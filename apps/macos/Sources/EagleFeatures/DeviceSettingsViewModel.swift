@@ -137,7 +137,6 @@ private struct DeviceServiceState: Decodable {
   public var needsBackgroundApproval: Bool { errorCode == "background_approval_required" }
   /// True when nothing may be contacted yet: no relay is baked in and none was chosen.
   public var needsServiceAddress: Bool { requiresServiceAddress && savedServiceAddress.isEmpty }
-  public var socketPath: String? { enabled && localReady ? control.socketPath : nil }
   public var isRefreshing: Bool { refreshGeneration != nil }
   public var controlsBusy: Bool { isStarting || isBusy }
   public var canToggleService: Bool { !isBusy && (enabled || !controlsBusy) }

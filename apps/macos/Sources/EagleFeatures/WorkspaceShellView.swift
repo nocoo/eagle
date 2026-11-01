@@ -21,7 +21,6 @@ public struct WorkspaceShellView: View {
   @State private var showsSettings = false
   /// The exchange a person opened from a folded row; nil while no dialog is up.
   @State private var openedPeerExchange: PeerExchange?
-  @AppStorage("eagle.appearance") private var appearance = "system"
   @AppStorage("eagle.hideToolCalls") private var hideToolCalls = false
   @AppStorage("eagle.loadMockData") private var loadMockData = false
   private let onShowGallery: (@escaping () -> Void) -> Void

@@ -98,7 +98,7 @@ struct DeviceServiceHostTests {
       #expect(host.cloudStatus == "offline")
       let port = DeviceLocalPort(path: host.socketPath)
       let status = try await port.call("status")
-      #expect(status["localReady"]?.bool == true)
+      #expect(status["localReady"] == .bool(true))
       // A device nobody decided about asks before it acts...
       #expect(status["policy"]?["mode"]?.string == "always-ask")
       // ...and this case is about the tool path once the person has allowed it.
@@ -236,7 +236,7 @@ struct DeviceServiceHostTests {
       #expect(host.localReady)
       #expect(host.failure == nil)
       #expect(try String(contentsOf: starts, encoding: .utf8).split(separator: "\n").count == 2)
-      #expect(try await host.call("service.status")["localReady"]?.bool == true)
+      #expect(try await host.call("service.status")["localReady"] == .bool(true))
       #expect(try await host.call("policy.get")["mode"]?.string == "always-ask")
     } catch {
       await host.stop()

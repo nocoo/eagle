@@ -50,14 +50,6 @@ public indirect enum DeviceJSON: Codable, Equatable, Sendable {
     if case .number(let x) = self { return x }
     return nil
   }
-  public var bool: Bool? {
-    if case .bool(let x) = self { return x }
-    return nil
-  }
-  public var array: [DeviceJSON]? {
-    if case .array(let x) = self { return x }
-    return nil
-  }
 
   public func decoded<T: Decodable>(_ type: T.Type) throws -> T {
     try JSONDecoder().decode(type, from: JSONEncoder().encode(self))

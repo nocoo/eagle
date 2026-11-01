@@ -3,7 +3,6 @@ import OSLog
 import ServiceManagement
 
 @MainActor public protocol DeviceControl: AnyObject {
-  var socketPath: String? { get }
   func start(
     confirm: @escaping @MainActor @Sendable (DeviceApprovalRequest) async -> Bool) async throws
   func retryStart(
@@ -29,7 +28,6 @@ extension DeviceControl {
   private var registration: DeviceServiceRegistration?
   private var client: DeviceXPCClient?
   private let log = Logger(subsystem: "ai.hexly.eagle.devices", category: "background")
-  public var socketPath: String? { configuration?.socketPath }
   public init(bundle: URL = Bundle.main.bundleURL, defaults: UserDefaults = .standard) {
     self.bundle = bundle
     self.defaults = defaults
