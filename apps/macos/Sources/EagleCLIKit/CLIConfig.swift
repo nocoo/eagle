@@ -62,14 +62,16 @@ public struct CLIConfig: Sendable {
   /// unreadable directory must never look like a missing credential.
   static func readDevToken(home: String) -> DevToken {
     let url = devTokenURL(home: home)
-    let handle: FileHandle
-    do {
-      handle = try FileHandle(forReadingFrom: url)
-    } catch {
-      return Self.isMissing(error)
-        ? .missing
-        : .unsafe(path: url.path, reason: "it cannot be opened (\(Self.describe(error)))")
+    // `O_NONBLOCK` keeps a FIFO somebody left at this path from hanging every command;
+    // a regular file is unaffected by the flag.
+    let descriptor = url.path.withCString { open($0, O_RDONLY | O_NONBLOCK) }
+    guard descriptor >= 0 else {
+      let code = errno
+      if code == ENOENT { return .missing }
+      return .unsafe(
+        path: url.path, reason: "it cannot be opened (\(String(cString: strerror(code))))")
     }
+    let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     defer { try? handle.close() }
     var info = stat()
     guard fstat(handle.fileDescriptor, &info) == 0 else {
@@ -92,20 +94,6 @@ public struct CLIConfig: Sendable {
         reason: "it holds \(token.count) characters, and at least 32 are required")
     }
     return .usable(token)
-  }
-
-  private static func isMissing(_ error: Error) -> Bool {
-    let failure = error as NSError
-    if failure.domain == NSCocoaErrorDomain
-      && (failure.code == NSFileNoSuchFileError || failure.code == NSFileReadNoSuchFileError)
-    {
-      return true
-    }
-    return failure.domain == NSPOSIXErrorDomain && failure.code == Int(ENOENT)
-  }
-
-  private static func describe(_ error: Error) -> String {
-    (error as NSError).localizedDescription
   }
 
   private static func octal(_ mode: Int) -> String {

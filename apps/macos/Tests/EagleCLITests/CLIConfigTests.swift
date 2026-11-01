@@ -118,6 +118,20 @@ struct CLIConfigTests {
     #expect(weak.unsafeDevToken?.reason.contains("32") == true)
   }
 
+  @Test("a FIFO at the development path is refused instead of blocking")
+  func fifoIsRefused() throws {
+    let home = try makeHome()
+    let directory = home.appendingPathComponent(".config/eagle-dev", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let url = directory.appendingPathComponent("token")
+    #expect(mkfifo(url.path, 0o600) == 0, "the fixture is a FIFO no writer ever opens")
+
+    let file = CLIConfig.load(argv0: "/x/eagle-dev", environment: [:], home: home.path)
+    #expect(file.token == nil, "a FIFO is no credential")
+    #expect(file.unsafeDevToken?.reason.contains("regular file") == true)
+  }
+
   @Test("a directory that cannot be inspected fails closed instead of looking absent")
   func unreadableDirectoryIsNotAbsent() throws {
     let home = try makeHome()

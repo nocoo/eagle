@@ -523,9 +523,13 @@ public struct Commands: Sendable {
     let socket = try await client.connect(clientName: "eagle-cli/\(EagleCLIKit.version)")
     defer { socket.close() }
     let snapshot = SocketSession.snapshotValue(try await socket.subscribe(botId: botId))
-    // Paging starts at the oldest page boundary the snapshot named, because the daemon
-    // requires a `before` id and invents none.
-    guard let before = arguments.value("before") ?? snapshot["truncatedBefore"] as? String else {
+    // `truncatedBefore` only says older messages exist; the cursor is the oldest message
+    // this client holds (`docs/bots/PROTOCOL.md` "Subscription"), because a page is
+    // contiguous with what the caller already has. Paging from the truncation marker asks
+    // for what predates the transcript's first entry and answers with nothing.
+    let held = (snapshot["messages"] as? [JSONObject])?.first?["id"] as? String
+    let more = snapshot["truncatedBefore"] != nil
+    guard let before = arguments.value("before") ?? (more ? held : nil) else {
       if printer.wantsJSON(arguments) {
         printer.json(["messages": [], "hasMore": false])
       } else {

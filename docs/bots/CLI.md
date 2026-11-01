@@ -99,7 +99,7 @@ come from the daemon; a bot may also be named by its exact title when that title
 | `eagle groups delete <id> --yes` | admin | `DELETE /v1/groups/:id` |
 | `eagle chat send <bot> --text T [--wait] [--timeout 120]` | write | Subscribes, sends, and with `--wait` prints the answer once the run settles |
 | `eagle chat watch <bot>` | read | Streams every append and delta until interrupted; another client's messages appear too |
-| `eagle chat history <bot> [--limit N] [--before e_12]` | read | Older messages, oldest first |
+| `eagle chat history <bot> [--limit N] [--before e_12]` | read | Older messages, oldest first; without `--before` it pages from the oldest message the CLI just saw |
 | `eagle chat abort <bot>` | write | Withdraws the running input and the queue |
 | `eagle usage [--days N]` | read | Token and call totals over the retention window |
 
