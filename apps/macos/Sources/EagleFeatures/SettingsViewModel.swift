@@ -13,8 +13,6 @@ extension Notification.Name {
 @MainActor
 public final class SettingsViewModel: ObservableObject {
   @Published public var selection: SettingsSection = .bots
-  @Published public var machines: [MachineDevice]
-  @Published public var usage: UsageSummary
   /// Third-party providers (search today), loaded when the 服务 tab opens.
   @Published public var providers: [ProviderSettings] = []
   @Published public var providerKeys: [String: String] = [:]
@@ -32,7 +30,6 @@ public final class SettingsViewModel: ObservableObject {
   public let links: ProductLinks
   /// One automatic check per launch, and never for a development build.
   private var checkedForUpdates = false
-  @Published public private(set) var renameTarget: String?
   /// The model gateway tab: values are loaded only when that tab is opened.
   @Published public var gateway: GatewaySettings?
   @Published public var gatewayBaseURL = ""
@@ -79,52 +76,15 @@ public final class SettingsViewModel: ObservableObject {
   private let urlSession: URLSession
 
   public init(
-    machines: [MachineDevice] = MockSettings.machines,
-    usage: UsageSummary = MockSettings.usage,
     botsSettings: BotsSettings = BotsSettings(),
     urlSession: URLSession = .shared,
     appVersion: AppVersion = .current(),
     links: ProductLinks = .current()
   ) {
-    self.machines = machines
-    self.usage = usage
     self.botsSettings = botsSettings
     self.urlSession = urlSession
     self.appVersion = appVersion
     self.links = links
-  }
-
-  public var onlineCount: Int {
-    machines.filter(\.online).count
-  }
-
-  public func cyclePermission(_ id: String) {
-    guard let index = machines.firstIndex(where: { $0.id == id }) else { return }
-    machines[index].permission = machines[index].permission.next
-  }
-
-  public func setPermission(_ id: String, _ permission: MachinePermission) {
-    guard let index = machines.firstIndex(where: { $0.id == id }) else { return }
-    machines[index].permission = permission
-  }
-
-  public func remove(_ id: String) {
-    machines.removeAll { $0.id == id }
-  }
-
-  public func beginRename(_ id: String) {
-    renameTarget = id
-  }
-
-  public func cancelRename() {
-    renameTarget = nil
-  }
-
-  public func rename(_ id: String, to name: String) {
-    defer { renameTarget = nil }
-    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty, let index = machines.firstIndex(where: { $0.id == id }) else { return }
-    machines[index].name = trimmed
   }
 
   /// Reads the daemon's gateway settings once, when the Bots tab is first opened.
