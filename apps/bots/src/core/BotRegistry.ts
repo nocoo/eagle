@@ -278,12 +278,13 @@ export class BotRegistry {
     return this.#entries.get(botId)?.handle;
   }
 
-  /** Name, label or face changed; the catalog keeps the truth and the summary follows. */
+  /** Name, label, note or face changed; the catalog keeps the truth and the summary follows. */
   async update(
     botId: string,
     changes: {
       readonly title?: string;
       readonly label?: string | null;
+      readonly note?: string | null;
       readonly appearance?: BotAppearance;
     },
     trace: string,
@@ -1050,6 +1051,7 @@ export class BotRegistry {
       id: entry.config.id,
       title: entry.config.title,
       ...(entry.config.label === undefined ? {} : { label: entry.config.label }),
+      ...(entry.config.note === undefined ? {} : { note: entry.config.note }),
       appearance: entry.config.appearance ?? DEFAULT_APPEARANCE,
       createdAt: entry.config.createdAt,
       updatedAt: entry.config.updatedAt,

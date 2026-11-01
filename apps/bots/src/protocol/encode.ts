@@ -93,6 +93,7 @@ const encodeBot = (b: BotSummary): Wire => {
     state: b.state,
   };
   if (b.label !== undefined) wire.label = b.label;
+  if (b.note !== undefined) wire.note = b.note;
   if (b.appearance) wire.appearance = { shape: b.appearance.shape, tint: b.appearance.tint };
   if (b.groupId !== undefined) wire.groupId = b.groupId;
   if (b.unavailable) {

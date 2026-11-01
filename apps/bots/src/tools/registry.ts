@@ -25,6 +25,7 @@ import {
 } from "./herdr/tools.ts";
 import { createListTool } from "./list.ts";
 import { MACHINE_EXTENSION, type MachinePrompt, machineExtension } from "./machine/tools.ts";
+import { createNoteSetTool } from "./note.ts";
 import { PEERS_TOOLS_EXTENSION, peersExtension } from "./peers/tools.ts";
 import { PERSONA_EXTENSION, personaExtension } from "./persona/tools.ts";
 import { PULLS_TOOLS_EXTENSION, pullsExtension } from "./pulls/tools.ts";
@@ -34,7 +35,7 @@ import {
   TRIGGER_TOOLS_EXTENSION,
   triggerExtension,
 } from "./trigger/tools.ts";
-import type { BotWorkspace } from "./types.ts";
+import type { BotWorkspace, NoteToolHost } from "./types.ts";
 
 export const BOTS_TOOLS_EXTENSION = "bots-tools";
 const toolSearch = createToolSearchExtension();
@@ -104,6 +105,8 @@ export type ToolRegistryOptions = {
   readonly peers?: Parameters<typeof peersExtension>[0];
   /** Pull-request reports belong to the coding group; absent without a store to keep them. */
   readonly pulls?: Parameters<typeof pullsExtension>[0];
+  /** The bot's own sidebar note; absent only in a build with no catalog around it. */
+  readonly note?: NoteToolHost;
 };
 
 export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistryOptions = {}) => {
@@ -118,6 +121,7 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
           ...(options.devices.log === undefined ? {} : { log: options.devices.log }),
         };
   const list = createListTool();
+  const note = createNoteSetTool(options.note);
   // The two core prompts are installed first so their sections lead the system prompt:
   // who this bot is comes before what it can do (docs/bots/PRODUCT.md, "Core prompts").
   if (options.persona !== undefined) registry.install(personaExtension(options.persona));
@@ -125,7 +129,7 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
   registry.install(
     defineExtension({
       name: BOTS_TOOLS_EXTENSION,
-      tools: [list],
+      tools: [list, note],
       wraps: [
         wrapTool(bash, () =>
           devices === undefined ? bash : observeDeviceTool(guardNativeTool(bash, devices), devices),
@@ -144,6 +148,7 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
           [
             `Your default working directory is ${agent.cwd ?? workspace.root}.`,
             "Use list to discover files, read to inspect them, edit for targeted changes, write for whole files, and bash for commands.",
+            "Keep the one line a person sees next to this bot in their sidebar with note_set: it is a status, so update it when the work changes, not every turn.",
             devices === undefined
               ? "Tool calls run without asking the user first."
               : "Local tools follow the shared device policy.",

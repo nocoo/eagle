@@ -4,7 +4,14 @@
 // on one internal queue, so concurrent callers cannot overwrite each other.
 import { randomUUID } from "node:crypto";
 import type { BotAppearance, BotGroup, BotRecord, ToolGroup } from "./domain.ts";
-import { BOT_ID_PATTERN, isToolGroup, MAX_BOT_GROUPS, MAX_GROUP_TITLE_CHARS } from "./domain.ts";
+import {
+  BOT_ID_PATTERN,
+  isToolGroup,
+  MAX_BOT_GROUPS,
+  MAX_BOT_NOTE_CHARS,
+  MAX_GROUP_TITLE_CHARS,
+  normalizeBotNote,
+} from "./domain.ts";
 
 export type DirEntry = { readonly name: string; isDirectory(): boolean };
 
@@ -26,6 +33,7 @@ export type DirectoryErrorReason =
   | "group_not_found"
   | "group_not_empty"
   | "invalid_groups"
+  | "invalid_note"
   | "limit_exceeded";
 
 export class DirectoryError extends Error {
@@ -80,6 +88,7 @@ const RECORD_KEYS = new Set([
   "id",
   "title",
   "label",
+  "note",
   "appearance",
   "createdAt",
   "updatedAt",
@@ -98,8 +107,9 @@ const isBotRecord = (value: unknown): value is BotConfig => {
   const optional = value as { instructions?: unknown; thinkingLevel?: unknown };
   if (optional.instructions !== undefined && typeof optional.instructions !== "string")
     return false;
-  const labelled = value as { label?: unknown; appearance?: unknown };
+  const labelled = value as { label?: unknown; note?: unknown; appearance?: unknown };
   if (labelled.label !== undefined && typeof labelled.label !== "string") return false;
+  if (labelled.note !== undefined && typeof labelled.note !== "string") return false;
   if (labelled.appearance !== undefined) {
     const appearance = labelled.appearance;
     if (!isObject(appearance)) return false;
@@ -280,6 +290,7 @@ export class BotDirectory {
     changes: {
       readonly title?: string;
       readonly label?: string | null;
+      readonly note?: string | null;
       readonly appearance?: BotAppearance;
     },
     at: string,
@@ -289,7 +300,19 @@ export class BotDirectory {
       const index = bots.findIndex((bot) => bot.id === id);
       if (index === -1) throw new DirectoryError("unknown_bot", `bot ${id} does not exist`);
       const current = bots[index] as BotConfig;
-      const { label, ...rest } = current;
+      const { label, note: storedNote, ...rest } = current;
+      const note =
+        changes.note === undefined
+          ? storedNote
+          : changes.note === null
+            ? undefined
+            : normalizeBotNote(changes.note);
+      if (note !== undefined && note.length > MAX_BOT_NOTE_CHARS) {
+        throw new DirectoryError(
+          "invalid_note",
+          `a note is at most ${MAX_BOT_NOTE_CHARS} characters`,
+        );
+      }
       const updated: BotConfig = {
         ...rest,
         ...(changes.title === undefined ? {} : { title: changes.title }),
@@ -301,6 +324,7 @@ export class BotDirectory {
           : changes.label === null
             ? {}
             : { label: changes.label }),
+        ...(note === undefined ? {} : { note }),
         updatedAt: at,
       };
       await this.#writeAll(bots.map((bot, position) => (position === index ? updated : bot)));

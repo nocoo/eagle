@@ -404,3 +404,46 @@ test("an unknown group order or a missing group is refused", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("a note is normalized, survives a restart and is cleared without an empty field", async () => {
+  const { root, dir } = await workspace();
+  try {
+    await dir.create(record("b_1"));
+    const set = await dir.update(
+      "b_1",
+      { note: "  在核对   10-24\n的依赖报告 " },
+      "2026-10-25T04:00:00.000Z",
+    );
+    assert.equal(set.note, "在核对 10-24 的依赖报告");
+
+    const restarted = new BotDirectory(root, await nodeDirectoryFs());
+    assert.equal((await restarted.load())[0]?.note, "在核对 10-24 的依赖报告");
+
+    const cleared = await dir.update("b_1", { note: null }, "2026-10-25T05:00:00.000Z");
+    assert.equal(cleared.note, undefined);
+    const catalog = JSON.parse(await readFile(dir.catalogPath, "utf8")) as {
+      bots: Record<string, unknown>[];
+    };
+    assert.equal("note" in (catalog.bots[0] ?? {}), false, "clearing deletes the field");
+
+    const blank = await dir.update("b_1", { note: "   " }, "2026-10-25T06:00:00.000Z");
+    assert.equal(blank.note, undefined, "a blank note clears it too");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an over-long note is refused and the stored note is untouched", async () => {
+  const { root, dir } = await workspace();
+  try {
+    await dir.create(record("b_1"));
+    await dir.update("b_1", { note: "正在核对" }, "2026-10-25T04:00:00.000Z");
+    await assert.rejects(
+      () => dir.update("b_1", { note: "字".repeat(121) }, "2026-10-25T05:00:00.000Z"),
+      (error: DirectoryError) => error.reason === "invalid_note",
+    );
+    assert.equal((await dir.load())[0]?.note, "正在核对", "a refused note writes nothing");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

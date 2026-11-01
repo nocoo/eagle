@@ -14,6 +14,8 @@ import {
   type BotTint,
   ClassifiedFailure,
   isThinkingLevel,
+  MAX_BOT_NOTE_CHARS,
+  normalizeBotNote,
 } from "../core/domain.ts";
 import { declareEvent } from "../log/events.ts";
 import type { Log } from "../log/log.ts";
@@ -185,22 +187,32 @@ const title = (body: unknown): string | undefined => {
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
-/** Name, label and face are all editable; a label of `""` clears it. */
+/** Name, label, note and face are all editable; a label of `""` or a note of `null` clears it. */
 const updateChanges = (
   body: unknown,
 ):
   | {
       readonly title?: string;
       readonly label?: string | null;
+      readonly note?: string | null;
       readonly appearance?: { shape: BotShape; tint: BotTint };
     }
   | undefined => {
   if (!isObject(body)) return undefined;
-  const allowed = new Set(["title", "label", "appearance", "groupId", "model", "thinkingLevel"]);
+  const allowed = new Set([
+    "title",
+    "label",
+    "note",
+    "appearance",
+    "groupId",
+    "model",
+    "thinkingLevel",
+  ]);
   if (Object.keys(body).some((key) => !allowed.has(key))) return undefined;
   const changes: {
     title?: string;
     label?: string | null;
+    note?: string | null;
     appearance?: { shape: BotShape; tint: BotTint };
   } = {};
   let any = false;
@@ -216,6 +228,13 @@ const updateChanges = (
     const label = body.label.trim();
     if (label.length > MAX_LABEL_CHARS) return undefined;
     changes.label = label.length === 0 ? null : label;
+    any = true;
+  }
+  if (body.note !== undefined) {
+    if (body.note !== null && typeof body.note !== "string") return undefined;
+    const note = body.note === null ? undefined : normalizeBotNote(body.note);
+    if (note !== undefined && note.length > MAX_BOT_NOTE_CHARS) return undefined;
+    changes.note = note ?? null;
     any = true;
   }
   if (body.appearance !== undefined) {
@@ -837,7 +856,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
               error: {
                 kind: "invalid_command",
                 message:
-                  "send a title, a label (max 24 characters), a face (one of the documented shapes and tints) or a groupId",
+                  "send a title, a label (max 24 characters), a note (max 120 characters after trimming), a face (one of the documented shapes and tints) or a groupId",
               },
             });
             return;
@@ -895,6 +914,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
             : error.reason === "group_not_found" || error.reason === "unknown_bot"
               ? 404
               : error.reason === "invalid_groups" ||
+                  error.reason === "invalid_note" ||
                   error.reason === "limit_exceeded" ||
                   error.reason === "duplicate_bot"
                 ? 400
@@ -905,6 +925,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
             : error.reason === "group_not_found" || error.reason === "unknown_bot"
               ? "unknown_bot"
               : error.reason === "invalid_groups" ||
+                  error.reason === "invalid_note" ||
                   error.reason === "limit_exceeded" ||
                   error.reason === "duplicate_bot"
                 ? "invalid_command"

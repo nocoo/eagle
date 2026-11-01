@@ -62,18 +62,18 @@ test("core supplies list and coding installs the original native extension witho
         .flatMap((extension) => extension.tools ?? [])
         .map((tool) => tool.name)
         .sort(),
-      ["bash", "edit", "list", "read", "write"],
+      ["bash", "edit", "list", "note_set", "read", "write"],
     );
     assert.deepEqual(
       snapshot.extension(BOTS_TOOLS_EXTENSION)?.tools?.map((tool) => tool.name),
-      ["list"],
+      ["list", "note_set"],
     );
   } finally {
     await rm(daemonRoot, { recursive: true, force: true });
   }
 });
 
-test("core and coding install five tools and a working-directory section", async () => {
+test("core and coding install six tools and a working-directory section", async () => {
   const daemonRoot = await mkdtemp(join(tmpdir(), "bots-registry-"));
   const workspace = await openWorkspace(join(daemonRoot, "bots", "a", "workspace"));
   const registry = createToolRegistry(workspace);
@@ -84,6 +84,7 @@ test("core and coding install five tools and a working-directory section", async
       .sort(),
     [
       [BOTS_TOOLS_EXTENSION, "list"],
+      [BOTS_TOOLS_EXTENSION, "note_set"],
       ["coding-tools", "bash"],
       ["coding-tools", "edit"],
       ["coding-tools", "read"],
@@ -99,6 +100,47 @@ test("core and coding install five tools and a working-directory section", async
   await rm(daemonRoot, { recursive: true, force: true });
 });
 
+test("note_set belongs to core and its section tells the model when to write it", async () => {
+  const daemonRoot = await mkdtemp(join(tmpdir(), "bots-note-registry-"));
+  try {
+    const workspace = await openWorkspace(join(daemonRoot, "workspace"));
+    const calls: string[] = [];
+    const registry = createToolRegistry(workspace, {
+      note: {
+        botId: "b_1",
+        async set(text) {
+          calls.push(text);
+          return text.length === 0 ? {} : { note: text };
+        },
+      },
+    });
+    assert.deepEqual(
+      selectToolExtensions(registry, ["core"]).map((extension) => extension.name),
+      [BOTS_TOOLS_EXTENSION, "coding-tools"],
+      "core adds bots-tools and nothing beyond the mandatory coding group",
+    );
+    assert.deepEqual(
+      registry
+        .snapshot()
+        .extension(BOTS_TOOLS_EXTENSION)
+        ?.tools?.map((tool) => tool.name),
+      ["list", "note_set"],
+    );
+    const section = registry
+      .snapshot()
+      .sections()
+      .find(({ section: entry }) => entry.key === "bots-tools");
+    assert.ok(section);
+    const text = section.section.render({ agent: {} } as never, {} as never);
+    assert.equal(typeof text, "string");
+    assert.match(text as string, /note_set/);
+    assert.match(text as string, /sidebar/);
+    assert.match(text as string, /not every turn/);
+  } finally {
+    await rm(daemonRoot, { recursive: true, force: true });
+  }
+});
+
 test("a bot's tool groups select from every registered built-in extension", async () => {
   const daemonRoot = await mkdtemp(join(tmpdir(), "bots-registry-"));
   const workspace = await openWorkspace(join(daemonRoot, "bots", "a", "workspace"));
@@ -109,7 +151,7 @@ test("a bot's tool groups select from every registered built-in extension", asyn
     coreOnly.map((extension) => extension.name),
     [BOTS_TOOLS_EXTENSION, "coding-tools"],
   );
-  assert.equal(coreOnly.flatMap((extension) => extension.tools ?? []).length, 5);
+  assert.equal(coreOnly.flatMap((extension) => extension.tools ?? []).length, 6);
   const both = selectToolExtensions(registry, ["herdr"]);
   assert.ok(both.some((extension) => extension.name === HERDR_TOOLS_EXTENSION));
   assert.ok(both.some((extension) => extension.name === "tool-search"));
@@ -194,6 +236,7 @@ test("a group whose tools are not installed contributes nothing, not even its lo
       .sort();
     assert.deepEqual(selected, [
       "bots-tools:list",
+      "bots-tools:note_set",
       "coding-tools:bash",
       "coding-tools:edit",
       "coding-tools:read",

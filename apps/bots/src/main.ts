@@ -332,6 +332,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     const explicit = process.env.BOTS_MACHINE_AGENTS?.trim();
     return explicit === undefined || explicit.length === 0 ? MACHINE_PROMPT_CANDIDATES : [explicit];
   };
+  let noteTraces = 0;
   const runtime = new PiDurableRuntime({
     ...(canonical.deviceSocket === undefined ? {} : { deviceSocket: canonical.deviceSocket }),
     models: () => models,
@@ -347,6 +348,21 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
         return queue === undefined ? undefined : (await queue).cursor();
       }),
     pulls: pulls.runtimeHost,
+    // The tool owns the line; the catalog owns the truth, and the broadcast is how the
+    // sidebar sees it without another read.
+    note: (spec) => ({
+      botId: spec.id,
+      async set(text) {
+        noteTraces += 1;
+        const bot = await registry.update(
+          spec.id,
+          { note: text },
+          `tr_note_${Date.now().toString(36)}_${noteTraces.toString(36)}`,
+        );
+        broadcast?.();
+        return bot.note === undefined ? {} : { note: bot.note };
+      },
+    }),
     peers: async (spec) =>
       peerHostFor({
         botId: spec.id,

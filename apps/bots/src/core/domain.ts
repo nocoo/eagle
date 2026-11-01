@@ -201,12 +201,22 @@ export type BotGroup = {
 
 export const MAX_BOT_GROUPS = 50;
 export const MAX_GROUP_TITLE_CHARS = 40;
+/** The one line a Bot writes about itself; normalized before it is measured. */
+export const MAX_BOT_NOTE_CHARS = 120;
+
+/** Trims and collapses whitespace runs; an empty result means the note is cleared. */
+export const normalizeBotNote = (text: string): string | undefined => {
+  const note = text.replace(/\s+/gu, " ").trim();
+  return note.length === 0 ? undefined : note;
+};
 
 export type BotSummary = {
   readonly id: BotId;
   readonly title: string;
   /** Optional short label the user typed; never user content beyond this field. */
   readonly label?: string;
+  /** The Bot's own one-line status; absent when it never set one. */
+  readonly note?: string;
   /** Absent only in a catalog written before appearance existed. */
   readonly appearance?: BotAppearance;
   readonly createdAt: string;
@@ -323,6 +333,8 @@ export type BotRecord = {
   readonly id: BotId;
   readonly title: string;
   readonly label?: string;
+  /** The Bot's own one-line status; absent means it never set one. */
+  readonly note?: string;
   /** Absent in catalogs written before appearance existed; defaults on load. */
   readonly appearance?: BotAppearance;
   readonly createdAt: string;

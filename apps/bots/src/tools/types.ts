@@ -23,6 +23,13 @@ export class ToolError extends Error {
 
 export const failed = (message: string): ToolOutcome => ({ output: message, isError: true });
 
+/** What one Bot may write about itself: the sidebar line the daemon stores in its catalog. */
+export type NoteToolHost = {
+  readonly botId: string;
+  /** Sets the note; an empty string clears it. Answers what the catalog now holds. */
+  set(text: string): Promise<{ readonly note?: string }>;
+};
+
 /** One trigger as a tool sees it: the daemon owns the storage, the tool owns the surface. */
 export type TriggerView = {
   readonly id: string;

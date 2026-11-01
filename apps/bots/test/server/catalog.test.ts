@@ -5,6 +5,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import type { BotSummary } from "../../src/core/domain.ts";
 import { MAX_HTTP_BODY_BYTES } from "../../src/protocol/limits.ts";
 import { frameQueue, hello, send, startStack } from "../support/server.ts";
 
@@ -26,6 +27,12 @@ const api = (stack: { port: number; token: string }) => {
       }),
     remove: (id: string) =>
       fetch(`http://127.0.0.1:${stack.port}/v1/bots/${id}`, { method: "DELETE", headers }),
+    patch: (id: string, body: unknown) =>
+      fetch(`http://127.0.0.1:${stack.port}/v1/bots/${id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(body),
+      }),
   };
 };
 
@@ -71,6 +78,65 @@ test("create, rename and delete keep the catalog absolute", async () => {
     assert.equal(deleted.status, 204);
     assert.deepEqual((await frames.next()).bots, []);
     assert.deepEqual(((await (await client.list()).json()) as { bots: unknown[] }).bots, []);
+    socket.close();
+  } finally {
+    await stack.close();
+  }
+});
+
+const untilBots = async (
+  frames: ReturnType<typeof frameQueue>,
+  match: (bot: BotSummary | undefined) => boolean,
+): Promise<void> => {
+  for (;;) {
+    const frame = await frames.next();
+    if (frame.type === "bots" && (frame.bots as BotSummary[]).some(match)) return;
+  }
+};
+
+test("a bot's own note rides the catalog, clears with null and refuses a long one", async () => {
+  const stack = await startStack();
+  try {
+    const client = api(stack);
+    const socket = stack.connect();
+    const frames = frameQueue(socket);
+    await send(socket, hello);
+    await frames.next();
+
+    const created = await client.create("研究员");
+    const bot = ((await created.json()) as { bot: { id: string } }).bot;
+    await frames.next();
+
+    const set = await client.patch(bot.id, { note: "  在核对   10-24 的报告 " });
+    assert.equal(set.status, 200);
+    const noted = ((await set.json()) as { bot: BotSummary }).bot;
+    assert.equal(noted.note, "在核对 10-24 的报告", "the response carries the normalized note");
+    await untilBots(
+      frames,
+      (candidate) => candidate?.updatedAt === noted.updatedAt && candidate.note === noted.note,
+    );
+
+    const tooLong = await client.patch(bot.id, { note: "字".repeat(121) });
+    assert.equal(tooLong.status, 400);
+    assert.equal(
+      ((await tooLong.json()) as { error: { kind: string } }).error.kind,
+      "invalid_command",
+    );
+    const unchanged = (await (await client.list()).json()) as { bots: BotSummary[] };
+    assert.equal(unchanged.bots[0]?.note, "在核对 10-24 的报告", "a refused note writes nothing");
+
+    const cleared = await client.patch(bot.id, { note: null });
+    assert.equal(cleared.status, 200);
+    const clean = ((await cleared.json()) as { bot: BotSummary }).bot;
+    assert.equal(clean.note, undefined);
+    await untilBots(
+      frames,
+      (candidate) => candidate?.updatedAt === clean.updatedAt && candidate.note === undefined,
+    );
+
+    const blank = await client.patch(bot.id, { note: "   " });
+    assert.equal(blank.status, 200);
+    assert.equal(((await blank.json()) as { bot: BotSummary }).bot.note, undefined);
     socket.close();
   } finally {
     await stack.close();

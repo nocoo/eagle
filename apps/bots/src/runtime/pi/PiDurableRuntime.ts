@@ -41,7 +41,12 @@ import { createHerdrClient } from "../../tools/herdr/client.ts";
 import type { MachinePrompt } from "../../tools/machine/tools.ts";
 import { createToolRegistry, selectToolExtensions } from "../../tools/registry.ts";
 import type { SearchClient } from "../../tools/search/client.ts";
-import type { PeerToolHost, PullToolHost, TriggerToolHost } from "../../tools/types.ts";
+import type {
+  NoteToolHost,
+  PeerToolHost,
+  PullToolHost,
+  TriggerToolHost,
+} from "../../tools/types.ts";
 import type { UsageMeter } from "../../tools/usage.ts";
 import { openWorkspace } from "../../tools/workspace.ts";
 import { FailureClassifier, type Minted } from "./classify.ts";
@@ -152,6 +157,8 @@ export type PiRuntimeOptions = {
   readonly peers?: (spec: RuntimeBotSpec) => Promise<PeerToolHost | undefined>;
   /** The pull-request tools' host for a bot, bound to that bot's own reports. */
   readonly pulls?: (spec: RuntimeBotSpec) => Promise<PullToolHost | undefined>;
+  /** The bot's own sidebar note, written into the catalog this daemon owns. */
+  readonly note?: (spec: RuntimeBotSpec) => NoteToolHost | undefined;
   /** Where a tool that costs something books it (docs/bots/PROTOCOL.md, "Usage statistics"). */
   readonly usage?: UsageMeter;
   /** The person's standing instruction, shared by every bot (docs/bots/PRODUCT.md). */
@@ -188,6 +195,7 @@ export class PiDurableRuntime implements RuntimePort {
       const trigger = await this.#options.trigger?.(spec);
       const peers = await this.#options.peers?.(spec);
       const pulls = await this.#options.pulls?.(spec);
+      const note = this.#options.note?.(spec);
       const registry = createToolRegistry(workspace, {
         ...(this.#options.corePrompt === undefined ? {} : { persona: this.#options.corePrompt }),
         ...(this.#options.machinePrompt === undefined
@@ -211,6 +219,7 @@ export class PiDurableRuntime implements RuntimePort {
         ...(trigger === undefined ? {} : { trigger }),
         ...(peers === undefined ? {} : { peers }),
         ...(pulls === undefined ? {} : { pulls }),
+        ...(note === undefined ? {} : { note }),
       });
       const installed = selectToolExtensions(registry, groups);
       const harness = await HarnessFactory.open(

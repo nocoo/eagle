@@ -52,6 +52,7 @@ test("a warm bot can enable groups it did not initially select", async () => {
       "bash",
       "edit",
       "list",
+      "note_set",
       "read",
       "write",
     ]);
@@ -83,6 +84,7 @@ test("disabling optional groups removes their tools and loader but retains both 
       "bash",
       "edit",
       "list",
+      "note_set",
       "read",
       "write",
     ]);
