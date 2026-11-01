@@ -70,7 +70,7 @@ umask 077 && mkdir -p ~/.config/eagle-dev && openssl rand -base64 48 > ~/.config
 - **The daemon side.** An App running from source starts its daemon with
   `BOTS_DEV_AGENT_TOKEN=<home>/.config/eagle-dev/token`, which is how a development daemon
   learns to accept that file. A packaged build never sets it, so a released App's daemon
-  never accepts a development token.
+  never accepts a development token; the variable, not the file, is the switch.
 
 The token file and `EAGLE_TOKEN` are the only carriers; nothing travels on the command
 line, and the App's own `<root>/token` is never borrowed.

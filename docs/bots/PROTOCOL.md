@@ -231,7 +231,9 @@ exactly as before.
 - **How it is armed.** `BOTS_DEV_AGENT_TOKEN` holds the absolute path of that file.
   Without the variable the daemon never accepts a development token, even when the
   file exists. Only the process that starts the daemon can set it, and a packaged
-  build never sets it, so a release cannot gain the behaviour by accident.
+  build never sets it, so a release cannot gain the behaviour by accident. This is a
+  boundary for a machine with one owner, not a privilege boundary between people:
+  whoever can start that daemon can also read `<root>/token`.
 - **It is read again on every authentication.** A rewritten file takes effect at once:
   the new bearer works and the old one is refused, with no restart and no second
   credential.
