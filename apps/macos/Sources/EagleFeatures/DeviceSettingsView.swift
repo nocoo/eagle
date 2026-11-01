@@ -50,6 +50,12 @@ public struct DeviceSettingsView: View {
         Label(cloudLabel, systemImage: "network")
           .foregroundStyle(Theme.Palette.textSecondary)
         Spacer(minLength: 0)
+        Toggle("设备服务", isOn: serviceBinding)
+          .toggleStyle(.switch)
+          .tint(Theme.Palette.accentStrong)
+          .font(Theme.TypeScale.note)
+          .disabled(!model.canToggleService)
+          .accessibilityIdentifier("devices.service")
         SettingsActionButton("刷新") {
           Task {
             await model.startIfNeeded()
@@ -61,6 +67,15 @@ public struct DeviceSettingsView: View {
       .font(Theme.TypeScale.note)
       serviceRecovery
     }
+  }
+
+  /// The one control that starts and stops the local service: every other action on this page
+  /// needs it running, and stopping it unregisters the helper while keeping the choice stored.
+  private var serviceBinding: Binding<Bool> {
+    Binding(
+      get: { model.enabled },
+      set: { next in Task { await model.setEnabled(next) } }
+    )
   }
 
   /// A published App names no relay: this field is where a person points it at their own.

@@ -153,6 +153,37 @@ struct DeviceSettingsLayoutTests {
     #expect(entries(host).compactMap(title).contains(deviceSettingsLocalID))
   }
 
+  @Test("the device service has one switch, and it is the only way the person stops it")
+  func serviceSwitch() async throws {
+    let (model, control, defaults) = deviceSettingsFixture()
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    await model.startIfNeeded()
+    #expect(model.enabled)
+    let (host, window) = makeHost(model)
+    defer {
+      window.orderOut(nil)
+      window.contentView = nil
+    }
+    try await Task.sleep(for: .milliseconds(50))
+
+    let toggle = try #require(
+      entries(host).first { attribute($0, "AXIdentifier") as? String == "devices.service" })
+    #expect(attribute(toggle, "AXValue") as? Int == 1, "a running service reads as on")
+
+    let press = NSSelectorFromString("accessibilityPerformPress")
+    try #require(toggle.responds(to: press))
+    toggle.perform(press)
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(control.stops == 1)
+    #expect(!model.enabled)
+    #expect(attribute(toggle, "AXValue") as? Int == 0, "a stopped service reads as off")
+
+    toggle.perform(press)
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(control.starts == 2)
+    #expect(model.enabled)
+  }
+
   private func makeHost(
     _ model: DeviceSettingsViewModel
   ) -> (
