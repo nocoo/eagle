@@ -72,10 +72,7 @@ test("the native Chat composer focuses on entry and whitespace while preserving 
 </dict></plist>
 `,
     );
-    copyFileSync(
-      join(fixtureBinDir, "ComposerFocusFixture"),
-      bundleExecutable,
-    );
+    copyFileSync(join(fixtureBinDir, "ComposerFocusFixture"), bundleExecutable);
     for (const name of readdirSync(fixtureBinDir)) {
       if (name.endsWith(".dylib")) {
         copyFileSync(join(fixtureBinDir, name), join(macosDir, name));
