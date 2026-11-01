@@ -163,9 +163,17 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
   // the token as a secret for redaction from its first record.
   // Declared before the log: its redaction closure reads this set on every record.
   const triggerTokens = new Set<string>();
+  // A development bearer is a credential like any other: it must never reach a log line.
+  const devTokens = new Set<string>();
   const sink = new FileLogSink({ root, minimum: canonical.logLevel });
   const log = new Log(sink.sink, undefined, {
-    secrets: () => [token, gateway?.apiKey ?? "", ...providers.secrets(), ...triggerTokens],
+    secrets: () => [
+      token,
+      gateway?.apiKey ?? "",
+      ...providers.secrets(),
+      ...triggerTokens,
+      ...devTokens,
+    ],
   });
   const startup = "tr_boot_1";
   log.emit("info", "core", StartupEvents.singletonStart, { trace: startup });
@@ -198,6 +206,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
           path: canonical.devAgentTokenPath,
           log,
           trace: startup,
+          remember: (devToken) => devTokens.add(devToken),
         });
   const directory = new BotDirectory(root, await nodeDirectoryFs());
   // The stored gateway wins over the dotenv; without either, the registry is empty and a

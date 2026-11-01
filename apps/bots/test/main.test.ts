@@ -6,6 +6,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import WebSocket from "ws";
 import { readConfig } from "../src/config.ts";
 import { startDaemon } from "../src/main.ts";
 import { DEFAULT_CORE_PROMPT, readGateway, writeGateway } from "../src/server/gateway.ts";
@@ -151,6 +152,58 @@ test("the daemon starts from configuration and closes without leaving work behin
     await again.close();
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the development bearer is redacted from the log it authenticates with", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bots-devtoken-redact-"));
+  const dir = await mkdtemp(join(tmpdir(), "bots-devtoken-redact-file-"));
+  const path = join(dir, "token");
+  const token = "dev-agent-token-0123456789-abcdefghijklmnop";
+  await writeFile(path, `${token}\n`);
+  await chmod(path, 0o600);
+  try {
+    const daemon = await startDaemon(
+      readConfig({ argv: ["--root", root, "--port", "0"], env: { BOTS_DEV_AGENT_TOKEN: path } }),
+    );
+    try {
+      const created = await fetch(`http://127.0.0.1:${daemon.port}/v1/bots`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ title: "开发代理" }),
+      });
+      const botId = ((await created.json()) as { bot: { id: string } }).bot.id;
+      // A client that puts its credential where a trace belongs must not paint it into
+      // the record: the subscribe trace is logged, and the accepted bearer is redacted.
+      const socket = new WebSocket(`ws://127.0.0.1:${daemon.port}/v1/socket`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      await new Promise<void>((resolve_, reject) => {
+        socket.once("open", () => resolve_());
+        socket.once("error", reject);
+      });
+      const snapshot = new Promise<void>((resolve_) => {
+        socket.on("message", (data) => {
+          const frame = JSON.parse(data.toString()) as { type?: string };
+          if (frame.type === "snapshot") resolve_();
+        });
+      });
+      socket.send(JSON.stringify({ type: "hello", protocolVersion: 1, client: "redact" }));
+      socket.send(JSON.stringify({ type: "subscribe", botId, trace: token }));
+      await snapshot;
+      socket.close();
+    } finally {
+      await daemon.close();
+    }
+    const logs = (await readdir(join(root, "logs"))).filter((name) => name.endsWith(".jsonl"));
+    const body = (
+      await Promise.all(logs.map((name) => readFile(join(root, "logs", name), "utf8")))
+    ).join("");
+    assert.equal(body.includes("core.subscribe.ok"), true, "the traced subscribe was logged");
+    assert.equal(body.includes(token), false, "no record carries the development bearer");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true });
   }
 });
 

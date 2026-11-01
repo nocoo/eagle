@@ -3,7 +3,7 @@
 // switch. It is armed only while the daemon was told where its file is, the file is
 // read again on every authentication, and a file that is not conforming is refused
 // rather than repaired.
-import { readFile, stat } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { declareEvent } from "../log/events.ts";
 import type { Log } from "../log/log.ts";
 import { CLIENT_SCOPES, type Client } from "./clients.ts";
@@ -25,29 +25,32 @@ export type DevCredential = { readonly token: string; readonly createdAt: string
 /** Reads the file again on every call, so a rewritten file takes effect at once. */
 export type DevTokenReader = () => Promise<DevCredential | undefined>;
 
-/** A read that fails is not a credential: an unreadable file is simply absent. */
-const readOrUndefined = async <T>(operation: Promise<T>): Promise<T | undefined> => {
-  try {
-    return await operation;
-  } catch {
-    return undefined;
-  }
-};
-
 /**
  * The credential in the file, or undefined when the file cannot be one: a mode other
  * than 0600, a content shorter than 32 characters after trimming and an unreadable
- * file are all refused, and nothing is repaired on the way.
+ * file are all refused, and nothing is repaired on the way. The mode and the bytes come
+ * from one descriptor, so the file that was checked is the file that is read.
  */
 export const readDevToken = async (path: string): Promise<DevCredential | undefined> => {
-  const stats = await readOrUndefined(stat(path));
-  if (stats === undefined || !stats.isFile()) return undefined;
-  if ((stats.mode & 0o777) !== 0o600) return undefined;
-  const body = await readOrUndefined(readFile(path, "utf8"));
-  if (body === undefined) return undefined;
-  const token = body.trim();
-  if (token.length < MIN_DEV_TOKEN_CHARS) return undefined;
-  return { token, createdAt: stats.mtime.toISOString() };
+  let handle: Awaited<ReturnType<typeof open>>;
+  try {
+    handle = await open(path, "r");
+  } catch {
+    return undefined;
+  }
+  try {
+    const stats = await handle.stat();
+    if (!stats.isFile()) return undefined;
+    if ((stats.mode & 0o777) !== 0o600) return undefined;
+    const body = await handle.readFile("utf8");
+    const token = body.trim();
+    if (token.length < MIN_DEV_TOKEN_CHARS) return undefined;
+    return { token, createdAt: stats.mtime.toISOString() };
+  } catch {
+    return undefined;
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
 };
 
 /** The client a development token acts as: every scope, named `dev-agent`. */
@@ -68,6 +71,8 @@ export const armDevToken = async (options: {
   readonly path: string;
   readonly log: Log;
   readonly trace: string;
+  /** Hands each usable bearer to the log's redaction set, including a rotated one. */
+  readonly remember?: (token: string) => void;
 }): Promise<DevTokenReader> => {
   const credential = await readDevToken(options.path);
   if (credential === undefined) {
@@ -81,5 +86,12 @@ export const armDevToken = async (options: {
       detail: { path: options.path },
     });
   }
-  return async () => readDevToken(options.path);
+  if (credential !== undefined) options.remember?.(credential.token);
+  // Read again on every authentication: a usable bearer joins the redaction set the
+  // first time it is presented, so a rotated file is covered as well.
+  return async () => {
+    const fresh = await readDevToken(options.path);
+    if (fresh !== undefined) options.remember?.(fresh.token);
+    return fresh;
+  };
 };
