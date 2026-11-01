@@ -186,8 +186,7 @@ Sources/
     Primitives/        Avatar, Tag, SectionLabel, IconButton, ChevronRow,
                        ToggleRow, SwitchToggle, SpinnerArc, SegmentedTabs,
                        EdgeFade, ResizeHandle
-    Chat/              AssistantTurn, UserBubble, SenderChip, DeliveryNote,
-                       TypingIndicator, Composer
+    Chat/              UserBubble, DeliveryNote, TypingIndicator, Composer
     Panels/            SidebarPanel, ConversationColumn, InspectorColumn,
                        ThreeColumnShell
     Gallery/           TemplateGallery

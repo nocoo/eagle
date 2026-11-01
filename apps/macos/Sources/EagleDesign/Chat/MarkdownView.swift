@@ -106,7 +106,7 @@ public struct AssistantBubble: View, Equatable {
         }
       }
     case .code(let language, let body):
-      code(language: language, body: body, caret: caret)
+      code(language: language, body: body)
     case .quote(let text):
       HStack(alignment: .top, spacing: 10) {
         RoundedRectangle(cornerRadius: 1.5)
@@ -124,7 +124,7 @@ public struct AssistantBubble: View, Equatable {
         }
       }
     case .table(let headers, let rows):
-      table(headers: headers, rows: rows, caret: caret)
+      table(headers: headers, rows: rows)
     }
   }
 
@@ -136,7 +136,7 @@ public struct AssistantBubble: View, Equatable {
       .fixedSize(horizontal: false, vertical: true)
   }
 
-  private func code(language: String?, body: String, caret: Bool) -> some View {
+  private func code(language: String?, body: String) -> some View {
     VStack(alignment: .leading, spacing: 0) {
       if let language, !language.isEmpty {
         Text(language)
@@ -169,7 +169,7 @@ public struct AssistantBubble: View, Equatable {
   /// A grid, not raw pipes: header cells are dim and semibold, body cells wrap, and the
   /// whole table scrolls horizontally when a model writes many columns.
   private func table(
-    headers: [AttributedString], rows: [[AttributedString]], caret: Bool
+    headers: [AttributedString], rows: [[AttributedString]]
   ) -> some View {
     ScrollView(.horizontal, showsIndicators: false) {
       Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {

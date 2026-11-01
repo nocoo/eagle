@@ -128,18 +128,3 @@ public struct SettingsScaffold<Content: View>: View {
     .background(Theme.Palette.surface)
   }
 }
-
-/// Title above a settings card.
-public struct SettingsTitle: View {
-  private let text: String
-
-  public init(_ text: String) {
-    self.text = text
-  }
-
-  public var body: some View {
-    Text(text)
-      .font(.system(size: 22, weight: .semibold))
-      .foregroundStyle(Theme.Palette.textPrimary)
-  }
-}

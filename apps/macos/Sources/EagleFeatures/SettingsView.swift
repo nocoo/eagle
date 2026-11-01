@@ -353,7 +353,7 @@ public struct SettingsView: View {
     }
   }
 
-  /// The seven reasoning levels as a popup, drawn like `PillMenu` so the tab keeps one style.
+  /// The seven reasoning levels as a popup, drawn like the other capsules so the tab keeps one style.
   private var thinkingLevelMenu: some View {
     Menu {
       ForEach(model.thinkingLevels, id: \.value) { level in

@@ -1,59 +1,10 @@
 import SwiftUI
 
-/// A single assistant turn: plain text on the surface, never a bubble.
-/// Bullets keep the reference's tight left column.
-public struct AssistantTurn: View {
-  public enum Block: Hashable, Sendable {
-    case paragraph(String)
-    case bullets([String])
-    case note(String)
-  }
-
-  private let blocks: [Block]
-
-  public init(_ blocks: [Block]) {
-    self.blocks = blocks
-  }
-
-  public init(text: String) {
-    self.blocks = [.paragraph(text)]
-  }
-
-  public var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-        switch block {
-        case .paragraph(let text):
-          Text(text)
-            .font(Theme.TypeScale.body)
-            .foregroundStyle(Theme.Palette.textPrimary)
-            .lineSpacing(4)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-        case .bullets(let items):
-          VStack(alignment: .leading, spacing: 5) {
-            ForEach(items, id: \.self) { item in
-              HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("•")
-                  .font(Theme.TypeScale.body)
-                  .foregroundStyle(Theme.Palette.textSecondary)
-                Text(item)
-                  .font(Theme.TypeScale.body)
-                  .foregroundStyle(Theme.Palette.textPrimary)
-                  .textSelection(.enabled)
-                  .fixedSize(horizontal: false, vertical: true)
-              }
-            }
-          }
-        case .note(let text):
-          Text(text)
-            .font(Theme.TypeScale.note)
-            .foregroundStyle(Theme.Palette.textSecondary)
-        }
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-  }
+/// A block of an assistant turn: how the demo transcript carries structured text.
+public enum AssistantBlock: Hashable, Sendable {
+  case paragraph(String)
+  case bullets([String])
+  case note(String)
 }
 
 /// The only colored surface in the transcript: a green pill aligned right.

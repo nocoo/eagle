@@ -1105,7 +1105,7 @@ struct BotsPresenter {
     }
   }
 
-  private func noteBlocks(for message: Message) -> [AssistantTurn.Block] {
+  private func noteBlocks(for message: Message) -> [AssistantBlock] {
     if message.state == .aborted { return [.note("回答已中止")] }
     if message.state == .error { return [.note("回答失败，可以重新发送。")] }
     if message.stopReason == .length { return [.note("回答因为长度上限被截断。")] }

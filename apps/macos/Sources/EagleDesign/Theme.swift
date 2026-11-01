@@ -68,8 +68,6 @@ public enum Theme {
     public static let trafficLightNudgeY: CGFloat = -11.5
     public static let trafficLightsEnd: CGFloat =
       trafficLightLeading + trafficLightPitch * 2 + trafficLightSize
-    public static let toolbarHeight: CGFloat = 35
-    public static let toolbarTopInset: CGFloat = 0
     public static let headerHeight: CGFloat = 72
     /// The tallest control in the header band is the participant card, so the band is its height.
     public static let headerBandHeight: CGFloat = participantHeight
@@ -102,17 +100,12 @@ public enum Theme {
     /// Rows sit on cards inset from the panel edges; avatars keep the 20 pt line.
     public static let listCardInset: CGFloat = 12
     public static let rowContentInset: CGFloat = contentInset - listCardInset
-    /// The space a row's compact switch occupies, reserved so text truncates before it.
-    public static let rowToggleWidth: CGFloat = 26
-    /// The gap between a row's text block and its trailing switch.
-    public static let rowToggleGap: CGFloat = 8
     /// Every scrolling surface fades over the same distance.
     public static let edgeFadeHeight: CGFloat = 20
     public static let rowHeight: CGFloat = 58
     public static let rowAvatarGap: CGFloat = 11
     public static let sectionHeaderHeight: CGFloat = 24
     public static let sectionGap: CGFloat = 18
-    public static let listTopGap: CGFloat = 10
     public static let unreadPillHeight: CGFloat = 28
     public static let unreadPillBottom: CGFloat = 16
     public static let unreadBadgeHeight: CGFloat = 18
@@ -170,7 +163,6 @@ public enum Theme {
     public static let waitingDot: CGFloat = 6
     public static let waitingDotGap: CGFloat = 5
     public static let waitingDotLift: CGFloat = 3.5
-    public static let windowInset: CGFloat = 8
 
     public static let avatarRow: CGFloat = 34
     /// The footer's product mark is a scaled app icon: it takes the macOS icon corner, not none.
@@ -186,14 +178,11 @@ public enum Theme {
     public static let controlRadius: CGFloat = 9
     public static let hairline: CGFloat = 1
 
-    public static let chipTopInset: CGFloat = 2
-    public static let pinnedHeaderHeight: CGFloat = 62
     public static let collapseDuration: CGFloat = 0.28
     public static let conversationMaxContentWidth: CGFloat = 720
 
     public static let settingsRailWidth: CGFloat = 190
     public static let settingsRowHeight: CGFloat = 46
-    public static let settingsDeviceRowHeight: CGFloat = 58
     public static let settingsCardRadius: CGFloat = 14
     public static let settingsCardInset: CGFloat = 20
     public static let settingsContentInset: CGFloat = 28
@@ -210,8 +199,6 @@ public enum Theme {
     public static let rowTitle = Font.system(size: 15, weight: .medium)
     public static let rowSubtitle = Font.system(size: 13.5)
     public static let sectionLabel = Font.system(size: 13.5, weight: .medium)
-    public static let profileName = Font.system(size: 13.5, weight: .semibold)
-    public static let profilePlan = Font.system(size: 12.5)
     public static let brand = Font.system(size: 17, weight: .semibold)
     public static let body = Font.system(size: 15)
     public static let bodyEmphasis = Font.system(size: 15, weight: .medium)
@@ -235,11 +222,6 @@ extension Color {
         return NSColor(srgb: isDark ? dark : light)
       }
     )
-  }
-
-  /// Static sRGB helper used by tests and one-off previews.
-  init(srgb value: UInt32) {
-    self.init(nsColor: NSColor(srgb: value))
   }
 }
 

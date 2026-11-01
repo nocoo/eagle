@@ -5,9 +5,9 @@ import SwiftUI
 public enum TranscriptEntry: Identifiable, Hashable, Sendable {
   /// `from` names the peer whose message this answer was given to; absent means the open bot was
   /// answering a person.
-  case assistant(id: String, blocks: [AssistantTurn.Block], from: PeerOrigin? = nil)
+  case assistant(id: String, blocks: [AssistantBlock], from: PeerOrigin? = nil)
   /// The assistant turn still receiving deltas: the bubble shows a caret.
-  case streamingAssistant(id: String, blocks: [AssistantTurn.Block])
+  case streamingAssistant(id: String, blocks: [AssistantBlock])
   /// A person's turn; `origin` names a cause other than a person typing (TRIGGERS.md §6).
   case user(id: String, text: String, origin: String? = nil)
   case note(id: String, text: String, tintIndices: [Int])

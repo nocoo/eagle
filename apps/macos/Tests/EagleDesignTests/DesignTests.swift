@@ -29,18 +29,15 @@ struct ThemeTests {
     #expect(Theme.Metric.listCardInset == 12)
     #expect(Theme.Metric.rowContentInset + Theme.Metric.listCardInset == Theme.Metric.contentInset)
     #expect(Theme.Metric.edgeFadeHeight == 20)
-    #expect(Theme.Metric.toolbarTopInset == 0)
     // The reference header control is its own size: 35 pt with a 16 pt glyph.
     #expect(Theme.Metric.headerControlHeight == 35)
     #expect(Theme.Metric.headerControlHeight * Theme.Metric.roundGlyphRatio < 17)
     #expect(Theme.Metric.composerHeight == Theme.Metric.footerHeight)
     #expect(Theme.Metric.composerBottomInset == Theme.Metric.footerBottom)
-    #expect(Theme.Metric.toolbarHeight == Theme.Metric.headerControlHeight)
     #expect(Theme.Metric.unreadPillHeight == 28)
     #expect(Theme.Metric.inspectorRowHeight == 40)
     #expect(Theme.Metric.composerHeight == 54)
     #expect(Theme.Metric.cardRadius == 12)
-    #expect(Theme.Metric.pinnedHeaderHeight == 62)
   }
 
   @Test("column clamps stay ordered")
@@ -124,8 +121,8 @@ struct TranscriptTests {
 
   @Test("assistant blocks compare by content")
   func blocks() {
-    #expect(AssistantTurn.Block.paragraph("x") == .paragraph("x"))
-    #expect(AssistantTurn.Block.bullets(["a"]) != .bullets(["b"]))
+    #expect(AssistantBlock.paragraph("x") == .paragraph("x"))
+    #expect(AssistantBlock.bullets(["a"]) != .bullets(["b"]))
   }
 }
 

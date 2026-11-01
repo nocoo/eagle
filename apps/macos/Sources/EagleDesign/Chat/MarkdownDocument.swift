@@ -184,7 +184,7 @@ enum MarkdownBlock: Equatable, Sendable {
   }
 }
 
-extension Array where Element == AssistantTurn.Block {
+extension Array where Element == AssistantBlock {
   /// The demo transcript keeps structured blocks; the bubble renders their text as
   /// markdown paragraphs, lists and notes in one document.
   public var markdown: String {

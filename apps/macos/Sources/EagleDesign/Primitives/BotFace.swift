@@ -17,7 +17,6 @@ public struct BotFace: View {
       self.tint = tint
     }
 
-    public static let standard = Style(shape: .blob, tint: .green)
   }
 
   private let style: Style
@@ -221,10 +220,6 @@ private struct ShapePath: Shape {
       path.closeSubpath()
     }
     return path
-  }
-
-  private func mid(_ a: CGPoint, _ b: CGPoint) -> CGPoint {
-    CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
   }
 }
 

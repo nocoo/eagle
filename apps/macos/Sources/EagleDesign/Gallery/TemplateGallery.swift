@@ -10,7 +10,6 @@ public struct TemplateGallery: View {
   @State private var toggleOne = true
   @State private var toggleTwo = true
   @State private var draft = ""
-  @State private var draftFilled = "把 sleepy 那个 PR 一起并掉"
   @State private var draftSteerable = ""
   @State private var previewRunning = true
   @State private var previewInspector = false
