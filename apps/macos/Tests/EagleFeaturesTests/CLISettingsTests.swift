@@ -208,6 +208,18 @@ struct CLISettingsTests {
     #expect(!sourceRun.canInstall)
     #expect(sourceRun.pathHint != nil, "~/.local/bin is not on PATH here")
     #expect(model.pathHint != nil)
-    #expect(CLISettingsViewModel.bundledCommand(in: URL(fileURLWithPath: "/tmp/none")) == nil)
+    #expect(
+      CLISettingsViewModel.bundledCommand(
+        in: URL(fileURLWithPath: "/tmp/none"), executable: nil) == nil)
+    // A source run has no bundle copy, so the sibling `eagle-cli` is what it installs.
+    let build = FileManager.default.temporaryDirectory
+      .appendingPathComponent("eagle-build-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: build, withIntermediateDirectories: true)
+    let sibling = build.appendingPathComponent("eagle-cli")
+    try Data("x".utf8).write(to: sibling)
+    #expect(
+      CLISettingsViewModel.bundledCommand(
+        in: build, executable: build.appendingPathComponent("Eagle"))
+        == sibling)
   }
 }

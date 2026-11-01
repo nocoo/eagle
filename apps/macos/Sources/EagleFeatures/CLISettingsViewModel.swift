@@ -37,7 +37,8 @@ public final class CLISettingsViewModel: ObservableObject {
     session: URLSession = .shared,
     fileManager: FileManager = .default,
     home: URL = FileManager.default.homeDirectoryForCurrentUser,
-    binaryURL: URL? = CLISettingsViewModel.bundledCommand(in: Bundle.main.bundleURL),
+    binaryURL: URL? = CLISettingsViewModel.bundledCommand(
+      in: Bundle.main.bundleURL, executable: Bundle.main.executableURL),
     environment: [String: String] = ProcessInfo.processInfo.environment
   ) {
     self.commandName = appVersion.isRelease ? "eagle" : "eagle-dev"
@@ -59,12 +60,23 @@ public final class CLISettingsViewModel: ObservableObject {
     self.installed = fileManager.fileExists(atPath: linkURL.path)
   }
 
-  /// The command shipped inside this App bundle, or nil for a source run.
-  public static func bundledCommand(in bundleURL: URL) -> URL? {
+  /// The command this App can install: the copy shipped in `Contents/Helpers`, or — for a
+  /// source run, where `Bundle.main` is the build directory — the sibling `eagle-cli` that
+  /// `swift build` produced. The installed link still gets the App's own name.
+  public static func bundledCommand(
+    in bundleURL: URL,
+    executable: URL? = Bundle.main.executableURL
+  ) -> URL? {
     let helpers = bundleURL.appendingPathComponent("Contents/Helpers", isDirectory: true)
     for name in ["eagle", "eagle-dev"] {
       let candidate = helpers.appendingPathComponent(name)
       if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+    }
+    if let sibling = executable?.deletingLastPathComponent()
+      .appendingPathComponent("eagle-cli"),
+      FileManager.default.fileExists(atPath: sibling.path)
+    {
+      return sibling
     }
     return nil
   }
@@ -72,7 +84,7 @@ public final class CLISettingsViewModel: ObservableObject {
   public var canInstall: Bool { binaryURL != nil }
 
   public var binaryLabel: String {
-    binaryURL.map { "已内置 \($0.lastPathComponent)" } ?? "源码运行，没有内置 CLI"
+    binaryURL.map { "内置 \($0.lastPathComponent)" } ?? "找不到 CLI 可执行文件"
   }
 
   public var linkLabel: String { linkURL.path }
