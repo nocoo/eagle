@@ -146,6 +146,7 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
       ("left", NSPoint(x: 2, y: 27)), ("right", NSPoint(x: 358, y: 27)),
     ] {
       fixture.focusOther()
+      await fixture.settle()
       fixture.click(point)
       await fixture.settle { fixture.hasComposerFocus }
       check("\(name) padding focuses the native input", fixture.hasComposerFocus)
@@ -212,8 +213,9 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
     let viewport = fixture.host.convert(scroll.contentView.bounds, from: scroll.contentView)
     check("transcript has a native scroll viewport", viewport.height > 100)
     fixture.focusOther()
-    fixture.click(NSPoint(x: viewport.midX, y: viewport.maxY - 32))
     await fixture.settle()
+    fixture.click(NSPoint(x: viewport.midX, y: viewport.maxY - 32))
+    await fixture.settle { fixture.hasComposerFocus }
     check("empty transcript whitespace focuses the native composer", fixture.hasComposerFocus)
     fixture.key("c", code: 8)
     await fixture.settle()
@@ -233,8 +235,9 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
     ] {
       fixture.model.draft = ""
       fixture.focusOther()
-      fixture.click(point)
       await fixture.settle()
+      fixture.click(point)
+      await fixture.settle { fixture.hasComposerFocus }
       fixture.key(character, code: code)
       await fixture.settle()
       check(
@@ -353,7 +356,7 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
         ("long-\($0)", [.paragraph(AttributedString("History message \($0)"))])
       })
     await fixture.settle()
-    await fixture.drainRunLoop()
+    await fixture.drainRunLoop(for: ComposerFocusTiming.ci ? 1.0 : 0.35)
     fixture.focusOther()
     let beforeScroll = scroll.contentView.bounds.origin
     let scrollDelta = fixture.scrollViewport(scroll, by: 80)
@@ -473,23 +476,8 @@ private final class ComposerFocusWindow {
     ComposerFocusTrace.mark("\(context).layout.return")
   }
 
-  private func pumpRunLoop() {
-    let until = Date(timeIntervalSinceNow: 0.01)
-    while Date() < until {
-      guard
-        let event = NSApp.nextEvent(
-          matching: .any,
-          until: min(until, Date(timeIntervalSinceNow: 0.001)),
-          inMode: .default,
-          dequeue: true
-        )
-      else { continue }
-      NSApp.sendEvent(event)
-    }
-  }
-
-  /// When `until` is nil, drain layout and run-loop work for a short idle window. Otherwise wait
-  /// until the predicate holds or the readiness deadline expires (slow CI activation/focus).
+  /// When `until` is nil, drain layout for a short idle window. Otherwise wait until the predicate
+  /// holds or the readiness deadline expires (slow CI activation/focus).
   func settle(until condition: (() -> Bool)? = nil, timeout: TimeInterval? = nil) async {
     ComposerFocusTrace.mark("settle.enter")
     defer { ComposerFocusTrace.mark("settle.return") }
@@ -501,7 +489,6 @@ private final class ComposerFocusWindow {
       layout("settle[\(step)]")
       step += 1
       if let condition, condition() { return }
-      pumpRunLoop()
       try? await Task.sleep(for: .milliseconds(10))
     }
   }
@@ -513,7 +500,6 @@ private final class ComposerFocusWindow {
     let steps = max(1, Int(duration / 0.01))
     for step in 0..<steps {
       layout("drainRunLoop[\(step)]")
-      pumpRunLoop()
       try? await Task.sleep(for: .milliseconds(10))
     }
   }

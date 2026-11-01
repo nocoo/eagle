@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+  copyFileSync,
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -9,8 +18,9 @@ const macosPackage = resolve("apps/macos");
 
 test("the native Chat composer focuses on entry and whitespace while preserving editing", (context) => {
   const root = mkdtempSync(join(tmpdir(), "eagle-composer-focus-"));
-  let fixtureBinDir = "";
-  let executable = "";
+  const bundle = join(root, "Focus Fixture.app");
+  const macosDir = join(bundle, "Contents", "MacOS");
+  const bundleExecutable = join(macosDir, "composer-focus");
   let cleanArguments: string[] = [];
   let cursor: { x: number; y: number } | undefined;
   const failures: unknown[] = [];
@@ -46,18 +56,47 @@ test("the native Chat composer focuses on entry and whitespace while preserving 
       { encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 },
     );
     assert.equal(binPath.status, 0, binPath.stderr);
-    fixtureBinDir = binPath.stdout.trim();
-    executable = join(fixtureBinDir, "ComposerFocusFixture");
+    const fixtureBinDir = binPath.stdout.trim();
+    mkdirSync(macosDir, { recursive: true });
+    writeFileSync(
+      join(bundle, "Contents", "Info.plist"),
+      `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>ai.hexly.eagle.focus-fixture.${randomUUID()}</string>
+<key>CFBundleExecutable</key><string>composer-focus</string>
+<key>CFBundleName</key><string>Eagle Focus Fixture</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>LSMinimumSystemVersion</key><string>15.0</string>
+<key>NSPrincipalClass</key><string>NSApplication</string>
+</dict></plist>
+`,
+    );
+    copyFileSync(
+      join(fixtureBinDir, "ComposerFocusFixture"),
+      bundleExecutable,
+    );
+    for (const name of readdirSync(fixtureBinDir)) {
+      if (name.endsWith(".dylib")) {
+        copyFileSync(join(fixtureBinDir, name), join(macosDir, name));
+      }
+      if (name.endsWith(".bundle")) {
+        cpSync(join(fixtureBinDir, name), join(macosDir, name), {
+          recursive: true,
+        });
+      }
+    }
     cleanArguments = [
       "-i",
-      `DYLD_LIBRARY_PATH=${fixtureBinDir}`,
+      `DYLD_LIBRARY_PATH=${macosDir}`,
       "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
       "EAGLE_COMPOSER_FOCUS_FIXTURE=1",
-      executable,
+      bundleExecutable,
     ];
     const sign = spawnSync(
       "/usr/bin/codesign",
-      ["--force", "--sign", "-", "--timestamp=none", executable],
+      ["--force", "--sign", "-", "--timestamp=none", bundle],
       { encoding: "utf8", timeout: 20_000, maxBuffer: 1024 * 1024 },
     );
     assert.equal(sign.status, 0, sign.stdout + sign.stderr);
@@ -70,7 +109,7 @@ test("the native Chat composer focuses on entry and whitespace while preserving 
     cursor = JSON.parse(position.stdout) as { x: number; y: number };
     assert(Number.isFinite(cursor.x) && Number.isFinite(cursor.y));
     // Run-only budget: compile is separate. Traces on stderr show stage progress if this fires.
-    const fixtureRunTimeout = process.env.CI ? 120_000 : 45_000;
+    const fixtureRunTimeout = process.env.CI ? 150_000 : 45_000;
     const run = spawnSync("/usr/bin/env", cleanArguments, {
       encoding: "utf8",
       timeout: fixtureRunTimeout,
