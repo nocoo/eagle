@@ -2,25 +2,49 @@
   "id": "cli-chat",
   "title": "通过 CLI 与 bot 对话：send --wait、history、watch、abort 后再接力",
   "kind": "chat",
-  "notes": "The conversation verbs a terminal or another agent uses. The slow answer is aborted while it is still in flight, and the transcript must never carry it.",
+  "notes": "The conversation verbs a terminal or another agent uses. The slow answer is aborted while the scripted model still holds it, so the transcript can never carry it; the history page is read with the answer's own entry id, which is how an agent pages. A truncated snapshot (`truncatedBefore`) needs a transcript larger than the snapshot window; the mapping from that field is unit-tested in CommandsTests.",
   "timeoutMs": 120000,
   "model": {
     "script": [
-      { "text": "第一答" },
-      { "text": "慢答", "delayMs": 4000 },
-      { "text": "第二答" }
+      {
+        "text": "第一答"
+      },
+      {
+        "text": "慢答",
+        "holdFor": "slow"
+      },
+      {
+        "text": "第二答"
+      }
     ]
   },
   "steps": [
     {
       "kind": "cli",
-      "args": ["chat", "send", "eval cli-chat", "--text", "你好", "--wait"],
-      "stdoutContains": "第一答"
+      "args": [
+        "chat",
+        "send",
+        "eval cli-chat",
+        "--text",
+        "你好",
+        "--wait",
+        "--json"
+      ],
+      "stdoutContains": "第一答",
+      "capture": "reply"
     },
     {
       "kind": "cli",
-      "args": ["chat", "history", "eval cli-chat", "--limit", "5"],
-      "stdoutContains": "no older messages"
+      "args": [
+        "chat",
+        "history",
+        "eval cli-chat",
+        "--before",
+        "{{reply.answerEntryId}}",
+        "--limit",
+        "5"
+      ],
+      "stdoutContains": "你好"
     },
     {
       "kind": "cli",
@@ -33,27 +57,58 @@
       "kind": "cli",
       "args": ["chat", "send", "eval cli-chat", "--text", "慢任务"]
     },
-    { "kind": "sleep", "ms": 800 },
+    {
+      "kind": "waitModelRequest",
+      "count": 2,
+      "timeoutMs": 10000
+    },
     {
       "kind": "cli",
       "args": ["chat", "abort", "eval cli-chat"],
       "stdoutContains": "aborted"
     },
     {
+      "kind": "releaseModel",
+      "hold": "slow"
+    },
+    {
+      "kind": "sleep",
+      "ms": 1500
+    },
+    {
       "kind": "cli",
       "args": ["chat", "send", "eval cli-chat", "--text", "接力", "--wait"],
       "stdoutContains": "第二答"
-    },
-    { "kind": "sleep", "ms": 4000 }
+    }
   ],
   "expect": {
     "messages": [
-      { "role": "user", "contains": "你好" },
-      { "role": "assistant", "contains": "第一答" },
-      { "role": "user", "contains": "慢任务" },
-      { "role": "user", "contains": "接力" },
-      { "role": "assistant", "contains": "第二答" }
+      {
+        "role": "user",
+        "contains": "你好"
+      },
+      {
+        "role": "assistant",
+        "contains": "第一答"
+      },
+      {
+        "role": "user",
+        "contains": "慢任务"
+      },
+      {
+        "role": "user",
+        "contains": "接力"
+      },
+      {
+        "role": "assistant",
+        "contains": "第二答"
+      }
     ],
-    "messagesExcluded": [{ "role": "assistant", "contains": "慢答" }]
+    "messagesExcluded": [
+      {
+        "role": "assistant",
+        "contains": "慢答"
+      }
+    ]
   }
 }

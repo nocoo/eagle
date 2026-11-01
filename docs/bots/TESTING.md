@@ -65,8 +65,9 @@ scope, the exit code and the daemon behind it together.
   `~/.config/eagle-dev/token` (`docs/bots/CLI.md`), so an acceptance run needs no
   person turning a switch. A bundled build never accepts that file.
 - Acceptance cases live in `tests/eval` and drive their steps through the CLI
-  (`docs` and `tests/eval/README.md`). `npm --prefix apps/bots run eval` stays outside
-  `npm run check` because it boots a process and runs real tools.
+  (`tests/eval/README.md`). `npm --prefix apps/bots run eval` builds the CLI and runs
+  every case; `eval:cli` runs only the `cli-*` ones. Both stay outside `npm run check`
+  because they boot a process and run real tools.
 - This never replaces a deterministic test: a scope, a refusal or a wire rule still
   needs its assertion in `apps/bots/test`, and a CLI acceptance case is evidence the
   assembled product still does the thing, not a substitute for the gate.

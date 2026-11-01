@@ -4,17 +4,29 @@
   "kind": "chat",
   "notes": "The development credential an agent mints itself must work, must fail closed when the file is unsafe or replaced, must never reach a release binary, and must not lend its scopes to a read-only credential.",
   "timeoutMs": 90000,
-  "model": { "script": [{ "text": "no model reply is needed" }] },
+  "model": {
+    "script": [
+      {
+        "text": "no model reply is needed"
+      }
+    ]
+  },
   "steps": [
     {
       "kind": "cli",
       "args": ["whoami", "--json"],
-      "json": { "client": { "name": "dev-agent" } }
+      "json": {
+        "client": {
+          "name": "dev-agent"
+        }
+      }
     },
     {
       "kind": "cli",
       "args": ["bots", "list", "--json"],
-      "env": { "EAGLE_TOKEN": "wrong-token-0123456789-abcdefghijkl" },
+      "env": {
+        "EAGLE_TOKEN": "wrong-token-0123456789-abcdefghijkl"
+      },
       "expectExit": 3,
       "stderrContains": "a bearer token is required"
     },
@@ -39,7 +51,13 @@
     {
       "kind": "cli",
       "args": ["bots", "list", "--json"],
-      "json": { "bots": [{ "title": "eval cli-auth" }] }
+      "json": {
+        "bots": [
+          {
+            "title": "eval cli-auth"
+          }
+        ]
+      }
     },
     {
       "kind": "cli",
@@ -52,7 +70,9 @@
       "kind": "http",
       "method": "POST",
       "path": "/v1/clients",
-      "headers": { "content-type": "application/json" },
+      "headers": {
+        "content-type": "application/json"
+      },
       "body": "{\"name\":\"reader\",\"scopes\":[\"read\"]}",
       "expectStatus": 201,
       "capture": "reader"
@@ -60,15 +80,31 @@
     {
       "kind": "cli",
       "args": ["bots", "create", "--title", "只读越权", "--json"],
-      "env": { "EAGLE_TOKEN": "{{reader.token}}" },
+      "env": {
+        "EAGLE_TOKEN": "{{reader.token}}"
+      },
       "expectExit": 3,
-      "stderrContains": "write scope"
+      "stderrContains": "write scope",
+      "stdoutExcludes": "只读越权"
     },
     {
       "kind": "cli",
       "args": ["bots", "list", "--json"],
-      "env": { "EAGLE_TOKEN": "{{reader.token}}" },
-      "json": { "bots": [{ "title": "eval cli-auth" }] }
+      "env": {
+        "EAGLE_TOKEN": "{{reader.token}}"
+      },
+      "json": {
+        "bots": [
+          {
+            "title": "eval cli-auth"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "cli",
+      "args": ["bots", "list", "--json"],
+      "stdoutExcludes": "只读越权"
     },
     {
       "kind": "file",
@@ -79,12 +115,20 @@
     {
       "kind": "cli",
       "args": ["bots", "list", "--json"],
-      "json": { "bots": [{ "title": "eval cli-auth" }] }
+      "json": {
+        "bots": [
+          {
+            "title": "eval cli-auth"
+          }
+        ]
+      }
     },
     {
       "kind": "cli",
       "args": ["bots", "list", "--json"],
-      "env": { "EAGLE_TOKEN": "{{dev.token}}" },
+      "env": {
+        "EAGLE_TOKEN": "{{dev.token}}"
+      },
       "expectExit": 3,
       "stderrContains": "a bearer token is required"
     }

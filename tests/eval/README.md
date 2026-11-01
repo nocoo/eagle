@@ -11,7 +11,7 @@ live in `apps/bots/test` (`npm --prefix apps/bots run check`); a case here answe
 the whole product still do this end to end".
 
 ```sh
-# every case, one report line each
+# every case, one report line each; the macOS CLI is built first
 npm --prefix apps/bots run eval
 # one case, with the model requests and every frame printed
 npm --prefix apps/bots run eval -- --case coding-fix-loop --verbose
@@ -33,7 +33,11 @@ npm --prefix apps/bots run eval:cli
 npm --prefix apps/bots run eval:cli -- --case cli-chat --verbose
 ```
 
-`eval:cli` links the built binary as `eagle-dev` inside the case's temp root, because
+`npm run eval` is the acceptance entry: it builds the CLI and runs every case, because a
+case that drives the CLI is part of the product's acceptance and must not be skipped
+quietly. `eval:cli` narrows the same run to the `cli-*` cases.
+
+The runner links the built binary as `eagle-dev` inside the case's temp root, because
 the CLI takes its own name from argv0: that name selects the development credential.
 Each case gets a temporary `HOME`, mints `~/.config/eagle-dev/token` there (mode 0600)
 and starts the daemon with `BOTS_DEV_AGENT_TOKEN` pointing at it, so a run never reads

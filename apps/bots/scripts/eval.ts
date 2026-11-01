@@ -14,10 +14,11 @@ import { readConfig } from "../src/config.ts";
 import { type DaemonHandle, startDaemon } from "../src/main.ts";
 
 type ScriptedReply =
-  | { readonly text: string; readonly delayMs?: number }
+  | { readonly text: string; readonly delayMs?: number; readonly holdFor?: string }
   | {
       readonly toolCall: { readonly name: string; readonly args: Record<string, unknown> };
       readonly delayMs?: number;
+      readonly holdFor?: string;
     };
 
 type CaseFile = {
@@ -91,12 +92,21 @@ type Step =
       readonly mode?: string;
     }
   | {
+      /** Waits until the scripted model has answered `count` requests: an in-flight run. */
+      readonly kind: "waitModelRequest";
+      readonly count: number;
+      readonly timeoutMs?: number;
+    }
+  | { readonly kind: "releaseModel"; readonly hold: string }
+  | {
       readonly kind: "cli";
       readonly args: readonly string[];
       /** `dev` (default) runs a link named `eagle-dev`; `release` runs one named `eagle`. */
       readonly bin?: "dev" | "release";
       readonly expectExit?: number;
       readonly stdoutContains?: string;
+      /** A string that must not appear: how a case proves a refused write did nothing. */
+      readonly stdoutExcludes?: string;
       readonly stderrContains?: string;
       /** Subset match against the last JSON line on stdout. */
       readonly json?: unknown;
@@ -123,10 +133,26 @@ function failure(message: string): never {
   throw new Error(message);
 }
 
-/** A local OpenAI Responses endpoint: streams the case's replies, in order. */
+/**
+ * A local OpenAI Responses endpoint: streams the case's replies, in order. A reply may
+ * hold until the case releases it, so a test about aborting knows the answer is really
+ * in flight instead of guessing with a sleep.
+ */
 const scriptedModel = (script: readonly ScriptedReply[], repeatLast: boolean) => {
   const requests: { readonly lastInput: string; readonly tools: number }[] = [];
+  const waiters = new Map<string, (() => void)[]>();
+  let arrivals = 0;
   let index = 0;
+  const holdUntilReleased = (hold: string): Promise<void> =>
+    new Promise((resolve_) => {
+      const waiting = waiters.get(hold) ?? [];
+      waiting.push(resolve_);
+      waiters.set(hold, waiting);
+    });
+  const release = (hold: string): void => {
+    for (const resolve_ of waiters.get(hold) ?? []) resolve_();
+    waiters.delete(hold);
+  };
   const server = createServer((request, response) => {
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -151,6 +177,7 @@ const scriptedModel = (script: readonly ScriptedReply[], repeatLast: boolean) =>
       });
       const reply = index < script.length ? script[index] : repeatLast ? script.at(-1) : undefined;
       index += 1;
+      arrivals += 1;
       if (reply === undefined) {
         response.writeHead(500, { "content-type": "application/json" });
         response.end(JSON.stringify({ error: { message: "eval script exhausted" } }));
@@ -256,11 +283,16 @@ const scriptedModel = (script: readonly ScriptedReply[], repeatLast: boolean) =>
       };
       // A case about aborting needs an answer that is still in flight when it aborts.
       const delay = reply.delayMs ?? 0;
-      if (delay > 0) setTimeout(respond, delay);
+      const hold = reply.holdFor;
+      if (hold !== undefined) {
+        void holdUntilReleased(hold).then(() =>
+          delay > 0 ? setTimeout(respond, delay) : respond(),
+        );
+      } else if (delay > 0) setTimeout(respond, delay);
       else respond();
     });
   });
-  return { server, requests };
+  return { server, requests, arrivals: () => arrivals, release };
 };
 
 const listen = (server: ReturnType<typeof createServer>): Promise<number> =>
@@ -763,6 +795,9 @@ const runCase = async (
               `${command} printed no ${JSON.stringify(step.stdoutContains)}: ${stdout}${stderr === "" ? "" : ` / stderr ${stderr}`}`,
             );
           }
+          if (step.stdoutExcludes !== undefined && stdout.includes(fill(step.stdoutExcludes))) {
+            failure(`${command} printed ${JSON.stringify(step.stdoutExcludes)}: ${stdout}`);
+          }
           if (step.stderrContains !== undefined && !stderr.includes(fill(step.stderrContains))) {
             failure(`${command} said no ${JSON.stringify(step.stderrContains)}: ${stderr}`);
           }
@@ -776,6 +811,16 @@ const runCase = async (
           if (step.capture !== undefined) captured.set(step.capture, lastJsonLine(stdout));
           break;
         }
+        case "waitModelRequest":
+          await waitUntil(
+            () => model.arrivals() >= step.count,
+            `${step.count} model request(s)`,
+            stepBudget,
+          );
+          break;
+        case "releaseModel":
+          model.release(step.hold);
+          break;
         case "waitFor":
           await waitUntil(
             () =>
@@ -889,16 +934,7 @@ const main = async (): Promise<void> => {
     .sort();
   // A case that drives the CLI needs the built binary. Without one the plain run stays the
   // daemon's acceptance and says so; `eval:cli` builds the binary and runs those cases.
-  const files =
-    cli === undefined && match === undefined
-      ? cases.filter((name) => !name.startsWith("cli-"))
-      : cases;
-  const skipped = cases.length - files.length;
-  if (skipped > 0) {
-    process.stdout.write(
-      `skipping ${skipped} cli-* case(s): run them with npm run eval:cli (it builds the CLI)\n`,
-    );
-  }
+  const files = cases;
   if (files.length === 0) failure(`no eval cases in ${dir}`);
   let failed = 0;
   for (const file of files) {

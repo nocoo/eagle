@@ -4,18 +4,54 @@
   "kind": "chat",
   "notes": "The whole surface one agent needs before it trusts the CLI: the document, the identity it presents, and every documented exit code. Nothing here talks to a model.",
   "timeoutMs": 60000,
-  "model": { "script": [{ "text": "no model reply is needed" }] },
+  "model": {
+    "script": [
+      {
+        "text": "no model reply is needed"
+      }
+    ]
+  },
   "steps": [
-    { "kind": "cli", "args": ["--version"], "stdoutContains": "eagle-dev" },
-    { "kind": "cli", "args": ["--version"], "stdoutContains": "daemon" },
-    { "kind": "cli", "args": ["--skill"], "stdoutContains": "bots list" },
-    { "kind": "cli", "args": ["health", "--json"], "json": { "bots": 1 } },
+    {
+      "kind": "cli",
+      "args": ["--version"],
+      "stdoutContains": "eagle-dev"
+    },
+    {
+      "kind": "cli",
+      "args": ["--version"],
+      "stdoutContains": "daemon"
+    },
+    {
+      "kind": "cli",
+      "args": ["--skill"],
+      "stdoutContains": "bots list"
+    },
+    {
+      "kind": "cli",
+      "args": ["health", "--json"],
+      "json": {
+        "bots": 1
+      }
+    },
     {
       "kind": "cli",
       "args": ["whoami", "--json"],
-      "json": { "client": { "name": "dev-agent" } }
+      "json": {
+        "client": {
+          "name": "dev-agent"
+        }
+      }
     },
-    { "kind": "cli", "args": ["usage", "--json"], "json": {} },
+    {
+      "kind": "cli",
+      "args": ["usage", "--json", "--days", "7"],
+      "json": {
+        "usage": {
+          "week": {}
+        }
+      }
+    },
     {
       "kind": "cli",
       "args": ["bots"],
@@ -37,20 +73,30 @@
     {
       "kind": "cli",
       "args": ["health"],
-      "env": { "EAGLE_PORT": "1" },
+      "env": {
+        "EAGLE_PORT": "1"
+      },
       "expectExit": 4
     },
     {
       "kind": "cli",
       "args": ["bots", "list", "--json"],
-      "env": { "EAGLE_TOKEN": "wrong-token-0123456789-abcdefghijkl" },
+      "env": {
+        "EAGLE_TOKEN": "wrong-token-0123456789-abcdefghijkl"
+      },
       "expectExit": 3,
       "stderrContains": "a bearer token is required"
     },
     {
       "kind": "cli",
       "args": ["bots", "list", "--json"],
-      "json": { "bots": [{ "title": "eval cli-surface" }] }
+      "json": {
+        "bots": [
+          {
+            "title": "eval cli-surface"
+          }
+        ]
+      }
     }
   ]
 }
