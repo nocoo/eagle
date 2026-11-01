@@ -4,7 +4,7 @@
 // read again on every authentication, and a file that is not conforming is refused
 // rather than repaired.
 import { constants } from "node:fs";
-import { open } from "node:fs/promises";
+import { lstat, open } from "node:fs/promises";
 import { declareEvent } from "../log/events.ts";
 import type { Log } from "../log/log.ts";
 import { CLIENT_SCOPES, type Client } from "./clients.ts";
@@ -33,10 +33,13 @@ export type DevTokenReader = () => Promise<DevCredential | undefined>;
  * from one descriptor, so the file that was checked is the file that is read.
  */
 export const readDevToken = async (path: string): Promise<DevCredential | undefined> => {
+  // `lstat` answers without opening, so a FIFO or a device at this path is refused before
+  // anything can wait for a writer. The open still passes `O_NONBLOCK`, because a file
+  // replaced between the two calls must not block either.
+  const entry = await lstat(path).catch(() => undefined);
+  if (entry === undefined || !entry.isFile()) return undefined;
   let handle: Awaited<ReturnType<typeof open>>;
   try {
-    // `O_NONBLOCK` keeps a FIFO somebody left at this path from hanging the request that
-    // reads it; a regular file is unaffected by the flag.
     handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
   } catch {
     return undefined;
