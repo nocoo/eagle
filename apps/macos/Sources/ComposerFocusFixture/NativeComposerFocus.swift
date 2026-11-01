@@ -357,11 +357,30 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
       })
     await fixture.settle()
     await fixture.drainRunLoop(for: ComposerFocusTiming.ci ? 1.0 : 0.35)
+    await fixture.settle(
+      until: {
+        let documentHeight = scroll.documentView?.frame.height ?? 0
+        let visibleHeight = scroll.contentView.bounds.height
+        return documentHeight > visibleHeight + 40
+      },
+      timeout: ComposerFocusTiming.ci ? 20 : 5
+    )
     fixture.focusOther()
-    let beforeScroll = scroll.contentView.bounds.origin
-    let scrollDelta = fixture.scrollViewport(scroll, by: 80)
     await fixture.settle()
-    await fixture.drainRunLoop()
+    let beforeScroll = scroll.contentView.bounds.origin
+    var scrollDelta: CGFloat = 0
+    for attempt in 0..<6 {
+      scrollDelta = fixture.scrollViewport(scroll, by: 80)
+      await fixture.settle()
+      if scroll.contentView.bounds.origin != beforeScroll { break }
+      await fixture.drainRunLoop(for: ComposerFocusTiming.ci ? 0.5 : 0.2)
+      ComposerFocusTrace.mark("historyScroll.retry attempt=\(attempt)")
+    }
+    if !fixture.otherHasFocus {
+      fixture.focusOther()
+      await fixture.settle()
+    }
+    await fixture.drainRunLoop(for: ComposerFocusTiming.ci ? 0.5 : 0.35)
     editingStates.append([
       "step": "historyScroll", "before": NSStringFromPoint(beforeScroll),
       "after": NSStringFromPoint(scroll.contentView.bounds.origin),
