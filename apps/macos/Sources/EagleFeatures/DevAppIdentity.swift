@@ -12,9 +12,23 @@ import AppKit
 public enum DevAppIdentity {
   public static let name = "Eagle Dev"
 
+  /// The product's own name: a source run is **Eagle Dev**, so the window title and the
+  /// About card agree with the menu; a bundled App keeps the name its Info.plist carries.
+  public static let productName = "Eagle for Mac"
+
   /// Only a source run needs the rename: a bundle carries `CFBundleName` already.
   public static func shouldRename(bundleIdentifier: String?) -> Bool {
     bundleIdentifier == nil
+  }
+
+  /// What the window title and the About card say for this build.
+  public static func displayName(bundleIdentifier: String?) -> String {
+    shouldRename(bundleIdentifier: bundleIdentifier) ? name : productName
+  }
+
+  /// The same answer for the running build.
+  public static var currentDisplayName: String {
+    displayName(bundleIdentifier: Bundle.main.bundleIdentifier)
   }
 
   /// Exact matches only: a window title or a submenu that merely contains "Eagle" is not the

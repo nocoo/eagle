@@ -14,6 +14,14 @@ struct DevAppIdentityTests {
       "an installed App keeps the name in its Info.plist")
   }
 
+  @Test("a source run calls itself Eagle Dev everywhere a person reads the name")
+  func displayName() {
+    #expect(DevAppIdentity.displayName(bundleIdentifier: nil) == "Eagle Dev")
+    #expect(
+      DevAppIdentity.displayName(bundleIdentifier: "ai.hexly.eagle.macos") == "Eagle for Mac",
+      "an installed App keeps the product name its bundle carries")
+  }
+
   @Test("only the items that are the app's own name change")
   func titles() {
     #expect(DevAppIdentity.renamed("Eagle") == "Eagle Dev")

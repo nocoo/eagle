@@ -704,7 +704,7 @@ public struct SettingsView: View {
           HStack(alignment: .center, spacing: 18) {
             aboutMark
             VStack(alignment: .leading, spacing: 4) {
-              Text("Eagle for Mac")
+              Text(DevAppIdentity.currentDisplayName)
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(Theme.Palette.textPrimary)
               Text("多机工作态势 · 本地优先")
