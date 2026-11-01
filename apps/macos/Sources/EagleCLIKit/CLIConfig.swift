@@ -62,8 +62,20 @@ public struct CLIConfig: Sendable {
   /// unreadable directory must never look like a missing credential.
   static func readDevToken(home: String) -> DevToken {
     let url = devTokenURL(home: home)
-    // `O_NONBLOCK` keeps a FIFO somebody left at this path from hanging every command;
-    // a regular file is unaffected by the flag.
+    // `lstat` answers without opening, so a FIFO or a device at this path is refused before
+    // anything can wait for a writer; the open still passes `O_NONBLOCK`, because a file
+    // replaced between the two calls must not block either.
+    var entry = stat()
+    guard url.path.withCString({ lstat($0, &entry) }) == 0 else {
+      let code = errno
+      let reason = String(cString: strerror(code))
+      return code == ENOENT
+        ? .missing
+        : .unsafe(path: url.path, reason: "it cannot be inspected (\(reason))")
+    }
+    guard (entry.st_mode & S_IFMT) == S_IFREG else {
+      return .unsafe(path: url.path, reason: "it is not a regular file")
+    }
     let descriptor = url.path.withCString { open($0, O_RDONLY | O_NONBLOCK) }
     guard descriptor >= 0 else {
       let code = errno

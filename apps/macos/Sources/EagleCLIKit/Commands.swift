@@ -527,8 +527,16 @@ public struct Commands: Sendable {
     // this client holds (`docs/bots/PROTOCOL.md` "Subscription"), because a page is
     // contiguous with what the caller already has. Paging from the truncation marker asks
     // for what predates the transcript's first entry and answers with nothing.
-    let held = (snapshot["messages"] as? [JSONObject])?.first?["id"] as? String
+    // A provisional id is not a cursor: the daemon only accepts committed entries.
+    let held = (snapshot["messages"] as? [JSONObject] ?? [])
+      .compactMap { $0["id"] as? String }
+      .first { $0.hasPrefix("e_") }
     let more = snapshot["truncatedBefore"] != nil
+    if more, held == nil, arguments.value("before") == nil {
+      throw CLIError.refused(
+        kind: "not_ready",
+        message: "the page holds only an unfinished answer; nothing older is reachable yet")
+    }
     guard let before = arguments.value("before") ?? (more ? held : nil) else {
       if printer.wantsJSON(arguments) {
         printer.json(["messages": [], "hasMore": false])

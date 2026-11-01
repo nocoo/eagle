@@ -152,7 +152,7 @@ struct CLIConfigTests {
       file.token == nil,
       "a credential that cannot be inspected never falls back to the config file's token")
     #expect(file.unsafeDevToken != nil, "the refusal is explicit and names the path")
-    #expect(file.unsafeDevToken?.reason.contains("cannot be opened") == true)
+    #expect(file.unsafeDevToken?.reason.contains("cannot be inspected") == true)
   }
 
   @Test("EAGLE_TOKEN wins over an unsafe development token file")
