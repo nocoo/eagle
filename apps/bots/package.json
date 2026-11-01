@@ -23,7 +23,8 @@
     "fixtures:write": "node --experimental-strip-types scripts/fixtures.ts write",
     "smoke:model": "node --env-file-if-exists=.env --experimental-strip-types scripts/smoke-model.ts",
     "check": "npm run fixtures:check && npm test && npm run typecheck && npm run lint && npm run coverage",
-    "eval": "node --experimental-strip-types scripts/eval.ts"
+    "eval": "node --experimental-strip-types scripts/eval.ts",
+    "eval:cli": "sh scripts/eval-cli.sh"
   },
   "dependencies": {
     "@earendil-works/chord": "1.4.0",

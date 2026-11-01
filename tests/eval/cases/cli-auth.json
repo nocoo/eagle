@@ -1,0 +1,92 @@
+{
+  "id": "cli-auth",
+  "title": "CLI 的凭证面：dev token、不安全文件、错误 token、发布版忽略与 scope 拒绝",
+  "kind": "chat",
+  "notes": "The development credential an agent mints itself must work, must fail closed when the file is unsafe or replaced, must never reach a release binary, and must not lend its scopes to a read-only credential.",
+  "timeoutMs": 90000,
+  "model": { "script": [{ "text": "no model reply is needed" }] },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": ["whoami", "--json"],
+      "json": { "client": { "name": "dev-agent" } }
+    },
+    {
+      "kind": "cli",
+      "args": ["bots", "list", "--json"],
+      "env": { "EAGLE_TOKEN": "wrong-token-0123456789-abcdefghijkl" },
+      "expectExit": 3,
+      "stderrContains": "a bearer token is required"
+    },
+    {
+      "kind": "file",
+      "path": "home/.config/eagle-dev/token",
+      "content": "{{dev.token}}\n",
+      "mode": "644"
+    },
+    {
+      "kind": "cli",
+      "args": ["bots", "list", "--json"],
+      "expectExit": 3,
+      "stderrContains": "not usable"
+    },
+    {
+      "kind": "file",
+      "path": "home/.config/eagle-dev/token",
+      "content": "{{dev.token}}\n",
+      "mode": "600"
+    },
+    {
+      "kind": "cli",
+      "args": ["bots", "list", "--json"],
+      "json": { "bots": [{ "title": "eval cli-auth" }] }
+    },
+    {
+      "kind": "cli",
+      "bin": "release",
+      "args": ["bots", "list", "--json"],
+      "expectExit": 3,
+      "stderrContains": "no CLI credential"
+    },
+    {
+      "kind": "http",
+      "method": "POST",
+      "path": "/v1/clients",
+      "headers": { "content-type": "application/json" },
+      "body": "{\"name\":\"reader\",\"scopes\":[\"read\"]}",
+      "expectStatus": 201,
+      "capture": "reader"
+    },
+    {
+      "kind": "cli",
+      "args": ["bots", "create", "--title", "只读越权", "--json"],
+      "env": { "EAGLE_TOKEN": "{{reader.token}}" },
+      "expectExit": 3,
+      "stderrContains": "write scope"
+    },
+    {
+      "kind": "cli",
+      "args": ["bots", "list", "--json"],
+      "env": { "EAGLE_TOKEN": "{{reader.token}}" },
+      "json": { "bots": [{ "title": "eval cli-auth" }] }
+    },
+    {
+      "kind": "file",
+      "path": "home/.config/eagle-dev/token",
+      "content": "a-brand-new-development-token-0123456789abcdef\n",
+      "mode": "600"
+    },
+    {
+      "kind": "cli",
+      "args": ["bots", "list", "--json"],
+      "json": { "bots": [{ "title": "eval cli-auth" }] }
+    },
+    {
+      "kind": "cli",
+      "args": ["bots", "list", "--json"],
+      "env": { "EAGLE_TOKEN": "{{dev.token}}" },
+      "expectExit": 3,
+      "stderrContains": "a bearer token is required"
+    }
+  ]
+}

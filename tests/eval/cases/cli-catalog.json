@@ -1,0 +1,125 @@
+{
+  "id": "cli-catalog",
+  "title": "只通过 CLI 管理目录：分组、机器人的增改移删与按标题寻址",
+  "kind": "chat",
+  "notes": "Every catalog verb the CLI documents, driven against a real daemon and read back through a later command: a write that the next read does not see is a failure.",
+  "timeoutMs": 90000,
+  "model": { "script": [{ "text": "no model reply is needed" }] },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": ["groups", "create", "工作", "--json"],
+      "json": { "group": { "title": "工作" } },
+      "capture": "work"
+    },
+    {
+      "kind": "cli",
+      "args": ["groups", "create", "生活", "--json"],
+      "json": { "group": { "title": "生活" } },
+      "capture": "life"
+    },
+    {
+      "kind": "cli",
+      "args": ["groups", "rename", "{{work.group.id}}", "工作台", "--json"],
+      "json": { "group": { "title": "工作台" } }
+    },
+    {
+      "kind": "cli",
+      "args": [
+        "bots",
+        "create",
+        "--title",
+        "研究",
+        "--label",
+        "lab",
+        "--group",
+        "{{work.group.id}}",
+        "--json"
+      ],
+      "json": {
+        "bot": {
+          "title": "研究",
+          "label": "lab",
+          "groupId": "{{work.group.id}}"
+        }
+      },
+      "capture": "research"
+    },
+    {
+      "kind": "cli",
+      "args": ["bots", "show", "研究", "--json"],
+      "json": { "bot": { "label": "lab", "groupId": "{{work.group.id}}" } }
+    },
+    {
+      "kind": "cli",
+      "args": ["bots", "list", "--group", "{{work.group.id}}", "--json"],
+      "json": { "bots": [{ "title": "研究" }] }
+    },
+    {
+      "kind": "cli",
+      "args": [
+        "bots",
+        "move",
+        "研究",
+        "--group",
+        "{{life.group.id}}",
+        "--json"
+      ],
+      "json": { "bot": { "groupId": "{{life.group.id}}" } }
+    },
+    {
+      "kind": "cli",
+      "args": [
+        "bots",
+        "update",
+        "研究",
+        "--title",
+        "研究二",
+        "--label",
+        "",
+        "--json"
+      ],
+      "json": { "bot": { "title": "研究二" } }
+    },
+    {
+      "kind": "cli",
+      "args": ["bots", "list", "--group", "-", "--json"],
+      "json": { "bots": [{ "title": "eval cli-catalog" }] }
+    },
+    {
+      "kind": "cli",
+      "args": [
+        "groups",
+        "order",
+        "{{life.group.id}},{{work.group.id}}",
+        "--json"
+      ],
+      "json": { "groups": [{ "title": "生活" }, { "title": "工作台" }] }
+    },
+    {
+      "kind": "cli",
+      "args": ["groups", "list", "--json"],
+      "json": { "groups": [{ "title": "生活" }, { "title": "工作台" }] }
+    },
+    {
+      "kind": "cli",
+      "args": ["bots", "delete", "研究二", "--yes", "--json"],
+      "json": { "deleted": "{{research.bot.id}}" }
+    },
+    {
+      "kind": "cli",
+      "args": ["bots", "list", "--json"],
+      "json": { "bots": [{ "title": "eval cli-catalog" }] }
+    },
+    {
+      "kind": "cli",
+      "args": ["groups", "delete", "{{life.group.id}}", "--yes", "--json"],
+      "json": { "deleted": "{{life.group.id}}" }
+    },
+    {
+      "kind": "cli",
+      "args": ["groups", "list", "--json"],
+      "json": { "groups": [{ "title": "工作台" }] }
+    }
+  ]
+}

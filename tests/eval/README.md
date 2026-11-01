@@ -21,6 +21,35 @@ npm --prefix apps/bots run eval -- --case trigger-webhook --keep
 EVAL_TRACE=1 npm --prefix apps/bots run eval -- --case trigger-cron --verbose
 ```
 
+## CLI cases
+
+A case whose steps are `cli` drives the product through the shipped command line
+instead of the raw wire, which is how acceptance is run (`docs/bots/TESTING.md`,
+"Driving acceptance through the CLI").
+
+```sh
+# builds apps/macos' eagle-cli, then runs every cli-* case through it
+npm --prefix apps/bots run eval:cli
+npm --prefix apps/bots run eval:cli -- --case cli-chat --verbose
+```
+
+`eval:cli` links the built binary as `eagle-dev` inside the case's temp root, because
+the CLI takes its own name from argv0: that name selects the development credential.
+Each case gets a temporary `HOME`, mints `~/.config/eagle-dev/token` there (mode 0600)
+and starts the daemon with `BOTS_DEV_AGENT_TOKEN` pointing at it, so a run never reads
+or writes the real `~/.config`. A `file` step rewrites that token (mode or value) to
+prove a case fails closed.
+
+| Extra step | Does |
+| --- | --- |
+| `cli` | Runs `args` with `HOME`, `EAGLE_ROOT` and `EAGLE_PORT` set; asserts `expectExit`, `stdoutContains`, `stderrContains` and a `json` subset. `bin: "release"` runs a link named `eagle`; `expectTimeout` is for a command that must outlive its budget (`chat watch`). `capture` stores the last JSON line. |
+| `file` | Writes a path under the case root with an optional octal `mode`. |
+
+`http` and `cli` steps may `capture` a name, and later steps address it as
+`{{name.path.to.value}}` in `args`, `env`, `file` content or a string `json`
+expectation. The runner also captures `{{dev.token}}`, `{{dev.path}}` and
+`{{dev.home}}`. Every case still ends with the same transcript assertions.
+
 A run exits non-zero when any case fails, and the report names the first unmet
 expectation. `--repeat N` runs a case N times in a row: that is how a trigger is proven
 stable rather than lucky once.
@@ -117,6 +146,14 @@ budget for that step.
   `--repeat 3` to prove it is stable (≈2 minutes per round).
 - `complex-self-trigger` — the model creates its own webhook trigger with
   `trigger_create`, and a delivery then reaches it.
+- `cli-surface` — the release-facing basics through the CLI: `--version`, `--skill`,
+  `health`, `whoami`, `usage`, and the documented exit codes 2, 3 and 4.
+- `cli-catalog` — groups and bots created, renamed, reordered, moved and deleted only
+  through commands, each write read back by the next command.
+- `cli-chat` — `chat send --wait`, `chat history`, `chat watch`, and an answer aborted
+  while it is still in flight; the transcript must never carry that answer.
+- `cli-auth` — the development token works, an unsafe or replaced file is refused, a
+  release binary ignores the file, and a read-only credential cannot write.
 - `complex-*` — three different end-to-end shapes (a coding loop, a triggered triage
   that writes a file, and a model that creates its own trigger and then receives a
   delivery).

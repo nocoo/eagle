@@ -3,7 +3,9 @@
 // Responses endpoint, drives the case's steps over HTTP and a WebSocket, and checks the
 // transcript. Not part of `npm run check`: a case boots a process and runs real tools.
 
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -12,9 +14,10 @@ import { readConfig } from "../src/config.ts";
 import { type DaemonHandle, startDaemon } from "../src/main.ts";
 
 type ScriptedReply =
-  | { readonly text: string }
+  | { readonly text: string; readonly delayMs?: number }
   | {
       readonly toolCall: { readonly name: string; readonly args: Record<string, unknown> };
+      readonly delayMs?: number;
     };
 
 type CaseFile = {
@@ -34,11 +37,18 @@ type CaseFile = {
     readonly enabled?: boolean;
   }[];
   readonly model: { readonly script: readonly ScriptedReply[]; readonly repeatLast?: boolean };
+  /** `mint` (default) writes a development agent token; `none` leaves it unwritten. */
+  readonly devToken?: "mint" | "none";
   readonly steps: readonly Step[];
   readonly expect?: {
     readonly messages?: readonly {
       readonly role?: string;
       readonly origin?: string;
+      readonly contains?: string;
+    }[];
+    /** Rows that must not exist: how a case proves an answer never arrived. */
+    readonly messagesExcluded?: readonly {
+      readonly role?: string;
       readonly contains?: string;
     }[];
     readonly atLeast?: readonly {
@@ -70,6 +80,30 @@ type Step =
       readonly headers?: Readonly<Record<string, string>>;
       readonly body?: string;
       readonly expectStatus?: number;
+      /** Stores the parsed answer under this name for later `{{name.path}}` references. */
+      readonly capture?: string;
+    }
+  | {
+      readonly kind: "file";
+      readonly path: string;
+      readonly content?: string;
+      /** Octal string, e.g. `"644"`: how a case makes a credential file unsafe. */
+      readonly mode?: string;
+    }
+  | {
+      readonly kind: "cli";
+      readonly args: readonly string[];
+      /** `dev` (default) runs a link named `eagle-dev`; `release` runs one named `eagle`. */
+      readonly bin?: "dev" | "release";
+      readonly expectExit?: number;
+      readonly stdoutContains?: string;
+      readonly stderrContains?: string;
+      /** Subset match against the last JSON line on stdout. */
+      readonly json?: unknown;
+      readonly capture?: string;
+      readonly env?: Readonly<Record<string, string | null>>;
+      /** The command is expected to outlive its budget and be killed. */
+      readonly expectTimeout?: boolean;
     }
   | {
       readonly kind: "waitFor";
@@ -85,9 +119,9 @@ type Frame = { readonly type: string } & Record<string, unknown>;
 type Loose = Record<string, unknown>;
 type Row = { readonly role: string; readonly origin: string | null; readonly text: string };
 
-const failure = (message: string): never => {
+function failure(message: string): never {
   throw new Error(message);
-};
+}
 
 /** A local OpenAI Responses endpoint: streams the case's replies, in order. */
 const scriptedModel = (script: readonly ScriptedReply[], repeatLast: boolean) => {
@@ -122,102 +156,108 @@ const scriptedModel = (script: readonly ScriptedReply[], repeatLast: boolean) =>
         response.end(JSON.stringify({ error: { message: "eval script exhausted" } }));
         return;
       }
-      const text = "text" in reply ? reply.text : "";
-      const call =
-        "toolCall" in reply
-          ? {
-              type: "function_call",
-              id: "fc_eval",
-              call_id: `call_${index}`,
-              name: reply.toolCall.name,
-              arguments: JSON.stringify(reply.toolCall.args),
-            }
-          : undefined;
-      const item = call ?? {
-        type: "message",
-        id: "msg_eval",
-        status: "completed",
-        role: "assistant",
-        content: [{ type: "output_text", text, annotations: [] }],
-      };
-      const base = {
-        id: "resp_eval",
-        object: "response",
-        created_at: Math.floor(Date.now() / 1000),
-        model: body.model ?? "eval-model",
-      };
-      const usage = { input_tokens: 20, output_tokens: 12, total_tokens: 32 };
-      if (body.stream !== true) {
-        response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({ ...base, status: "completed", output: [item], usage }));
-        return;
-      }
-      response.writeHead(200, {
-        "content-type": "text/event-stream",
-        "cache-control": "no-store",
-        connection: "keep-alive",
-      });
-      const send = (event: string, data: Record<string, unknown>): void => {
-        response.write(`event: ${event}\ndata: ${JSON.stringify({ type: event, ...data })}\n\n`);
-      };
-      send("response.created", {
-        response: { ...base, status: "in_progress", output: [] },
-      });
-      send("response.output_item.added", {
-        output_index: 0,
-        item:
-          call === undefined
+      const respond = (): void => {
+        const text = "text" in reply ? reply.text : "";
+        const call =
+          "toolCall" in reply
             ? {
-                type: "message",
-                id: "msg_eval",
-                status: "in_progress",
-                role: "assistant",
-                content: [],
+                type: "function_call",
+                id: "fc_eval",
+                call_id: `call_${index}`,
+                name: reply.toolCall.name,
+                arguments: JSON.stringify(reply.toolCall.args),
               }
-            : { ...call, status: "in_progress" },
-      });
-      if (call !== undefined) {
-        send("response.function_call_arguments.delta", {
-          item_id: call.id,
-          output_index: 0,
-          delta: call.arguments,
+            : undefined;
+        const item = call ?? {
+          type: "message",
+          id: "msg_eval",
+          status: "completed",
+          role: "assistant",
+          content: [{ type: "output_text", text, annotations: [] }],
+        };
+        const base = {
+          id: "resp_eval",
+          object: "response",
+          created_at: Math.floor(Date.now() / 1000),
+          model: body.model ?? "eval-model",
+        };
+        const usage = { input_tokens: 20, output_tokens: 12, total_tokens: 32 };
+        if (body.stream !== true) {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({ ...base, status: "completed", output: [item], usage }));
+          return;
+        }
+        response.writeHead(200, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-store",
+          connection: "keep-alive",
         });
-        send("response.function_call_arguments.done", {
-          item_id: call.id,
-          output_index: 0,
-          arguments: call.arguments,
+        const send = (event: string, data: Record<string, unknown>): void => {
+          response.write(`event: ${event}\ndata: ${JSON.stringify({ type: event, ...data })}\n\n`);
+        };
+        send("response.created", {
+          response: { ...base, status: "in_progress", output: [] },
         });
-      } else {
-        send("response.content_part.added", {
-          item_id: "msg_eval",
+        send("response.output_item.added", {
           output_index: 0,
-          content_index: 0,
-          part: { type: "output_text", text: "", annotations: [] },
+          item:
+            call === undefined
+              ? {
+                  type: "message",
+                  id: "msg_eval",
+                  status: "in_progress",
+                  role: "assistant",
+                  content: [],
+                }
+              : { ...call, status: "in_progress" },
         });
-        send("response.output_text.delta", {
-          item_id: "msg_eval",
-          output_index: 0,
-          content_index: 0,
-          delta: text,
+        if (call !== undefined) {
+          send("response.function_call_arguments.delta", {
+            item_id: call.id,
+            output_index: 0,
+            delta: call.arguments,
+          });
+          send("response.function_call_arguments.done", {
+            item_id: call.id,
+            output_index: 0,
+            arguments: call.arguments,
+          });
+        } else {
+          send("response.content_part.added", {
+            item_id: "msg_eval",
+            output_index: 0,
+            content_index: 0,
+            part: { type: "output_text", text: "", annotations: [] },
+          });
+          send("response.output_text.delta", {
+            item_id: "msg_eval",
+            output_index: 0,
+            content_index: 0,
+            delta: text,
+          });
+          send("response.output_text.done", {
+            item_id: "msg_eval",
+            output_index: 0,
+            content_index: 0,
+            text,
+          });
+          send("response.content_part.done", {
+            item_id: "msg_eval",
+            output_index: 0,
+            content_index: 0,
+            part: { type: "output_text", text, annotations: [] },
+          });
+        }
+        send("response.output_item.done", { output_index: 0, item });
+        send("response.completed", {
+          response: { ...base, status: "completed", output: [item], usage },
         });
-        send("response.output_text.done", {
-          item_id: "msg_eval",
-          output_index: 0,
-          content_index: 0,
-          text,
-        });
-        send("response.content_part.done", {
-          item_id: "msg_eval",
-          output_index: 0,
-          content_index: 0,
-          part: { type: "output_text", text, annotations: [] },
-        });
-      }
-      send("response.output_item.done", { output_index: 0, item });
-      send("response.completed", {
-        response: { ...base, status: "completed", output: [item], usage },
-      });
-      response.end();
+        response.end();
+      };
+      // A case about aborting needs an answer that is still in flight when it aborts.
+      const delay = reply.delayMs ?? 0;
+      if (delay > 0) setTimeout(respond, delay);
+      else respond();
     });
   });
   return { server, requests };
@@ -232,8 +272,10 @@ const listen = (server: ReturnType<typeof createServer>): Promise<number> =>
   });
 
 /** `--port 0` asks the kernel for a free port, so cases never collide with a real daemon. */
-const boot = async (root: string): Promise<DaemonHandle> =>
-  startDaemon(readConfig({ argv: ["--root", root, "--port", "0"], env: {} }));
+const boot = async (
+  root: string,
+  env: Readonly<Record<string, string>> = {},
+): Promise<DaemonHandle> => startDaemon(readConfig({ argv: ["--root", root, "--port", "0"], env }));
 
 const api = async (
   port: number,
@@ -384,20 +426,122 @@ const waitUntil = async (
 
 type Report = { readonly id: string; readonly ok: boolean; readonly detail: string };
 
+/** Every expected key and array prefix must hold; a case asserts what it read, not all of it. */
+const assertSubset = (actual: unknown, expected: unknown, where: string): void => {
+  if (Array.isArray(expected)) {
+    const list = Array.isArray(actual) ? actual : undefined;
+    if (list === undefined || list.length < expected.length) {
+      failure(`${where}: expected ${expected.length} entries, got ${JSON.stringify(actual)}`);
+    }
+    for (const [index, item] of expected.entries()) {
+      assertSubset(list[index], item, `${where}[${index}]`);
+    }
+    return;
+  }
+  if (expected !== null && typeof expected === "object") {
+    const record =
+      actual !== null && typeof actual === "object" && !Array.isArray(actual)
+        ? (actual as Record<string, unknown>)
+        : undefined;
+    if (record === undefined) {
+      failure(`${where}: expected an object, got ${JSON.stringify(actual)}`);
+    }
+    for (const [key, value] of Object.entries(expected)) {
+      assertSubset(record[key], value, `${where}.${key}`);
+    }
+    return;
+  }
+  if (actual !== expected) {
+    failure(`${where}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  }
+};
+
+type ProcessResult = {
+  readonly status: number | null;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly timedOut: boolean;
+};
+
+/**
+ * Runs a command without blocking: the daemon this runner boots lives in its own event
+ * loop, so a synchronous child would starve it and every request would time out.
+ */
+const runProcess = (
+  bin: string,
+  args: readonly string[],
+  env: Readonly<Record<string, string>>,
+  timeoutMs: number,
+): Promise<ProcessResult> =>
+  new Promise((resolve_) => {
+    const child = spawn(bin, args, { env });
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, timeoutMs);
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      resolve_({ status: null, stdout, stderr: `${stderr}${String(error)}`, timedOut });
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve_({ status: code, stdout, stderr, timedOut });
+    });
+  });
+
+/** The last stdout line that parses as JSON. `--json` prints one object per line. */
+const lastJsonLine = (stdout: string): unknown => {
+  const lines = stdout.split("\n").filter((line) => line.trim().startsWith("{"));
+  const last = lines.at(-1) ?? failure(`no JSON line on stdout: ${JSON.stringify(stdout)}`);
+  try {
+    return JSON.parse(last);
+  } catch {
+    return failure(`the last JSON line does not parse: ${JSON.stringify(last)}`);
+  }
+};
+
 const runCase = async (
   file: string,
-  options: { readonly verbose: boolean; readonly keep: boolean },
+  options: { readonly verbose: boolean; readonly keep: boolean; readonly cli?: string },
 ): Promise<Report> => {
   const study = JSON.parse(await readFile(file, "utf8")) as CaseFile;
   const budget = study.timeoutMs ?? 120_000;
   const started = Date.now();
   const root = await mkdtemp(join(tmpdir(), `bots-eval-${study.id}-`));
+  const usesCli = study.steps.some((step) => step.kind === "cli");
+  const home = join(root, "home");
+  const devTokenPath = join(home, ".config", "eagle-dev", "token");
+  /** Values a step captured, addressed by later steps as `{{name.path}}`. */
+  const captured = new Map<string, unknown>();
   const model = scriptedModel(study.model.script, study.model.repeatLast === true);
   const modelPort = await listen(model.server);
   let handle: DaemonHandle | undefined;
   let botId = "";
   try {
+    if (usesCli && options.cli === undefined) {
+      failure(
+        `case ${study.id} drives the CLI: build it and pass --cli (apps/bots/scripts/eval-cli.sh does both)`,
+      );
+    }
     await mkdir(root, { recursive: true });
+    const devToken = study.devToken === "none" ? undefined : randomBytes(48).toString("base64url");
+    if (devToken !== undefined) {
+      await mkdir(dirname(devTokenPath), { recursive: true, mode: 0o700 });
+      await writeFile(devTokenPath, `${devToken}\n`, { mode: 0o600 });
+      captured.set("dev", { token: devToken, path: devTokenPath, home });
+    }
+    /** Only a case that drives the CLI arms the development credential. */
+    const daemonEnv = (): Readonly<Record<string, string>> =>
+      devToken === undefined ? {} : { BOTS_DEV_AGENT_TOKEN: devTokenPath };
     // Hermetic: provider keys and other user configuration must never be read by a case.
     process.env.XDG_CONFIG_HOME = join(root, "config");
     await writeFile(
@@ -419,7 +563,7 @@ const runCase = async (
       { mode: 0o600 },
     );
 
-    handle = await boot(root);
+    handle = await boot(root, daemonEnv());
     const token = handle.token;
     const created = await api(handle.port, token, "/v1/bots", {
       method: "POST",
@@ -469,11 +613,29 @@ const runCase = async (
         await mkdir(dirname(target), { recursive: true });
         await writeFile(target, body);
       }
-      handle = await boot(root);
+      handle = await boot(root, daemonEnv());
     }
 
     const running = handle;
     const token2 = running.token;
+    /** Fills `{{name.path}}` from a captured value, so a step can name what an earlier one made. */
+    const fill = (text: string): string =>
+      text.replace(/\{\{([a-z][\w-]*)((?:\.[\w-]+)*)\}\}/g, (_all, name: string, path: string) => {
+        let value: unknown = captured.get(name);
+        if (value === undefined) failure(`no captured value named ${name}`);
+        for (const key of path.split(".").filter((part) => part.length > 0)) {
+          value = (value as Record<string, unknown> | undefined)?.[key];
+          if (value === undefined) failure(`captured ${name} has no ${path}`);
+        }
+        return typeof value === "string" ? value : JSON.stringify(value);
+      });
+    /** The CLI reads its own name from argv0, so each build gets its real link name. */
+    const cliLink = async (bin: "dev" | "release"): Promise<string> => {
+      const link = join(root, "bin", bin === "dev" ? "eagle-dev" : "eagle");
+      await mkdir(dirname(link), { recursive: true });
+      await symlink(options.cli as string, link).catch(() => undefined);
+      return link;
+    };
     const view = await viewer(running.port, token2, botId);
     await view.ready;
     type Detail = { id: string; name: string; token?: string };
@@ -550,14 +712,68 @@ const runCase = async (
           const path = step.path
             .replace("<bot>", botId)
             .replace(/<trigger:([^>]+)>/g, (_all, name: string) => byName.get(name)?.id ?? "");
+          // The owner's bearer by default: a case that tests a refusal states its own.
           const response = await fetch(`http://127.0.0.1:${handle.port}${path}`, {
             method: step.method,
-            headers: step.headers ?? {},
+            headers: { authorization: `Bearer ${token2}`, ...(step.headers ?? {}) },
             ...(step.body === undefined ? {} : { body: step.body }),
           });
           if (step.expectStatus !== undefined && response.status !== step.expectStatus) {
             failure(`${step.method} ${path} answered ${response.status}`);
           }
+          if (step.capture !== undefined) captured.set(step.capture, await response.json());
+          break;
+        }
+        case "file": {
+          const target = join(root, fill(step.path));
+          await mkdir(dirname(target), { recursive: true });
+          await writeFile(target, fill(step.content ?? ""));
+          if (step.mode !== undefined) await chmod(target, Number.parseInt(step.mode, 8));
+          break;
+        }
+        case "cli": {
+          const bin = await cliLink(step.bin ?? "dev");
+          const env: Record<string, string> = {
+            PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin",
+            // The CLI reads its files from HOME, so a case never touches the real ones.
+            HOME: home,
+            EAGLE_ROOT: root,
+            EAGLE_PORT: String(running.port),
+          };
+          for (const [key, value] of Object.entries(step.env ?? {})) {
+            if (value === null) delete env[key];
+            else env[key] = fill(value);
+          }
+          const args = step.args.map(fill);
+          const result = await runProcess(bin, args, env, stepBudget);
+          const stdout = result.stdout;
+          const stderr = result.stderr;
+          const command = `${step.bin ?? "dev"} ${args.join(" ")}`;
+          if (step.expectTimeout === true) {
+            if (!result.timedOut) {
+              failure(`${command} finished instead of running past its budget`);
+            }
+          } else if (result.status !== (step.expectExit ?? 0)) {
+            failure(
+              `${command} exited ${String(result.status)}: ${(stderr || stdout).trim().slice(0, 400)}`,
+            );
+          }
+          if (step.stdoutContains !== undefined && !stdout.includes(fill(step.stdoutContains))) {
+            failure(
+              `${command} printed no ${JSON.stringify(step.stdoutContains)}: ${stdout}${stderr === "" ? "" : ` / stderr ${stderr}`}`,
+            );
+          }
+          if (step.stderrContains !== undefined && !stderr.includes(fill(step.stderrContains))) {
+            failure(`${command} said no ${JSON.stringify(step.stderrContains)}: ${stderr}`);
+          }
+          if (step.json !== undefined) {
+            // Either form lets an expectation name an id an earlier step captured.
+            const expected = JSON.parse(
+              typeof step.json === "string" ? fill(step.json) : fill(JSON.stringify(step.json)),
+            );
+            assertSubset(lastJsonLine(stdout), expected, command);
+          }
+          if (step.capture !== undefined) captured.set(step.capture, lastJsonLine(stdout));
           break;
         }
         case "waitFor":
@@ -599,6 +815,16 @@ const runCase = async (
           failure(`no ${JSON.stringify(wanted)} after row ${cursor}: ${JSON.stringify(view.rows)}`);
         }
         cursor = found + 1;
+      }
+    }
+    for (const unwanted of expect.messagesExcluded ?? []) {
+      const found = view.rows.find(
+        (row) =>
+          (unwanted.role === undefined || row.role === unwanted.role) &&
+          (unwanted.contains === undefined || row.text.includes(unwanted.contains)),
+      );
+      if (found !== undefined) {
+        failure(`unexpected row ${JSON.stringify(found)}: ${JSON.stringify(view.rows)}`);
       }
     }
     for (const want of expect.atLeast ?? []) {
@@ -654,15 +880,34 @@ const main = async (): Promise<void> => {
   const repeat = repeatAt < 0 ? 1 : Number(argv[repeatAt + 1] ?? "1");
   const dir = resolve(option("--dir") ?? resolve(import.meta.dirname, "../../../tests/eval/cases"));
   const wanted = option("--case");
-  const files = (await readdir(dir))
+  const match = option("--match");
+  const cli = option("--cli") ?? process.env.EAGLE_CLI_BIN;
+  const cases = (await readdir(dir))
     .filter((name) => name.endsWith(".json"))
     .filter((name) => wanted === undefined || name === `${wanted}.json`)
+    .filter((name) => match === undefined || name.startsWith(match))
     .sort();
+  // A case that drives the CLI needs the built binary. Without one the plain run stays the
+  // daemon's acceptance and says so; `eval:cli` builds the binary and runs those cases.
+  const files =
+    cli === undefined && match === undefined
+      ? cases.filter((name) => !name.startsWith("cli-"))
+      : cases;
+  const skipped = cases.length - files.length;
+  if (skipped > 0) {
+    process.stdout.write(
+      `skipping ${skipped} cli-* case(s): run them with npm run eval:cli (it builds the CLI)\n`,
+    );
+  }
   if (files.length === 0) failure(`no eval cases in ${dir}`);
   let failed = 0;
   for (const file of files) {
     for (let round = 1; round <= repeat; round += 1) {
-      const report = await runCase(join(dir, file), { verbose, keep });
+      const report = await runCase(join(dir, file), {
+        verbose,
+        keep,
+        ...(cli === undefined ? {} : { cli }),
+      });
       const label = repeat > 1 ? `${report.id} (${round}/${repeat})` : report.id;
       process.stdout.write(
         `${report.ok ? "ok  " : "FAIL"} ${label}${report.ok ? ` — ${report.detail}` : ` — ${report.detail}`}\n`,
