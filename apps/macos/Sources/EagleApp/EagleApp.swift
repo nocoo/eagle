@@ -51,6 +51,10 @@ struct EagleApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.regular)
+    // A source run answers as "Eagle Dev"; an installed bundle keeps its Info.plist name.
+    if DevAppIdentity.shouldRename(bundleIdentifier: Bundle.main.bundleIdentifier) {
+      DevAppIdentity.apply(to: NSApp.mainMenu, version: AppVersion.current().display)
+    }
     // A bundle carries its icon in Info.plist; a `swift run` binary has none and would show the
     // generic executable icon in the Dock.
     if Bundle.main.bundleIdentifier == nil { NSApp.applicationIconImage = EagleIcon.image }
