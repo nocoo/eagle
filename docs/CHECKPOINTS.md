@@ -19,8 +19,12 @@
   cli-chat 两次、去掉 abort 的负控制会红）；根 `npm run check` 265 测试通过。
 - 未验证：未构建/未安装签名发布包，因此「打包 App 永不接受 dev token」仍由
   source-run 名称与环境变量约定保证，不是发布产物实测；未跑浏览器套件与公网。
-- 下一断点：`git push` 被本机凭证挡住（keychain 需交互授权、gh token 失效、无 SSH
-  key），16 个提交仅存在本地。
+- 交付：17 个提交已推送（`01302e3`），CI `Check` 与 `Deploy` 在 `ed3fa02` 上均
+  success。首轮 CI 首次红在 `DeviceServiceHostTests`（XPC 首次调用 1 秒预算把连接
+  建立也算进去，CI 上超时两次），已改为先预热连接再断言 1 秒；另一条 transcript 行
+  成本比值在首轮也偶然超限，重跑通过，未改其阈值。
+- 下一断点：发布包实测仍未做——「打包 App 永不接受 dev token」目前靠 source-run
+  名称与环境变量约定，签名安装包与真实双 Mac 配对仍待验。
 
 ## 2026-10-29 16:48 +08 — 设备页刷新与点击修复集成
 
