@@ -9,7 +9,6 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
   case machines = "设备"
   case realtime = "实时"
   case usage = "用量与账单"
-  case updates = "更新"
   case about = "关于"
 
   public var id: String { rawValue }
@@ -23,7 +22,6 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
     case .machines: return "desktopcomputer"
     case .realtime: return "dot.radiowaves.left.and.right"
     case .usage: return "chart.bar"
-    case .updates: return "arrow.up.circle"
     case .about: return "info.circle"
     }
   }

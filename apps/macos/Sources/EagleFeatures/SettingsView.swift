@@ -46,8 +46,6 @@ public struct SettingsView: View {
         realtime
       case .usage:
         usage
-      case .updates:
-        updates
       case .about:
         about
       }
@@ -672,28 +670,6 @@ public struct SettingsView: View {
     }
   }
 
-  private var updates: some View {
-    VStack(alignment: .leading, spacing: 18) {
-      SettingsCard {
-        VStack(alignment: .leading, spacing: 12) {
-          HStack(spacing: 10) {
-            Text("Eagle \(model.appVersion.display)")
-              .font(.system(size: 15, weight: .semibold))
-              .foregroundStyle(Theme.Palette.textPrimary)
-            Spacer(minLength: 0)
-            SettingsActionButton("检查更新") {
-              Task { await model.checkForUpdates() }
-            }
-          }
-          .padding(.vertical, 4)
-          updateSummary
-        }
-        .padding(.vertical, 14)
-      }
-    }
-    .task { await model.checkForUpdatesIfNeeded() }
-  }
-
   /// What one check found: the newest published build, the current one, or why it is silent.
   @ViewBuilder private var updateSummary: some View {
     switch model.updateState {
@@ -746,44 +722,53 @@ public struct SettingsView: View {
     }
   }
 
-  /// Identity, where to get the code, and what the app is made of.
+  /// Identity, the update check and where to get the code; the app's own versions below.
   private var about: some View {
     VStack(alignment: .leading, spacing: 18) {
       SettingsCard {
-        HStack(alignment: .center, spacing: 18) {
-          aboutMark
-          VStack(alignment: .leading, spacing: 4) {
-            Text("Eagle for Mac")
-              .font(.system(size: 20, weight: .semibold))
-              .foregroundStyle(Theme.Palette.textPrimary)
-            Text("多机工作态势 · 本地优先")
-              .font(Theme.TypeScale.note)
-              .foregroundStyle(Theme.Palette.textSecondary)
-            HStack(spacing: 8) {
-              Text(model.appVersion.display)
-                .font(Theme.TypeScale.mono)
+        VStack(alignment: .leading, spacing: 0) {
+          HStack(alignment: .center, spacing: 18) {
+            aboutMark
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Eagle for Mac")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(Theme.Palette.textPrimary)
+              Text("多机工作态势 · 本地优先")
+                .font(Theme.TypeScale.note)
                 .foregroundStyle(Theme.Palette.textSecondary)
-                .textSelection(.enabled)
-              if !model.appVersion.isRelease {
-                Text("开发版")
-                  .font(.system(size: 11, weight: .medium))
-                  .foregroundStyle(Theme.Palette.textMuted)
-                  .padding(.horizontal, 6)
-                  .padding(.vertical, 2)
-                  .background(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                      .fill(Theme.Palette.canvas)
-                  )
+              HStack(spacing: 8) {
+                Text(model.appVersion.display)
+                  .font(Theme.TypeScale.mono)
+                  .foregroundStyle(Theme.Palette.textSecondary)
+                  .textSelection(.enabled)
+                if !model.appVersion.isRelease {
+                  Text("开发版")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.Palette.textMuted)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                      RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Theme.Palette.canvas)
+                    )
+                }
+              }
+            }
+            Spacer(minLength: 0)
+            if model.appVersion.isRelease {
+              SettingsActionButton("检查更新") {
+                Task { await model.checkForUpdates() }
               }
             }
           }
-          Spacer(minLength: 0)
-        }
-        .padding(.vertical, 20)
-      }
+          .padding(.vertical, 20)
 
-      if model.updateState != .idle, model.appVersion.isRelease {
-        SettingsCard { updateSummary.padding(.vertical, 14) }
+          if model.appVersion.isRelease {
+            Divider().overlay(Theme.Palette.line)
+            updateSummary
+              .padding(.vertical, 14)
+          }
+        }
       }
 
       if let github = model.links.github {
