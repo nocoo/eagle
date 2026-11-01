@@ -216,4 +216,113 @@ struct CommandsTests {
     #expect(document.contains("Settings → CLI"))
     #expect(document.contains("description:"))
   }
+
+  @Test("only the development copy explains the development token")
+  func skillMentionsTheDevelopmentToken() {
+    let development = Skill.document(binaryName: "eagle-dev", clientName: nil)
+    #expect(development.contains("~/.config/eagle-dev/token"))
+    #expect(development.contains("0600"))
+    #expect(development.contains("EAGLE_TOKEN"))
+
+    let release = Skill.document(binaryName: "eagle", clientName: nil)
+    #expect(release.contains("eagle-dev") == false)
+    #expect(release.contains("development token") == false)
+    #expect(release.contains("~/.config/eagle-dev") == false)
+  }
+
+  private func developmentHome(_ token: String, mode: Int = 0o600) throws -> URL {
+    let home = FileManager.default.temporaryDirectory
+      .appendingPathComponent("eagle-cli-\(UUID().uuidString)", isDirectory: true)
+    let directory = home.appendingPathComponent(".config/eagle-dev", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let file = directory.appendingPathComponent("token")
+    try Data(token.utf8).write(to: file)
+    try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: file.path)
+    return home
+  }
+
+  /// The whole binary's path: argv, environment and the exit code.
+  private func runEntry(
+    _ arguments: [String], environment: [String: String]
+  ) async -> (code: Int32, out: [String], err: [String]) {
+    let box = OutputBox()
+    let code = await CLIEntry.run(
+      arguments: arguments,
+      environment: environment,
+      printer: { _ in
+        Printer(json: false) { line, isError in box.append(line, isError: isError) }
+      },
+      session: session()
+    )
+    return (code, box.out, box.err)
+  }
+
+  @Test("an unsafe development token file stops the commands that need a credential")
+  func unsafeDevelopmentToken() async throws {
+    StubTransport.calls = []
+    StubTransport.answers = [
+      "/v1/health": (200, #"{"version":"1.0","bots":0,"pid":1}"#),
+      "/v1/bots": (200, Self.catalog),
+    ]
+    let home = try developmentHome(String(repeating: "d", count: 48), mode: 0o644)
+    defer { try? FileManager.default.removeItem(at: home) }
+    let path = home.appendingPathComponent(".config/eagle-dev/token").path
+
+    let health = await runEntry(["/x/eagle-dev", "health"], environment: ["HOME": home.path])
+    #expect(health.code == 0, "a command without a credential still works")
+    #expect(health.out.first?.contains("1.0") == true)
+
+    let version = await runEntry(["/x/eagle-dev", "--version"], environment: ["HOME": home.path])
+    #expect(version.code == 0, "--version is the diagnostic for a broken setup")
+    let help = await runEntry(["/x/eagle-dev", "--help"], environment: ["HOME": home.path])
+    #expect(help.code == 0)
+    let skill = await runEntry(["/x/eagle-dev", "--skill"], environment: ["HOME": home.path])
+    #expect(skill.code == 0)
+
+    let listed = await runEntry(
+      ["/x/eagle-dev", "bots", "list"], environment: ["HOME": home.path])
+    #expect(listed.code == 3)
+    #expect(listed.err.first?.contains("not usable") == true)
+    #expect(listed.err.first?.contains(path) == true)
+    #expect(
+      StubTransport.calls.allSatisfy { $0.path == "/v1/health" },
+      "no credentialed request is attempted")
+  }
+
+  @Test("EAGLE_TOKEN wins over an unsafe development token file")
+  func environmentBeatsTheUnsafeFile() async throws {
+    StubTransport.calls = []
+    StubTransport.answers = ["/v1/bots": (200, Self.catalog)]
+    let home = try developmentHome(String(repeating: "d", count: 48), mode: 0o644)
+    defer { try? FileManager.default.removeItem(at: home) }
+    let config = CLIConfig.load(
+      argv0: "/x/eagle-dev", environment: ["EAGLE_TOKEN": "c_env"], home: home.path)
+    #expect(config.unsafeDevToken == nil, "the file is not even read")
+
+    let result = await runEntry(
+      ["/x/eagle-dev", "bots", "list"],
+      environment: ["HOME": home.path, "EAGLE_TOKEN": "c_env"])
+    #expect(result.code == 0)
+    #expect(StubTransport.calls.first?.bearer == "Bearer c_env")
+  }
+
+  @Test("HOME decides which development token the CLI presents")
+  func homeDrivesTheCredential() async throws {
+    StubTransport.calls = []
+    StubTransport.answers = ["/v1/bots": (200, Self.catalog)]
+    let token = String(repeating: "d", count: 48)
+    let home = try developmentHome(token)
+    defer { try? FileManager.default.removeItem(at: home) }
+    let box = OutputBox()
+    let code = await CLIEntry.run(
+      arguments: ["/x/eagle-dev", "bots", "list"],
+      environment: ["HOME": home.path],
+      printer: { _ in
+        Printer(json: false) { line, isError in box.append(line, isError: isError) }
+      },
+      session: session()
+    )
+    #expect(code == 0)
+    #expect(StubTransport.calls.first?.bearer == "Bearer \(token)")
+  }
 }

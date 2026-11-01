@@ -77,6 +77,25 @@ struct BotsDaemonSupervisorTests {
         == bots.path)
   }
 
+  @Test("a source run tells the daemon where the development token is; a build never does")
+  func developmentTokenEnvironment() {
+    let source = BotsDaemonSupervisor.daemonEnvironment(
+      packaged: false,
+      environment: ["HOME": "/Users/me"],
+      isolatedConfigHome: nil,
+      deviceSocketPath: nil
+    )
+    #expect(source["BOTS_DEV_AGENT_TOKEN"] == "/Users/me/.config/eagle-dev/token")
+
+    let packaged = BotsDaemonSupervisor.daemonEnvironment(
+      packaged: true,
+      environment: ["HOME": "/Users/me"],
+      isolatedConfigHome: nil,
+      deviceSocketPath: nil
+    )
+    #expect(packaged["BOTS_DEV_AGENT_TOKEN"] == nil, "a packaged build never offers it")
+  }
+
   @Test("the App launches real Bots with bundled Node and its fixed offline device port")
   func launchesBundledDaemon() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

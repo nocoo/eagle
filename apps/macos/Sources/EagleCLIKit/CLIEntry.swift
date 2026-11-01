@@ -6,7 +6,7 @@ public enum CLIEntry {
   public static func run(
     arguments: [String],
     environment: [String: String] = ProcessInfo.processInfo.environment,
-    home: String = NSHomeDirectory(),
+    home: String? = nil,
     printer makePrinter: ((Bool) -> Printer)? = nil,
     session: URLSession = .shared
   ) async -> Int32 {

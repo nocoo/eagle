@@ -42,6 +42,15 @@ public struct DaemonClient: Sendable {
     self.session = session
   }
 
+  /// A development token file that exists but cannot be used: a local refusal with the
+  /// path and the reason, before anything is sent (`docs/bots/CLI.md` "Development token").
+  public static func credentialFailure(_ config: CLIConfig) -> CLIError? {
+    guard let unsafe = config.unsafeDevToken else { return nil }
+    return .auth(
+      "the development token at \(unsafe.path) is not usable: \(unsafe.reason). "
+        + "Fix it (chmod 600 \(unsafe.path)) or remove it; nothing was sent.")
+  }
+
   /// `GET` or a mutation; a `204` answers an empty object. Only `health` may travel
   /// without a credential, and it says so.
   public func request(
@@ -50,10 +59,13 @@ public struct DaemonClient: Sendable {
     body: JSONObject? = nil,
     requiresAuth: Bool = true
   ) async throws -> JSONObject {
-    if requiresAuth, (config.token ?? "").isEmpty {
-      throw CLIError.auth(
-        "no CLI credential: turn on the App's Settings → CLI switch, or set EAGLE_TOKEN (looked in \(config.configPath))"
-      )
+    if requiresAuth {
+      if let failure = Self.credentialFailure(config) { throw failure }
+      if (config.token ?? "").isEmpty {
+        throw CLIError.auth(
+          "no CLI credential: turn on the App's Settings → CLI switch, or set EAGLE_TOKEN (looked in \(config.configPath))"
+        )
+      }
     }
     var request = URLRequest(url: config.baseURL.appendingPathComponent(path))
     request.httpMethod = method
@@ -96,6 +108,7 @@ public struct DaemonClient: Sendable {
 
   /// Opens the one socket this process uses and completes the handshake.
   public func connect(clientName: String) async throws -> SocketSession {
+    if let failure = Self.credentialFailure(config) { throw failure }
     guard let token = config.token, !token.isEmpty else {
       throw CLIError.auth(
         "no CLI credential: run the App's Settings → CLI switch, or set EAGLE_TOKEN (looked in \(config.configPath))"

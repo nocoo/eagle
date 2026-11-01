@@ -109,17 +109,13 @@ public final class BotsDaemonSupervisor: ObservableObject {
         "--root", settings.rootPath,
         "--port", settings.port,
       ]
-    var childEnvironment =
-      packaged
-      ? [
-        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin",
-        "HOME": NSHomeDirectory(), "TMPDIR": NSTemporaryDirectory(),
-      ] : environment
-    if settings.isIsolated {
-      childEnvironment["XDG_CONFIG_HOME"] = settings.rootURL.appendingPathComponent("config").path
-    }
-    // Keep the port configured even when disabled/offline: absence must never expose unguarded tools.
-    if let deviceSocketPath { childEnvironment["BOTS_DEVICE_SOCKET"] = deviceSocketPath }
+    let childEnvironment = Self.daemonEnvironment(
+      packaged: packaged,
+      environment: environment,
+      isolatedConfigHome: settings.isIsolated
+        ? settings.rootURL.appendingPathComponent("config").path : nil,
+      deviceSocketPath: deviceSocketPath
+    )
     process.environment = childEnvironment
     process.currentDirectoryURL = daemonDirectory
     let output = Pipe()
@@ -191,6 +187,38 @@ public final class BotsDaemonSupervisor: ObservableObject {
   }
 
   // MARK: - internals
+
+  /// The environment the daemon child gets. A packaged build gets a fixed, minimal one; a
+  /// source run inherits the developer's environment and tells the daemon where the
+  /// development token lives (`docs/bots/CLI.md` "Development token").
+  static func daemonEnvironment(
+    packaged: Bool,
+    environment: [String: String],
+    isolatedConfigHome: String?,
+    deviceSocketPath: String?
+  ) -> [String: String] {
+    var childEnvironment =
+      packaged
+      ? [
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin",
+        "HOME": NSHomeDirectory(), "TMPDIR": NSTemporaryDirectory(),
+      ] : environment
+    if let isolatedConfigHome { childEnvironment["XDG_CONFIG_HOME"] = isolatedConfigHome }
+    if !packaged {
+      childEnvironment["BOTS_DEV_AGENT_TOKEN"] = devTokenPath(home: environment["HOME"])
+    }
+    // Keep the port configured even when disabled/offline: absence must never expose unguarded tools.
+    if let deviceSocketPath { childEnvironment["BOTS_DEVICE_SOCKET"] = deviceSocketPath }
+    return childEnvironment
+  }
+
+  /// `~/.config/eagle-dev/token`; the file itself may or may not exist.
+  static func devTokenPath(home: String?) -> String {
+    let root = home.flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory()
+    return URL(fileURLWithPath: root, isDirectory: true)
+      .appendingPathComponent(".config/eagle-dev", isDirectory: true)
+      .appendingPathComponent("token").path
+  }
 
   private struct Health: Decodable {
     let version: String
