@@ -500,7 +500,8 @@ private final class ComposerFocusWindow {
   func settle(until condition: (() -> Bool)? = nil, timeout: TimeInterval? = nil) async {
     ComposerFocusTrace.mark("settle.enter")
     defer { ComposerFocusTrace.mark("settle.return") }
-    let limit = timeout
+    let limit =
+      timeout
       ?? (condition == nil ? ComposerFocusTiming.idleSettle : ComposerFocusTiming.readinessTimeout)
     let deadline = ProcessInfo.processInfo.systemUptime + limit
     var step = 0
