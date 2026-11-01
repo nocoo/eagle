@@ -59,6 +59,27 @@ public enum DevAppIdentity {
   }
 }
 
+/// The rename has to be applied more than once. AppKit derives the app menu's title from
+/// the process name — "Eagle" for a binary that has no bundle — and SwiftUI installs its own
+/// main menu after `applicationDidFinishLaunching`, which writes that name back within half a
+/// second (measured). The rename therefore runs once more after the menu has settled, and on
+/// every activation, because a rebuilt menu starts from the process name again.
+extension DevAppIdentity {
+  @MainActor
+  public static func keepApplied(version: String) {
+    apply(to: NSApp.mainMenu, version: version)
+    Task { @MainActor in
+      try? await Task.sleep(for: .milliseconds(700))
+      apply(to: NSApp.mainMenu, version: version)
+    }
+    NotificationCenter.default.addObserver(
+      forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+    ) { _ in
+      MainActor.assumeIsolated { apply(to: NSApp.mainMenu, version: version) }
+    }
+  }
+}
+
 /// The one About panel a source run shows: same panel, with the development name.
 @MainActor
 final class AboutPanel: NSObject {
