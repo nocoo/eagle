@@ -110,6 +110,12 @@ version, the instance id, the pid and a bot count, never bot content.
 | `GET` | `/v1/usage?days=` | — | `{ "usage": UsageReport }` — statistics over the daemon's retained days |
 | `GET` | `/v1/models` | — | `{ "models": [string] }` — the gateway's ids, empty when it cannot be asked |
 | `GET` | `/v1/settings` | — | `{ "settings": GatewaySettings, "machinePrompt": MachinePrompt \| null }` |
+| `GET` | `/v1/clients` | — | `{ "clients": [Client] }` — requires `admin` |
+| `POST` | `/v1/clients` | `{ "name", "scopes" }` — fields follow `CLI.md` rules | `201 { "client": Client, "token" }` — requires `admin`, the token is answered once |
+| `GET` | `/v1/clients/me` | — | `{ "client": Client \| null }` — `null` for the App's own token |
+| `POST` | `/v1/clients/:id/rotate` | — | `{ "client": Client, "token" }` — requires `admin` |
+| `POST` | `/v1/clients/:id/revoke` | — | `{ "client": Client }` — requires `admin`, idempotent |
+| `DELETE` | `/v1/clients/:id` | — | `204`, or `409 client_active` while the client is not revoked |
 | `PUT` | `/v1/settings` | `{ "baseUrl", "model", "apiKey"?, "provider"?, "thinkingLevel"?, "toolGroups"?, "corePrompt"? }` | `{ "settings": GatewaySettings, "machinePrompt": MachinePrompt \| null }` |
 | `POST` | `/v1/settings/test` | `{ "baseUrl"?, "model"?, "apiKey"?, "provider"? }` | `{ "result": GatewayProbe }` |
 
@@ -171,6 +177,44 @@ knows the daemon restarted and reconnects. Errors use
 
 The model is the daemon's configured gateway model; saving settings aligns every bot with
 it. A per-bot model picker still needs the `agent` capability.
+
+## CLI clients and scopes
+
+The App's own token in `<root>/token` stays the only credential with every right. Named
+CLI credentials are an additive set so a person can hand one to another agent, watch it,
+revoke it and delete it again (`CLI.md` owns the CLI itself).
+
+- **Where they live.** `<root>/clients.json`, mode 0600, beside the token:
+  `{ "version": 1, "clients": [Client] }`. Written atomically through a temporary
+  sibling and `link`, the same way the token is.
+- **What is stored.** `{ "id": "c_<uuid>", "name", "scopes": ["read"|"write"|"admin"],
+  "salt", "hash", "createdAt", "lastUsedAt"?, "revokedAt"? }`. The secret itself is
+  never written: `hash` is SHA-256 over the salt and the secret, so a copied file does not
+  yield a usable bearer.
+- **Token form.** `<id>.<secret>`, secret 32 random bytes base64url. A presented bearer is
+  split on the first `.`, looked up by id, compared in constant time, and refused with the
+  same `401 auth_failed` as an unknown token when the credential is missing or revoked
+  (no oracle).
+- **Scopes are per route.** `read` covers every `GET`; `write` adds `send`/`abort` on a
+  subscribed bot, `POST /v1/bots`, `PATCH /v1/bots/:id`, `POST /v1/groups`,
+  `PATCH /v1/groups/:id` and `PUT /v1/groups/order`; `admin` adds `DELETE /v1/bots/:id`,
+  `DELETE /v1/groups/:id`, every `/v1/settings` write, `/v1/settings/test`,
+  `/v1/providers` writes and `/v1/clients`. A missing scope is
+  `403 { "error": { "kind": "auth_scope", "message" } }` and mutates nothing. The App's
+  own token is always `admin`.
+- **Sockets obey the scope.** A credential without `write` may subscribe and read; its
+  `send`/`abort` is refused as `error{kind:"auth_scope"}` on the open connection instead of
+  blocking the upgrade.
+- **Name rules.** 1–32 characters after trimming, `[a-z0-9][a-z0-9_-]*`, unique among
+  records, so a log line names one client. `scopes` is a non-empty deduplicated subset of
+  the three; an unknown scope or a duplicate name is a `400`.
+- **Revoke first, delete second.** `revoke` sets `revokedAt` and keeps the record (the App
+  shows who was cut off); `DELETE` answers `409 client_active` until the record is revoked,
+  then removes it. Revoking an already-revoked client is a no-op that returns the record.
+- **Authorship is recorded, not invented.** A user message admitted over a CLI credential
+  carries `origin: { "kind": "human", "label": "<client name>" }`; the App's own token
+  keeps `{ "kind": "human" }`. `lastUsedAt` moves at most once per minute, so a chatty
+  client does not rewrite the file per request.
 
 ## Group rules
 

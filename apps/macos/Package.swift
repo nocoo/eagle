@@ -9,6 +9,10 @@ let package = Package(
     .executable(name: "EagleDeviceHelper", targets: ["EagleDeviceHelper"]),
     // Tokens and primitives, dependent on nothing (docs/bots/ARCHITECTURE.md).
     .library(name: "EagleDesign", targets: ["EagleDesign"]),
+    // The CLI the App installs as `eagle` / `eagle-dev` (docs/bots/CLI.md). The product
+    // keeps its own name: a bundle copy is what carries the installed name, and macOS
+    // filenames are case-insensitive, so `eagle` would collide with the `Eagle` app.
+    .executable(name: "eagle-cli", targets: ["EagleCLI"]),
   ],
   dependencies: [
     .package(path: "../bots-macos")
@@ -45,7 +49,10 @@ let package = Package(
       name: "ComposerFocusFixture",
       dependencies: ["EagleDesign"]
     ),
+    .target(name: "EagleCLIKit"),
+    .executableTarget(name: "EagleCLI", dependencies: ["EagleCLIKit"]),
     .testTarget(name: "EagleDesignTests", dependencies: ["EagleDesign"]),
+    .testTarget(name: "EagleCLITests", dependencies: ["EagleCLIKit"]),
     .testTarget(name: "EagleFeaturesTests", dependencies: ["EagleFeatures"]),
     .testTarget(name: "EagleDevicesTests", dependencies: ["EagleDevices"]),
   ]
