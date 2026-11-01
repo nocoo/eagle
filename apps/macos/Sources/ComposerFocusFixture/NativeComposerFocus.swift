@@ -474,7 +474,18 @@ private final class ComposerFocusWindow {
   }
 
   private func pumpRunLoop() {
-    RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+    let until = Date(timeIntervalSinceNow: 0.01)
+    while Date() < until {
+      guard
+        let event = NSApp.nextEvent(
+          matching: .any,
+          until: min(until, Date(timeIntervalSinceNow: 0.001)),
+          inMode: .default,
+          dequeue: true
+        )
+      else { continue }
+      NSApp.sendEvent(event)
+    }
   }
 
   /// When `until` is nil, drain layout and run-loop work for a short idle window. Otherwise wait
