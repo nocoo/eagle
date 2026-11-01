@@ -3,7 +3,6 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   copyFileSync,
-  cpSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -80,11 +79,6 @@ test("the native Chat composer focuses on entry and whitespace while preserving 
     for (const name of readdirSync(fixtureBinDir)) {
       if (name.endsWith(".dylib")) {
         copyFileSync(join(fixtureBinDir, name), join(macosDir, name));
-      }
-      if (name.endsWith(".bundle")) {
-        cpSync(join(fixtureBinDir, name), join(macosDir, name), {
-          recursive: true,
-        });
       }
     }
     cleanArguments = [
