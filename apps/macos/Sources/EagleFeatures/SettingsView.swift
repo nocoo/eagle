@@ -42,8 +42,6 @@ public struct SettingsView: View {
         providersPage
       case .machines:
         DeviceSettingsView(model: devices)
-      case .realtime:
-        realtime
       case .usage:
         usage
       case .about:
@@ -510,33 +508,6 @@ public struct SettingsView: View {
     )
   }
 
-  private var realtime: some View {
-    VStack(alignment: .leading, spacing: 18) {
-      SettingsCard {
-        VStack(spacing: 0) {
-          SettingsRow("自动跟随终端输出", detail: "打开 Space 时立即显示最新画面") {
-            Toggle("", isOn: $model.followTerminal)
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-          }
-          Divider().overlay(Theme.Palette.line)
-          SettingsRow("允许从网页发送输入", detail: "接管输入前仍需要在终端侧确认") {
-            Toggle("", isOn: $model.allowRemoteInput)
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-          }
-        }
-      }
-      SettingsCaption(
-        devices.directoryIsStale
-          ? "设备目录待刷新"
-          : "设备目录中在线 \(devices.directory?.devices.filter { $0.online == true }.count ?? 0) 台 · 其余状态以设备页为准"
-      )
-    }
-  }
-
   private var usage: some View {
     VStack(alignment: .leading, spacing: 18) {
       if model.usageReport == nil {
@@ -711,14 +682,12 @@ public struct SettingsView: View {
         RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
           .fill(Theme.Palette.accentStrong.opacity(0.10))
       )
+    case .development(let version):
+      InfoBanner("已是最新版本 \(version)")
     case .unavailable:
-      Text(
-        model.appVersion.isRelease
-          ? "这一版没有可用的版本信息。"
-          : "开发版不检查更新。"
-      )
-      .font(Theme.TypeScale.note)
-      .foregroundStyle(Theme.Palette.textSecondary)
+      Text("这一版没有可用的版本信息。")
+        .font(Theme.TypeScale.note)
+        .foregroundStyle(Theme.Palette.textSecondary)
     }
   }
 
@@ -755,19 +724,15 @@ public struct SettingsView: View {
               }
             }
             Spacer(minLength: 0)
-            if model.appVersion.isRelease {
-              SettingsActionButton("检查更新") {
-                Task { await model.checkForUpdates() }
-              }
+            SettingsActionButton("检查更新") {
+              Task { await model.checkForUpdates() }
             }
           }
           .padding(.vertical, 20)
 
-          if model.appVersion.isRelease {
-            Divider().overlay(Theme.Palette.line)
-            updateSummary
-              .padding(.vertical, 14)
-          }
+          Divider().overlay(Theme.Palette.line)
+          updateSummary
+            .padding(.vertical, 14)
         }
       }
 

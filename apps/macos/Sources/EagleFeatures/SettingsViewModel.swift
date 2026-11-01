@@ -26,8 +26,6 @@ public final class SettingsViewModel: ObservableObject {
   @Published public var usageBusy = false
   @Published public var launchAtLogin = true
   @Published public var showUnfocusedSpaces = true
-  @Published public var followTerminal = true
-  @Published public var allowRemoteInput = false
   @Published public var updateState: UpdateState = .idle
   /// The app's own version and where it looks; injectable so a test never touches the network.
   public let appVersion: AppVersion
@@ -407,17 +405,22 @@ public final class SettingsViewModel: ObservableObject {
     ]
   }
 
-  /// One check per launch, only for a signed product build with a published version to reach.
+  /// One check per launch with a published version to reach; a development build reports its
+  /// own version instead of asking.
   public func checkForUpdatesIfNeeded() async {
     guard !checkedForUpdates else { return }
     checkedForUpdates = true
     await checkForUpdates()
   }
 
-  /// Asks the live endpoint which app version is published. A development build, a missing
-  /// endpoint or an unreachable one all settle quietly: no prompt is not an error.
+  /// Asks the live endpoint which app version is published. A missing endpoint or an
+  /// unreachable one settles quietly: no prompt is not an error.
   public func checkForUpdates() async {
-    guard appVersion.isRelease, let endpoint = links.updates else {
+    guard appVersion.isRelease else {
+      updateState = .development(appVersion.short)
+      return
+    }
+    guard let endpoint = links.updates else {
       updateState = .unavailable
       return
     }

@@ -62,7 +62,7 @@ struct SettingsTests {
     #expect(model.onlineCount > 0)
   }
 
-  @Test("a development build never asks and settles quietly")
+  @Test("a development build reports itself as the build in hand, never a newer one")
   func updatesInDevelopment() async {
     let model = SettingsViewModel(
       appVersion: AppVersion(short: "0.15.0", build: "1", isRelease: false),
@@ -70,7 +70,7 @@ struct SettingsTests {
         github: nil, release: nil, updates: URL(string: "https://example.com/api/live"))
     )
     await model.checkForUpdates()
-    #expect(model.updateState == .unavailable)
+    #expect(model.updateState == .development("0.15.0"))
   }
 
   @Test("a release build without a check endpoint settles quietly too")

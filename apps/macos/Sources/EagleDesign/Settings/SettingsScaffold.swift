@@ -7,7 +7,6 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
   case tools = "工具"
   case providers = "服务"
   case machines = "设备"
-  case realtime = "实时"
   case usage = "用量与账单"
   case about = "关于"
 
@@ -20,7 +19,6 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
     case .tools: return "wrench.and.screwdriver"
     case .providers: return "antenna.radiowaves.left.and.right"
     case .machines: return "desktopcomputer"
-    case .realtime: return "dot.radiowaves.left.and.right"
     case .usage: return "chart.bar"
     case .about: return "info.circle"
     }

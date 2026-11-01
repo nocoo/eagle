@@ -201,6 +201,26 @@ struct SnapshotRenderer {
       in: directory
     )
 
+    // The same page as a build from source sees it: no published version to jump to, so the
+    // card states the version in hand instead.
+    let development = SettingsViewModel(
+      appVersion: AppVersion(short: "0.16.0", build: "dev", isRelease: false),
+      links: ProductLinks(
+        github: URL(string: "https://github.com/nocoo/eagle"),
+        release: URL(string: "https://github.com/nocoo/eagle/releases/latest"),
+        updates: nil
+      )
+    )
+    development.selection = .about
+    development.updateState = .development("0.16.0")
+    capture(
+      SettingsView(model: development).preferredColorScheme(.light),
+      size: CGSize(
+        width: CGFloat(Theme.Metric.settingsWidth), height: CGFloat(Theme.Metric.settingsHeight)),
+      named: "settings-about-development",
+      in: directory
+    )
+
     let machines = SettingsViewModel()
     machines.selection = .machines
     capture(
