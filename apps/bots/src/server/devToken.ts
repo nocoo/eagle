@@ -3,6 +3,7 @@
 // switch. It is armed only while the daemon was told where its file is, the file is
 // read again on every authentication, and a file that is not conforming is refused
 // rather than repaired.
+import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { declareEvent } from "../log/events.ts";
 import type { Log } from "../log/log.ts";
@@ -34,7 +35,9 @@ export type DevTokenReader = () => Promise<DevCredential | undefined>;
 export const readDevToken = async (path: string): Promise<DevCredential | undefined> => {
   let handle: Awaited<ReturnType<typeof open>>;
   try {
-    handle = await open(path, "r");
+    // `O_NONBLOCK` keeps a FIFO somebody left at this path from hanging the request that
+    // reads it; a regular file is unaffected by the flag.
+    handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
   } catch {
     return undefined;
   }

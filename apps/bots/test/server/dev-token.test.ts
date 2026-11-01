@@ -3,6 +3,7 @@
 // is. The file is read again on every authentication, and a file that is not conforming
 // is refused rather than repaired.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -239,6 +240,28 @@ test("a file that is missing, or is not a file, is refused", async () => {
         headers: { authorization: `Bearer ${DEV_TOKEN}` },
       });
       assert.equal(refused.status, 401, "a directory is no credential");
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a FIFO at the path is refused instead of blocking the daemon", async () => {
+  const { dir } = await tokenFile();
+  const path = join(dir, "token");
+  try {
+    await rm(path);
+    execFileSync("/usr/bin/mkfifo", ["-m", "600", path]);
+    await withStack({ devTokenPath: path }, async (stack) => {
+      // No writer will ever open this FIFO: a blocking read would hold the request for
+      // good, so the answer has to arrive on its own.
+      const refused = await fetch(`http://127.0.0.1:${stack.port}/v1/bots`, {
+        headers: { authorization: `Bearer ${DEV_TOKEN}` },
+        signal: AbortSignal.timeout(2_000),
+      });
+      assert.equal(refused.status, 401, "a FIFO is no credential");
+      const health = await fetch(`http://127.0.0.1:${stack.port}/v1/health`);
+      assert.equal(health.status, 200, "the daemon still answers");
     });
   } finally {
     await rm(dir, { recursive: true, force: true });
