@@ -144,6 +144,12 @@ product that lives in this repository:
   or silence a log to pass. End-to-end acceptance lives in `tests/eval`
   (`npm --prefix apps/bots run eval`): real daemon, scripted model, real tools. It is
   not part of `check`; run it after changing a trigger, a tool or the invocation path.
+- Acceptance drives the product through the `eagle-dev` CLI, not a bespoke
+  HTTP/WebSocket script: a real command proves the wire, the credential, the scope and
+  the exit code at once. The development daemon also accepts a credential an agent
+  mints itself at `~/.config/eagle-dev/token`, so a run needs no person at a switch; a
+  bundled build never accepts it. `apps/bots/test` keeps the deterministic gates, and a
+  permission rule still needs its own assertion there.
 - Layer attribution is part of correctness: every crossing logs its layer with
   the shared `trace`, the innermost failure is the only error logged, and the
   diagnosis recipes in `docs/bots/OBSERVABILITY.md` are asserted by tests.

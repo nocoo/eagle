@@ -54,6 +54,23 @@ Checks: cd apps/bots && npm run check
 | — | `CatalogPort` / `ConversationPort` in VM tests | Domain fakes; no sockets |
 | — | `URLProtocol` for **HTTP only** | It cannot intercept `URLSessionWebSocketTask`; a WebSocket fake must be a real local server |
 
+## Driving acceptance through the CLI
+
+The `eagle-dev` CLI is the supported external surface of the daemon, so an end-to-end
+check is a real command against a real daemon rather than a hand-written HTTP or
+WebSocket script. One CLI call exercises the wire format, the credential and its
+scope, the exit code and the daemon behind it together.
+
+- The development daemon accepts a credential an agent mints itself at
+  `~/.config/eagle-dev/token` (`docs/bots/CLI.md`), so an acceptance run needs no
+  person turning a switch. A bundled build never accepts that file.
+- Acceptance cases live in `tests/eval` and drive their steps through the CLI
+  (`docs` and `tests/eval/README.md`). `npm --prefix apps/bots run eval` stays outside
+  `npm run check` because it boots a process and runs real tools.
+- This never replaces a deterministic test: a scope, a refusal or a wire rule still
+  needs its assertion in `apps/bots/test`, and a CLI acceptance case is evidence the
+  assembled product still does the thing, not a substitute for the gate.
+
 ## Test ladder
 
 Each row is one commit-sized step; the `Needs` column is the precondition. A step
