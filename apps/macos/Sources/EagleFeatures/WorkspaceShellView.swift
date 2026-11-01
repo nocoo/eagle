@@ -217,7 +217,6 @@ public struct WorkspaceShellView: View {
           } else if selectedIsMock {
             ConversationColumn(
               title: item?.title ?? "依赖修复专家",
-              subtitle: item?.tag ?? "GitHub",
               tintIndex: item?.tintIndex ?? 2,
               entries: chat.entries,
               showsToolCalls: !hideToolCalls,

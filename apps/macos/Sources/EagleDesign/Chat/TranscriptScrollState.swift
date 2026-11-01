@@ -43,8 +43,6 @@ final class TranscriptScroller {
   private var state = TranscriptScrollState()
   private var userIsScrolling = false
 
-  var followsBottom: Bool { state.followsBottom }
-
   func setUserScrolling(_ scrolling: Bool) {
     userIsScrolling = scrolling
   }

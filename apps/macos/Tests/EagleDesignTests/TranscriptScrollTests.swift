@@ -55,7 +55,5 @@ struct TranscriptScrollTests {
     let streaming = TranscriptEntry.streamingAssistant(id: "answer", blocks: [.paragraph("Text")])
     let finished = TranscriptEntry.assistant(id: "answer", blocks: [.paragraph("Text")])
     #expect(streaming.id == finished.id)
-    #expect(streaming.isStreaming)
-    #expect(!finished.isStreaming)
   }
 }

@@ -94,7 +94,7 @@ struct WorkspaceListTests {
   @Test("conversations can be renamed and deleted")
   func itemCRUD() {
     let model = WorkspaceListViewModel()
-    let before = model.totalBots
+    let before = model.groups.flatMap(\.items).count
 
     model.renameItem("deps", to: "  依赖修复专家 A  ")
     let renamed = model.groups.flatMap(\.items).first { $0.id == "deps" }
@@ -104,7 +104,7 @@ struct WorkspaceListTests {
     #expect(model.groups.flatMap(\.items).first { $0.id == "deps" }?.title == "依赖修复专家 A")
 
     model.deleteItem("deps")
-    #expect(model.totalBots == before - 1)
+    #expect(model.groups.flatMap(\.items).count == before - 1)
     #expect(model.selection != "deps")
     #expect(model.selectedItem != nil)
   }
@@ -119,37 +119,21 @@ struct WorkspaceListTests {
     model.deleteItem("nope")
     model.moveItem("nope", to: "secretariat")
     #expect(model.groups == snapshot)
-    #expect(model.groupID(of: "nope") == nil)
   }
 
-  @Test("groupID resolves the section that owns a row")
-  func groupID() {
-    let model = WorkspaceListViewModel()
-    #expect(model.groupID(of: "deps") == "review")
-    #expect(model.groupID(of: "investigator") == "secretariat")
-    #expect(model.groupID(of: "missing") == nil)
-  }
-
-  @Test("addGroup appends an empty section and expands it")
-  func addGroup() {
-    let model = WorkspaceListViewModel()
-    let before = model.groups.count
-    let id = model.addGroup()
-    #expect(model.groups.count == before + 1)
-    #expect(model.groups.last?.id == id)
-    #expect(model.groups.last?.items.isEmpty == true)
-    #expect(model.expanded.contains(id))
-    #expect(model.sections.first { $0.id == id }?.isExpanded == true)
+  /// The section that owns a row; the demo list keeps this out of its public surface.
+  private func group(holding id: String, in model: WorkspaceListViewModel) -> String? {
+    model.groups.first { $0.items.contains { $0.id == id } }?.id
   }
 
   @Test("moveItem relocates a row to the end of another group")
   func moveItem() throws {
     let model = WorkspaceListViewModel(selection: "deps")
-    let source = try #require(model.groupID(of: "deps"))
+    let source = try #require(group(holding: "deps", in: model))
     let target = try #require(model.groups.first { $0.id != source }?.id)
     let targetCount = try #require(model.groups.first { $0.id == target }?.items.count)
     model.moveItem("deps", to: target)
-    #expect(model.groupID(of: "deps") == target)
+    #expect(group(holding: "deps", in: model) == target)
     #expect(model.groups.first { $0.id == source }?.items.contains { $0.id == "deps" } == false)
     #expect(model.groups.first { $0.id == target }?.items.count == targetCount + 1)
     #expect(model.groups.first { $0.id == target }?.items.last?.id == "deps")
@@ -159,7 +143,7 @@ struct WorkspaceListTests {
   @Test("moveItem ignores same-group and unknown targets")
   func moveItemNoOps() throws {
     let model = WorkspaceListViewModel()
-    let home = try #require(model.groupID(of: "deps"))
+    let home = try #require(group(holding: "deps", in: model))
     let snapshot = model.groups
     model.moveItem("deps", to: home)
     #expect(model.groups == snapshot)

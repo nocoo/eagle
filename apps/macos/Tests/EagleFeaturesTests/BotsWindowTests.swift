@@ -61,18 +61,18 @@ struct BotsWindowTests {
       gatewayProbe: { gateway }
     )
     await bots.start()
-    await bots.awaitScheduledPublishDrain()
+    await settlePublish(bots)
     bots.select("b_1")
     conversationPort.emit(.connection(.ready))
     conversationPort.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
-    await bots.awaitScheduledPublishDrain()
+    await settlePublish(bots)
     try await waitUntil {
       app.conversation.connection == .ready && app.conversation.hasSnapshot
     }
     try await waitUntil {
       bots.connection == .ready && bots.subtitle == "已连接"
     }
-    await bots.awaitShellQuiescence()
+    await settlePublish(bots, passes: 12)
     return (bots, app, conversationPort, outbox)
   }
 
@@ -80,7 +80,7 @@ struct BotsWindowTests {
   func singleDraft() async throws {
     let (bots, app, conversationPort, _) = try await window()
     bots.setDraft("hello from Eagle")
-    #expect(bots.draft == "hello from Eagle")
+    #expect(bots.composer.text == "hello from Eagle")
     #expect(app.conversation.draft == "hello from Eagle", "there is no second draft")
 
     bots.send()
@@ -97,8 +97,8 @@ struct BotsWindowTests {
         requestId: requestId
       )
     )
-    try await waitUntil { bots.draft == "hello from Eagle" }
-    #expect(bots.draft == "hello from Eagle", "the restored draft is what the user sees")
+    try await waitUntil { bots.composer.text == "hello from Eagle" }
+    #expect(bots.composer.text == "hello from Eagle", "the restored draft is what the user sees")
   }
 
   @Test("sidebar previews use the last received chat text rather than lifecycle state")
@@ -131,7 +131,7 @@ struct BotsWindowTests {
   @Test("draft and error-only changes do not republish the transcript")
   func transcriptPublicationIsolation() async throws {
     let (bots, _, port, _) = try await window()
-    await bots.awaitScheduledPublishDrain()
+    await settlePublish(bots)
     // A loaded runner can deliver the baseline state after the drain; count from a quiet
     // baseline so the assertion is about draft edits, not about when the socket settled.
     try await Task.sleep(for: .milliseconds(120))
@@ -291,14 +291,14 @@ struct BotsWindowTests {
     )
     conversationPort.emit(.delta(messageId: "p_a1", changes: [.text(index: 0, append: "答")]))
     try await waitUntil {
-      if case .streamingAssistant(_, let blocks) = bots.entries.last,
+      if case .streamingAssistant(_, let blocks) = bots.transcript.entries.last,
         case .paragraph("回答") = blocks.first
       {
         return true
       }
       return false
     }
-    let rows = bots.entries
+    let rows = bots.transcript.entries
     #expect(rows.count >= 2, "the transcript grows with the stream")
     #expect(
       {
@@ -350,10 +350,10 @@ struct BotsWindowTests {
     #expect(
       bots.sections.map(\.id)
         == ["g_1", "g_2", SidebarComposition.ungroupedSectionID])
-    #expect(bots.bots(in: "g_1").map(\.id) == ["b_1"])
-    #expect(bots.bots(in: "g_2").isEmpty)
+    #expect(botIDs(in: "g_1", of: bots) == ["b_1"])
+    #expect(botIDs(in: "g_2", of: bots).isEmpty)
     #expect(
-      bots.bots(in: nil).map(\.id) == ["b_2", "b_3"],
+      botIDs(in: nil, of: bots) == ["b_2", "b_3"],
       "an ungrouped bot and one filed under a missing group")
   }
 
@@ -383,10 +383,10 @@ struct BotsWindowTests {
 
     await bots.moveBot("b_1", toGroup: "g_2")
     #expect(catalog.moved.map { "\($0.0)=\($0.1 ?? "nil")" } == ["b_1=g_2"])
-    #expect(bots.bots(in: "g_2").map(\.id) == ["b_1"])
+    #expect(botIDs(in: "g_2", of: bots) == ["b_1"])
 
     await bots.moveBot("b_1", toGroup: nil)
-    #expect(bots.bots(in: nil).map(\.id) == ["b_1"])
+    #expect(botIDs(in: nil, of: bots) == ["b_1"])
 
     await bots.deleteGroup("g_2")
     #expect(catalog.deletedGroups == ["g_2"])
@@ -707,13 +707,13 @@ struct BotsTriggerTests {
       settings: BotsSettings(environment: [:]), makeApp: { _ in app },
       gatewayProbe: { true })
     await bots.start()
-    await bots.awaitScheduledPublishDrain()
+    await settlePublish(bots)
     bots.select("b_1")
     port.emit(.connection(.ready))
     let snapshot = ConversationSnapshot(
       botId: "b_1", triggers: list ?? [summary()])
     port.emit(.snapshot(snapshot))
-    await bots.awaitScheduledPublishDrain()
+    await settlePublish(bots)
     try await waitUntil { app.conversation.hasSnapshot }
     triggers.details = [
       TriggerDetail(summary: summary(), prompt: "triage the queue")
@@ -743,7 +743,7 @@ struct BotsTriggerTests {
     #expect(triggers.switches[0].2 == false, "the switch sends what the person chose")
 
     port.emit(.triggers([summary(enabled: false)]))
-    await bots.awaitScheduledPublishDrain()
+    await settlePublish(bots)
     try await waitUntil { bots.triggerItems.first?.isOn == false }
   }
 }
@@ -768,11 +768,11 @@ struct BotsDaemonReconnectTests {
       settings: BotsSettings(environment: [:]), makeApp: { _ in app },
       gatewayProbe: { true })
     await bots.start()
-    await bots.awaitScheduledPublishDrain()
+    await settlePublish(bots)
     bots.select("b_1")
     port.emit(.connection(.ready))
     port.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
-    await bots.awaitScheduledPublishDrain()
+    await settlePublish(bots)
     return (bots, port, app)
   }
 
@@ -785,7 +785,7 @@ struct BotsDaemonReconnectTests {
     let deadline = Date().addingTimeInterval(2)
     while !bots.participantStatus.canRetry, Date() < deadline {
       try await Task.sleep(nanoseconds: 20_000_000)
-      await bots.awaitScheduledPublishDrain()
+      await settlePublish(bots)
     }
 
     #expect(bots.participantStatus.canRetry, "the person is offered a retry")
@@ -825,4 +825,21 @@ struct BotsDaemonAbsentTests {
     try await Task.sleep(nanoseconds: 1_500_000_000)
     #expect(model.connection.isFailed, "still failed: no blind retry loop")
   }
+}
+
+/// Lets deferred main-actor publish passes run: the shell schedules a follow-up publish, so a
+/// test that just emitted an event must yield before asserting on what it produced.
+@MainActor
+private func settlePublish(_ bots: BotsWorkspaceViewModel, passes: Int = 6) async {
+  for _ in 0..<passes {
+    await Task.yield()
+    try? await Task.sleep(nanoseconds: 2_000_000)
+  }
+}
+
+/// The rows the sidebar shows under one section; `nil` is the ungrouped section.
+@MainActor
+private func botIDs(in section: String?, of bots: BotsWorkspaceViewModel) -> [String] {
+  let id = section ?? SidebarComposition.ungroupedSectionID
+  return bots.sections.first { $0.id == id }?.items.map(\.id) ?? []
 }

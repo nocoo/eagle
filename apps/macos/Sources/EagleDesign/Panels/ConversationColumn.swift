@@ -25,11 +25,6 @@ public enum TranscriptEntry: Identifiable, Hashable, Sendable {
     }
   }
 
-  public var isStreaming: Bool {
-    if case .streamingAssistant = self { return true }
-    return false
-  }
-
   public var isToolCall: Bool {
     switch self {
     case .tool, .toolRun: return true
@@ -49,7 +44,6 @@ extension [TranscriptEntry] {
 /// Middle column: a slim control strip, scrollable transcript, composer.
 public struct ConversationColumn: View {
   private let title: String
-  private let subtitle: String
   private let tintIndex: Int
   /// The bot's own face, shared with its sidebar row and the inspector.
   private let face: BotFace.Style?
@@ -77,7 +71,6 @@ public struct ConversationColumn: View {
 
   public init(
     title: String,
-    subtitle: String,
     tintIndex: Int,
     face: BotFace.Style? = nil,
     entries: [TranscriptEntry],
@@ -99,7 +92,6 @@ public struct ConversationColumn: View {
     onOpenPeerExchange: ((String) -> Void)? = nil
   ) {
     self.title = title
-    self.subtitle = subtitle
     self.tintIndex = tintIndex
     self.face = face
     self.entries = entries

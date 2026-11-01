@@ -86,7 +86,7 @@ struct LiveDaemonTests {
     #expect((response as? HTTPURLResponse)?.statusCode == 202)
 
     try await waitUntil {
-      bots.entries.contains { entry in
+      bots.transcript.entries.contains { entry in
         if case .user(_, let text, let origin) = entry {
           return origin == "Webhook" && text.contains("deploy 77aa finished")
         }
@@ -96,7 +96,7 @@ struct LiveDaemonTests {
 
     // The schedule fires on its own, with no client involved.
     try await waitUntil(timeout: 150) {
-      bots.entries.contains { entry in
+      bots.transcript.entries.contains { entry in
         if case .user(_, _, let origin) = entry { return origin == "定时" }
         return false
       }

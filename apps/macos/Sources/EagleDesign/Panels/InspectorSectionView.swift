@@ -3,7 +3,6 @@ import SwiftUI
 /// One decorated section: the shared header, then either its rows or its empty state.
 public struct InspectorSectionView: View {
   private let section: InspectorSectionModel
-  private let onExpand: () -> Void
   private let onRetryTask: (String) -> Void
   private let onStopTask: (String) -> Void
   private let onChoose: (String, String) -> Void
@@ -11,14 +10,12 @@ public struct InspectorSectionView: View {
 
   public init(
     section: InspectorSectionModel,
-    onExpand: @escaping () -> Void = {},
     onRetryTask: @escaping (String) -> Void = { _ in },
     onStopTask: @escaping (String) -> Void = { _ in },
     onChoose: @escaping (String, String) -> Void = { _, _ in },
     onToggleTrigger: @escaping (String, Bool) -> Void = { _, _ in }
   ) {
     self.section = section
-    self.onExpand = onExpand
     self.onRetryTask = onRetryTask
     self.onStopTask = onStopTask
     self.onChoose = onChoose

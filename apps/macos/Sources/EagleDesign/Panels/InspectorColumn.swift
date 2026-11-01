@@ -28,7 +28,6 @@ public struct InspectorColumn: View {
   @Binding private var tab: Tab
   private let onRetryTask: (String) -> Void
   private let onStopTask: (String) -> Void
-  private let onExpand: () -> Void
   private let onCollapse: () -> Void
   private let onShare: () -> Void
   private let face: BotFace.Style?
@@ -55,7 +54,6 @@ public struct InspectorColumn: View {
     tab: Binding<Tab>,
     onRetryTask: @escaping (String) -> Void = { _ in },
     onStopTask: @escaping (String) -> Void = { _ in },
-    onExpand: @escaping () -> Void = {},
     onCollapse: @escaping () -> Void = {},
     onShare: @escaping () -> Void = {},
     face: BotFace.Style? = nil,
@@ -80,7 +78,6 @@ public struct InspectorColumn: View {
     self._tab = tab
     self.onRetryTask = onRetryTask
     self.onStopTask = onStopTask
-    self.onExpand = onExpand
     self.onCollapse = onCollapse
     self.onShare = onShare
     self.face = face
@@ -167,7 +164,6 @@ public struct InspectorColumn: View {
       ForEach(sections) { section in
         InspectorSectionView(
           section: section,
-          onExpand: onExpand,
           onRetryTask: onRetryTask,
           onStopTask: onStopTask,
           onChoose: onChoose,

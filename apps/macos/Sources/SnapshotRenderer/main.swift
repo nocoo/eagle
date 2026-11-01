@@ -46,7 +46,7 @@ struct SnapshotRenderer {
     for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
       capture(
         ConversationColumn(
-          title: "一个需要保持停止按钮可见的很长的研究员名字", subtitle: "Bots", tintIndex: 2,
+          title: "一个需要保持停止按钮可见的很长的研究员名字", tintIndex: 2,
           entries: [.streamingAssistant(id: "preview", blocks: [.paragraph("正在整理已经观察到的信息。")])],
           draft: .constant("第一行：输入框向上展开。\n第二行：按钮留在底部。\n第三行：高度到此为止。\n第四行：在内部滚动。"),
           onSend: {},
@@ -58,7 +58,7 @@ struct SnapshotRenderer {
       )
       capture(
         ConversationColumn(
-          title: "依赖修复专家", subtitle: "Bots", tintIndex: 4,
+          title: "依赖修复专家", tintIndex: 4,
           entries: [.user(id: "u1", text: "PR #490 已开好，我先过闸门再合并发版。", origin: nil)],
           draft: .constant(""),
           onSend: {},
@@ -75,7 +75,7 @@ struct SnapshotRenderer {
     for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
       capture(
         ConversationColumn(
-          title: "依赖修复专家", subtitle: "Bots", tintIndex: 4,
+          title: "依赖修复专家", tintIndex: 4,
           entries: [
             .user(id: "u1", text: "PR #490 已开好，我先过闸门再合并发版。", origin: nil),
             .peerExchange(id: "x1", exchange: MockWorkspace.vesExchange),

@@ -618,30 +618,6 @@ struct BotsTriggerPresenterTests {
       "a loss is visible on the row")
   }
 
-  @Test("the inspector's rows are read-only and skip zero counters")
-  func detailRows() {
-    let detail = TriggerDetail(
-      summary: summary(kind: .webhook, dropped: 4), prompt: "handle the deploy",
-      endpoint: "/v1/triggers/b_1/t_9f2a1c3d04")
-    let rows = presenter.inspectorTrigger(detail)
-    #expect(rows.contains { $0.label == "类型" && $0.value == "Webhook" })
-    #expect(rows.contains { $0.label == "端点" && $0.value.hasPrefix("/v1/triggers/") })
-    #expect(rows.contains { $0.label == "已丢弃" && $0.value == "4 条" })
-    #expect(rows.contains { $0.label == "指令" && $0.value == "handle the deploy" })
-    #expect(!rows.contains { $0.label == "计划" }, "a webhook has no cron row")
-    #expect(!rows.contains { $0.label == "被拒绝" }, "zero counters are not rows")
-
-    let schedule = presenter.inspectorTrigger(
-      TriggerDetail(summary: summary(), prompt: "triage"))
-    #expect(schedule.contains { $0.label == "计划" && $0.value == "0 9 * * *" })
-    #expect(schedule.contains { $0.label == "时区" && $0.value == "Asia/Shanghai" })
-    #expect(schedule.contains { $0.label == "下次" })
-
-    let long = presenter.inspectorTrigger(
-      TriggerDetail(summary: summary(), prompt: String(repeating: "字", count: 200)))
-    #expect(long.contains { $0.label == "指令" && $0.value.hasSuffix("…") })
-  }
-
   @Test("an instant is shown in the trigger's own zone")
   func dueLabel() {
     #expect(
@@ -653,34 +629,6 @@ struct BotsTriggerPresenterTests {
       BotsPresenter.dueLabel("2026-10-29T01:00:00.000Z", zone: "Mars/Olympus") != nil,
       "an unknown zone falls back instead of dropping the row")
   }
-}
-
-@MainActor
-@Suite("Bots webhook detail")
-struct BotsWebhookDetailTests {
-  private let presenter = BotsPresenter()
-
-  @Test("a webhook's detail shows where it delivers and the credential to copy")
-  func endpointAndToken() {
-    let detail = TriggerDetail(
-      summary: TriggerSummary(
-        id: "t_7b1e55aa10", kind: .webhook, name: "deploy notify", enabled: true),
-      prompt: "handle the deploy",
-      endpoint: "/v1/triggers/b_1/t_7b1e55aa10",
-      token: "tok_abc"
-    )
-    let rows = presenter.inspectorTrigger(detail)
-    #expect(rows.first { $0.id == "endpoint" }?.value == "/v1/triggers/b_1/t_7b1e55aa10")
-    #expect(rows.first { $0.id == "token" }?.value == "tok_abc")
-    #expect(
-      presenter.inspectorTrigger(TriggerDetail(summary: detail.summary, prompt: "x"))
-        .tokenRow == nil,
-      "a schedule has no credential to show")
-  }
-}
-
-extension Array where Element == InspectorUsageRow {
-  fileprivate var tokenRow: InspectorUsageRow? { first { $0.id == "token" } }
 }
 
 @Suite("Peers in the transcript")

@@ -258,10 +258,6 @@ public final class WorkspaceListViewModel: ObservableObject {
     groups.flatMap(\.items).first { $0.id == selection }
   }
 
-  public var totalBots: Int {
-    groups.reduce(0) { $0 + $1.items.count }
-  }
-
   public func toggleSection(_ id: String) {
     if expanded.contains(id) {
       expanded.remove(id)
@@ -325,25 +321,6 @@ public final class WorkspaceListViewModel: ObservableObject {
       return
     }
     move(id, from: source, to: target)
-  }
-
-  /// The group a row belongs to, for the move submenu's checkmark.
-  public func groupID(of id: String) -> String? {
-    groups.first { $0.items.contains { $0.id == id } }?.id
-  }
-
-  /// Adds a group and returns its id, for "创建分组" in the context menu.
-  @discardableResult
-  public func addGroup() -> String {
-    var index = 1
-    var id = "group-\(index)"
-    while groups.contains(where: { $0.id == id }) {
-      index += 1
-      id = "group-\(index)"
-    }
-    groups.append(WorkspaceGroup(id: id, title: "新分组 \(index)", items: []))
-    expanded.insert(id)
-    return id
   }
 
   private func move(_ id: String, from source: Int, to target: Int) {

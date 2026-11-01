@@ -26,7 +26,6 @@ public struct DeviceDirectoryEntry: Codable, Equatable, Identifiable, Sendable {
   public let name: String
   public let platform: String
   public let arch: String
-  public let groupId: String?
   public let online: Bool?
   public let lastSeenAt: Int64?
   public let capabilities: [String]?

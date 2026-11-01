@@ -418,7 +418,7 @@ private struct ComposerFocusView: View {
   var body: some View {
     if conversation {
       ConversationColumn(
-        title: "Fixture", subtitle: "", tintIndex: 0, entries: model.entries,
+        title: "Fixture", tintIndex: 0, entries: model.entries,
         preparedMarkdown: model.preparedMarkdown,
         draft: $model.draft, onSend: { model.sends += 1 },
         onInsert: model.running ? { model.inserts += 1 } : nil

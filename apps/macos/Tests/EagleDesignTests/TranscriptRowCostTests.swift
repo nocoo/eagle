@@ -16,7 +16,7 @@ struct TranscriptRowCostTests {
     let entries = Self.entries(turns: 40)
     let markdown = Self.prepared(entries)
     let columnView = ConversationColumn(
-      title: "Bot", subtitle: "Bots", tintIndex: 1, entries: entries,
+      title: "Bot", tintIndex: 1, entries: entries,
       preparedMarkdown: markdown, draft: .constant(""), onSend: {})
     // Interleaved rounds: a machine that slows down mid-test must not tilt one side.
     _ = Self.pageCost(columnView)

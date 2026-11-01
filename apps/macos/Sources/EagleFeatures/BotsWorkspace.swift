@@ -63,7 +63,6 @@ final class BotsWorkspaceViewModel: ObservableObject {
   @Published private(set) var collapsed: Set<String> = []
   let transcript = BotsTranscriptViewModel()
   let composer = BotsComposerViewModel()
-  var entries: [TranscriptEntry] { transcript.entries }
   @Published private(set) var title = "Bots"
   @Published private(set) var subtitle = "正在连接…"
   @Published private(set) var tintIndex = 0
@@ -201,15 +200,6 @@ final class BotsWorkspaceViewModel: ObservableObject {
   }
 
   var isConnected: Bool { app != nil }
-
-  /// Every bot the sidebar can show, filed under its group; nil is 未分组. A membership
-  /// that points at a group the daemon no longer lists counts as ungrouped.
-  func bots(in groupId: String?) -> [BotSummary] {
-    let known = Set(groups.map(\.id))
-    return (app?.bots ?? []).filter {
-      SidebarComposition.membership($0.groupId, known: known) == groupId
-    }
-  }
 
   /// The group a bot is filed under right now, resolved the same way, for a drop.
   func groupId(of botId: String) -> String? {
@@ -523,10 +513,6 @@ final class BotsWorkspaceViewModel: ObservableObject {
     publish()
   }
 
-  /// The conversation view model owns the only draft; the composer reads and writes it
-  /// through these two members, so there is no second copy to drift.
-  var draft: String { composer.text }
-
   func setDraft(_ value: String) {
     guard let conversation = app?.conversation else { return }
     conversation.writeDraft(value)
@@ -760,23 +746,6 @@ final class BotsWorkspaceViewModel: ObservableObject {
         self.publish()
       } while self.pendingRepublish
       self.publicationScheduled = false
-    }
-  }
-
-  /// Waits until deferred shell publish passes finish (handshake, status, etc.).
-  func awaitScheduledPublishDrain() async {
-    while publicationScheduled {
-      await Task.yield()
-      try? await Task.sleep(nanoseconds: 2_000_000)
-    }
-  }
-
-  /// Yields until in-flight main-actor work (e.g. transcript projection) settles.
-  func awaitShellQuiescence() async {
-    await awaitScheduledPublishDrain()
-    for _ in 0..<6 {
-      await Task.yield()
-      try? await Task.sleep(nanoseconds: 5_000_000)
     }
   }
 }
@@ -1292,50 +1261,6 @@ struct BotsPresenter {
     if let warning = trigger.warning { parts.append(warning) }
     if !trigger.enabled { parts.append("已停用") }
     return parts.joined(separator: " · ")
-  }
-
-  /// The inspector's 触发器 rows for the opened trigger: read-only, in one grid.
-  func inspectorTrigger(_ detail: TriggerDetail) -> [InspectorUsageRow] {
-    let summary = detail.summary
-    var rows = [
-      InspectorUsageRow(
-        id: "kind", label: "类型", value: summary.kind == .schedule ? "定时" : "Webhook"),
-      InspectorUsageRow(id: "enabled", label: "状态", value: summary.enabled ? "启用" : "停用"),
-    ]
-    if let schedule = summary.schedule {
-      rows.append(InspectorUsageRow(id: "cron", label: "计划", value: schedule.cron))
-      rows.append(InspectorUsageRow(id: "zone", label: "时区", value: schedule.timezone))
-      if let next = schedule.nextDueAt, let shown = Self.dueLabel(next, zone: schedule.timezone) {
-        rows.append(InspectorUsageRow(id: "next", label: "下次", value: shown))
-      }
-    }
-    if let endpoint = detail.endpoint {
-      rows.append(InspectorUsageRow(id: "endpoint", label: "端点", value: endpoint))
-    }
-    if let token = detail.token {
-      rows.append(InspectorUsageRow(id: "token", label: "令牌", value: token))
-    }
-    rows.append(
-      InspectorUsageRow(
-        id: "fired", label: "已触发", value: "\(summary.counters.fired) 次"))
-    if summary.counters.dropped > 0 {
-      rows.append(
-        InspectorUsageRow(
-          id: "dropped", label: "已丢弃", value: "\(summary.counters.dropped) 条"))
-    }
-    if summary.counters.refused > 0 {
-      rows.append(
-        InspectorUsageRow(
-          id: "refused", label: "被拒绝", value: "\(summary.counters.refused) 次"))
-    }
-    if let skipped = summary.lastSkipped {
-      rows.append(InspectorUsageRow(id: "skipped", label: "最近跳过", value: skipped.reason))
-    }
-    if !detail.prompt.isEmpty {
-      let prompt = detail.prompt.count > 120 ? "\(detail.prompt.prefix(120))…" : detail.prompt
-      rows.append(InspectorUsageRow(id: "prompt", label: "指令", value: prompt))
-    }
-    return rows
   }
 
   /// An ISO instant in the trigger's own zone, so the row and the schedule agree.
