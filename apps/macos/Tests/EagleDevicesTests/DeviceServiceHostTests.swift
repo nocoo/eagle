@@ -84,6 +84,11 @@ struct DeviceServiceHostTests {
       client.invalidate()
       withExtendedLifetime(server) { listener.invalidate() }
     }
+    // The first round trip also builds the connection, so a one-second budget measures the
+    // connection setup as much as the handshake; a slow CI runner then reports a timeout
+    // for a helper that is answering. Warm the connection once, then hold the answer to the
+    // budget the test is about.
+    _ = try await client.call("service.ping", timeoutSeconds: 30)
     let reply = try await client.call("service.ping", timeoutSeconds: 1)
     #expect(reply["version"] == .number(1))
     #expect(!host.localReady)
