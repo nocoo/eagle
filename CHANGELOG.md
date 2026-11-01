@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## macOS v0.16.0 — 2026-11-01
+
+- Ship the `eagle` command line client: Settings → CLI installs it into `~/.local/bin`,
+  issues a named credential with scopes, and prints the agent-facing skill document; a
+  source run installs the copy it just built and calls itself `eagle-dev`, so a
+  development build and the installed App never share a link, a config file or a
+  credential.
+- A development daemon can accept a credential an agent mints itself at
+  `~/.config/eagle-dev/token` (mode 0600, 32+ characters). The App arms it only from a
+  source run; a packaged build never sets the variable, so a release cannot gain the
+  behaviour. The bearer joins the log's redaction set and is refused when the file is a
+  FIFO, unsafe or unreadable.
+- Show a bot's own one-line note in its sidebar row, refreshed by every settled run and
+  carried through the catalog, the CLI and the protocol.
+- Fix three CLI reads against a real daemon: `usage` kept the `?days=` in the path,
+  `chat watch` read the conversation from the wrong level and stayed silent, and
+  `chat history` used the truncation marker as its cursor, so the first page was always
+  empty.
+- Fix `POST /v1/bots` dropping the `groupId` the CLI sends, so `bots create --group`
+  silently created an unfiled bot; a refused creation now leaves no bot behind.
+- Name a source run "Eagle Dev" in the menu bar, the About panel, the window title and
+  the About card, and keep it after SwiftUI installs its own menu.
+- Acceptance drives the Bots surface through the CLI: five `cli-*` cases in `tests/eval`
+  boot a real daemon with a scripted model and run real commands, including an answer
+  aborted while it is in flight.
+
 - Adopt an npm workspace layout: `apps/web` (dashboard, Worker, D1 migrations),
   `apps/macos` (client placeholder), `packages/contracts` (shared schemas) and
   `packages/agent` (published Agent). The root manifest stays the version and
