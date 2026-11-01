@@ -493,9 +493,10 @@ public struct Commands: Sendable {
     let botId = bot["id"] as? String ?? name
     let socket = try await client.connect(clientName: "eagle-cli/\(EagleCLIKit.version)")
     defer { socket.close() }
-    let snapshot = try await socket.subscribe(botId: botId)
+    let frame = try await socket.subscribe(botId: botId)
+    let snapshot = SocketSession.snapshotValue(frame)
     if printer.wantsJSON(arguments) {
-      printer.json(snapshot)
+      printer.json(frame)
     } else {
       for message in snapshot["messages"] as? [JSONObject] ?? [] {
         printer.text(Self.messageLine(message))
@@ -521,7 +522,7 @@ public struct Commands: Sendable {
     let botId = bot["id"] as? String ?? name
     let socket = try await client.connect(clientName: "eagle-cli/\(EagleCLIKit.version)")
     defer { socket.close() }
-    let snapshot = try await socket.subscribe(botId: botId)
+    let snapshot = SocketSession.snapshotValue(try await socket.subscribe(botId: botId))
     // Paging starts at the oldest page boundary the snapshot named, because the daemon
     // requires a `before` id and invents none.
     guard let before = arguments.value("before") ?? snapshot["truncatedBefore"] as? String else {

@@ -206,6 +206,26 @@ struct CommandsTests {
     #expect(result.err.first?.contains("Settings → CLI") == true)
   }
 
+  @Test("a conversation is read from the frame's value, where the snapshot keeps it")
+  func snapshotValue() {
+    let frame: JSONObject = [
+      "type": "snapshot", "rev": 4,
+      "value": [
+        "botId": "b_1", "messages": [["id": "e_1"]], "truncatedBefore": "e_0",
+      ],
+    ]
+    let conversation = SocketSession.snapshotValue(frame)
+    #expect(
+      (conversation["messages"] as? [JSONObject])?.count == 1,
+      "watch finds the page where the daemon put it")
+    #expect(
+      conversation["truncatedBefore"] as? String == "e_0",
+      "history finds the oldest page boundary the snapshot named")
+    #expect(
+      SocketSession.snapshotValue(["messages": []])["messages"] != nil,
+      "a frame without a value is read as it arrives")
+  }
+
   @Test("the skill document names this binary and its two support answers")
   func skill() async {
     let result = await run(["--skill"])

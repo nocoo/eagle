@@ -67,7 +67,13 @@ public struct DaemonClient: Sendable {
         )
       }
     }
-    var request = URLRequest(url: config.baseURL.appendingPathComponent(path))
+    // A path may carry a query string (`v1/usage?days=30`): `appendingPathComponent` would
+    // escape the `?` into the path and the daemon would not find the route.
+    let url =
+      path.contains("?")
+      ? URL(string: "\(config.baseURL.absoluteString)/\(path)") ?? config.baseURL
+      : config.baseURL.appendingPathComponent(path)
+    var request = URLRequest(url: url)
     request.httpMethod = method
     request.timeoutInterval = 15
     if let token = config.token, !token.isEmpty {
@@ -164,6 +170,12 @@ public final class SocketSession: @unchecked Sendable {
       if frame["type"] as? String == "snapshot" { return frame }
       if frame["type"] as? String == "error" { throw Self.error(from: frame) }
     }
+  }
+
+  /// A `snapshot` frame carries the conversation under `value` (PROTOCOL.md "Subscription"),
+  /// so every caller reads `messages` and `truncatedBefore` from the same place.
+  static func snapshotValue(_ frame: JSONObject) -> JSONObject {
+    frame["value"] as? JSONObject ?? frame
   }
 
   public func send(text: String, requestId: String, whenBusy: String = "followUp") async throws {
