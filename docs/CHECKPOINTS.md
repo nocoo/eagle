@@ -1,5 +1,27 @@
 # 用户视角检查点
 
+## 2026-11-01 18:10 +08 — agent 自建 dev token 与 CLI 验收套件
+
+- 可观察：本机 `~/.config/eagle-dev/token`（0600，agent 自己生成）被 source-run 的
+  dev App 认下。`eagle-dev whoami` 打印 `dev-agent · read, write, admin`，
+  `eagle-dev bots list` 读到真实目录 8 个 bot；`health`/`--version`/`--skill`/`usage`
+  均可用，release 的 `eagle` 完全不读该目录（同一二进制换名即被拒，exit 3）。
+- CLI 面新增 5 个真实用例（`npm --prefix apps/bots run eval`，会先构建 CLI）：
+  cli-surface、cli-catalog、cli-chat、cli-history、cli-auth。用例暴露并修掉三个真 bug：
+  `usage` 把 `?days=` 编进路径（daemon 回 unknown_bot）、`chat watch` 读顶层
+  `messages`（永远静默）、`chat history` 拿 `truncatedBefore` 当游标（首屏永远空页），
+  以及 daemon `POST /v1/bots` 吞掉 `groupId`（`bots create --group` 静默丢失）。
+- 审查三轮：P1 dev bearer 进日志（已加入脱敏集合）、P1 不可读 dev token 被当缺失而
+  回退 config token（已 fail closed）；P2 FIFO 阻塞、abort 未确认、深分支断言无效
+  （已用 lstat/O_NONBLOCK、unanswered 屏障、201 条消息分页用例覆盖）。
+- 证据：`apps/bots` `npm run check` 759 测试通过（95.36/88.43/90.49）；`swift test`
+  210+48+60+25 通过；`swift format lint --strict` 0；`npm run eval` 14 用例全过（含
+  cli-chat 两次、去掉 abort 的负控制会红）；根 `npm run check` 265 测试通过。
+- 未验证：未构建/未安装签名发布包，因此「打包 App 永不接受 dev token」仍由
+  source-run 名称与环境变量约定保证，不是发布产物实测；未跑浏览器套件与公网。
+- 下一断点：`git push` 被本机凭证挡住（keychain 需交互授权、gh token 失效、无 SSH
+  key），16 个提交仅存在本地。
+
 ## 2026-10-29 16:48 +08 — 设备页刷新与点击修复集成
 
 - Root 对旧 App 做 13 秒只读 AX 采样：156 次中刷新按钮 153 次可用、3 次禁用；

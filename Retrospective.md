@@ -1,5 +1,24 @@
 # Retrospective
 
+## 2026-11-01 — Three ways this session produced work I could not trust
+
+1. A Python rewrite helper wrote `t` into `p`: it replaced `DaemonClient.swift` with the
+   contents of `Commands.swift`. The fix is mechanical now (re-read both files, restore one
+   from `HEAD` and re-apply its hunks by hand), but the lesson is about the write: a
+   cleanup script that holds two paths should assert the destination name and print it
+   before writing, and `git status` should be read after every scripted edit, not after
+   the batch. Recovery cost about ten minutes and risked losing a pane's whole diff.
+2. The first red run of the new daemon tests hung for 41 minutes because it awaited a
+   WebSocket frame that would never arrive. A wait without a rejection path is not a
+   failing test, it is a hung session, and node's runner has no default timeout. Every
+   wait over a socket, a file or a condition now needs a deadline and a rejection event,
+   and the red run should be attempted on one file first.
+3. Two tests could not fail and were only caught by a negative control: the log-redaction
+   assertion passed while the redaction was removed (the token was in a field nobody
+   logs), and the abort case slept long enough to assert before the answer could arrive.
+   Each acceptance assertion now gets a negative control once: remove the mechanism, watch
+   it go red, put the mechanism back. A test whose failure was never observed is a claim.
+
 ## 2026-10-21 — Accept the minifier's actual string syntax
 
 The additional production UI verifier recognized quoted onboarding versions but
