@@ -305,6 +305,8 @@ public struct BotSummary: Codable, Sendable, Equatable, Identifiable {
   public var unavailable: BotUnavailable?
   /// The sidebar group this bot is filed under; absent means ungrouped.
   public var groupId: String?
+  /// The line the bot wrote about itself (`note_set`); absent means it never did.
+  public var note: String?
 
   public init(
     id: String,
@@ -316,7 +318,8 @@ public struct BotSummary: Codable, Sendable, Equatable, Identifiable {
     model: ModelRef,
     state: BotState,
     unavailable: BotUnavailable? = nil,
-    groupId: String? = nil
+    groupId: String? = nil,
+    note: String? = nil
   ) {
     self.id = id
     self.title = title
@@ -328,6 +331,7 @@ public struct BotSummary: Codable, Sendable, Equatable, Identifiable {
     self.state = state
     self.unavailable = unavailable
     self.groupId = groupId
+    self.note = note
   }
 
   /// The face to draw, with the default for a bot written before appearance existed.

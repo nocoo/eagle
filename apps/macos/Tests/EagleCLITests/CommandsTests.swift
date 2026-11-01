@@ -102,6 +102,7 @@ struct CommandsTests {
   private static let catalog = #"""
     {"bots":[
       {"id":"b_1","title":"研究员","label":"研究","state":"idle","groupId":"g_1",
+       "note":"在核对依赖报告",
        "appearance":{"shape":"blob","tint":"green"}},
       {"id":"b_2","title":"工作秘书","state":"idle"}
     ],"groups":[{"id":"g_1","title":"工作"}]}
@@ -117,6 +118,7 @@ struct CommandsTests {
     #expect(text.out[0].contains("b_1"))
     #expect(text.out[0].contains("研究"))
     #expect(text.out[0].contains("blob/green"))
+    #expect(text.out[0].contains("「在核对依赖报告」"), "the bot's own note is on the row")
     #expect(StubTransport.calls.first?.bearer == "Bearer c_1.secret")
 
     let json = await run(["bots", "list", "--json"])

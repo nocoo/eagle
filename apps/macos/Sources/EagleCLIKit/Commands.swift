@@ -584,6 +584,11 @@ public struct Commands: Sendable {
     let tint = face?["tint"] as? String
     let group = bot["groupId"] as? String
     var parts = ["\(id)  \(title)"]
+    if let note = (bot["note"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !note.isEmpty
+    {
+      parts.append("「\(note)」")
+    }
     if let label { parts.append("label=\(label)") }
     if let group { parts.append("group=\(group)") }
     if let shape, let tint { parts.append("\(shape)/\(tint)") }

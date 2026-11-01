@@ -108,6 +108,30 @@ struct BotsPresenterTests {
     #expect(!presenter.isWaiting(for: state))
   }
 
+  @Test("the bot's own note wins, and a bot without one keeps its derived preview")
+  func sidebarNote() {
+    let bot = BotSummary(
+      id: "b_1",
+      title: "研究员",
+      createdAt: "x",
+      updatedAt: "x",
+      model: ModelRef(provider: "p", modelId: "m"),
+      state: .idle,
+      note: "在核对依赖报告"
+    )
+    #expect(presenter.sidebarItem(for: bot, preview: "旧消息").subtitle == "在核对依赖报告")
+
+    var blank = bot
+    blank.note = "   "
+    #expect(
+      presenter.sidebarItem(for: blank, preview: "旧消息").subtitle == "旧消息",
+      "a blank note is not a status line")
+
+    var silent = bot
+    silent.note = nil
+    #expect(presenter.sidebarItem(for: silent).subtitle.isEmpty)
+  }
+
   @Test("an unavailable bot says so and a sidebar item carries its state")
   func unavailable() {
     let state = ConversationState(

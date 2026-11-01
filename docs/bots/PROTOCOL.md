@@ -39,6 +39,7 @@ Runtime details live in [RUNTIME.md](RUNTIME.md), layers in
 | `send.text` | 8 000 characters | `error{invalid_command}` |
 | `bot.title` (HTTP) | 80 characters | HTTP `400` |
 | `bot.label` (HTTP) | 24 characters, optional | HTTP `400` |
+| `bot.note` (HTTP and `note_set`) | 120 characters after trimming and whitespace collapse, optional | HTTP `400`, or the tool returns an error |
 | `group.title` (HTTP) | 1–40 characters after trimming | HTTP `400` |
 | Groups | 50 per catalog | `POST /v1/groups` answers `limit_exceeded` |
 | `bot.appearance` (HTTP) | one shape and one tint from the closed sets | HTTP `400` |
@@ -98,7 +99,7 @@ version, the instance id, the pid and a bot count, never bot content.
 | `GET` | `/v1/health` | — | `{ "version", "protocolVersion", "instance", "pid", "bots", "deviceAccess" }` |
 | `GET` | `/v1/bots` | — | `{ "bots": [BotSummary] }` |
 | `POST` | `/v1/bots` | `{ "title", "label"?, "appearance"? }` — `appearance` is `{ "shape", "tint" }` | `201 { "bot": BotSummary }` |
-| `PATCH` | `/v1/bots/:id` | `{ "title"?, "label"?, "appearance"?, "groupId"?, "model"?, "thinkingLevel"? }` — a label of `""` and a `groupId` of `null` clear their field | `{ "bot": BotSummary }` |
+| `PATCH` | `/v1/bots/:id` | `{ "title"?, "label"?, "note"?, "appearance"?, "groupId"?, "model"?, "thinkingLevel"? }` — a label of `""`, a note of `null` and a `groupId` of `null` clear their field | `{ "bot": BotSummary }` |
 | `DELETE` | `/v1/bots/:id` | — | `204` |
 | `POST` | `/v1/groups` | `{ "title" }` | `{ "group": BotGroup }` |
 | `PATCH` | `/v1/groups/:id` | `{ "title" }` | `{ "group": BotGroup }` |
@@ -215,6 +216,22 @@ revoke it and delete it again (`CLI.md` owns the CLI itself).
   carries `origin: { "kind": "human", "label": "<client name>" }`; the App's own token
   keeps `{ "kind": "human" }`. `lastUsedAt` moves at most once per minute, so a chatty
   client does not rewrite the file per request.
+
+## The bot's own note
+
+`BotSummary.note` is the one line a Bot writes about itself, so a sidebar row says what a
+Bot is doing without opening its conversation (which costs a socket and a restore).
+
+- **It is the Bot's, not the person's.** The `note_set` tool in the `core` group writes it;
+  `PATCH /v1/bots/:id` exists so a client can read it back and clear it (`"note": null`),
+  never so a client can invent a status.
+- **Bounded and normalized.** Whitespace runs collapse to one space, the value is trimmed,
+  and 120 characters is the cap. A longer note is refused instead of truncated: a silently
+  shortened status line is a lie.
+- **Catalog-visible.** The value rides on `BotSummary`, so `bots` events carry it and no
+  extra read is needed. Setting or clearing it republishes the catalog.
+- **Optional.** Absent means the Bot never set one; a client may then show its own derived
+  preview, and must not invent text of its own.
 
 ## Group rules
 
@@ -407,6 +424,7 @@ The `usage` capability is `true`.
   "id": "b_0190a1b0-…",                 // UUIDv7 with a "b_" prefix
   "title": "研究员",
   "label": "研究",                       // optional; at most 24 characters
+  "note": "在核对 10-24 的依赖报告",      // optional; the Bot's own one-line status
   "appearance": {                        // optional; the client's closed sets
     "shape": "blob",                     // blob|pebble|squircle|star|cloud|shield|drop|hex|heart|flower
     "tint": "green"                      // paper|clay|red|orange|yellow|green|teal|sky|blue|violet|pink|graphite

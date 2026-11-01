@@ -1145,11 +1145,14 @@ struct BotsPresenter {
 
   /// `running` overrides the catalog for the open bot: its own socket knows the run before the
   /// daemon's catalog round trip does, so every surface showing that bot moves together.
+  /// The bot's own note wins: it is written for this row. A bot that never wrote one falls
+  /// back to the preview the opened conversation produced, and to nothing otherwise.
   func sidebarItem(for bot: BotSummary, preview: String = "", running: Bool? = nil) -> SidebarItem {
-    SidebarItem(
+    let note = (bot.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    return SidebarItem(
       id: bot.id,
       title: bot.title,
-      subtitle: preview,
+      subtitle: note.isEmpty ? preview : note,
       tag: bot.label,
       tintIndex: tintIndex(for: bot),
       face: faceStyle(for: bot),
