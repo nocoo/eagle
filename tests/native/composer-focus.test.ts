@@ -2,15 +2,17 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
+
+const macosPackage = resolve("apps/macos");
 
 test("the native Chat composer focuses on entry and whitespace while preserving editing", (context) => {
   const root = mkdtempSync(join(tmpdir(), "eagle-composer-focus-"));
@@ -24,14 +26,9 @@ test("the native Chat composer focuses on entry and whitespace while preserving 
   ];
   let cursor: { x: number; y: number } | undefined;
   const failures: unknown[] = [];
-  // The fixture compiles the whole design module against SwiftUI from cold, so the budget follows
-  // the module's growth: a slow CI runner spent 98 s on the 0.15.0 sources and tripped the old cap.
-  const compileTimeout = process.env.CI ? 240_000 : 150_000;
+  // CI already built EagleDesign for `swift build`; this links the fixture incrementally.
+  const linkTimeout = process.env.CI ? 120_000 : 60_000;
   try {
-    const source = resolve("apps/macos/Sources/EagleDesign");
-    const files = readdirSync(source, { recursive: true, encoding: "utf8" })
-      .filter((name) => name.endsWith(".swift"))
-      .map((name) => join(source, name));
     mkdirSync(join(bundle, "Contents", "MacOS"), { recursive: true });
     writeFileSync(
       join(bundle, "Contents", "Info.plist"),
@@ -49,20 +46,38 @@ test("the native Chat composer focuses on entry and whitespace while preserving 
 `,
     );
     const build = spawnSync(
-      "xcrun",
+      "swift",
       [
-        "swiftc",
-        "-swift-version",
-        "6",
-        "-parse-as-library",
-        ...files,
-        "tests/fixtures/native-composer-focus.swift",
-        "-o",
-        executable,
+        "build",
+        "--package-path",
+        macosPackage,
+        "--target",
+        "ComposerFocusFixture",
+        "-c",
+        "debug",
       ],
-      { encoding: "utf8", timeout: compileTimeout, maxBuffer: 1024 * 1024 },
+      { encoding: "utf8", timeout: linkTimeout, maxBuffer: 10 * 1024 * 1024 },
     );
     assert.equal(build.status, 0, build.stdout + build.stderr);
+    const binPath = spawnSync(
+      "swift",
+      [
+        "build",
+        "--package-path",
+        macosPackage,
+        "--target",
+        "ComposerFocusFixture",
+        "--show-bin-path",
+        "-c",
+        "debug",
+      ],
+      { encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 },
+    );
+    assert.equal(binPath.status, 0, binPath.stderr);
+    copyFileSync(
+      join(binPath.stdout.trim(), "ComposerFocusFixture"),
+      executable,
+    );
     const sign = spawnSync(
       "/usr/bin/codesign",
       ["--force", "--sign", "-", "--timestamp=none", bundle],
@@ -77,9 +92,8 @@ test("the native Chat composer focuses on entry and whitespace while preserving 
     assert.equal(position.status, 0, position.stdout + position.stderr);
     cursor = JSON.parse(position.stdout) as { x: number; y: number };
     assert(Number.isFinite(cursor.x) && Number.isFinite(cursor.y));
-    // A deadline, not a target: the fixture walks real AppKit views on a shared runner, and a
-    // 60 s budget already expired on a busy one. A genuine hang still fails here.
-    const fixtureRunTimeout = process.env.CI ? 150_000 : 40_000;
+    // Run-only budget: compile is separate. Traces on stderr show stage progress if this fires.
+    const fixtureRunTimeout = process.env.CI ? 120_000 : 45_000;
     const run = spawnSync("/usr/bin/env", cleanArguments, {
       encoding: "utf8",
       timeout: fixtureRunTimeout,

@@ -1,5 +1,14 @@
 import AppKit
+import EagleDesign
 import SwiftUI
+
+@MainActor
+private enum ComposerFocusTiming {
+  static var ci: Bool { ProcessInfo.processInfo.environment["CI"] == "1" }
+  /// AppKit activation and SwiftUI autofocus can lag on a shared CI desktop.
+  static var readinessTimeout: TimeInterval { ci ? 15 : 4 }
+  static var idleSettle: TimeInterval { 0.35 }
+}
 
 @MainActor
 private enum ComposerFocusTrace {
@@ -464,12 +473,24 @@ private final class ComposerFocusWindow {
     ComposerFocusTrace.mark("\(context).layout.return")
   }
 
-  func settle(until condition: () -> Bool = { false }) async {
+  private func pumpRunLoop() {
+    RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+  }
+
+  /// When `until` is nil, drain layout and run-loop work for a short idle window. Otherwise wait
+  /// until the predicate holds or the readiness deadline expires (slow CI activation/focus).
+  func settle(until condition: (() -> Bool)? = nil, timeout: TimeInterval? = nil) async {
     ComposerFocusTrace.mark("settle.enter")
     defer { ComposerFocusTrace.mark("settle.return") }
-    for step in 0..<20 {
+    let limit = timeout
+      ?? (condition == nil ? ComposerFocusTiming.idleSettle : ComposerFocusTiming.readinessTimeout)
+    let deadline = ProcessInfo.processInfo.systemUptime + limit
+    var step = 0
+    while ProcessInfo.processInfo.systemUptime < deadline {
       layout("settle[\(step)]")
-      if condition() { return }
+      step += 1
+      if let condition, condition() { return }
+      pumpRunLoop()
       try? await Task.sleep(for: .milliseconds(10))
     }
   }
@@ -481,6 +502,7 @@ private final class ComposerFocusWindow {
     let steps = max(1, Int(duration / 0.01))
     for step in 0..<steps {
       layout("drainRunLoop[\(step)]")
+      pumpRunLoop()
       try? await Task.sleep(for: .milliseconds(10))
     }
   }
