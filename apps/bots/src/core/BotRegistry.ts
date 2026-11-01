@@ -468,14 +468,19 @@ export class BotRegistry {
   async create(
     title: string,
     trace: string,
-    appearance: { readonly label?: string; readonly appearance?: BotAppearance } = {},
+    extras: {
+      readonly label?: string;
+      readonly appearance?: BotAppearance;
+      /** Files the bot at creation, so a group is never a second write that can fail alone. */
+      readonly groupId?: string;
+    } = {},
   ): Promise<BotSummary> {
     if (this.#entries.size + this.#creating >= MAX_CATALOG_BOTS) {
       throw new ClassifiedFailure(newFailure("limit_exceeded"), "not_admitted", "catalog is full");
     }
     this.#creating += 1;
     try {
-      return await this.#create(title, trace, appearance);
+      return await this.#create(title, trace, extras);
     } finally {
       this.#creating -= 1;
     }
@@ -484,7 +489,11 @@ export class BotRegistry {
   async #create(
     title: string,
     trace: string,
-    extras: { readonly label?: string; readonly appearance?: BotAppearance },
+    extras: {
+      readonly label?: string;
+      readonly appearance?: BotAppearance;
+      readonly groupId?: string;
+    },
   ): Promise<BotSummary> {
     if (this.#entries.size >= MAX_CATALOG_BOTS) {
       throw new ClassifiedFailure(newFailure("limit_exceeded"), "not_admitted", "catalog is full");
@@ -494,6 +503,7 @@ export class BotRegistry {
       id: (this.#options.newBotId ?? (() => newBotId()))(),
       title,
       ...(extras.label === undefined ? {} : { label: extras.label }),
+      ...(extras.groupId === undefined ? {} : { groupId: extras.groupId }),
       appearance: extras.appearance ?? DEFAULT_APPEARANCE,
       createdAt: at,
       updatedAt: at,

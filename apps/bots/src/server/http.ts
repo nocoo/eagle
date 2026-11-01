@@ -741,7 +741,27 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
           });
           return;
         }
-        const bot = await registry.create(name, `tr_http_${++sequence}`, face);
+        // A group named at creation is filed by the same write, so a missing group leaves
+        // no unfiled bot behind.
+        const group = groupChange(body);
+        if (group === undefined && isObject(body) && body.groupId !== undefined) {
+          json(response, 400, {
+            error: { kind: "invalid_command", message: "a groupId is a group id or null" },
+          });
+          return;
+        }
+        if (group?.value != null && !registry.groups().some((entry) => entry.id === group.value)) {
+          // The group is checked here, before the write: a bot that cannot be filed must
+          // not be created and then left unfiled.
+          json(response, 404, {
+            error: { kind: "unknown_bot", message: `no group ${group.value}` },
+          });
+          return;
+        }
+        const bot = await registry.create(name, `tr_http_${++sequence}`, {
+          ...face,
+          ...(group?.value == null ? {} : { groupId: group.value }),
+        });
         broadcastCatalog();
         json(response, 201, { bot });
         return;

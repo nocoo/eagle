@@ -416,6 +416,42 @@ test("a label and face survive a restart", async () => {
   }
 });
 
+test("a bot can be created already filed in a group", async () => {
+  const stack = await startStack();
+  const headers = { authorization: `Bearer ${stack.token}`, "content-type": "application/json" };
+  const call = (path: string, method: string, body?: unknown) =>
+    fetch(`http://127.0.0.1:${stack.port}${path}`, {
+      method,
+      headers,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  try {
+    const created = await call("/v1/groups", "POST", { title: "工作" });
+    const group = ((await created.json()) as { group: { id: string } }).group;
+
+    const answer = await call("/v1/bots", "POST", { title: "研究", groupId: group.id });
+    assert.equal(answer.status, 201);
+    const bot = ((await answer.json()) as { bot: BotSummary }).bot;
+    assert.equal(bot.groupId, group.id, "creation files the bot in the group it named");
+    const listed = (await (await call("/v1/bots", "GET")).json()) as { bots: BotSummary[] };
+    assert.equal(
+      listed.bots.find((candidate) => candidate.id === bot.id)?.groupId,
+      group.id,
+      "the catalog keeps the file",
+    );
+
+    const refused = await call("/v1/bots", "POST", { title: "无组", groupId: "g_nope" });
+    assert.equal(refused.status, 404, "an unknown group files nothing");
+    const after = (await (await call("/v1/bots", "GET")).json()) as { bots: BotSummary[] };
+    assert.equal(after.bots.length, listed.bots.length, "a refused creation leaves no bot behind");
+
+    const notAString = await call("/v1/bots", "POST", { title: "坏组", groupId: 7 });
+    assert.equal(notAString.status, 400, "a groupId that is not a string is refused");
+  } finally {
+    await stack.close();
+  }
+});
+
 test("groups are created, renamed, reordered and deleted only when empty", async () => {
   const stack = await startStack();
   const headers = { authorization: `Bearer ${stack.token}`, "content-type": "application/json" };
