@@ -29,7 +29,9 @@ public final class CLISettingsViewModel: ObservableObject {
   private let port: String
   private let session: URLSession
   private let fileManager: FileManager
-  private let automaticClientName = "本机 CLI"
+  /// A name the daemon accepts (lower case, digits, `-`, `_`): credentials are
+  /// identified in logs, so the automatic one is stated in that same alphabet.
+  static let automaticClientName = "this-mac"
 
   public init(
     appVersion: AppVersion = .current(),
@@ -107,7 +109,6 @@ public final class CLISettingsViewModel: ObservableObject {
     installed = fileManager.fileExists(atPath: linkURL.path)
     do {
       clients = try await client().list()
-      failure = nil
     } catch {
       failure = "\(error)"
     }
@@ -134,13 +135,14 @@ public final class CLISettingsViewModel: ObservableObject {
 
       // The secret is only ever answered once, so a live credential for this machine is
       // revoked and dropped before a new one is issued; a revoked record is deleted as is.
-      for existing in try await client().list() where existing.name == automaticClientName {
+      for existing in try await client().list() where existing.name == Self.automaticClientName {
         if !existing.isRevoked {
           _ = try await client().revoke(existing.id)
         }
         try await client().delete(existing.id)
       }
-      let issued = try await client().issue(name: automaticClientName, scopes: ["read", "write"])
+      let issued = try await client().issue(
+        name: Self.automaticClientName, scopes: ["read", "write"])
       clients = try await client().list()
       try writeConfig(token: issued.1)
       installed = true
@@ -164,7 +166,7 @@ public final class CLISettingsViewModel: ObservableObject {
       }
       try? fileManager.removeItem(at: configURL)
       for record in (try await client().list())
-      where record.name == automaticClientName && !record.isRevoked {
+      where record.name == Self.automaticClientName && !record.isRevoked {
         _ = try await client().revoke(record.id)
       }
       clients = try await client().list()
@@ -177,11 +179,21 @@ public final class CLISettingsViewModel: ObservableObject {
     }
   }
 
+  /// The daemon's own rule (docs/bots/PROTOCOL.md "CLI clients and scopes"), checked here so
+  /// a name it would refuse is explained before a request is made.
+  static func validName(_ name: String) -> Bool {
+    name.count <= 32 && name.range(of: "^[a-z0-9][a-z0-9_-]*$", options: .regularExpression) != nil
+  }
+
   /// Issues one more credential for another agent; the secret is answered once.
   public func issue(name: String, scopes: [String]) async {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     guard !trimmed.isEmpty else {
       failure = "请先命名这个客户端，例如 claude-code"
+      return
+    }
+    guard Self.validName(trimmed) else {
+      failure = "名称只能用 1–32 个小写字母、数字、连字符或下划线，例如 claude-code"
       return
     }
     busy = true
@@ -241,7 +253,7 @@ public final class CLISettingsViewModel: ObservableObject {
       at: configURL.deletingLastPathComponent(), withIntermediateDirectories: true,
       attributes: [.posixPermissions: 0o700])
     let payload: [String: String] = [
-      "root": rootURL.path, "port": port, "token": token, "client": automaticClientName,
+      "root": rootURL.path, "port": port, "token": token, "client": Self.automaticClientName,
     ]
     let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
     try data.write(to: configURL, options: [.atomic])

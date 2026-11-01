@@ -144,7 +144,7 @@ struct CLISettingsTests {
       contentsOf: home.appendingPathComponent(".config/eagle/eagle-dev.json"))
     let object = try #require(try JSONSerialization.jsonObject(with: config) as? [String: Any])
     #expect(object["token"] as? String == "c_new_1.secret")
-    #expect(object["client"] as? String == "本机 CLI")
+    #expect(object["client"] as? String == "this-mac")
     #expect(object["port"] as? String == "44000")
     let attributes = try FileManager.default.attributesOfItem(
       atPath: home.appendingPathComponent(".config/eagle/eagle-dev.json").path)
@@ -155,7 +155,7 @@ struct CLISettingsTests {
   @Test("disabling unlinks, removes the config and revokes this machine's credential")
   func disable() async throws {
     let (model, home, _, _) = try fixture()
-    CLITransport.clients = [CLITransport.client(id: "c_1", name: "本机 CLI")]
+    CLITransport.clients = [CLITransport.client(id: "c_1", name: "this-mac")]
     await model.enable()
     await model.disable()
     #expect(
@@ -185,6 +185,37 @@ struct CLISettingsTests {
     await model.delete("c_dead")
     #expect(
       CLITransport.calls.contains { $0.method == "DELETE" && $0.path == "/v1/clients/c_dead" })
+  }
+
+  @Test("a name the daemon would refuse is explained before any request")
+  func invalidName() async throws {
+    let (model, _, _, _) = try fixture()
+    await model.issue(name: "本机 CLI", scopes: ["read"])
+    #expect(model.failure?.contains("小写字母") == true)
+    #expect(CLITransport.calls.isEmpty, "nothing was sent")
+
+    await model.issue(name: "claude-code", scopes: ["read"])
+    #expect(model.failure == nil)
+    #expect(model.issuedToken != nil)
+  }
+
+  @Test("the automatic credential uses a name the daemon accepts")
+  func automaticName() async throws {
+    let (model, _, _, _) = try fixture()
+    #expect(CLISettingsViewModel.validName(CLISettingsViewModel.automaticClientName))
+    await model.enable()
+    #expect(model.failure == nil)
+    let body = try #require(CLITransport.calls.first { $0.method == "POST" }?.body)
+    #expect(body.contains("this-mac"))
+  }
+
+  @Test("a failure survives the next successful read")
+  func failurePersists() async throws {
+    let (model, _, _, _) = try fixture()
+    await model.issue(name: "中文", scopes: ["read"])
+    #expect(model.failure != nil)
+    await model.load()
+    #expect(model.failure != nil, "a redraw or reload must not swallow the reason")
   }
 
   @Test("a new credential is answered once and named in lower case")

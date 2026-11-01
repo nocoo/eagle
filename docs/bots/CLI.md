@@ -13,7 +13,7 @@ own and never invents one.
 | Development or candidate App | `Contents/Helpers/eagle-dev` | `~/.local/bin/eagle-dev` |
 
 - **The App owns the installation.** Settings → CLI has one switch. Turning it on creates the
-  symlink into `~/.local/bin`, issues the `本机 CLI` credential (scopes `read` and `write`)
+  symlink into `~/.local/bin`, issues the `this-mac` credential (scopes `read` and `write`)
   when none is configured yet, and writes the config file. Turning it off removes the link
   and revokes that credential; the daemon keeps running for the App.
 - **Permissions are asked for at the switch.** Creating `~/.local/bin` or the link needs no
@@ -27,7 +27,7 @@ own and never invents one.
 
 ```json
 { "root": "/Users/me/.local/share/eagle-bots", "port": "43117",
-  "token": "c_01H….Zm9vYmFy", "client": "this Mac" }
+  "token": "c_01H….Zm9vYmFy", "client": "this-mac" }
 ```
 
 - **Resolution order.** `EAGLE_TOKEN` and `EAGLE_PORT` / `EAGLE_ROOT` win over the file;

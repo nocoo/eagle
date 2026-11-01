@@ -5,6 +5,9 @@ import SwiftUI
 /// The settings window content, one screen per rail section.
 public struct SettingsView: View {
   @StateObject private var model: SettingsViewModel
+  /// The CLI page keeps its switch state, credentials and error message across redraws: a
+  /// fresh view model per render silently discarded all three.
+  @StateObject private var cli = CLISettingsViewModel()
   @ObservedObject private var devices: DeviceSettingsViewModel
   @AppStorage("eagle.appearance") private var appearance = "system"
   @AppStorage("eagle.hideToolCalls") private var hideToolCalls = false
@@ -43,7 +46,7 @@ public struct SettingsView: View {
       case .machines:
         DeviceSettingsView(model: devices)
       case .cli:
-        CLISettingsView()
+        CLISettingsView(model: cli)
       case .usage:
         usage
       case .about:
