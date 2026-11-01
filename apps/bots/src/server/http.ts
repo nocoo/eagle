@@ -2,6 +2,7 @@
 // ready checks and the catalog, with the bearer token checked before anything else runs.
 import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 import { DirectoryError } from "../core/BotDirectory.ts";
 import type { BotRegistry } from "../core/BotRegistry.ts";
@@ -20,6 +21,7 @@ import type { ServerEvent } from "../protocol/frames.ts";
 import { MAX_HTTP_BODY_BYTES, MAX_LABEL_CHARS, MAX_TITLE_CHARS } from "../protocol/limits.ts";
 import { PROTOCOL_VERSION } from "../protocol/version.ts";
 import { parseBearer, tokenMatches } from "./auth.ts";
+import { type Client, ClientError, type ClientScope, type ClientStore } from "./clients.ts";
 import { serverFailure } from "./failures.ts";
 import type { GatewayApi, GatewayInput } from "./gateway.ts";
 import type { ProviderApi } from "./providers.ts";
@@ -34,6 +36,8 @@ export type ServerOptions = {
   /** Host configuration identity, not a credential or authorization decision. */
   readonly deviceSocket?: string;
   readonly token: string;
+  /** Named CLI credentials beside the token; the token itself is always `admin`. */
+  readonly clients: ClientStore;
   readonly log: Log;
   readonly registry: BotRegistry;
   readonly service: ConversationService;
@@ -338,6 +342,35 @@ export type TriggerIngress = {
 /** PROTOCOL.md, "Limits": a delivery is small; a bigger body is refused, not buffered. */
 export const MAX_DELIVERY_BYTES = 64 * 1024;
 
+const SCOPE_RANK: Readonly<Record<ClientScope, number>> = { read: 0, write: 1, admin: 2 };
+
+/** Who presented the bearer: the App's own token, or one named CLI credential. */
+type Actor =
+  | { readonly kind: "root" }
+  | {
+      readonly kind: "client";
+      readonly client: Client;
+      readonly scopes: ReadonlySet<ClientScope>;
+    };
+
+/**
+ * Which scope a route needs (PROTOCOL.md, "CLI clients and scopes"): `read` covers every
+ * GET, `write` the catalog and conversation mutations, and `admin` the destructive, the
+ * global and the credential routes. Every other mutation is a write.
+ */
+const requiredScope = (path: string, method: string): ClientScope => {
+  if (method === "GET" || method === "HEAD") {
+    // The credential list names every client, so it is one of the admin routes.
+    return path === "/v1/clients" ? "admin" : "read";
+  }
+  if (path.startsWith("/v1/clients")) return "admin";
+  if (path === "/v1/settings" || path === "/v1/settings/test") return "admin";
+  // A provider probe spends a stored key, so it sits with the provider writes.
+  if (path.startsWith("/v1/providers")) return "admin";
+  if (method === "DELETE") return "admin";
+  return "write";
+};
+
 export const startServer = async (options: ServerOptions): Promise<Daemon> => {
   const { log, registry, service, token } = options;
   let connections = 0;
@@ -350,6 +383,24 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
   const writers = new Map<WebSocket, (event: ServerEvent) => void>();
   const instance = options.instance ?? `i_${process.pid}`;
   let sequence = 0;
+
+  const authenticate = async (header: string | undefined): Promise<Actor | undefined> => {
+    const presented = parseBearer(header);
+    if (presented === undefined) return undefined;
+    // The App's own token comes first and keeps every right, exactly as it always did.
+    if (tokenMatches(token, presented)) return { kind: "root" };
+    // A credential store that cannot answer refuses the request: authentication errors
+    // fail closed, and neither the route nor the upgrade may see a half-checked caller.
+    const credential = await options.clients.authenticate(presented).catch(() => undefined);
+    return credential === undefined
+      ? undefined
+      : { kind: "client", client: credential.client, scopes: credential.scopes };
+  };
+
+  // The scopes are additive: `write` includes `read`, `admin` includes both.
+  const allows = (actor: Actor, scope: ClientScope): boolean =>
+    actor.kind === "root" ||
+    [...actor.scopes].some((held) => SCOPE_RANK[held] >= SCOPE_RANK[scope]);
 
   const server = createServer((request, response) => {
     void route(request, response);
@@ -439,7 +490,8 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
           return;
       }
     }
-    if (!tokenMatches(token, parseBearer(request.headers.authorization))) {
+    const actor = await authenticate(request.headers.authorization);
+    if (actor === undefined) {
       log.emit("warn", "transport", Events.authFail, {
         trace: `tr_http_${process.pid}`,
         failure: serverFailure("auth_failed", "transport"),
@@ -450,7 +502,45 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
       });
       return;
     }
+    const needed = requiredScope(path, request.method ?? "GET");
+    if (!allows(actor, needed)) {
+      // A missing scope mutates nothing: the refusal happens before any route runs.
+      json(response, 403, {
+        error: { kind: "auth_scope", message: `this credential needs the ${needed} scope` },
+      });
+      return;
+    }
     try {
+      if (path === "/v1/clients" && request.method === "GET") {
+        json(response, 200, { clients: options.clients.list() });
+        return;
+      }
+      if (path === "/v1/clients" && request.method === "POST") {
+        const created = await options.clients.create(await readBody(request));
+        json(response, 201, { client: created.client, token: created.token });
+        return;
+      }
+      if (path === "/v1/clients/me" && request.method === "GET") {
+        json(response, 200, { client: actor.kind === "client" ? actor.client : null });
+        return;
+      }
+      const rotateMatch = /^\/v1\/clients\/(c_[A-Za-z0-9-]+)\/rotate$/.exec(path);
+      if (rotateMatch !== null && request.method === "POST") {
+        const rotated = await options.clients.rotate(rotateMatch[1] as string);
+        json(response, 200, { client: rotated.client, token: rotated.token });
+        return;
+      }
+      const revokeMatch = /^\/v1\/clients\/(c_[A-Za-z0-9-]+)\/revoke$/.exec(path);
+      if (revokeMatch !== null && request.method === "POST") {
+        json(response, 200, { client: await options.clients.revoke(revokeMatch[1] as string) });
+        return;
+      }
+      const clientMatch = /^\/v1\/clients\/(c_[A-Za-z0-9-]+)$/.exec(path);
+      if (clientMatch !== null && request.method === "DELETE") {
+        await options.clients.remove(clientMatch[1] as string);
+        response.writeHead(204).end();
+        return;
+      }
       if (path === "/v1/settings" && request.method === "GET") {
         json(response, 200, {
           settings: options.settings?.public() ?? {
@@ -784,6 +874,20 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
       }
       json(response, 404, { error: { kind: "unknown_bot", message: "no such endpoint" } });
     } catch (error) {
+      if (error instanceof ClientError) {
+        // An unknown id is a 404 like any other; a live credential is refused with its own
+        // kind so the App can offer "revoke first" instead of a generic refusal.
+        const status =
+          error.reason === "unknown_client" ? 404 : error.reason === "client_active" ? 409 : 400;
+        const kind =
+          error.reason === "unknown_client"
+            ? "unknown_bot"
+            : error.reason === "client_active"
+              ? "client_active"
+              : "invalid_command";
+        json(response, status, { error: { kind, message: error.message } });
+        return;
+      }
       if (error instanceof DirectoryError) {
         const status =
           error.reason === "group_not_empty"
@@ -824,7 +928,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
     }
   };
 
-  server.on("upgrade", (request, socket, head) => {
+  const upgrade = async (request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> => {
     if (closing) {
       refuseUpgrade(socket, 503, "Service Unavailable");
       return;
@@ -835,7 +939,8 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
       refuseUpgrade(socket, 404, "Not Found");
       return;
     }
-    if (!tokenMatches(token, parseBearer(request.headers.authorization))) {
+    const actor = await authenticate(request.headers.authorization);
+    if (actor === undefined) {
       log.emit("warn", "transport", Events.authFail, {
         trace: `tr_http_${process.pid}`,
         failure: serverFailure("auth_failed", "transport"),
@@ -872,6 +977,8 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         connId,
         server: { version: options.version, instance, pid: options.pid ?? process.pid },
         capabilities: options.capabilities,
+        canWrite: allows(actor, "write"),
+        ...(actor.kind === "client" ? { label: actor.client.name } : {}),
         register: (socket) => {
           sockets.add(socket);
         },
@@ -883,6 +990,10 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
       });
       writers.set(ws, write);
     });
+  };
+
+  server.on("upgrade", (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    void upgrade(request, socket, head);
   });
 
   await new Promise<void>((resolve) => server.listen(options.port ?? 0, "127.0.0.1", resolve));

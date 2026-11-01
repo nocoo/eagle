@@ -331,9 +331,10 @@ export class ConversationService implements InvocationPort {
   /**
    * A duplicate `requestId` answers from the stored record without touching the runtime,
    * which is how a lost reply is recovered. The reply is connection-scoped: it carries no
-   * revision, and settlements reach everyone through the hub instead.
+   * revision, and settlements reach everyone through the hub instead. A `label` names the
+   * CLI credential that admitted it, so the App can show who sent the message.
    */
-  async send(connectionId: string, input: SubmitInput): Promise<Submission> {
+  async send(connectionId: string, input: SubmitInput, label?: string): Promise<Submission> {
     // The connection owns the subscription, so it names the bot: the view's own id is the
     // runtime's answer, not the identity a command must address.
     let botId: string;
@@ -351,7 +352,14 @@ export class ConversationService implements InvocationPort {
       );
       throw error;
     }
-    return this.#admitAndLog({ ...input, botId, origin: { kind: "human" } }, connectionId);
+    return this.#admitAndLog(
+      {
+        ...input,
+        botId,
+        origin: label === undefined ? { kind: "human" } : { kind: "human", label },
+      },
+      connectionId,
+    );
   }
 
   /**

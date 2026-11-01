@@ -5,7 +5,8 @@ import type { BusyMode, Submission } from "./domain.ts";
 
 /** Who admitted the work. Closed on purpose: `unknown` is a reconstruction, never input. */
 export type InvocationOrigin =
-  | { readonly kind: "human" }
+  /** A person, or a named CLI credential acting for them: the label names that client. */
+  | { readonly kind: "human"; readonly label?: string }
   | { readonly kind: "schedule"; readonly triggerId: string }
   | { readonly kind: "webhook"; readonly triggerId: string }
   | { readonly kind: "peer"; readonly fromBotId: string; readonly exchangeId?: string }

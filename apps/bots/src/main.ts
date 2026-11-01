@@ -32,6 +32,7 @@ import { composePulls, pullPublisher } from "./pulls/host.ts";
 import { createDaemonModels } from "./runtime/pi/models.ts";
 import { PiDurableRuntime, type PiSettings } from "./runtime/pi/PiDurableRuntime.ts";
 import { loadToken } from "./server/auth.ts";
+import { ClientStore } from "./server/clients.ts";
 import {
   DEFAULT_CORE_PROMPT,
   type GatewayApi,
@@ -153,6 +154,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
   });
   const canonical: DaemonConfig = { ...config, root };
   const token = await loadToken(root);
+  const clients = await ClientStore.open(root);
   const providers = await createProviderService();
   let gateway: GatewayConfig | undefined;
   // The log exists before the lock so a refused second start is on record, and it holds
@@ -624,6 +626,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
   const daemon = await startServer({
     ...(canonical.deviceSocket === undefined ? {} : { deviceSocket: canonical.deviceSocket }),
     token,
+    clients,
     log,
     registry,
     service,

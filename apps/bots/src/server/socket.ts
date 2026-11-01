@@ -66,6 +66,13 @@ export type ConnectionDeps = {
   readonly server: { readonly version: string; readonly instance: string; readonly pid: number };
   readonly capabilities: Readonly<Record<string, boolean>>;
   readonly connId: string;
+  /**
+   * A credential without `write` may subscribe and read. Its `send` and `abort` are
+   * refused on the open connection instead of blocking the upgrade.
+   */
+  readonly canWrite?: boolean;
+  /** The named CLI client behind this connection; its name is the admission's label. */
+  readonly label?: string;
   readonly register: (socket: WebSocket) => void;
   readonly unregister: (socket: WebSocket) => void;
   readonly idleMs?: number;
@@ -411,6 +418,28 @@ export const attachConnection = (
       });
       return;
     }
+    if (deps.canWrite === false && (command.type === "send" || command.type === "abort")) {
+      // The credential may watch this bot but not act on it (PROTOCOL.md, "CLI clients
+      // and scopes"): the refusal lands on the open connection, which keeps reading.
+      const refusal = serverFailure("auth_scope", "protocol");
+      log.emit("warn", "protocol", Events.commandFail, {
+        trace,
+        connId,
+        ...(command.type === "send" ? { reqId: command.requestId } : {}),
+        failure: refusal,
+        detail: { kind: command.type },
+      });
+      emit({
+        type: "error",
+        trace,
+        kind: "auth_scope",
+        disposition: "not_admitted",
+        failure: refusal.id,
+        message: "this credential may not send or abort",
+        ...(command.type === "send" ? { requestId: command.requestId } : {}),
+      });
+      return;
+    }
     try {
       await run(command, trace);
     } catch (error) {
@@ -455,12 +484,16 @@ export const attachConnection = (
       return;
     }
     if (command.type === "send") {
-      const record = await service.send(connId, {
-        requestId: command.requestId,
-        text: command.text,
-        whenBusy: command.whenBusy,
-        trace,
-      });
+      const record = await service.send(
+        connId,
+        {
+          requestId: command.requestId,
+          text: command.text,
+          whenBusy: command.whenBusy,
+          trace,
+        },
+        deps.label,
+      );
       emit({ type: "submission", trace, record });
       return;
     }

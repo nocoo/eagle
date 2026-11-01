@@ -185,6 +185,8 @@ export class FrameError extends Error {
 
 const ERROR_KINDS: readonly ErrorKind[] = [
   "auth_failed",
+  "auth_scope",
+  "client_active",
   "unknown_bot",
   "invalid_command",
   "limit_exceeded",

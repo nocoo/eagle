@@ -147,7 +147,9 @@ const parseOrigin = (value: unknown): MessageOrigin | undefined => {
   const label = typeof origin.label === "string" ? origin.label : undefined;
   switch (origin.kind) {
     case "human":
-      return { kind: "human" };
+      // A named CLI credential's label is part of the record, or the next read would
+      // attribute the message to a bare "human".
+      return label === undefined ? { kind: "human" } : { kind: "human", label };
     case "unknown":
       return { kind: "unknown" };
     case "schedule":

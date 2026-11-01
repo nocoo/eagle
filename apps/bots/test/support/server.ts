@@ -17,6 +17,7 @@ import { measureEvent } from "../../src/main.ts";
 import { peerApi } from "../../src/peers/api.ts";
 import { peerHostFor } from "../../src/peers/host.ts";
 import { PiDurableRuntime } from "../../src/runtime/pi/PiDurableRuntime.ts";
+import { ClientStore } from "../../src/server/clients.ts";
 import type { GatewayApi } from "../../src/server/gateway.ts";
 import type { TriggerApi, TriggerIngress } from "../../src/server/http.ts";
 import { startServer } from "../../src/server/http.ts";
@@ -63,6 +64,8 @@ export type StackOptions = {
   readonly prepare?: (context: { root: string; directory: BotDirectory }) => Promise<void>;
   /** Reuse a root, so a restart is a restart and not a new daemon on new state. */
   readonly root?: string;
+  /** The clock named CLI credentials read, so `lastUsedAt` throttling is deterministic. */
+  readonly now?: () => Date;
   /** A runtime the test builds itself, for a fault the standard wiring cannot express. */
   readonly runtime?: RuntimePort;
   /** Real-adapter limits: the message projection cap and the snapshot window. */
@@ -89,6 +92,10 @@ export type StackOptions = {
 
 export const startStack = async (options: StackOptions = {}): Promise<Stack> => {
   const root = options.root ?? (await mkdtemp(join(tmpdir(), "bots-server-")));
+  const clients = await ClientStore.open(
+    root,
+    options.now === undefined ? {} : { now: options.now },
+  );
   const { log, records } = captureLog();
   const fake =
     options.real === true
@@ -243,6 +250,7 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
     });
   const daemon = await startServer({
     token,
+    clients,
     log,
     registry: registryView,
     service,

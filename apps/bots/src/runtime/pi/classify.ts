@@ -29,6 +29,9 @@ export type Minted = {
 /** Fixed texts: a report's own message can echo model output, so it never travels. */
 const MESSAGE: Readonly<Record<ErrorKind, string>> = {
   auth_failed: "the model endpoint refused the credentials",
+  // Transport-only kinds: the adapter never mints them, but the map stays total.
+  auth_scope: "the credential may not do that",
+  client_active: "the client is still active",
   unknown_bot: "the bot is unknown",
   invalid_command: "the command was refused",
   limit_exceeded: "the bot is at its queue limit",
