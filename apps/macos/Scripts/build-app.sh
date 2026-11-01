@@ -53,6 +53,11 @@ if [ ! -x "$HELPER" ]; then
   echo "Build requires the EagleDeviceHelper SPM executable target" >&2
   exit 1
 fi
+CLI="$BINARY_DIRECTORY/eagle-cli"
+if [ ! -x "$CLI" ]; then
+  echo "Build requires the eagle-cli SPM executable target" >&2
+  exit 1
+fi
 OUTPUT_DIRECTORY=".build/$PROFILE"
 APP="$OUTPUT_DIRECTORY/$APP_NAME"
 mkdir -p "$OUTPUT_DIRECTORY"
@@ -64,7 +69,7 @@ if [ ! -f Sources/EagleDesign/Resources/AppIcon.icns ]; then
   swift Scripts/make-icon.swift
 fi
 "$NODE_BINARY" Scripts/assemble-device-app.ts --app "$STAGED_APP" \
-  --binary "$BINARY" --helper "$HELPER" --profile "$PROFILE" \
+  --binary "$BINARY" --helper "$HELPER" --cli "$CLI" --profile "$PROFILE" \
   --service-url "${EAGLE_DEVICE_SERVICE_URL:-}" \
   --github-url "${EAGLE_GITHUB_URL:-$(node -p "require('../../package.json').config.repositoryUrl" 2>/dev/null || true)}" \
   --release-url "${EAGLE_RELEASE_URL:-$(node -p "require('../../package.json').config.macosReleaseUrl" 2>/dev/null || true)}" \

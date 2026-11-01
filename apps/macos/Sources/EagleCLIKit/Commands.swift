@@ -143,10 +143,12 @@ public struct Commands: Sendable {
   // MARK: - Read-only
 
   private func version() async throws {
-    let health = try await client.request("GET", "v1/health")
-    let daemon = health["version"] as? String ?? "unknown"
+    // The local version prints even when the daemon is down: that is the diagnostic case.
+    let daemon = (try? await client.request("GET", "v1/health", requiresAuth: false))
+      .flatMap { $0["version"] as? String }
+    let tail = daemon.map { "daemon \($0)" } ?? "daemon unreachable"
     printer.text(
-      "\(config.binaryName) \(EagleCLIKit.version) · daemon \(daemon) · \(config.baseURL.absoluteString)"
+      "\(config.binaryName) \(EagleCLIKit.version) · \(tail) · \(config.baseURL.absoluteString)"
     )
   }
 

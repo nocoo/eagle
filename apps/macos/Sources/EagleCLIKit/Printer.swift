@@ -49,16 +49,39 @@ public struct Printer: Sendable {
   }
 }
 
-/// The CLI's own identity: the App's version when it ships inside the bundle.
+/// The CLI's own identity: the App's version when it ships inside the bundle. A helper
+/// binary has no `Info.plist` of its own, so the enclosing `.app` is what carries it.
 public enum EagleCLIKit {
   public static var version: String {
-    let info = Bundle.main.infoDictionary
-    if let short = info?["EagleVersion"] as? String, !short.isEmpty, short != "dev" {
-      return short
-    }
-    if let short = info?["CFBundleShortVersionString"] as? String, !short.isEmpty, short != "dev" {
+    if let short = version(inAppContaining: executableURL), !short.isEmpty { return short }
+    if let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+      !short.isEmpty, short != "dev"
+    {
       return short
     }
     return "dev"
+  }
+
+  private static var executableURL: URL {
+    (CommandLine.arguments.first.map { URL(fileURLWithPath: $0) } ?? URL(fileURLWithPath: ""))
+      .resolvingSymlinksInPath()
+  }
+
+  /// Walks up from the binary until a `Contents/Info.plist` names a version.
+  private static func version(inAppContaining executable: URL) -> String? {
+    var directory = executable.deletingLastPathComponent()
+    for _ in 0..<5 {
+      let plist = directory.appendingPathComponent("Contents/Info.plist")
+      if let data = try? Data(contentsOf: plist),
+        let object = try? PropertyListSerialization.propertyList(
+          from: data, options: [], format: nil) as? [String: Any],
+        let short = object["CFBundleShortVersionString"] as? String,
+        !short.isEmpty, short != "dev"
+      {
+        return short
+      }
+      directory = directory.deletingLastPathComponent()
+    }
+    return nil
   }
 }

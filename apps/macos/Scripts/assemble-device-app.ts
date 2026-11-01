@@ -34,6 +34,8 @@ type PrepareOptions = {
   app: string;
   binary: string;
   helper: string;
+  /** The `eagle` / `eagle-dev` command this bundle installs (docs/bots/CLI.md). */
+  cli?: string;
   profile: Profile;
   serviceUrl?: string;
   /** Where the app links a person for the code, the releases and the version check. */
@@ -142,6 +144,7 @@ export function prepareDeviceBundle(options: PrepareOptions): void {
   const contents = join(app, "Contents");
   const resources = join(contents, "Resources");
   mkdirSync(join(contents, "MacOS"), { recursive: true });
+  mkdirSync(join(contents, "Helpers"), { recursive: true });
   mkdirSync(resources);
   mkdirSync(join(contents, "Library/LaunchServices"), { recursive: true });
   mkdirSync(join(contents, "Library/LaunchAgents"));
@@ -149,6 +152,16 @@ export function prepareDeviceBundle(options: PrepareOptions): void {
   copyFileSync(helper, join(app, helperRelative));
   chmodSync(join(contents, "MacOS/Eagle"), 0o755);
   chmodSync(join(app, helperRelative), 0o755);
+  if (options.cli !== undefined) {
+    // A released App installs `eagle`; a candidate keeps `eagle-dev`, so the two never
+    // take each other's link, config file or credential.
+    const command = join(
+      contents,
+      `Helpers/${profile === "device-release" ? "eagle" : "eagle-dev"}`,
+    );
+    copyFileSync(options.cli, command);
+    chmodSync(command, 0o755);
+  }
   writeFileSync(join(contents, "Info.plist"), info);
   copyFileSync(
     join(macos, "Sources/EagleDesign/Resources/AppIcon.icns"),
@@ -366,6 +379,7 @@ if (
         binary: { type: "string" },
         helper: { type: "string" },
         profile: { type: "string", default: "device-candidate" },
+        cli: { type: "string" },
         "service-url": { type: "string" },
         "github-url": { type: "string" },
         "release-url": { type: "string" },
@@ -401,6 +415,7 @@ if (
         app: resolve(values.app),
         binary: resolve(values.binary),
         helper: resolve(values.helper),
+        cli: values.cli === undefined ? undefined : resolve(values.cli),
         profile: values.profile as Profile,
         serviceUrl: values["service-url"],
         links: {

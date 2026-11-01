@@ -42,6 +42,8 @@ public struct SettingsView: View {
         providersPage
       case .machines:
         DeviceSettingsView(model: devices)
+      case .cli:
+        CLISettingsView()
       case .usage:
         usage
       case .about:
