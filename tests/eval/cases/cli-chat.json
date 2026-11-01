@@ -68,12 +68,17 @@
       "stdoutContains": "aborted"
     },
     {
+      "kind": "waitSubmission",
+      "status": "unanswered",
+      "timeoutMs": 5000
+    },
+    {
       "kind": "releaseModel",
       "hold": "slow"
     },
     {
       "kind": "sleep",
-      "ms": 1500
+      "ms": 800
     },
     {
       "kind": "cli",

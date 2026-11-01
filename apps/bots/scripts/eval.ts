@@ -92,6 +92,19 @@ type Step =
       readonly mode?: string;
     }
   | {
+      /** Waits until a submission reached `status`: how a case sees an abort confirmed. */
+      readonly kind: "waitSubmission";
+      readonly status: string;
+      readonly timeoutMs?: number;
+    }
+  | {
+      /** Sends `count` messages in order, waiting for each to settle: a long transcript. */
+      readonly kind: "chatBurst";
+      readonly text: string;
+      readonly count: number;
+      readonly timeoutMs?: number;
+    }
+  | {
       /** Waits until the scripted model has answered `count` requests: an in-flight run. */
       readonly kind: "waitModelRequest";
       readonly count: number;
@@ -107,6 +120,8 @@ type Step =
       readonly stdoutContains?: string;
       /** A string that must not appear: how a case proves a refused write did nothing. */
       readonly stdoutExcludes?: string;
+      /** Dotted paths to arrays and the exact length each must have. */
+      readonly jsonLengths?: Readonly<Record<string, number>>;
       readonly stderrContains?: string;
       /** Subset match against the last JSON line on stdout. */
       readonly json?: unknown;
@@ -421,6 +436,7 @@ const viewer = async (port: number, token: string, botId: string) => {
     errors,
     triggers,
     settled: (requestId: string): string | undefined => submissions.get(requestId),
+    statuses: (): string[] => [...submissions.values()],
     send: (text: string, requestId: string): void => {
       socket.send(
         JSON.stringify({
@@ -808,7 +824,43 @@ const runCase = async (
             );
             assertSubset(lastJsonLine(stdout), expected, command);
           }
+          for (const [path, length] of Object.entries(step.jsonLengths ?? {})) {
+            const value = path
+              .split(".")
+              .reduce<unknown>(
+                (node, key) => (node as Record<string, unknown> | undefined)?.[key],
+                lastJsonLine(stdout),
+              );
+            if (!Array.isArray(value) || value.length !== length) {
+              failure(
+                `${command}: ${path} has ${Array.isArray(value) ? value.length : "no"} entries, expected ${length}`,
+              );
+            }
+          }
           if (step.capture !== undefined) captured.set(step.capture, lastJsonLine(stdout));
+          break;
+        }
+        case "waitSubmission":
+          await waitUntil(
+            () => view.statuses().includes(step.status),
+            `a ${step.status} submission`,
+            stepBudget,
+          );
+          break;
+        case "chatBurst": {
+          for (let sent = 0; sent < step.count; sent += 1) {
+            requestSeq += 1;
+            const requestId = `r_burst_${String(requestSeq).padStart(4, "0")}`;
+            view.send(`${step.text} ${sent + 1}`, requestId);
+            await waitUntil(
+              () => {
+                const status = view.settled(requestId);
+                return status === "done" || status === "unanswered";
+              },
+              `burst message ${sent + 1} to settle`,
+              stepBudget,
+            );
+          }
           break;
         }
         case "waitModelRequest":

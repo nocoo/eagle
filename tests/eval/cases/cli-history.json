@@ -1,0 +1,37 @@
+{
+  "id": "cli-history",
+  "title": "历史分页：截断的 snapshot 用 truncatedBefore 找到第一页",
+  "kind": "chat",
+  "notes": "A snapshot holds a bounded window, so a long transcript makes `truncatedBefore` appear. `chat history` without `--before` must page from that boundary; reading it from the wrong place prints an empty page and this case fails.",
+  "timeoutMs": 240000,
+  "model": {
+    "script": [
+      {
+        "text": "好"
+      }
+    ],
+    "repeatLast": true
+  },
+  "steps": [
+    {
+      "kind": "chatBurst",
+      "text": "消息",
+      "count": 201,
+      "timeoutMs": 180000
+    },
+    {
+      "kind": "cli",
+      "args": ["chat", "history", "eval cli-history", "--json", "--limit", "2"],
+      "json": {
+        "messages": [{}, {}]
+      }
+    },
+    {
+      "kind": "cli",
+      "args": ["chat", "history", "eval cli-history", "--json", "--limit", "1"],
+      "json": {
+        "messages": [{}]
+      }
+    }
+  ]
+}

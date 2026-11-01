@@ -50,6 +50,9 @@
         "usage": {
           "week": {}
         }
+      },
+      "jsonLengths": {
+        "usage.days": 7
       }
     },
     {
