@@ -8,6 +8,8 @@ public struct CLISettingsView: View {
   @State private var newName = ""
   @State private var newScopes: Set<String> = ["read", "write"]
   @State private var showsIssueRow = false
+  @State private var copiedToken = false
+  @State private var copiedCommand = false
 
   public init(model: CLISettingsViewModel = CLISettingsViewModel()) {
     self.model = model
@@ -84,6 +86,17 @@ public struct CLISettingsView: View {
     }
   }
 
+  /// Copies and says so for a moment: the button is the only confirmation a person gets.
+  private func copy(_ text: String, feedback: Binding<Bool>) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+    feedback.wrappedValue = true
+    Task { @MainActor in
+      try? await Task.sleep(for: .seconds(2))
+      feedback.wrappedValue = false
+    }
+  }
+
   private var installBinding: Binding<Bool> {
     Binding(
       get: { model.installed },
@@ -105,10 +118,11 @@ public struct CLISettingsView: View {
             .truncationMode(.middle)
             .accessibilityIdentifier("cli.token")
           Spacer(minLength: 0)
-          SettingsActionButton("复制") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(token, forType: .string)
+          SettingsActionButton(copiedToken ? "已复制" : "复制") {
+            copy(token, feedback: $copiedToken)
           }
+          .accessibilityIdentifier("cli.copy.token")
+          .accessibilityLabel(copiedToken ? "已复制" : "复制凭据")
           SettingsActionButton("完成") { model.dismissIssuedToken() }
         }
         .padding(.vertical, 14)
@@ -269,10 +283,11 @@ public struct CLISettingsView: View {
               .foregroundStyle(Theme.Palette.textSecondary)
           }
           Spacer(minLength: 0)
-          SettingsActionButton("复制命令") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString("\(model.commandName) --skill", forType: .string)
+          SettingsActionButton(copiedCommand ? "已复制" : "复制命令") {
+            copy("\(model.commandName) --skill", feedback: $copiedCommand)
           }
+          .accessibilityIdentifier("cli.copy.skill")
+          .accessibilityLabel(copiedCommand ? "已复制" : "复制命令")
         }
         .padding(.vertical, 14)
       }
