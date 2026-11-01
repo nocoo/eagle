@@ -219,19 +219,29 @@ revoke it and delete it again (`CLI.md` owns the CLI itself).
 
 ## The bot's own note
 
-`BotSummary.note` is the one line a Bot writes about itself, so a sidebar row says what a
-Bot is doing without opening its conversation (which costs a socket and a restore).
+`BotSummary.note` is the one line a sidebar row shows about a Bot, so a person knows what
+it is doing without opening the conversation (which costs a socket and a restore).
 
-- **It is the Bot's, not the person's.** The `note_set` tool in the `core` group writes it;
-  `PATCH /v1/bots/:id` exists so a client can read it back and clear it (`"note": null`),
-  never so a client can invent a status.
+- **It is refreshed by every settled run.** When a run settles the daemon writes this
+  run's line: the value the Bot gave `note_set` during that run, or — when it gave none —
+  the first sentence of that run's answer, whitespace collapsed, at most 120 characters,
+  cut at a character boundary. The derivation is local and deterministic: no model call,
+  no extra tokens.
+- **A Bot refines it, the daemon keeps it.** `note_set` (the `core` group) is how a Bot
+  replaces the derived line with a better one ("在等 PR 审核" instead of the answer's first
+  sentence), and `""` is how it clears the line for this run. A cleared line is not
+  re-derived in the same run.
+- **The next run owns the next line.** A Bot that stopped caring about its note does not
+  leave a stale one behind: the following settled run replaces it.
 - **Bounded and normalized.** Whitespace runs collapse to one space, the value is trimmed,
-  and 120 characters is the cap. A longer note is refused instead of truncated: a silently
-  shortened status line is a lie.
+  and 120 characters is the cap. A longer `note_set` value is refused instead of
+  truncated: a silently shortened status line is a lie.
 - **Catalog-visible.** The value rides on `BotSummary`, so `bots` events carry it and no
-  extra read is needed. Setting or clearing it republishes the catalog.
-- **Optional.** Absent means the Bot never set one; a client may then show its own derived
-  preview, and must not invent text of its own.
+  extra read is needed. `PATCH /v1/bots/:id` with `"note": null` clears it from a client;
+  clients never invent a status.
+- **The Bot can see its own line.** The `bots-tools` section of its system prompt carries
+  the current note and its age, so a stale line is visible to the model rather than only
+  to the person.
 
 ## Group rules
 

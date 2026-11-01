@@ -121,7 +121,7 @@ types/source remain authoritative for native argument details and output limits.
 
 | Group / tool | Input | Behavior | Replay |
 | --- | --- | --- | --- |
-| `core` / `note_set` | `text` | The Bot's own one-line status for the sidebar, trimmed, whitespace collapsed, at most 120 characters; an empty string clears it. Idempotent by value, so a replay writes the same line | Safe |
+| `core` / `note_set` | `text` | The Bot's own line for the sidebar, replacing the answer's first sentence the daemon would otherwise derive for this run; trimmed, whitespace collapsed, at most 120 characters; an empty string clears it for this run. Idempotent by value | Safe |
 | `core` / `list` | `path?, limit?` | Recursive, directory-relative paths; default 2,000 entries, at most 50 KiB; sorted per directory; does not traverse symlinks or common generated/dependency directories | Safe |
 | `coding` / `read` | `path, offset?, limit?` | Native text paging, diagnostics and supported image input; offset is one-based | SDK default unsafe |
 | `coding` / `write` | `path, content` | Native whole-file UTF-8 creation/replacement, including parent directories | SDK default unsafe |
