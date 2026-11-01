@@ -7,6 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import type { BotSummary } from "../../src/core/domain.ts";
 import { MAX_HTTP_BODY_BYTES } from "../../src/protocol/limits.ts";
+import { text } from "../support/pi.ts";
 import { frameQueue, hello, send, startStack } from "../support/server.ts";
 
 const api = (stack: { port: number; token: string }) => {
@@ -137,6 +138,37 @@ test("a bot's own note rides the catalog, clears with null and refuses a long on
     const blank = await client.patch(bot.id, { note: "   " });
     assert.equal(blank.status, 200);
     assert.equal(((await blank.json()) as { bot: BotSummary }).bot.note, undefined);
+    socket.close();
+  } finally {
+    await stack.close();
+  }
+});
+
+test("a settled run refreshes the sidebar line and the catalog event carries it", async () => {
+  const stack = await startStack({ real: true, note: true });
+  try {
+    assert.ok(stack.faux !== undefined);
+    stack.faux.setResponses([text("已提交 PR。等待审核。")]);
+    const botId = await stack.createBot("研究员");
+    const socket = stack.connect();
+    const frames = frameQueue(socket);
+    await send(socket, hello);
+    await frames.next();
+    await send(socket, { type: "subscribe", botId, trace: "tr_note_run_0123456" });
+    for (;;) {
+      const frame = await frames.next(10_000);
+      if (frame.type === "snapshot") break;
+    }
+    await send(socket, {
+      type: "send",
+      requestId: "r_note_run",
+      text: "开始",
+      whenBusy: "followUp",
+      trace: "tr_note_run_0123456",
+    });
+    // The derived line, not a tool's: nothing in this run called note_set.
+    await untilBots(frames, (candidate) => candidate?.note === "已提交 PR。");
+    assert.equal((await stack.directory.load())[0]?.note, "已提交 PR。", "the catalog holds it");
     socket.close();
   } finally {
     await stack.close();

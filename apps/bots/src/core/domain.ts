@@ -210,6 +210,68 @@ export const normalizeBotNote = (text: string): string | undefined => {
   return note.length === 0 ? undefined : note;
 };
 
+const SENTENCE_END = /[。！？.!?]/u;
+
+/** The line one answer derives: its first sentence, whitespace collapsed, capped. */
+export const deriveBotNote = (text: string): string | undefined => {
+  const collapsed = normalizeBotNote(text);
+  if (collapsed === undefined) return undefined;
+  const end = collapsed.search(SENTENCE_END);
+  const sentence = end === -1 ? collapsed : collapsed.slice(0, end + 1);
+  // Cut by code point: half a surrogate pair is not a shorter line, it is a broken one.
+  return [...sentence].slice(0, MAX_BOT_NOTE_CHARS).join("").trim();
+};
+
+/** How stale a line is, in the units a person reads: minutes, hours, then days. */
+export const formatNoteAge = (at: string, now: number): string | undefined => {
+  const written = Date.parse(at);
+  if (Number.isNaN(written)) return undefined;
+  const minutes = Math.floor(Math.max(0, now - written) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+};
+
+/**
+ * What the `bots-tools` section tells the model about its own line. A model that cannot see
+ * a stale line keeps refining it blindly, so the age travels with the value.
+ */
+export const noteLine = (
+  current: { readonly note?: string; readonly at?: string },
+  now: number,
+): string => {
+  if (current.note === undefined) {
+    return "Your sidebar line is empty; the daemon fills it with your answer's first sentence after every run.";
+  }
+  const age = current.at === undefined ? undefined : formatNoteAge(current.at, now);
+  const when = age === undefined ? "" : ` (written ${age})`;
+  return `Your sidebar line reads "${current.note}"${when}.`;
+};
+
+/** What one run did to its own line: the last note_set value, or nothing at all. */
+export type RunNote = {
+  record(text: string): void;
+  /** Reads the run's own value and forgets it: one value belongs to one run. */
+  take(): string | undefined;
+};
+
+export const createRunNote = (): RunNote => {
+  let value: string | undefined;
+  return {
+    record: (text) => {
+      value = text;
+    },
+    take: () => {
+      const taken = value;
+      value = undefined;
+      return taken;
+    },
+  };
+};
+
 export type BotSummary = {
   readonly id: BotId;
   readonly title: string;
@@ -335,6 +397,8 @@ export type BotRecord = {
   readonly label?: string;
   /** The Bot's own one-line status; absent means it never set one. */
   readonly note?: string;
+  /** When that line was written; it lives and dies with the note and never rides the wire. */
+  readonly noteAt?: string;
   /** Absent in catalogs written before appearance existed; defaults on load. */
   readonly appearance?: BotAppearance;
   readonly createdAt: string;

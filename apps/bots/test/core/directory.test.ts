@@ -433,6 +433,30 @@ test("a note is normalized, survives a restart and is cleared without an empty f
   }
 });
 
+test("a note keeps when it was written, and clearing it deletes the time too", async () => {
+  const { root, dir } = await workspace();
+  try {
+    await dir.create(record("b_1"));
+    await dir.update("b_1", { note: "正在核对" }, "2026-10-25T04:00:00.000Z");
+    const kept = await dir.update("b_1", { title: "改个名字" }, "2026-10-25T05:00:00.000Z");
+    assert.equal(kept.noteAt, "2026-10-25T04:00:00.000Z", "an unrelated edit keeps the time");
+
+    const restarted = new BotDirectory(root, await nodeDirectoryFs());
+    const reloaded = (await restarted.load())[0];
+    assert.equal(reloaded?.note, "正在核对");
+    assert.equal(reloaded?.noteAt, "2026-10-25T04:00:00.000Z", "the time survives a restart");
+
+    await dir.update("b_1", { note: null }, "2026-10-25T06:00:00.000Z");
+    const catalog = JSON.parse(await readFile(dir.catalogPath, "utf8")) as {
+      bots: Record<string, unknown>[];
+    };
+    assert.equal("note" in (catalog.bots[0] ?? {}), false, "clearing deletes the note");
+    assert.equal("noteAt" in (catalog.bots[0] ?? {}), false, "and the time goes with it");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("an over-long note is refused and the stored note is untouched", async () => {
   const { root, dir } = await workspace();
   try {

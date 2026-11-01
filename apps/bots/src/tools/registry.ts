@@ -7,7 +7,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-search";
 import { CodingTools, createBashTool } from "@earendil-works/pi-durable/tools";
-import { resolveToolGroups, type ToolGroup } from "../core/domain.ts";
+import { noteLine, resolveToolGroups, type ToolGroup } from "../core/domain.ts";
 import type { Log } from "../log/log.ts";
 import { AGENTS_TOOLS_EXTENSION, agentsExtension } from "./agents/tools.ts";
 import { SocketDevicePort } from "./devices/port.ts";
@@ -107,6 +107,8 @@ export type ToolRegistryOptions = {
   readonly pulls?: Parameters<typeof pullsExtension>[0];
   /** The bot's own sidebar note; absent only in a build with no catalog around it. */
   readonly note?: NoteToolHost;
+  /** The clock the note's age is read against; the daemon's own when absent. */
+  readonly now?: () => number;
 };
 
 export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistryOptions = {}) => {
@@ -148,7 +150,10 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
           [
             `Your default working directory is ${agent.cwd ?? workspace.root}.`,
             "Use list to discover files, read to inspect them, edit for targeted changes, write for whole files, and bash for commands.",
-            "Keep the one line a person sees next to this bot in their sidebar with note_set: it is a status, so update it when the work changes, not every turn.",
+            "Keep the one line a person sees next to this bot in their sidebar with note_set: it is a status, so rewrite it when the nature of the work changes, not every turn; a plain follow-up leaves it alone.",
+            ...(options.note === undefined
+              ? []
+              : [noteLine(options.note.current(), (options.now ?? Date.now)())]),
             devices === undefined
               ? "Tool calls run without asking the user first."
               : "Local tools follow the shared device policy.",

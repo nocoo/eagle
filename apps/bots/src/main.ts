@@ -68,6 +68,7 @@ import {
   type MachinePrompt,
   readMachinePrompt,
 } from "./tools/machine/tools.ts";
+import { createNoteHost } from "./tools/note.ts";
 import type { SearchClient } from "./tools/search/client.ts";
 import { createDeepSeekSearch } from "./tools/search/deepseek.ts";
 import { createTavilySearch } from "./tools/search/tavily.ts";
@@ -349,20 +350,21 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
       }),
     pulls: pulls.runtimeHost,
     // The tool owns the line; the catalog owns the truth, and the broadcast is how the
-    // sidebar sees it without another read.
-    note: (spec) => ({
-      botId: spec.id,
-      async set(text) {
-        noteTraces += 1;
-        const bot = await registry.update(
-          spec.id,
-          { note: text },
-          `tr_note_${Date.now().toString(36)}_${noteTraces.toString(36)}`,
-        );
-        broadcast?.();
-        return bot.note === undefined ? {} : { note: bot.note };
-      },
-    }),
+    // sidebar sees it without another read. A settled run writes through the same host.
+    note: (spec) =>
+      createNoteHost({
+        botId: spec.id,
+        async write(text) {
+          noteTraces += 1;
+          return registry.update(
+            spec.id,
+            { note: text },
+            `tr_note_${Date.now().toString(36)}_${noteTraces.toString(36)}`,
+          );
+        },
+        current: () => registry.noteOf(spec.id),
+        changed: () => broadcast?.(),
+      }),
     peers: async (spec) =>
       peerHostFor({
         botId: spec.id,

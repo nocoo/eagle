@@ -25,7 +25,13 @@ import {
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type { ConversationSnapshot, Message, Submission, TaskSummary } from "../../core/domain.ts";
-import { ClassifiedFailure, resolveToolGroups } from "../../core/domain.ts";
+import {
+  ClassifiedFailure,
+  createRunNote,
+  deriveBotNote,
+  type RunNote,
+  resolveToolGroups,
+} from "../../core/domain.ts";
 import type {
   RuntimeBotSpec,
   RuntimeEvent,
@@ -80,6 +86,8 @@ const Events = {
   piSessionClosed: declareEvent("pi.session.closed"),
   toolsRefreshOk: declareEvent("runtime.tools.refresh.ok"),
   toolsRefreshFail: declareEvent("runtime.tools.refresh.fail"),
+  // The line a settled run writes is a catalog field, so a failed write is recorded as one.
+  catalogWriteFail: declareEvent("core.catalog.write.fail"),
 } as const;
 
 /** The subset of `HarnessSettings` the adapter decides; pi fills in the rest. */
@@ -196,6 +204,21 @@ export class PiDurableRuntime implements RuntimePort {
       const peers = await this.#options.peers?.(spec);
       const pulls = await this.#options.pulls?.(spec);
       const note = this.#options.note?.(spec);
+      const runNote = createRunNote();
+      // The tool owns what the Bot wrote; this run keeps the last value so its settlement
+      // writes the Bot's line instead of deriving another one over it.
+      const noteTools =
+        note === undefined
+          ? undefined
+          : {
+              botId: note.botId,
+              current: () => note.current(),
+              async set(text: string) {
+                const written = await note.set(text);
+                runNote.record(text);
+                return written;
+              },
+            };
       const registry = createToolRegistry(workspace, {
         ...(this.#options.corePrompt === undefined ? {} : { persona: this.#options.corePrompt }),
         ...(this.#options.machinePrompt === undefined
@@ -219,7 +242,8 @@ export class PiDurableRuntime implements RuntimePort {
         ...(trigger === undefined ? {} : { trigger }),
         ...(peers === undefined ? {} : { peers }),
         ...(pulls === undefined ? {} : { pulls }),
-        ...(note === undefined ? {} : { note }),
+        ...(noteTools === undefined ? {} : { note: noteTools }),
+        ...(this.#options.now === undefined ? {} : { now: this.#options.now }),
       });
       const installed = selectToolExtensions(registry, groups);
       const harness = await HarnessFactory.open(
@@ -260,6 +284,8 @@ export class PiDurableRuntime implements RuntimePort {
         classifier,
         options: this.#options,
         registry,
+        runNote,
+        ...(note === undefined ? {} : { note }),
       });
       handle.attachTaskGraph(await harness.taskGraph(BACKGROUND_CONTEXT));
       harness.closed.then((end) => handle?.sessionEnd(end));
@@ -309,6 +335,10 @@ type HandleOptions = {
   readonly classifier: FailureClassifier;
   readonly options: PiRuntimeOptions;
   readonly registry: Registry;
+  /** The catalog line this bot owns; absent in a build with no catalog around it. */
+  readonly note?: NoteToolHost;
+  /** What the run in flight gave note_set, so its settlement writes that and nothing else. */
+  readonly runNote: RunNote;
 };
 
 class PiRuntimeHandle implements RuntimeHandle {
@@ -320,6 +350,8 @@ class PiRuntimeHandle implements RuntimeHandle {
   readonly #rootId: ConversationId;
   readonly #classifier: FailureClassifier;
   readonly #options: PiRuntimeOptions;
+  readonly #note: NoteToolHost | undefined;
+  readonly #runNote: RunNote;
   readonly #mapper: EventMapper;
   /** One logical subscription per sink, holding whichever stream is current. */
   readonly #subscriptions = new Map<(event: RuntimeEvent) => void, Subscription>();
@@ -346,6 +378,12 @@ class PiRuntimeHandle implements RuntimeHandle {
   #watchSequence = 0;
   #closing: Promise<void> | undefined;
   #resubscribed = false;
+  /** The answer text of the run in flight, for the line its settlement derives. */
+  #runAnswer: string | undefined;
+  /** The run whose line was already written, so a second subscriber cannot write it twice. */
+  #settledRun: string | undefined;
+  /** Serializes the settlements: a line lands in the order its runs settled. */
+  #noteQueue: Promise<unknown> = Promise.resolve();
 
   constructor(options: HandleOptions) {
     this.#spec = options.spec;
@@ -354,6 +392,8 @@ class PiRuntimeHandle implements RuntimeHandle {
     this.#classifier = options.classifier;
     this.#options = options.options;
     this.#registry = options.registry;
+    this.#note = options.note;
+    this.#runNote = options.runNote;
     this.#toolGroups = resolveToolGroups(options.spec.toolGroups);
     this.#mapper = new EventMapper({
       botId: options.spec.id,
@@ -1044,6 +1084,7 @@ class PiRuntimeHandle implements RuntimeHandle {
       for (const mapped of this.#mapOne(event, trace, byEntry, active)) {
         this.#deliver(state, mapped);
       }
+      this.#followRun(event, trace);
     }
     // The commit belongs to the run it ends, including the settlement that follows
     // `run_end` in the same batch; a run that starts in this batch sets its own trace.
@@ -1194,6 +1235,58 @@ class PiRuntimeHandle implements RuntimeHandle {
     if (record.requestId.length === 0) return;
     this.#submissionIds.set(record.requestId, record.id);
     this.#requestIds.set(record.id, record.requestId);
+  }
+
+  /**
+   * Keeps what one settled run's line needs: the newest answer text and the value the Bot
+   * gave note_set. Runs on every subscriber's batch, so the second one must not write again.
+   */
+  #followRun(event: AgentEvent, trace: string): void {
+    if (event.type === "run_start") {
+      this.#runAnswer = undefined;
+      return;
+    }
+    if (event.type === "message_end") {
+      const message = this.#mapper.entryMessage(event.entry);
+      const answer =
+        message === undefined || message.role !== "assistant"
+          ? undefined
+          : message.blocks.map((block) => (block.type === "text" ? block.text : "")).join("");
+      if (answer !== undefined && answer !== "") this.#runAnswer = answer;
+      return;
+    }
+    if (event.type !== "run_end") return;
+    const run = event.inputs.join(",");
+    if (run === this.#settledRun) return;
+    this.#settledRun = run;
+    const answer = this.#runAnswer;
+    this.#runAnswer = undefined;
+    this.#settleNote(answer, trace);
+  }
+
+  /**
+   * Writes the run's line and broadcasts it through the host: the value the Bot gave, or the
+   * line its answer derives. One write per run, and a failed write is never the run's failure.
+   */
+  #settleNote(answer: string | undefined, trace: string): void {
+    const host = this.#note;
+    if (host === undefined) return;
+    const given = this.#runNote.take();
+    const note = given === undefined ? deriveBotNote(answer ?? "") : given;
+    const written = this.#noteQueue.then(() => host.set(note ?? ""));
+    this.#noteQueue = written.catch(() => undefined);
+    void written.catch((cause: unknown) => {
+      // The catalog write records its own origin; this only says the settled run handed the
+      // failure on, with the same identity. A host that fails without classifying cannot be
+      // attributed here, and inventing an identity would describe a second episode.
+      if (!(cause instanceof ClassifiedFailure)) return;
+      this.#options.log.emit("warn", "core", Events.catalogWriteFail, {
+        trace,
+        botId: this.#spec.id,
+        failure: cause.failure,
+        propagated: true,
+      });
+    });
   }
 
   #broadcast(event: RuntimeEvent): void {

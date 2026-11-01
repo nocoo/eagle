@@ -14,6 +14,18 @@ import {
 } from "../../src/tools/registry.ts";
 import { openWorkspace } from "../../src/tools/workspace.ts";
 
+/** The one section the model reads before it decides what to do with its own line. */
+const botsToolsSection = (registry: ReturnType<typeof createToolRegistry>): string => {
+  const entry = registry
+    .snapshot()
+    .sections()
+    .find(({ section }) => section.key === "bots-tools");
+  assert.ok(entry, "bots-tools is installed");
+  const text = entry.section.render({ agent: {} } as never, {} as never);
+  assert.equal(typeof text, "string");
+  return text as string;
+};
+
 test("a shared device registry exposes no Herdr writes outside device policy", () => {
   const registry = createToolRegistry(
     { root: "/tmp" },
@@ -105,13 +117,16 @@ test("note_set belongs to core and its section tells the model when to write it"
   try {
     const workspace = await openWorkspace(join(daemonRoot, "workspace"));
     const calls: string[] = [];
+    const now = Date.parse("2026-10-25T06:00:00.000Z");
     const registry = createToolRegistry(workspace, {
+      now: () => now,
       note: {
         botId: "b_1",
         async set(text) {
           calls.push(text);
           return text.length === 0 ? {} : { note: text };
         },
+        current: () => ({ note: "在等 PR 审核", at: "2026-10-25T03:00:00.000Z" }),
       },
     });
     assert.deepEqual(
@@ -126,16 +141,32 @@ test("note_set belongs to core and its section tells the model when to write it"
         ?.tools?.map((tool) => tool.name),
       ["list", "note_set"],
     );
-    const section = registry
-      .snapshot()
-      .sections()
-      .find(({ section: entry }) => entry.key === "bots-tools");
-    assert.ok(section);
-    const text = section.section.render({ agent: {} } as never, {} as never);
-    assert.equal(typeof text, "string");
-    assert.match(text as string, /note_set/);
-    assert.match(text as string, /sidebar/);
-    assert.match(text as string, /not every turn/);
+    const text = botsToolsSection(registry);
+    assert.match(text, /note_set/);
+    assert.match(text, /sidebar/);
+    assert.match(text, /not every turn/);
+    assert.match(text, /在等 PR 审核/, "the model sees its own line");
+    assert.match(text, /3 hours ago/, "and how stale it is");
+  } finally {
+    await rm(daemonRoot, { recursive: true, force: true });
+  }
+});
+
+test("a bot with no note is told the line is empty rather than left guessing", async () => {
+  const daemonRoot = await mkdtemp(join(tmpdir(), "bots-note-empty-"));
+  try {
+    const workspace = await openWorkspace(join(daemonRoot, "workspace"));
+    const registry = createToolRegistry(workspace, {
+      note: {
+        botId: "b_1",
+        set: async (text) => (text.length === 0 ? {} : { note: text }),
+        current: () => ({}),
+      },
+    });
+    const text = botsToolsSection(registry);
+    assert.match(text, /sidebar/);
+    assert.match(text, /empty/);
+    assert.equal(text.includes("ago"), false);
   } finally {
     await rm(daemonRoot, { recursive: true, force: true });
   }

@@ -89,6 +89,7 @@ const RECORD_KEYS = new Set([
   "title",
   "label",
   "note",
+  "noteAt",
   "appearance",
   "createdAt",
   "updatedAt",
@@ -107,9 +108,15 @@ const isBotRecord = (value: unknown): value is BotConfig => {
   const optional = value as { instructions?: unknown; thinkingLevel?: unknown };
   if (optional.instructions !== undefined && typeof optional.instructions !== "string")
     return false;
-  const labelled = value as { label?: unknown; note?: unknown; appearance?: unknown };
+  const labelled = value as {
+    label?: unknown;
+    note?: unknown;
+    noteAt?: unknown;
+    appearance?: unknown;
+  };
   if (labelled.label !== undefined && typeof labelled.label !== "string") return false;
   if (labelled.note !== undefined && typeof labelled.note !== "string") return false;
+  if (labelled.noteAt !== undefined && typeof labelled.noteAt !== "string") return false;
   if (labelled.appearance !== undefined) {
     const appearance = labelled.appearance;
     if (!isObject(appearance)) return false;
@@ -300,7 +307,7 @@ export class BotDirectory {
       const index = bots.findIndex((bot) => bot.id === id);
       if (index === -1) throw new DirectoryError("unknown_bot", `bot ${id} does not exist`);
       const current = bots[index] as BotConfig;
-      const { label, note: storedNote, ...rest } = current;
+      const { label, note: storedNote, noteAt: storedNoteAt, ...rest } = current;
       const note =
         changes.note === undefined
           ? storedNote
@@ -313,6 +320,10 @@ export class BotDirectory {
           `a note is at most ${MAX_BOT_NOTE_CHARS} characters`,
         );
       }
+      // The time is the note's own: a rewritten line is as old as its latest write, and a
+      // cleared one has no age to report.
+      const noteAt =
+        changes.note === undefined ? storedNoteAt : note === undefined ? undefined : at;
       const updated: BotConfig = {
         ...rest,
         ...(changes.title === undefined ? {} : { title: changes.title }),
@@ -325,6 +336,7 @@ export class BotDirectory {
             ? {}
             : { label: changes.label }),
         ...(note === undefined ? {} : { note }),
+        ...(noteAt === undefined ? {} : { noteAt }),
         updatedAt: at,
       };
       await this.#writeAll(bots.map((bot, position) => (position === index ? updated : bot)));

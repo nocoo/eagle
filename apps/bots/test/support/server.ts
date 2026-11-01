@@ -22,6 +22,7 @@ import type { GatewayApi } from "../../src/server/gateway.ts";
 import type { TriggerApi, TriggerIngress } from "../../src/server/http.ts";
 import { startServer } from "../../src/server/http.ts";
 import { FakeRuntime, type FakeScript } from "../../src/testing/FakeRuntime.ts";
+import { createNoteHost } from "../../src/tools/note.ts";
 import type { PeerToolHost } from "../../src/tools/types.ts";
 
 /** A decoded frame: tests read one field at a time, so the shape stays open here. */
@@ -88,6 +89,8 @@ export type StackOptions = {
   readonly settings?: GatewayApi;
   /** The machine instructions a test pretends to have found, for the read-only preview. */
   readonly machinePrompt?: () => { readonly path: string; readonly text: string } | undefined;
+  /** Wire the catalog-backed sidebar line, as `main.ts` does, so a run can refresh it. */
+  readonly note?: boolean;
 };
 
 export const startStack = async (options: StackOptions = {}): Promise<Stack> => {
@@ -126,6 +129,17 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
       ...(options.windowMessages === undefined ? {} : { windowMessages: options.windowMessages }),
       // The host needs the registry and the service, which exist after the adapter does.
       peers: async (spec) => peersHolder.current?.(spec.id),
+      ...(options.note !== true
+        ? {}
+        : {
+            note: (spec: { readonly id: string }) =>
+              createNoteHost({
+                botId: spec.id,
+                write: (text) => registry.update(spec.id, { note: text }, "tr_note_test"),
+                current: () => registry.noteOf(spec.id),
+                changed: () => broadcast?.(),
+              }),
+          }),
     });
     openRuntime = (spec) => adapter.open(spec);
   } else {

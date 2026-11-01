@@ -38,3 +38,22 @@ export const createNoteSetTool = (host: NoteToolHost | undefined) =>
       }
     },
   });
+
+/**
+ * Wires the tool to the catalog a daemon owns: one write, one answer, one broadcast, so the
+ * sidebar sees the line without another read. The same wiring serves the settled run.
+ */
+export const createNoteHost = (options: {
+  readonly botId: string;
+  readonly write: (text: string) => Promise<{ readonly note?: string }>;
+  readonly current: () => { readonly note?: string; readonly at?: string };
+  readonly changed: () => void;
+}): NoteToolHost => ({
+  botId: options.botId,
+  async set(text) {
+    const written = await options.write(text);
+    options.changed();
+    return written.note === undefined ? {} : { note: written.note };
+  },
+  current: options.current,
+});

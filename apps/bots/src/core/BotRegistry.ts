@@ -278,6 +278,15 @@ export class BotRegistry {
     return this.#entries.get(botId)?.handle;
   }
 
+  /** The line a bot wrote about itself and when: the prompt shows both, the wire neither. */
+  noteOf(botId: string): { readonly note?: string; readonly at?: string } {
+    const config = this.#entries.get(botId)?.config;
+    return {
+      ...(config?.note === undefined ? {} : { note: config.note }),
+      ...(config?.noteAt === undefined ? {} : { at: config.noteAt }),
+    };
+  }
+
   /** Name, label, note or face changed; the catalog keeps the truth and the summary follows. */
   async update(
     botId: string,

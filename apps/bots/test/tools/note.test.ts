@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MAX_BOT_NOTE_CHARS } from "../../src/core/domain.ts";
-import { createNoteSetTool } from "../../src/tools/note.ts";
+import { createNoteHost, createNoteSetTool } from "../../src/tools/note.ts";
 import type { NoteToolHost } from "../../src/tools/types.ts";
 
 type Outcome = { output: string; isError?: boolean };
@@ -19,6 +19,7 @@ const bench = (overrides: Partial<NoteToolHost> = {}) => {
       calls.push(text);
       return text.length === 0 ? {} : { note: text };
     },
+    current: () => ({}),
     ...overrides,
   };
   const tool = createNoteSetTool(host);
@@ -80,4 +81,30 @@ test("a host failure is a readable error result", async () => {
   const result = await run("work");
   assert.equal(result.isError, true);
   assert.match(result.output, /catalog is busy/);
+});
+
+test("the host writes, answers and then announces the catalog, in that order", async () => {
+  const order: string[] = [];
+  const host = createNoteHost({
+    botId: "b_1",
+    async write(text) {
+      order.push(`write:${text}`);
+      return text.length === 0 ? {} : { note: text };
+    },
+    current: () => ({ note: "在等 PR 审核", at: "2026-10-25T03:00:00.000Z" }),
+    changed: () => order.push("changed"),
+  });
+  assert.deepEqual(host.current(), {
+    note: "在等 PR 审核",
+    at: "2026-10-25T03:00:00.000Z",
+  });
+  assert.deepEqual(await host.set("在等合并"), { note: "在等合并" });
+  assert.deepEqual(
+    order,
+    ["write:在等合并", "changed"],
+    "no client hears about a line that failed",
+  );
+  order.length = 0;
+  assert.deepEqual(await host.set(""), {}, "a cleared line has nothing to report");
+  assert.deepEqual(order, ["write:", "changed"]);
 });
