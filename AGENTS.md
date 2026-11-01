@@ -85,7 +85,10 @@ published tarball stays self-contained and its `bin` path is unchanged.
 ## Setup and commands
 
 Run from the root with Node.js 24+ and npm; CI uses Node 26. Actual collection
-requires Herdr, but documentation checks do not run the installed live Agent.
+requires Herdr, but documentation checks do not run the installed live Agent. The
+device-runtime test bundles `process.execPath` and refuses a Node that links a
+non-system library, which Homebrew's build does, so run the gates (and the pre-push
+hook, which runs them) with an official Node build.
 Use the machine-approved registry. Ignored `apps/web/.dev.vars` holds `AGENT_SIGNING_KEY`
 (at least 32 random characters, file mode 0600), `LOCAL_DEV="true"` for local
 browsing, optional `LOCAL_USER_EMAIL`, and optional existing `AGENT_TOKENS`.
