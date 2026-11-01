@@ -118,6 +118,29 @@ struct CLIConfigTests {
     #expect(weak.unsafeDevToken?.reason.contains("32") == true)
   }
 
+  @Test("a directory that cannot be inspected fails closed instead of looking absent")
+  func unreadableDirectoryIsNotAbsent() throws {
+    let home = try makeHome()
+    let directory = home.appendingPathComponent(".config/eagle-dev", isDirectory: true)
+    defer {
+      try? FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: directory.path)
+      try? FileManager.default.removeItem(at: home)
+    }
+    _ = try writeDevToken(home, String(repeating: "d", count: 48))
+    try writeConfig(home, "eagle-dev.json", #"{"token":"c_config"}"#)
+    // The owner can still stat a 0000 directory, but cannot open anything inside it.
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o000], ofItemAtPath: directory.path)
+
+    let file = CLIConfig.load(argv0: "/x/eagle-dev", environment: [:], home: home.path)
+    #expect(
+      file.token == nil,
+      "a credential that cannot be inspected never falls back to the config file's token")
+    #expect(file.unsafeDevToken != nil, "the refusal is explicit and names the path")
+    #expect(file.unsafeDevToken?.reason.contains("cannot be opened") == true)
+  }
+
   @Test("EAGLE_TOKEN wins over an unsafe development token file")
   func environmentBeatsTheUnsafeFile() throws {
     let home = try makeHome()
@@ -129,6 +152,27 @@ struct CLIConfigTests {
       argv0: "/x/eagle-dev", environment: ["EAGLE_TOKEN": "c_env"], home: home.path)
     #expect(file.token == "c_env")
     #expect(file.unsafeDevToken == nil, "an explicit environment token needs no local file")
+  }
+
+  @Test("EAGLE_TOKEN does not even open the development file")
+  func environmentSkipsTheFileEntirely() throws {
+    let home = try makeHome()
+    let directory = home.appendingPathComponent(".config/eagle-dev", isDirectory: true)
+    defer {
+      try? FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: directory.path)
+      try? FileManager.default.removeItem(at: home)
+    }
+    _ = try writeDevToken(home, String(repeating: "d", count: 48))
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o000], ofItemAtPath: directory.path)
+
+    let file = CLIConfig.load(
+      argv0: "/x/eagle-dev", environment: ["EAGLE_TOKEN": "c_env"], home: home.path)
+    #expect(file.token == "c_env")
+    #expect(
+      file.unsafeDevToken == nil,
+      "an inspection that never happened cannot report a file it did not open")
   }
 
   @Test("the released binary never reads the development directory")

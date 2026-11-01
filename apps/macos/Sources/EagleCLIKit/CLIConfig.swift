@@ -56,22 +56,33 @@ public struct CLIConfig: Sendable {
   }
 
   /// The file must be mode 0600 and carry at least 32 characters: a credential another
-  /// account can read is not a credential.
+  /// account can read is not a credential. The mode and the bytes come from one open
+  /// descriptor, so the file that was checked is the file that is read. Only "there is no
+  /// such file" means absent: a path that cannot be inspected fails closed, because an
+  /// unreadable directory must never look like a missing credential.
   static func readDevToken(home: String) -> DevToken {
     let url = devTokenURL(home: home)
-    let manager = FileManager.default
-    guard manager.fileExists(atPath: url.path) else { return .missing }
-    let attributes = try? manager.attributesOfItem(atPath: url.path)
-    guard let mode = (attributes?[.posixPermissions] as? NSNumber)?.intValue else {
-      return .unsafe(
-        path: url.path, reason: "its permissions could not be read, and they must be 0600")
+    let handle: FileHandle
+    do {
+      handle = try FileHandle(forReadingFrom: url)
+    } catch {
+      return Self.isMissing(error)
+        ? .missing
+        : .unsafe(path: url.path, reason: "it cannot be opened (\(Self.describe(error)))")
     }
+    defer { try? handle.close() }
+    var info = stat()
+    guard fstat(handle.fileDescriptor, &info) == 0 else {
+      return .unsafe(path: url.path, reason: "its state cannot be read")
+    }
+    guard (info.st_mode & S_IFMT) == S_IFREG else {
+      return .unsafe(path: url.path, reason: "it is not a regular file")
+    }
+    let mode = Int(info.st_mode & 0o777)
     guard mode == 0o600 else {
-      return .unsafe(path: url.path, reason: "its mode is \(modeText(mode)), not 0600")
+      return .unsafe(path: url.path, reason: "its mode is \(Self.octal(mode)), not 0600")
     }
-    guard let data = manager.contents(atPath: url.path),
-      let text = String(data: data, encoding: .utf8)
-    else {
+    guard let data = try? handle.readToEnd(), let text = String(data: data, encoding: .utf8) else {
       return .unsafe(path: url.path, reason: "it is not readable UTF-8 text")
     }
     let token = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -83,7 +94,21 @@ public struct CLIConfig: Sendable {
     return .usable(token)
   }
 
-  private static func modeText(_ mode: Int) -> String {
+  private static func isMissing(_ error: Error) -> Bool {
+    let failure = error as NSError
+    if failure.domain == NSCocoaErrorDomain
+      && (failure.code == NSFileNoSuchFileError || failure.code == NSFileReadNoSuchFileError)
+    {
+      return true
+    }
+    return failure.domain == NSPOSIXErrorDomain && failure.code == Int(ENOENT)
+  }
+
+  private static func describe(_ error: Error) -> String {
+    (error as NSError).localizedDescription
+  }
+
+  private static func octal(_ mode: Int) -> String {
     "0" + String(mode, radix: 8)
   }
 
@@ -108,14 +133,15 @@ public struct CLIConfig: Sendable {
       let raw = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines)
       return (raw?.isEmpty ?? true) ? nil : raw
     }
-    // The released binary never looks at the development directory.
-    let devToken = name == "eagle-dev" ? readDevToken(home: resolvedHome) : .missing
     var token: String?
     var unsafeDevToken: UnsafeDevToken?
     if let fromEnvironment = env("EAGLE_TOKEN") {
+      // The caller's own instruction for this run: the file is not even opened, so a
+      // credential on disk can never shadow an explicit one. The released binary never
+      // looks at the development directory at all.
       token = fromEnvironment
     } else {
-      switch devToken {
+      switch name == "eagle-dev" ? readDevToken(home: resolvedHome) : .missing {
       case .missing:
         token = value("token")
       case .usable(let developmentToken):
