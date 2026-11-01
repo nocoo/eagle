@@ -1,7 +1,7 @@
 // The composition root: one daemon over one root, wired from configuration, closed cleanly.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -151,6 +151,63 @@ test("the daemon starts from configuration and closes without leaving work behin
     await again.close();
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the daemon arms the development agent token it was told about", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bots-devtoken-"));
+  const dir = await mkdtemp(join(tmpdir(), "bots-devtoken-file-"));
+  const path = join(dir, "token");
+  const token = "dev-agent-token-0123456789-abcdefghijklmnop";
+  await writeFile(path, `${token}\n`);
+  await chmod(path, 0o600);
+  try {
+    const daemon = await startDaemon(
+      readConfig({
+        argv: ["--root", root, "--port", "0"],
+        env: { BOTS_DEV_AGENT_TOKEN: path },
+      }),
+    );
+    try {
+      const listed = await fetch(`http://127.0.0.1:${daemon.port}/v1/bots`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(listed.status, 200, "the development token reads the catalog");
+      const me = await fetch(`http://127.0.0.1:${daemon.port}/v1/clients/me`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(((await me.json()) as { client: { name: string } }).client.name, "dev-agent");
+    } finally {
+      await daemon.close();
+    }
+    const logs = await readdir(join(root, "logs"));
+    const records = (
+      await Promise.all(
+        logs
+          .filter((name) => name.endsWith(".jsonl"))
+          .map(async (name) => await readFile(join(root, "logs", name), "utf8")),
+      )
+    )
+      .join("")
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            evt?: string;
+            level?: string;
+            layer?: string;
+            detail?: { path?: string };
+          },
+      );
+    const armed = records.filter((record) => record.evt === "transport.devtoken.ok");
+    assert.equal(armed.length, 1, "the startup armed the token once");
+    assert.equal(armed[0]?.level, "info");
+    assert.equal(armed[0]?.layer, "transport");
+    assert.equal(armed[0]?.detail?.path, path, "the record names the file, never the token");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true });
   }
 });
 

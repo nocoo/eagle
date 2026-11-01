@@ -8,6 +8,8 @@ import type { Level } from "./log/log.ts";
 export type DaemonConfig = {
   /** Optional host-owned, version-1 private device port. No credentials. */
   readonly deviceSocket?: string;
+  /** The development agent's credential file; armed only when this is set. */
+  readonly devAgentTokenPath?: string;
   /** Canonical root: the catalog, the token, the logs and every bot directory. */
   readonly root: string;
   /** Loopback service port. */
@@ -48,6 +50,15 @@ const portNumber = (value: string | undefined, fallback: number): number => {
 
 export const defaultRoot = (): string => join(homedir(), ".local", "share", "eagle-bots");
 
+/**
+ * The development agent's credential file, named by `BOTS_DEV_AGENT_TOKEN`. An empty
+ * variable arms nothing, and without the variable the daemon never accepts one.
+ */
+const devAgentTokenPath = (value: string | undefined): string | undefined => {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
+};
+
 export type ConfigInput = {
   readonly argv?: readonly string[];
   readonly env?: Readonly<Record<string, string | undefined>>;
@@ -74,8 +85,10 @@ export const readConfig = (input: ConfigInput = {}): DaemonConfig => {
       port = portNumber(value, DEFAULT_PORT);
     }
   }
+  const devTokenPath = devAgentTokenPath(env.BOTS_DEV_AGENT_TOKEN);
   return {
     ...(env.BOTS_DEVICE_SOCKET === undefined ? {} : { deviceSocket: env.BOTS_DEVICE_SOCKET }),
+    ...(devTokenPath === undefined ? {} : { devAgentTokenPath: devTokenPath }),
     root,
     port,
     idleCloseMs: integer(env.BOTS_IDLE_CLOSE_MS, DEFAULT_IDLE_CLOSE_MS),

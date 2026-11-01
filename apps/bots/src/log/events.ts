@@ -14,6 +14,7 @@ export const OUTCOMES = [
   "reject",
   "end",
   "classify",
+  "unsafe",
 ] as const;
 export type Outcome = (typeof OUTCOMES)[number];
 
@@ -100,6 +101,8 @@ export const EVENTS = {
   "runtime.failure.classify": true,
   "pi.report": true,
   "pi.session.closed": true,
+  "transport.devtoken.ok": true,
+  "transport.devtoken.unsafe": true,
 } as const;
 
 export type EventName = keyof typeof EVENTS;

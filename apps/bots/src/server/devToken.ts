@@ -1,0 +1,85 @@
+// The development agent's own credential (docs/bots/PROTOCOL.md "CLI clients and
+// scopes"): a bearer an agent minted for itself, so an acceptance run needs nobody at a
+// switch. It is armed only while the daemon was told where its file is, the file is
+// read again on every authentication, and a file that is not conforming is refused
+// rather than repaired.
+import { readFile, stat } from "node:fs/promises";
+import { declareEvent } from "../log/events.ts";
+import type { Log } from "../log/log.ts";
+import { CLIENT_SCOPES, type Client } from "./clients.ts";
+
+/** The identity a development token acts as. */
+export const DEV_AGENT_CLIENT_ID = "c_dev-agent";
+export const DEV_AGENT_CLIENT_NAME = "dev-agent";
+/** A bearer shorter than this is not a credential. */
+export const MIN_DEV_TOKEN_CHARS = 32;
+
+const Events = {
+  ok: declareEvent("transport.devtoken.ok"),
+  unsafe: declareEvent("transport.devtoken.unsafe"),
+} as const;
+
+/** The credential and the identity's creation time: the file's own mtime. */
+export type DevCredential = { readonly token: string; readonly createdAt: string };
+
+/** Reads the file again on every call, so a rewritten file takes effect at once. */
+export type DevTokenReader = () => Promise<DevCredential | undefined>;
+
+/** A read that fails is not a credential: an unreadable file is simply absent. */
+const readOrUndefined = async <T>(operation: Promise<T>): Promise<T | undefined> => {
+  try {
+    return await operation;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * The credential in the file, or undefined when the file cannot be one: a mode other
+ * than 0600, a content shorter than 32 characters after trimming and an unreadable
+ * file are all refused, and nothing is repaired on the way.
+ */
+export const readDevToken = async (path: string): Promise<DevCredential | undefined> => {
+  const stats = await readOrUndefined(stat(path));
+  if (stats === undefined || !stats.isFile()) return undefined;
+  if ((stats.mode & 0o777) !== 0o600) return undefined;
+  const body = await readOrUndefined(readFile(path, "utf8"));
+  if (body === undefined) return undefined;
+  const token = body.trim();
+  if (token.length < MIN_DEV_TOKEN_CHARS) return undefined;
+  return { token, createdAt: stats.mtime.toISOString() };
+};
+
+/** The client a development token acts as: every scope, named `dev-agent`. */
+export const devAgentClient = (createdAt: string): Client => ({
+  id: DEV_AGENT_CLIENT_ID,
+  name: DEV_AGENT_CLIENT_NAME,
+  scopes: CLIENT_SCOPES,
+  createdAt,
+});
+
+/**
+ * Arms the development token for a daemon that was told where its file is, and says
+ * what the file was at startup. The reader it returns reads the file again on every
+ * authentication, so a file fixed later starts working and a file broken later stops
+ * working, with no second credential and no restart.
+ */
+export const armDevToken = async (options: {
+  readonly path: string;
+  readonly log: Log;
+  readonly trace: string;
+}): Promise<DevTokenReader> => {
+  const credential = await readDevToken(options.path);
+  if (credential === undefined) {
+    options.log.emit("warn", "transport", Events.unsafe, {
+      trace: options.trace,
+      detail: { path: options.path, reason: "invalid" },
+    });
+  } else {
+    options.log.emit("info", "transport", Events.ok, {
+      trace: options.trace,
+      detail: { path: options.path },
+    });
+  }
+  return async () => readDevToken(options.path);
+};

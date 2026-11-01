@@ -33,6 +33,7 @@ import { createDaemonModels } from "./runtime/pi/models.ts";
 import { PiDurableRuntime, type PiSettings } from "./runtime/pi/PiDurableRuntime.ts";
 import { loadToken } from "./server/auth.ts";
 import { ClientStore } from "./server/clients.ts";
+import { armDevToken } from "./server/devToken.ts";
 import {
   DEFAULT_CORE_PROMPT,
   type GatewayApi,
@@ -186,6 +187,18 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     throw error;
   }
   log.emit("info", "core", StartupEvents.singletonOk, { trace: startup });
+  // The development agent's credential is armed here: the file is read once to say
+  // whether it is usable, and again on every authentication, so a rewritten file takes
+  // effect at once. Without the environment variable there is no reader at all, and no
+  // development token is ever accepted.
+  const devToken =
+    canonical.devAgentTokenPath === undefined
+      ? undefined
+      : await armDevToken({
+          path: canonical.devAgentTokenPath,
+          log,
+          trace: startup,
+        });
   const directory = new BotDirectory(root, await nodeDirectoryFs());
   // The stored gateway wins over the dotenv; without either, the registry is empty and a
   // run settles `no_model` until a person configures it in the app.
@@ -645,6 +658,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     ...(canonical.deviceSocket === undefined ? {} : { deviceSocket: canonical.deviceSocket }),
     token,
     clients,
+    ...(devToken === undefined ? {} : { devToken }),
     log,
     registry,
     service,

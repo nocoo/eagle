@@ -18,6 +18,7 @@ import { peerApi } from "../../src/peers/api.ts";
 import { peerHostFor } from "../../src/peers/host.ts";
 import { PiDurableRuntime } from "../../src/runtime/pi/PiDurableRuntime.ts";
 import { ClientStore } from "../../src/server/clients.ts";
+import { armDevToken } from "../../src/server/devToken.ts";
 import type { GatewayApi } from "../../src/server/gateway.ts";
 import type { TriggerApi, TriggerIngress } from "../../src/server/http.ts";
 import { startServer } from "../../src/server/http.ts";
@@ -57,6 +58,8 @@ const token = "test-token-0123456789-abcdefghijklmnop";
 
 export type StackOptions = {
   readonly idleCloseMs?: number;
+  /** The development agent's credential file; absent means no development token. */
+  readonly devTokenPath?: string;
   readonly script?: FakeScript;
   readonly model?: { provider: string; modelId: string };
   /** Run the real pi-durable adapter over real sqlite; only the model network is faked. */
@@ -100,6 +103,11 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
     options.now === undefined ? {} : { now: options.now },
   );
   const { log, records } = captureLog();
+  // The development agent's credential, armed exactly as the daemon arms it.
+  const devToken =
+    options.devTokenPath === undefined
+      ? undefined
+      : await armDevToken({ path: options.devTokenPath, log, trace: "tr_boot_probe" });
   const fake =
     options.real === true
       ? undefined
@@ -265,6 +273,7 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
   const daemon = await startServer({
     token,
     clients,
+    ...(devToken === undefined ? {} : { devToken }),
     log,
     registry: registryView,
     service,

@@ -45,6 +45,21 @@ test("defaults, arguments and environment agree", () => {
   );
 });
 
+test("the development agent token path comes from the environment", () => {
+  assert.equal(
+    readConfig({ argv: [], env: {} }).devAgentTokenPath,
+    undefined,
+    "an unset variable arms nothing",
+  );
+  assert.equal(
+    readConfig({
+      argv: [],
+      env: { BOTS_DEV_AGENT_TOKEN: "/home/tester/.config/eagle-dev/token" },
+    }).devAgentTokenPath,
+    "/home/tester/.config/eagle-dev/token",
+  );
+});
+
 test("the configured model endpoint becomes the daemon's one provider", async () => {
   const models = createDaemonModels({
     baseUrl: "http://127.0.0.1:9/v1",

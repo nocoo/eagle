@@ -27,6 +27,7 @@ Runtime details live in [RUNTIME.md](RUNTIME.md), layers in
 | HTTP base | `http://127.0.0.1:<port>/v1` |
 | WebSocket | `ws://127.0.0.1:<port>/v1/socket` |
 | Auth | `Authorization: Bearer <token>`, token in `<root>/token` (0600) |
+| Dev agent token | Optional: `BOTS_DEV_AGENT_TOKEN` names the file whose bearer the daemon accepts as the `dev-agent` client. Without the variable no development token is ever accepted; see "CLI clients and scopes" |
 | Auth failure | HTTP `401` before upgrade; no socket is created |
 | Origin | Not checked: no browser client in phase 1. A browser client would require an origin check and a CSRF decision first |
 | Frames | Text only, one JSON object per frame, no batching envelope |
@@ -216,6 +217,33 @@ revoke it and delete it again (`CLI.md` owns the CLI itself).
   carries `origin: { "kind": "human", "label": "<client name>" }`; the App's own token
   keeps `{ "kind": "human" }`. `lastUsedAt` moves at most once per minute, so a chatty
   client does not rewrite the file per request.
+
+### The development agent token
+
+A development daemon can accept one bearer that no person issued: the token an agent
+minted for itself, so an acceptance run needs nobody at a switch. It is opt-in, it
+is off unless the daemon was started with the variable, and a released build behaves
+exactly as before.
+
+- **Where it lives.** `~/.config/eagle-dev/token`, in a file whose mode is `0600`. The
+  content is one bearer, at least 32 characters after trimming. The directory's own
+  mode is not part of the contract and is not checked.
+- **How it is armed.** `BOTS_DEV_AGENT_TOKEN` holds the absolute path of that file.
+  Without the variable the daemon never accepts a development token, even when the
+  file exists. Only the process that starts the daemon can set it, and a packaged
+  build never sets it, so a release cannot gain the behaviour by accident.
+- **It is read again on every authentication.** A rewritten file takes effect at once:
+  the new bearer works and the old one is refused, with no restart and no second
+  credential.
+- **A non-conforming file is refused, never repaired.** A mode other than `0600`, a
+  content shorter than 32 characters after trimming and an unreadable file all
+  refuse the bearer with the same `401 auth_failed` as an unknown token. The daemon
+  does not fall back to another credential and does not loosen the file itself.
+- **The identity.** A development token acts as the client `c_dev-agent`, named
+  `dev-agent`, with the `read`, `write` and `admin` scopes; its `createdAt` is the
+  file's mtime, so `GET /v1/clients/me` answers that client. It is not a record in
+  `<root>/clients.json`: it is not listed by `GET /v1/clients`, and it cannot be
+  rotated or revoked there. Replacing the file replaces the credential.
 
 ## The bot's own note
 

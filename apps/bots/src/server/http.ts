@@ -23,7 +23,14 @@ import type { ServerEvent } from "../protocol/frames.ts";
 import { MAX_HTTP_BODY_BYTES, MAX_LABEL_CHARS, MAX_TITLE_CHARS } from "../protocol/limits.ts";
 import { PROTOCOL_VERSION } from "../protocol/version.ts";
 import { parseBearer, tokenMatches } from "./auth.ts";
-import { type Client, ClientError, type ClientScope, type ClientStore } from "./clients.ts";
+import {
+  CLIENT_SCOPES,
+  type Client,
+  ClientError,
+  type ClientScope,
+  type ClientStore,
+} from "./clients.ts";
+import { type DevCredential, type DevTokenReader, devAgentClient } from "./devToken.ts";
 import { serverFailure } from "./failures.ts";
 import type { GatewayApi, GatewayInput } from "./gateway.ts";
 import type { ProviderApi } from "./providers.ts";
@@ -40,6 +47,12 @@ export type ServerOptions = {
   readonly token: string;
   /** Named CLI credentials beside the token; the token itself is always `admin`. */
   readonly clients: ClientStore;
+  /**
+   * The development agent's own bearer, read from its file on every authentication.
+   * Absent means the daemon was never told about one, and then no development token
+   * is accepted at all.
+   */
+  readonly devToken?: DevTokenReader;
   readonly log: Log;
   readonly registry: BotRegistry;
   readonly service: ConversationService;
@@ -408,6 +421,24 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
     if (presented === undefined) return undefined;
     // The App's own token comes first and keeps every right, exactly as it always did.
     if (tokenMatches(token, presented)) return { kind: "root" };
+    // The development agent's bearer is read from its file on every request, so a
+    // rewritten file takes effect at once and the old bearer stops working. A reader
+    // that cannot answer refuses the request: authentication fails closed.
+    if (options.devToken !== undefined) {
+      let credential: DevCredential | undefined;
+      try {
+        credential = await options.devToken();
+      } catch {
+        credential = undefined;
+      }
+      if (credential !== undefined && tokenMatches(credential.token, presented)) {
+        return {
+          kind: "client",
+          client: devAgentClient(credential.createdAt),
+          scopes: new Set(CLIENT_SCOPES),
+        };
+      }
+    }
     // A credential store that cannot answer refuses the request: authentication errors
     // fail closed, and neither the route nor the upgrade may see a half-checked caller.
     const credential = await options.clients.authenticate(presented).catch(() => undefined);

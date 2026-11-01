@@ -152,6 +152,29 @@ candidate 构建期 HTTPS service origin 小片已实现并增量审查通过，
 
 ## Where the code lives
 
+### Development agent token (2026-11-01)
+
+A development daemon can accept one bearer that no person issued, so an acceptance
+run needs nobody at a switch. The contract is fixed in [PROTOCOL.md](PROTOCOL.md)
+"CLI clients and scopes": the file is `~/.config/eagle-dev/token`, with mode `0600`
+and at least 32 characters after trimming; `BOTS_DEV_AGENT_TOKEN` names its
+absolute path; the file is read again on every authentication, so a rewritten file
+takes effect at once and the old bearer stops working. A file that is not
+conforming is refused, never repaired, and the daemon falls back to nothing.
+
+Without the variable the daemon never accepts a development token, even when the
+file exists, and a packaged build never sets it.
+
+The bearer acts as the client `c_dev-agent` (`dev-agent`) with the `read`, `write`
+and `admin` scopes, and `GET /v1/clients/me` answers it. It is not a record in
+`clients.json`: it is not listed, rotated or revoked there, and replacing the file
+replaces the credential.
+
+Two events mark the startup read, on the `transport` layer beside the other
+authentication records: `transport.devtoken.ok` (info) and
+`transport.devtoken.unsafe` (warn, `reason: invalid`). Without the environment variable the daemon behaves exactly as before,
+so a released build never accepts a development token.
+
 ### Helper startup recovery (2026-10-30)
 
 Installing `20b13f0` reproduced a signed helper launch-constraint rejection after

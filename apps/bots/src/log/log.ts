@@ -43,6 +43,7 @@ const DETAIL_TYPES = {
   quarantined: "boolean",
   queued: "boolean",
   propagated: "boolean",
+  path: "string",
 } as const;
 
 const redact = (value: string, secrets: readonly string[] = []): string => {
@@ -114,6 +115,8 @@ const DETAIL_SCHEMA: Readonly<Record<string, readonly string[]>> = {
   "runtime.submit.fail": ["providerCode", "reason"],
   "runtime.watch.end.ok": ["reason"],
   "pi.report": ["kind", "reason"],
+  "transport.devtoken.ok": ["path"],
+  "transport.devtoken.unsafe": ["path", "reason"],
 };
 const FRAMEWORK_DETAIL = new Set(["propagated"]);
 const COUNT_KEYS = new Set(["count", "bytes", "len"]);

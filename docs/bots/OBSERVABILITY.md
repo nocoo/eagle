@@ -23,6 +23,7 @@ Three rules make that possible, and each is tested:
 | `layer` | Code | Emits |
 | --- | --- | --- |
 | `transport` | `src/server` | Connections, auth, frame I/O, close codes |
+| `server` | `src/server` | Daemon startup configuration: the development agent token |
 | `protocol` | `src/protocol` | Encode/decode, version, limits, command validation |
 | `core` | `src/core` | Catalog, lifecycle, hub ordering, paging, command routing |
 | `runtime` | `src/runtime/pi` | Adapter calls, event mapping, failure classification |
@@ -60,15 +61,15 @@ Rules:
 ## Event names
 
 `<layer>.<subject>.<outcome>`, outcome ∈ `start | ok | fail | drop | degrade |
-skip | reject | end | classify`. Names are constants in `src/log/events.ts`. Every
-`start` has a declared `ok`/`fail` partner (`core.singleton.start` →
-`core.singleton.ok|fail`), and no free-form event name exists. From stage 4 a test
-asserts bidirectional equality between constants and uses; before that it asserts
-`used ⊆ declared`.
+skip | reject | end | classify | unsafe`. Names are constants in
+`src/log/events.ts`. Every `start` has a declared `ok`/`fail` partner
+(`core.singleton.start` → `core.singleton.ok|fail`), and no free-form event name
+exists. From stage 4 a test asserts bidirectional equality between constants and
+uses; before that it asserts `used ⊆ declared`.
 
 | layer | events |
 | --- | --- |
-| transport | `transport.conn.open.ok`, `transport.conn.open.reject`, `transport.conn.close.ok`, `transport.conn.close.end`, `transport.auth.fail`, `transport.frame.recv.ok`, `transport.frame.send.ok`, `transport.frame.send.drop` — a frame that cannot be decoded is `protocol.*`, not a second transport record |
+| transport | `transport.devtoken.ok`, `transport.devtoken.unsafe` — the development agent token's file, read once at startup: `ok` when it is a usable credential, `unsafe` when it is not, `transport.conn.open.ok`, `transport.conn.open.reject`, `transport.conn.close.ok`, `transport.conn.close.end`, `transport.auth.fail`, `transport.frame.recv.ok`, `transport.frame.send.ok`, `transport.frame.send.drop` — a frame that cannot be decoded is `protocol.*`, not a second transport record |
 | protocol | `protocol.decode.fail`, `protocol.encode.fail`, `protocol.limit.fail`, `protocol.version.fail`, `protocol.command.start`, `protocol.command.ok`, `protocol.command.fail` — `ok` means decoded, validated and dispatched (not "succeeded"); `fail` is a propagated refusal after dispatch, or the origin record when no layer below classified the failure |
 | core | `core.catalog.load.ok`, `core.catalog.load.fail`, `core.catalog.write.ok`, `core.catalog.write.fail`, `core.bot.resolve.fail`, `core.bot.open.start`, `core.bot.open.ok`, `core.bot.open.fail`, `core.bot.close.ok`, `core.bot.close.fail`, `core.bot.close.degrade` (quarantine), `core.subscribe.start`, `core.subscribe.ok`, `core.subscribe.fail`, `core.submit.start`, `core.submit.ok`, `core.submit.fail`, `core.history.start`, `core.history.ok`, `core.history.fail`, `core.hub.publish.ok`, `core.hub.coalesce.ok`, `core.hub.snapshot.ok`, `core.hub.degrade`, `core.singleton.start`, `core.singleton.ok`, `core.singleton.fail`, `core.origin.replay.degrade` (an unreadable origin record line), `core.recovery.start`, `core.recovery.bot.ok`, `core.recovery.bot.fail`, `core.recovery.ok`, `core.delete.start`, `core.delete.ok`, `core.delete.fail`, `core.reconcile.ok`, `core.group.write.ok` |
 | runtime | `runtime.device.start`, `runtime.device.ok`, `runtime.device.fail`, `runtime.open.start`, `runtime.open.ok`, `runtime.open.fail`, `runtime.subscribe.start`, `runtime.subscribe.ok`, `runtime.subscribe.fail`, `runtime.submit.start`, `runtime.submit.ok`, `runtime.submit.fail`, `runtime.abort.start`, `runtime.abort.ok`, `runtime.abort.fail`, `runtime.recover.start`, `runtime.task.retry.ok`, `runtime.task.abort.ok`, `runtime.recover.ok`, `runtime.recover.fail`, `runtime.tools.refresh.ok`, `runtime.tools.refresh.fail`, `runtime.close.start`, `runtime.close.ok`, `runtime.close.fail`, `runtime.watch.end.ok`, `runtime.failure.classify` |
@@ -76,6 +77,22 @@ asserts bidirectional equality between constants and uses; before that it assert
 
 `*.start` pairs with exactly one `*.ok|fail` per layer reached. A layer that is
 not reached emits nothing for that trace — that absence is evidence.
+
+### The development agent token events
+
+Both events are emitted once, at startup, on the `transport` layer, with the daemon's
+startup trace (`tr_boot_<n>`). They report the state of the file
+`BOTS_DEV_AGENT_TOKEN` names ([PROTOCOL.md](PROTOCOL.md) "CLI clients and scopes");
+neither carries the token.
+
+| Event | Level | `detail` |
+| --- | --- | --- |
+| `transport.devtoken.ok` | `info` | `path` — the configured file, shortened to `~` under the home directory |
+| `transport.devtoken.unsafe` | `warn` | `path`, `reason` — `reason` is `invalid`: the mode is not `0600`, the content is shorter than 32 characters after trimming, or the file cannot be read |
+
+The file is read again on every authentication, so a record at startup describes the
+start, not the current state: a file fixed later is accepted, and a file broken later
+is refused, without a second event.
 
 ## Record shape
 
