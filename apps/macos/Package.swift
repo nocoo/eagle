@@ -41,6 +41,10 @@ let package = Package(
         .product(name: "BotsTransport", package: "bots-macos"),
       ]
     ),
+    .executableTarget(
+      name: "ComposerFocusFixture",
+      dependencies: ["EagleDesign"]
+    ),
     .testTarget(name: "EagleDesignTests", dependencies: ["EagleDesign"]),
     .testTarget(name: "EagleFeaturesTests", dependencies: ["EagleFeatures"]),
     .testTarget(name: "EagleDevicesTests", dependencies: ["EagleDevices"]),

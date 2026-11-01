@@ -1,5 +1,14 @@
 import AppKit
+import EagleDesign
 import SwiftUI
+
+@MainActor
+private enum ComposerFocusTiming {
+  static var ci: Bool { ProcessInfo.processInfo.environment["CI"] == "1" }
+  /// AppKit activation and SwiftUI autofocus can lag on a shared CI desktop.
+  static var readinessTimeout: TimeInterval { ci ? 15 : 4 }
+  static var idleSettle: TimeInterval { 0.35 }
+}
 
 @MainActor
 private enum ComposerFocusTrace {
@@ -137,6 +146,7 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
       ("left", NSPoint(x: 2, y: 27)), ("right", NSPoint(x: 358, y: 27)),
     ] {
       fixture.focusOther()
+      await fixture.settle()
       fixture.click(point)
       await fixture.settle { fixture.hasComposerFocus }
       check("\(name) padding focuses the native input", fixture.hasComposerFocus)
@@ -203,8 +213,9 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
     let viewport = fixture.host.convert(scroll.contentView.bounds, from: scroll.contentView)
     check("transcript has a native scroll viewport", viewport.height > 100)
     fixture.focusOther()
-    fixture.click(NSPoint(x: viewport.midX, y: viewport.maxY - 32))
     await fixture.settle()
+    fixture.click(NSPoint(x: viewport.midX, y: viewport.maxY - 32))
+    await fixture.settle { fixture.hasComposerFocus }
     check("empty transcript whitespace focuses the native composer", fixture.hasComposerFocus)
     fixture.key("c", code: 8)
     await fixture.settle()
@@ -224,8 +235,9 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
     ] {
       fixture.model.draft = ""
       fixture.focusOther()
-      fixture.click(point)
       await fixture.settle()
+      fixture.click(point)
+      await fixture.settle { fixture.hasComposerFocus }
       fixture.key(character, code: code)
       await fixture.settle()
       check(
@@ -344,12 +356,31 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
         ("long-\($0)", [.paragraph(AttributedString("History message \($0)"))])
       })
     await fixture.settle()
-    await fixture.drainRunLoop()
+    await fixture.drainRunLoop(for: ComposerFocusTiming.ci ? 1.0 : 0.35)
+    await fixture.settle(
+      until: {
+        let documentHeight = scroll.documentView?.frame.height ?? 0
+        let visibleHeight = scroll.contentView.bounds.height
+        return documentHeight > visibleHeight + 40
+      },
+      timeout: ComposerFocusTiming.ci ? 20 : 5
+    )
     fixture.focusOther()
-    let beforeScroll = scroll.contentView.bounds.origin
-    let scrollDelta = fixture.scrollViewport(scroll, by: 80)
     await fixture.settle()
-    await fixture.drainRunLoop()
+    let beforeScroll = scroll.contentView.bounds.origin
+    var scrollDelta: CGFloat = 0
+    for attempt in 0..<6 {
+      scrollDelta = fixture.scrollViewport(scroll, by: 80)
+      await fixture.settle()
+      if scroll.contentView.bounds.origin != beforeScroll { break }
+      await fixture.drainRunLoop(for: ComposerFocusTiming.ci ? 0.5 : 0.2)
+      ComposerFocusTrace.mark("historyScroll.retry attempt=\(attempt)")
+    }
+    if !fixture.otherHasFocus {
+      fixture.focusOther()
+      await fixture.settle()
+    }
+    await fixture.drainRunLoop(for: ComposerFocusTiming.ci ? 0.5 : 0.35)
     editingStates.append([
       "step": "historyScroll", "before": NSStringFromPoint(beforeScroll),
       "after": NSStringFromPoint(scroll.contentView.bounds.origin),
@@ -464,12 +495,20 @@ private final class ComposerFocusWindow {
     ComposerFocusTrace.mark("\(context).layout.return")
   }
 
-  func settle(until condition: () -> Bool = { false }) async {
+  /// When `until` is nil, drain layout for a short idle window. Otherwise wait until the predicate
+  /// holds or the readiness deadline expires (slow CI activation/focus).
+  func settle(until condition: (() -> Bool)? = nil, timeout: TimeInterval? = nil) async {
     ComposerFocusTrace.mark("settle.enter")
     defer { ComposerFocusTrace.mark("settle.return") }
-    for step in 0..<20 {
+    let limit =
+      timeout
+      ?? (condition == nil ? ComposerFocusTiming.idleSettle : ComposerFocusTiming.readinessTimeout)
+    let deadline = ProcessInfo.processInfo.systemUptime + limit
+    var step = 0
+    while ProcessInfo.processInfo.systemUptime < deadline {
       layout("settle[\(step)]")
-      if condition() { return }
+      step += 1
+      if let condition, condition() { return }
       try? await Task.sleep(for: .milliseconds(10))
     }
   }
