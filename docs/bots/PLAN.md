@@ -875,9 +875,12 @@ The extension/tool track has its own proposed sequence in
    specifies: `memory_list`, `memory_search`, `memory_read`, `memory_write`,
    `memory_delete` over `global` (`global.md`) and `bot` (`<botId>.md`) scopes in a
    person-editable directory, eager, on by default, storage behind
-   `MemoryToolHost`. `npm run check` in `apps/bots` is green at 808 tests with
-   94.95% lines / 88.28% branches / 90.33% functions; the App shows one settings
-   row and the transport fallback matches. Not yet verified on an installed App
+   `MemoryToolHost`. `npm run check` in `apps/bots` is green at 823 tests with
+   94.99% lines / 88.48% branches / 90.32% functions; the App shows one settings
+   row and the transport fallback matches. Three read-only review rounds fixed a
+   record-splitting body heading, unparseable JSON over the Harness result cap, an
+   over-budget page, a 202-character excerpt, an emoji-splitting window and a
+   query folded differently from the body. Not yet verified on an installed App
    against a live daemon.
 3. Add optional `search`: `web_search` and `web_fetch`, separating URL discovery
    from page retrieval and proving bounded, cancellable provider calls.
