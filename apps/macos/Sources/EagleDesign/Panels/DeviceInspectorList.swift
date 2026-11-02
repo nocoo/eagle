@@ -23,17 +23,20 @@ public struct DeviceInspectorList: View {
   private let entries: [DeviceInspectorEntry]
   private let enabled: Bool
   private let stale: Bool
+  private let localContent: AnyView?
   private let onManage: () -> Void
 
   public init(
     entries: [DeviceInspectorEntry],
     enabled: Bool = true,
     stale: Bool = false,
+    localContent: AnyView? = nil,
     onManage: @escaping () -> Void = {}
   ) {
     self.entries = entries
     self.enabled = enabled
     self.stale = stale
+    self.localContent = localContent
     self.onManage = onManage
   }
 
@@ -48,7 +51,16 @@ public struct DeviceInspectorList: View {
         VStack(spacing: 0) {
           ForEach(Array(entries.enumerated()), id: \.element.id) { index, device in
             if index > 0 { Divider().overlay(Theme.Palette.line) }
-            row(device)
+            VStack(alignment: .leading, spacing: 0) {
+              row(device)
+              if device.isLocal, let localContent {
+                localContent
+                  .padding(.horizontal, 10)
+                  .padding(.bottom, 4)
+              }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("devices.inspector.\(device.id)")
           }
         }
         .background(

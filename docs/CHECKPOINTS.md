@@ -2557,3 +2557,24 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   revision was the website `/api/live` `macos` block. The App's "cloud not ready" state
   comes from the local agent's register/heartbeat, which the relay answers
   `session_required` until this Mac's release identity is authorized on the web.
+
+## 2026-11-02 15:43 +08 — Local Herdr teams in the computer inspector
+
+- Base: nocoo `74b541a`, in an isolated checkout; the neighboring history-sync
+  work and the original dirty checkout are untouched.
+- Collection: the installed Herdr CLI returned two local workspaces with six
+  recognized agents. One snapshot supplies each session's membership and states;
+  shell-only workspaces are excluded. No terminal transcript, cloud or D1 write.
+- UI: Herdr now belongs to the local Mac's row, initially collapsed, with a team
+  count and a marker derived from members reporting `working`. Expanded, stale
+  and empty views were rendered; the minimum 280-point inspector remains readable.
+- Verification: initial red tests reproduced the absent collection and later the
+  missing collapse behavior. The updated native interaction test passes both with
+  and without the device service. Root check and browser checks passed (191 browser
+  cases, 11 existing platform exclusions). Final Swift checks passed 358 tests
+  with 91.7% covered logic and strict formatting.
+- Installed the signed candidate build `1793605430280`; its executable, plist and
+  host configuration match the staged artifact hashes. The actual App window
+  started collapsed, expanded to six members, then collapsed again. Existing
+  device configuration and history remain in the same profile; the previous App
+  was retained by the normal installer. No required implementation hop remains.

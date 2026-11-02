@@ -922,3 +922,21 @@ release still pointed to 0.15.1; no affected client was observed. The release
 was then published and both endpoints agreed. Before the next app release,
 coordinate the automatic deployment with publication so the downloadable asset
 is public before the update endpoint advertises it; do not bypass the hooks.
+
+## 2026-11-02 — Reuse verified artifacts when the package proxy is stale
+
+Installing the local Herdr inspector checkout at `74b541a` failed because the
+configured proxy lacked Biome 2.6.4. The complete two-lock inventory found 306
+platform-relevant artifacts: 303 in retained content-addressed caches, with
+Biome, its Darwin ARM64 CLI and Croner 11.0.0 available as original local tarballs.
+All were checked against the current lock SRI and embedded package identity,
+then added normally to a task-private cache. Both normal `npm ci` runs passed;
+213 root and 102 Bots installed manifests matched, with no missing required
+package and both lock hashes unchanged.
+
+The Agent installation test additionally needed `ws` and `zod` packuments.
+Reading their exact versions through the configured proxy populated that metadata;
+offline identity/SRI checks then matched the root lock, and the normal root check
+passed. Tarball presence alone is not sufficient for a fresh unlocked prefix.
+See [NPM recovery](docs/NPM-RECOVERY.md); task receipts are under
+`.local/npm-recovery/`, not a new global registry configuration.

@@ -17,6 +17,31 @@ anonymous-directory authentication checks. Current installed App, WSS and physic
 Mac acceptance evidence is recorded in [the Bots plan](bots/PLAN.md#helper-startup-recovery-2026-10-30);
 operational setup is in [DEPLOYMENT.md](DEPLOYMENT.md).
 
+## Local Herdr teams in the macOS inspector
+
+The conversation's 电脑 tab shows a collapsed Herdr row under the local Mac in
+可用电脑. It shows the team count and a small marker when at least one team has a
+`working` member. Expanding it reveals the teams and their members. The count and
+marker keep refreshing while collapsed; paired computers do not get this row.
+A team is a local Herdr
+workspace containing recognized agents, including idle agents; plain shell
+workspaces are omitted. It lists the workspace/session name and each member's
+name, agent kind, working directory and observed lifecycle state. `done` means
+已响应, not that the team's task has been verified complete. Missing or unfamiliar
+states stay 未知; workspace aggregate badges do not override member observations.
+
+While this panel is visible, the App reads `herdr session list --json`, then
+`herdr --session <name> api snapshot` for each running local session every five
+seconds. Each session's membership and state come from one snapshot. It never
+starts Herdr, reads terminal transcripts, sends agent input, or uses the device
+execution queue. There is no remote-machine collection or cloud storage in this
+version. The existing device list and its policies are independent.
+
+Reads are bounded and cancellable. Missing Herdr, no running session, an empty
+team list and a failed read are distinct states. After a failed refresh, the last
+successful result remains visible with its observation time and unconfirmed
+statuses; the refresh action retries the read. Closing the panel stops polling.
+
 ## Identity and HTTPS
 
 Device identity is an Ed25519 key persisted by the independent App helper in a
