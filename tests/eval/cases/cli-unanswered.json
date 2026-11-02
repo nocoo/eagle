@@ -1,0 +1,34 @@
+{
+  "id": "cli-unanswered",
+  "title": "CLI preserves an unanswered submission and its model error",
+  "kind": "chat",
+  "notes": "The scripted provider refuses requests. The CLI must emit the terminal submission and distinguish the model error from a user withdrawal.",
+  "timeoutMs": 60000,
+  "model": { "script": [] },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval cli-unanswered",
+        "--text",
+        "one input",
+        "--wait",
+        "--timeout",
+        "45",
+        "--json"
+      ],
+      "expectExit": 1,
+      "stderrContains": "model_error",
+      "oneTerminal": true,
+      "json": {
+        "type": "submission",
+        "status": "unanswered",
+        "reason": "model_error"
+      },
+      "timeoutMs": 50000
+    }
+  ],
+  "expect": { "messages": [{ "role": "user", "contains": "one input" }] }
+}

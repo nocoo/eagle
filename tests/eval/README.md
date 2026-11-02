@@ -46,7 +46,7 @@ prove a case fails closed.
 
 | Extra step | Does |
 | --- | --- |
-| `cli` | Runs `args` with `HOME`, `EAGLE_ROOT` and `EAGLE_PORT` set; asserts `expectExit`, `stdoutContains`, `stderrContains` and a `json` subset. `bin: "release"` runs a link named `eagle`; `expectTimeout` is for a command that must outlive its budget (`chat watch`). `capture` stores the last JSON line. |
+| `cli` | Runs `args` with `HOME`, `EAGLE_ROOT` and `EAGLE_PORT` set; asserts `expectExit`, `stdoutContains`, `stderrContains` and a `json` subset. `oneTerminal` checks the whole JSON stream has exactly one terminal submission for the appended user input. `bin: "release"` runs a link named `eagle`; `expectTimeout` is for a command that must outlive its budget (`chat watch`). `capture` stores the last JSON line. |
 | `file` | Writes a path under the case root with an optional octal `mode`. |
 
 `http` and `cli` steps may `capture` a name, and later steps address it as

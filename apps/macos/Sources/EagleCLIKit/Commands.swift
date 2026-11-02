@@ -489,18 +489,17 @@ public struct Commands: Sendable {
         }
         if printer.wantsJSON(arguments) { printer.json(frame) }
       } else if type == "submission", frame["requestId"] as? String == requestId {
+        if printer.wantsJSON(arguments) { printer.json(frame) }
         let status = frame["status"] as? String ?? ""
         if status == "unanswered" {
-          throw CLIError.refused(kind: "unanswered", message: "the daemon withdrew the input")
+          let reason = frame["reason"] as? String ?? "unknown"
+          throw CLIError.refused(
+            kind: "unanswered", message: "the input was not answered: \(reason)")
         }
         if status == "done" {
           let entryId = frame["answerEntryId"] as? String
           let answer = entryId.flatMap { answers[$0] } ?? lastAnswer ?? ""
-          if printer.wantsJSON(arguments) {
-            printer.json(frame)
-          } else {
-            printer.text(answer.isEmpty ? "(no answer)" : answer)
-          }
+          if !printer.wantsJSON(arguments) { printer.text(answer.isEmpty ? "(no answer)" : answer) }
           return
         }
       } else if printer.wantsJSON(arguments) {

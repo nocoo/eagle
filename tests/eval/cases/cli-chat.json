@@ -31,6 +31,7 @@
         "--json"
       ],
       "stdoutContains": "第一答",
+      "oneTerminal": true,
       "capture": "reply"
     },
     {

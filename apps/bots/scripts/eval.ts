@@ -125,6 +125,8 @@ type Step =
       readonly stderrContains?: string;
       /** Subset match against the last JSON line on stdout. */
       readonly json?: unknown;
+      /** Exactly one terminal submission for the user input in the JSON stream. */
+      readonly oneTerminal?: boolean;
       readonly capture?: string;
       readonly env?: Readonly<Record<string, string | null>>;
       /** The command is expected to outlive its budget and be killed. */
@@ -823,6 +825,29 @@ const runCase = async (
               typeof step.json === "string" ? fill(step.json) : fill(JSON.stringify(step.json)),
             );
             assertSubset(lastJsonLine(stdout), expected, command);
+          }
+          if (step.oneTerminal === true) {
+            const frames = stdout
+              .split("\n")
+              .filter((line) => line.trim().startsWith("{"))
+              .map((line) => JSON.parse(line) as Frame);
+            const input = frames.find(
+              (frame) =>
+                frame.type === "append" && (frame.message as Loose | undefined)?.role === "user",
+            );
+            const requestId = (input?.message as Loose | undefined)?.requestId;
+            const terminal = frames.filter(
+              (frame) =>
+                frame.type === "submission" &&
+                (frame.status === "done" || frame.status === "unanswered"),
+            );
+            if (
+              typeof requestId !== "string" ||
+              terminal.length !== 1 ||
+              terminal[0]?.requestId !== requestId
+            ) {
+              failure(`${command}: expected one terminal submission for its input`);
+            }
           }
           for (const [path, length] of Object.entries(step.jsonLengths ?? {})) {
             const value = path

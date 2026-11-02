@@ -106,6 +106,8 @@ come from the daemon; a bot may also be named by its exact title when that title
 `chat send --wait --timeout N` waits at most N positive seconds after sending for the
 submission's terminal record. A timeout ends only the CLI's wait: the daemon continues
 working, and the CLI never aborts or resends the input. The command exits 1 on timeout.
+For an unanswered submission, it exits 1 and reports the daemon's reason. In JSON mode,
+submission frames, including the terminal failure, are printed before the command exits.
 
 `--json` shapes follow PROTOCOL.md: `{ "bots": [...] }`, `{ "bot": {...} }`,
 `{ "groups": [...] }`, `{ "usage": {...} }`, and for chat one object per line:
