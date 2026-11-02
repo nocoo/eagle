@@ -1053,4 +1053,6 @@ match the fixture's newline, leaving the original agent type in place. The
 corrected fixture reproduced `invalidResponse` for missing and null types before
 the fix. Check that fixtures exercise the intended input, not merely that the
 assertion fails. The first commit attempt also exposed an overlong test line;
-run the staged Swift format check before committing.
+run the staged Swift format check before committing. A later review found that
+trimming turn IDs could associate distinct records; IDs are now validated without
+normalizing them, with a regression covering the mismatch across cached reads.

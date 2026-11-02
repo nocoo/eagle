@@ -80,6 +80,22 @@ struct CodexSessionMetadataTests {
     #expect(await reader.read(sessionID: fixture.id) == HerdrAgentMetadata())
   }
 
+  @Test("turn identities are not normalized into another turn")
+  func distinctTurnIDs() async throws {
+    let fixture = try MetadataLogFixture()
+    defer { fixture.remove() }
+    let start =
+      #"{"type":"event_msg","payload":{"type":"task_started","turn_id":"turn-a ","model_context_window":100000}}"#
+      + "\n"
+    let context =
+      #"{"type":"turn_context","payload":{"turn_id":"turn-a","model":"model-b"}}"# + "\n"
+    try fixture.write(fixture.header + start)
+    let reader = CodexSessionMetadataReader(root: fixture.root)
+    _ = await reader.read(sessionID: fixture.id)
+    try fixture.append(context)
+    #expect(await reader.read(sessionID: fixture.id) == HerdrAgentMetadata(model: "model-b"))
+  }
+
   @Test("a large transcript is bounded while recent metadata beyond a small tail remains readable")
   func largeTranscript() async throws {
     let fixture = try MetadataLogFixture()

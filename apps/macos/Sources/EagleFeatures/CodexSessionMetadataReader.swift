@@ -82,7 +82,7 @@ actor CodexSessionMetadataReader {
             let event = Self.decode(Data(line.utf8))
           else { continue }
           let payload = event.payload
-          let turn = Self.clean(payload.turnId)
+          let turn = payload.turnId.flatMap { Self.clean($0) == $0 ? $0 : nil }
           let matches = turn != nil && turn == state.turnId
           if event.type == "turn_context" {
             state.metadata = HerdrAgentMetadata(
