@@ -117,6 +117,38 @@ struct SnapshotRenderer {
         ConversationColumn(
           title: "依赖修复专家", tintIndex: 4,
           entries: [
+            .user(id: "u1", text: "下一批先修哪几个？", origin: nil),
+            .question(
+              id: "ask-e_done",
+              card: AskCard(
+                id: "e_done",
+                questions: [
+                  AskCardQuestion(
+                    id: 0,
+                    prompt: "下一批先修哪几个仓库？",
+                    multiple: true,
+                    options: [
+                      AskCardQuestion.Option(label: "next-ai", detail: "CVE 5 个，只差一个可修的"),
+                      AskCardQuestion.Option(label: "sleepy", detail: "CVE 2 个"),
+                    ]
+                  )
+                ],
+                answered: true
+              )
+            ),
+            .assistant(id: "a2", blocks: [.paragraph("好，先修 next-ai，接着 sleepy。")]),
+          ],
+          draft: .constant(""),
+          onSend: {}
+        )
+        .preferredColorScheme(scheme),
+        size: CGSize(width: 760, height: 420), named: "ask-card-answered-\(name)", in: directory,
+        appearance: scheme == .dark ? .darkAqua : .aqua
+      )
+      capture(
+        ConversationColumn(
+          title: "依赖修复专家", tintIndex: 4,
+          entries: [
             .user(id: "u1", text: "PR #490 已开好，我先过闸门再合并发版。", origin: nil),
             .peerExchange(id: "x1", exchange: MockWorkspace.vesExchange),
             .assistant(

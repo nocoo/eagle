@@ -53,6 +53,9 @@ public struct AskCardRow: View {
   private let onSkip: (String) -> Void
   /// Chosen labels per question, kept here so a reload never pretends a choice was made.
   @State private var chosen: [Int: Set<String>] = [:]
+  /// The person already acted: the card locks at once instead of waiting for the round trip,
+  /// because a button that stays clickable reads as a click that did nothing.
+  @State private var submitted = false
 
   public init(
     card: AskCard,
@@ -65,13 +68,20 @@ public struct AskCardRow: View {
   }
 
   public var body: some View {
+    // Dividers sit *between* blocks, never under the last one: a rule at the card's own edge
+    // would run straight through the rounded corners.
     VStack(alignment: .leading, spacing: 0) {
       header
       ForEach(card.questions) { question in
+        rule
         questionBlock(question)
       }
-      if !card.answered { actions }
+      if !locked {
+        rule
+        actions
+      }
     }
+    .clipShape(RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous))
     .background(
       RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous)
         .fill(Theme.Palette.card)
@@ -83,28 +93,34 @@ public struct AskCardRow: View {
     .accessibilityElement(children: .contain)
   }
 
+  private var rule: some View {
+    Rectangle()
+      .fill(Theme.Palette.line)
+      .frame(height: Theme.Metric.hairline)
+  }
+
   private var header: some View {
     HStack(spacing: 10) {
-      Image(systemName: card.answered ? "checkmark.circle.fill" : "questionmark.circle")
+      Image(systemName: locked ? "checkmark.circle.fill" : "questionmark.circle")
         .font(.system(size: 13, weight: .medium))
-        .foregroundStyle(card.answered ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
-      Text(card.answered ? "已回答" : "需要你确认")
+        .foregroundStyle(locked ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
+      Text(card.answered ? "已回答" : submitted ? "已提交" : "需要你确认")
         .font(.system(size: 13, weight: .medium))
         .foregroundStyle(Theme.Palette.textPrimary)
       Spacer(minLength: 0)
-      if !card.answered {
-        Button("忽略") { onSkip(card.id) }
-          .buttonStyle(.plain)
-          .font(Theme.TypeScale.note)
-          .foregroundStyle(Theme.Palette.textSecondary)
-          .accessibilityLabel("忽略这次提问")
+      if !locked {
+        Button("忽略") {
+          submitted = true
+          onSkip(card.id)
+        }
+        .buttonStyle(.plain)
+        .font(Theme.TypeScale.note)
+        .foregroundStyle(Theme.Palette.textSecondary)
+        .accessibilityLabel("忽略这次提问")
       }
     }
     .padding(.horizontal, 14)
     .frame(height: 40)
-    .overlay(alignment: .bottom) {
-      Rectangle().fill(Theme.Palette.line).frame(height: Theme.Metric.hairline)
-    }
   }
 
   private func questionBlock(_ question: AskCardQuestion) -> some View {
@@ -127,15 +143,12 @@ public struct AskCardRow: View {
     }
     .padding(.horizontal, 14)
     .padding(.vertical, 12)
-    .overlay(alignment: .bottom) {
-      Rectangle().fill(Theme.Palette.line).frame(height: Theme.Metric.hairline)
-    }
   }
 
   private func optionRow(question: AskCardQuestion, option: AskCardQuestion.Option) -> some View {
     let selected = chosen[question.id]?.contains(option.label) ?? false
     return Button {
-      guard !card.answered else { return }
+      guard !locked else { return }
       var current = chosen[question.id] ?? []
       if question.multiple {
         if selected {
@@ -176,7 +189,7 @@ public struct AskCardRow: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .disabled(card.answered)
+    .disabled(locked)
     .accessibilityLabel(option.label)
     .accessibilityValue(selected ? "已选择" : "未选择")
   }
@@ -184,6 +197,7 @@ public struct AskCardRow: View {
   private var actions: some View {
     HStack(spacing: 10) {
       Button {
+        submitted = true
         onSubmit(card.id, orderedChoices)
       } label: {
         Text("提交")
@@ -208,6 +222,9 @@ public struct AskCardRow: View {
     .padding(.horizontal, 14)
     .padding(.vertical, 12)
   }
+
+  /// Read-only once the person answered or has just submitted.
+  private var locked: Bool { card.answered || submitted }
 
   private var complete: Bool {
     card.questions.allSatisfy { !(chosen[$0.id]?.isEmpty ?? true) }
