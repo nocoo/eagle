@@ -103,6 +103,10 @@ come from the daemon; a bot may also be named by its exact title when that title
 | `eagle chat abort <bot>` | write | Withdraws the running input and the queue |
 | `eagle usage [--days N]` | read | Token and call totals over the retention window |
 
+`chat send --wait --timeout N` waits at most N positive seconds after sending for the
+submission's terminal record. A timeout ends only the CLI's wait: the daemon continues
+working, and the CLI never aborts or resends the input. The command exits 1 on timeout.
+
 `--json` shapes follow PROTOCOL.md: `{ "bots": [...] }`, `{ "bot": {...} }`,
 `{ "groups": [...] }`, `{ "usage": {...} }`, and for chat one object per line:
 `{ "type": "append" | "delta" | "status" | "submission" | "history", ... }` exactly as the

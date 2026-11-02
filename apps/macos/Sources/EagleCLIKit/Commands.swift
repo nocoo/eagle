@@ -430,7 +430,15 @@ public struct Commands: Sendable {
       tokens, valueFlags: ["text", "timeout", "when-busy"], switchFlags: ["json", "wait"])
     let name = try arguments.positional(0, "<bot>")
     let text = try arguments.required("text")
-    let timeout = arguments.value("timeout").flatMap(Double.init) ?? 300
+    let timeout: Double
+    if let raw = arguments.value("timeout") {
+      guard let seconds = Double(raw), seconds.isFinite, seconds > 0,
+        seconds <= Double(Int64.max) / 1_000_000_000
+      else { throw CLIError.usage("--timeout must be a positive number of seconds") }
+      timeout = seconds
+    } else {
+      timeout = 300
+    }
     let whenBusy = arguments.value("when-busy") ?? "followUp"
     let bot = try await resolve(name)
     let botId = bot["id"] as? String ?? name
@@ -451,9 +459,25 @@ public struct Commands: Sendable {
 
     var answers: [String: String] = [:]
     var lastAnswer: String?
-    let deadline = Date().addingTimeInterval(timeout)
-    while Date() < deadline {
-      let frame = try await socket.read()
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(timeout))
+    let timer = Task {
+      try? await clock.sleep(until: deadline)
+      if !Task.isCancelled { socket.close() }
+    }
+    defer { timer.cancel() }
+    let timedOut = CLIError.refused(
+      kind: "timeout",
+      message: "no settled answer within \(timeout)s; the bot may still be running")
+    while true {
+      let frame: JSONObject
+      do {
+        frame = try await socket.read()
+      } catch {
+        if clock.now >= deadline { throw timedOut }
+        throw error
+      }
+      if clock.now >= deadline { throw timedOut }
       let type = frame["type"] as? String ?? ""
       if type == "append", let message = frame["message"] as? JSONObject,
         let id = message["id"] as? String
@@ -483,7 +507,6 @@ public struct Commands: Sendable {
         printer.json(frame)
       }
     }
-    throw CLIError.refused(kind: "timeout", message: "no settled answer within \(Int(timeout))s")
   }
 
   private func watch(_ tokens: [String]) async throws {

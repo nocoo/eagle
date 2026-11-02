@@ -206,6 +206,17 @@ struct CommandsTests {
     #expect(result.err.first?.contains("Settings → CLI") == true)
   }
 
+  @Test("invalid wait deadlines are rejected before contacting the daemon")
+  func invalidTimeout() async {
+    StubTransport.calls = []
+    for value in ["0", "-1", "nan", "inf", "invalid"] {
+      let result = await run(["chat", "send", "b_1", "--text", "hi", "--wait", "--timeout", value])
+      #expect(result.code == 2)
+      #expect(result.err.first?.contains("--timeout") == true)
+    }
+    #expect(StubTransport.calls.isEmpty)
+  }
+
   @Test("a conversation is read from the frame's value, where the snapshot keeps it")
   func snapshotValue() {
     let frame: JSONObject = [

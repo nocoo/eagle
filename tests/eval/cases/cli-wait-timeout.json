@@ -1,0 +1,46 @@
+{
+  "id": "cli-wait-timeout",
+  "title": "CLI wait deadline does not cancel the bot",
+  "kind": "chat",
+  "notes": "The model stays silent past the CLI deadline; the process must exit without the harness killing it, then the original input must complete once after the model is released.",
+  "timeoutMs": 30000,
+  "model": {
+    "script": [{ "text": "settled once", "holdFor": "release" }]
+  },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval cli-wait-timeout",
+        "--text",
+        "one input",
+        "--wait",
+        "--timeout",
+        "1",
+        "--json"
+      ],
+      "expectExit": 1,
+      "stderrContains": "timeout:",
+      "timeoutMs": 5000
+    },
+    { "kind": "waitModelRequest", "count": 1, "timeoutMs": 10000 },
+    { "kind": "releaseModel", "hold": "release" },
+    { "kind": "waitSubmission", "status": "done", "timeoutMs": 10000 },
+    {
+      "kind": "cli",
+      "args": ["chat", "watch", "eval cli-wait-timeout", "--json"],
+      "expectTimeout": true,
+      "timeoutMs": 1000,
+      "jsonLengths": { "value.messages": 2 }
+    }
+  ],
+  "expect": {
+    "messages": [
+      { "role": "user", "contains": "one input" },
+      { "role": "assistant", "contains": "settled once" }
+    ],
+    "modelRequests": { "max": 1 }
+  }
+}
