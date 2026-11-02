@@ -1,5 +1,28 @@
 # Retrospective
 
+## 2026-11-02 — Unbounded test and a misunderstood tool timeout
+
+A new WebSocket history test omitted its required `before` field, so the daemon rejected
+it and the test waited forever for a dispatch that could not start. The test should have
+failed promptly, but the shell tool's timeout is in seconds and I mistakenly supplied
+`120000` as if it were milliseconds: that allowed nearly 33 hours. The user interrupted
+it after over three hours. Supply valid protocol fixtures, put a rejecting deadline on
+all test barriers, and give the shell tool a short timeout in seconds. The interrupted
+test used an isolated temporary root; the installed App was not replaced.
+
+## 2026-11-02 — Lock probe used a different root identity
+
+A shutdown regression test probed the temporary root as `/var/...`, while the daemon
+canonicalized it to `/private/var/...` before deriving its lock port. The first test
+therefore acquired a different lock and falsely appeared to reproduce the bug. Use the
+actual daemon's canonical root for the challenger and verify the red test against the
+original ownership path before interpreting the result. The corrected probe did reproduce
+premature lock release; no data loss was demonstrated. A second red test initially removed
+its temporary root before the gated route completed and failed during cleanup instead of
+at the intended assertion. Its cleanup now waits for the actual write to finish, and the
+corrected red run reports the unexpected `closed` result. A new task-set name also
+collided with an existing local; run a focused test immediately after adding scope locals.
+
 ## 2026-11-02 — Shell expansion corrupted acceptance prompts
 
 While testing the released CLI, three messages included an unbraced shell variable

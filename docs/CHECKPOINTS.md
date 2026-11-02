@@ -1,5 +1,40 @@
 # 用户视角检查点
 
+## 2026-11-02 14:16 +08 — interrupted shutdown regression recovered
+
+- A new WebSocket history test hung from 10:50 until the owner interrupted it: the
+  request lacked its required `before` field, the test waited on an unbounded gate, and
+  the shell timeout was mistakenly set in milliseconds instead of seconds. The failure
+  and prevention are recorded in Retrospective.md; no test process remains running.
+- The corrected test fails promptly on the actual shutdown race and passes after tracking
+  WebSocket commands. Bots `npm run check` now passes 771 tests, typecheck, lint and
+  coverage. Before that last change, `npm --prefix apps/bots run eval` passed 17 cases;
+  it has not been rerun against the final transport change.
+- The installed App and its Bots daemon remain running and have not been replaced; the
+  space-station records are preserved. No new Herdr collection, website authentication,
+  D1, browser rendering or public deployment was verified.
+- Next broken hop: detached origin and trigger writes still lack a shutdown barrier, so
+  an embedded caller cannot yet assume a `closed` result means the root is reusable.
+  Finish and review that boundary, rerun the gates and acceptance, then build, safely
+  replace and regress the App. Do not treat the current partial repair as completion.
+
+## 2026-11-02 10:43 +08 — shutdown ownership work in progress
+
+- The installed 0.16.0 App and its Bots daemon have not been replaced; the space-station
+  bots and conversations remain in place. No new Herdr collection, website authentication,
+  D1, browser rendering or public deployment was performed.
+- Canonical-root negative controls reproduced premature lock release for a blocked opening
+  and a timed-out handle. The in-progress fix retains the lock, reports timeout separately,
+  and has a process exit-code regression; the Bots check passed 767 tests before the latest
+  HTTP drain changes. A gated real HTTP create also reproduced `closed` while a catalog
+  write was still pending; its focused test passes with the in-progress route tracker.
+- The first lock probe used `/var` instead of the daemon's canonical `/private/var` and was
+  invalid; the corrected negative control is recorded in Retrospective.md. The first HTTP
+  red run also exposed a cleanup race; the corrected run asserted the wrong close result.
+- Next broken hop: finish the transport task drain and review outstanding detached origin
+  and trigger writes before claiming root reuse is safe. Then run the complete Bots gate
+  and CLI acceptance, review, commit, build, and only then replace and regress the App.
+
 ## 2026-11-02 09:28 +08 — CLI repairs awaiting installation
 
 - Local Bots acceptance now passes all 17 scripted-model cases, including real CLI
