@@ -343,7 +343,7 @@ struct SettingsGatewayTests {
     GatewayHTTPStub.handler = nil
   }
 
-  @Test("a payload without tool groups falls back to both groups")
+  @Test("a payload without tool groups falls back to every default group")
   func loadGatewayWithoutToolGroups() async throws {
     let (settings, session) = try settingsGatewayFixture()
     GatewayHTTPStub.handler = { _ in
@@ -358,10 +358,10 @@ struct SettingsGatewayTests {
     await model.loadGateway()
     #expect(
       model.gateway?.toolGroups
-        == ["persona", "machine", "core", "coding", "herdr", "agents", "trigger"])
+        == ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"])
     #expect(
       model.gatewayToolGroups
-        == ["persona", "machine", "core", "coding", "herdr", "agents", "trigger"])
+        == ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"])
     GatewayHTTPStub.handler = nil
   }
 
