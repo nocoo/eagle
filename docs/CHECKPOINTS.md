@@ -3000,6 +3000,8 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   tests cover what the row shows; button *enablement* is asserted through those predicates
   because this App has no XCTest target and SwiftUI does not publish an accessible enabled
   state through this hosting path. Adding the `?`/`#` and distribution cases re-ran every
-  gate above, all green.
+  gate above, all green. A third round found the new layout test reading the machine's own
+  daemon: the fixture now answers that read from an injected URL stub, so the rows come from
+  the page's real load path and no fixture token leaves the process.
 - Not verified: the App's own page against a live daemon (the owner's dev App run is next),
   Raven and Falcon with real credentials, authentication and D1 (unchanged by this work).

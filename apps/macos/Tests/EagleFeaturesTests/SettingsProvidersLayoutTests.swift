@@ -15,7 +15,7 @@ import Testing
 struct SettingsProvidersLayoutTests {
   @Test("a relay that needs no key offers a probe and a way to clear its optional key")
   func keylessRelayRow() async throws {
-    let (model, window) = try providersFixture([
+    let (model, window) = try await providersFixture([
       provider(
         id: "jev-relay", title: "Jev 中转站", service: ProviderSettings.decisionService,
         model: "typesafe/jev-latest", keyRequired: false, hasApiKey: true, enabled: true)
@@ -30,7 +30,7 @@ struct SettingsProvidersLayoutTests {
 
   @Test("a provider that requires a key offers no probe and nothing to clear")
   func keyRequiredRow() async throws {
-    let (model, window) = try providersFixture([
+    let (model, window) = try await providersFixture([
       provider(
         id: "raven", title: "Raven", service: ProviderSettings.decisionService,
         model: "microsoft-decision-1", keyRequired: true, hasApiKey: false, enabled: false)
@@ -45,7 +45,7 @@ struct SettingsProvidersLayoutTests {
 
   @Test("a typed address keeps the probe off until it is saved")
   func draftRow() async throws {
-    let (model, window) = try providersFixture([
+    let (model, window) = try await providersFixture([
       provider(
         id: "falcon", title: "Falcon", service: ProviderSettings.decisionService,
         model: "jev-latest", keyRequired: true, hasApiKey: true, enabled: true)
@@ -63,7 +63,7 @@ struct SettingsProvidersLayoutTests {
 
   @Test("an expanded row shows the address and model fields")
   func addressFields() async throws {
-    let (_, window) = try providersFixture(
+    let (_, window) = try await providersFixture(
       [
         provider(
           id: "typesafe", title: "TypeSafe", service: ProviderSettings.decisionService,
@@ -79,7 +79,7 @@ struct SettingsProvidersLayoutTests {
   private func providersFixture(
     _ providers: [ProviderSettings],
     expandsProviderDetails: Set<String> = []
-  ) throws -> (SettingsViewModel, NSWindow) {
+  ) async throws -> (SettingsViewModel, NSWindow) {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("eagle-providers-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -87,15 +87,15 @@ struct SettingsProvidersLayoutTests {
     try "providers-layout-token-0123456789012345678901".write(
       to: token, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: token.path)
+    // The page reads its rows over HTTP; the stub answers that read so no test asks the
+    // machine's own daemon (and a fixture token never reaches it).
+    ProvidersLayoutHTTPStub.providers = providers
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [ProvidersLayoutHTTPStub.self]
     let model = SettingsViewModel(
       botsSettings: BotsSettings(environment: ["BOTS_ROOT": root.path, "BOTS_PORT": "43117"]),
-      urlSession: URLSession(configuration: .ephemeral))
+      urlSession: URLSession(configuration: configuration))
     model.selection = .providers
-    model.providers = providers
-    for provider in providers where provider.isDecision {
-      model.providerAddresses[provider.id] = provider.baseUrl
-      model.providerModels[provider.id] = provider.model
-    }
     NSApplication.shared.setActivationPolicy(.prohibited)
     NSApplication.shared.perform(
       NSSelectorFromString("accessibilitySetValue:forAttribute:"),
@@ -110,6 +110,11 @@ struct SettingsProvidersLayoutTests {
       styleMask: [.borderless], backing: .buffered, defer: false)
     window.contentView = host
     window.orderFront(nil)
+    host.layoutSubtreeIfNeeded()
+    // The list arrives from the stubbed read; wait for it instead of racing the page.
+    for _ in 0..<100 where model.providers.isEmpty {
+      try? await Task.sleep(for: .milliseconds(10))
+    }
     host.layoutSubtreeIfNeeded()
     return (model, window)
   }
@@ -153,4 +158,35 @@ struct SettingsProvidersLayoutTests {
     guard let element = node as? NSObject else { return [] }
     return [element] + ((attribute(element, "AXChildren") as? [Any]) ?? []).flatMap(entries)
   }
+}
+
+/// Answers the settings page's provider read with the fixture rows, so a layout test never needs
+/// the machine's own daemon or a real token.
+final class ProvidersLayoutHTTPStub: URLProtocol {
+  private final class Storage: @unchecked Sendable {
+    var providers: [ProviderSettings] = []
+  }
+
+  private static let storage = Storage()
+
+  static var providers: [ProviderSettings] {
+    get { storage.providers }
+    set { storage.providers = newValue }
+  }
+
+  override class func canInit(with request: URLRequest) -> Bool { true }
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+  override func startLoading() {
+    struct Payload: Encodable { let providers: [ProviderSettings] }
+    let data = (try? JSONEncoder().encode(Payload(providers: Self.providers))) ?? Data("{}".utf8)
+    let response = HTTPURLResponse(
+      url: request.url ?? URL(string: "http://127.0.0.1")!, statusCode: 200,
+      httpVersion: "HTTP/1.1", headerFields: ["content-type": "application/json"])!
+    client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    client?.urlProtocol(self, didLoad: data)
+    client?.urlProtocolDidFinishLoading(self)
+  }
+
+  override func stopLoading() {}
 }
