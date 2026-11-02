@@ -1,5 +1,19 @@
 # 用户视角检查点
 
+## 2026-11-02 09:28 +08 — CLI repairs awaiting installation
+
+- Local Bots acceptance now passes all 17 scripted-model cases, including real CLI
+  long-wait, quiet-watch, timeout and failed-submission cases. The installed 0.16.0
+  App has not yet been replaced; its existing bots and conversations remain in place.
+- Bots `check` and macOS Swift tests passed. The clean scratch Swift run verified the
+  version test's build-path isolation; the latest fixture adjustment passed the normal
+  Swift suite. The failed-submission change is still under review and uncommitted.
+- No new Herdr collection, website authentication, D1, browser rendering or public
+  deployment was performed. The earlier real CLI test authenticated with the supplied
+  credential; the old default credential's refusal remains unexplained.
+- Next: close the confirmed shutdown-retry issue, finish review, build and install the
+  local bundle, then verify the installed CLI and preserved conversations.
+
 ## 2026-11-02 08:58 +08 — CLI acceptance repair
 
 - The installed 0.16.0 App and its Bots daemon still run with the existing catalog and
