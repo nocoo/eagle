@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### macOS v0.16.1 — local release build
+## macOS v0.16.1 — 2026-11-02
 
 - Enforce CLI response deadlines, keep quiet sockets alive, resolve the bundled version
   through PATH, and preserve failed-submission details in JSON.
