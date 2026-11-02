@@ -2885,3 +2885,18 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   settings layout fixture (`NSCell.controlView` was nil); deployment was skipped.
   The next hop is follow-up review, an inspectable dev App, normal pre-push gates
   and CI verification on the fix revision.
+
+## 2026-11-02 21:19 +08 — Review-fix CI follow-up
+
+- The fixes and their test follow-ups are pushed through `dd3e46d`. Each push
+  passed the normal local root, browser and macOS gates. The dev App is running
+  in the right-hand pane; manual rendering and live Herdr collection have not
+  been verified. Authentication and D1 remain outside this run.
+- GitHub CI on `1a659fa` passed the root job but failed the macOS coverage run:
+  the existing device pairing layout fixture received an accessibility element
+  without an `NSCell.controlView`, and the Herdr ready fixture checked startup
+  too early. The latter now awaits the real startup with assertions preserved;
+  the former remains unresolved. The inherited-stdout regression passed.
+- Next: verify current-head CI and report the device pairing failure if it
+  persists. Failed checks skipped automatic deployment; no live deployment was
+  manually initiated.
