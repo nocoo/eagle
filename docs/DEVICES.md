@@ -40,6 +40,10 @@ model name, global CLI defaults or another member. `done` means
 已响应, not that the team's task has been verified complete. Missing or unfamiliar
 states stay 未知; workspace aggregate badges do not override member observations.
 
+Expanded inspector preview:
+
+![Local Herdr teams and member configuration](screenshots/macos-herdr-teams.png)
+
 While this panel is visible, the App reads `herdr session list --json`, then
 `herdr --session <name> api snapshot` for each running local session, waiting
 three seconds after each completed read. Each command has a ten-second timeout;
