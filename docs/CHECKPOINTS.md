@@ -2869,3 +2869,19 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   authentication, D1 or cloud change was performed for this correction.
 - Next: push the fixture correction through normal hooks, verify current-head
   GitHub CI, then send the authorized Teams review request to `nocoli`.
+
+## 2026-11-02 20:54 +08 — PR 116 merge and review fixes
+
+- PR 116 was merged as `ad968d9`, preserving its commits. Local fixes cover
+  missing agent kinds, device-directory status, Codex turn identity and bounded
+  Herdr stdout; independent review found a further turn-ID normalization case,
+  now fixed and under follow-up review.
+- Local Swift tests and strict formatting pass. The coverage gate passed at
+  91.8% before the last turn-ID fix; root check and browser tests passed (191
+  browser cases, 11 existing platform exclusions). Layout verification used
+  fixtures; live Herdr collection and manual App rendering have not yet been
+  rechecked for this revision. Authentication and D1 were not exercised.
+- Merge CI passed the root job but failed macOS coverage on the existing device
+  settings layout fixture (`NSCell.controlView` was nil); deployment was skipped.
+  The next hop is follow-up review, an inspectable dev App, normal pre-push gates
+  and CI verification on the fix revision.
