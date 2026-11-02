@@ -38,7 +38,8 @@ capacity when recorded, for example `codex · gpt-6-astra · max · 258.4K`. Pat
 are not displayed. Missing settings remain unrecorded, never inferred from a
 model name, global CLI defaults or another member. `done` means
 已响应, not that the team's task has been verified complete. Missing or unfamiliar
-states stay 未知; workspace aggregate badges do not override member observations.
+states and missing member kinds stay 未知; workspace aggregate badges do not override
+member observations.
 
 Expanded inspector preview:
 

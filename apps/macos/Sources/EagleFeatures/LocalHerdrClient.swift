@@ -139,11 +139,12 @@ public struct LocalHerdrClient: Sendable {
               info = await metadata?.read(sessionID: id) ?? HerdrAgentMetadata()
             }
             try Task.checkCancellation()
+            let kind = agent.agent.flatMap(Self.nonempty) ?? "未知"
             members.append(
               HerdrTeamMember(
                 id: agent.paneId,
-                name: Self.nonempty(agent.name) ?? "\(agent.agent) · \(agent.paneId)",
-                kind: agent.agent,
+                name: Self.nonempty(agent.name) ?? "\(kind) · \(agent.paneId)",
+                kind: kind,
                 status: HerdrAgentStatus(rawValue: agent.agentStatus ?? "") ?? .unknown,
                 model: info.model, reasoningEffort: info.reasoningEffort,
                 contextWindow: info.contextWindow))
@@ -256,7 +257,7 @@ public struct LocalHerdrClient: Sendable {
       let workspaceId: String
       let paneId: String
       let name: String?
-      let agent: String
+      let agent: String?
       let agentStatus: String?
       let agentSession: AgentSession?
     }

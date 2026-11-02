@@ -1045,3 +1045,12 @@ slow-render reproduction passes with every original assertion intact, as does th
 91.7% coverage gate. The temporary pause was removed; production timing, test
 limits and release gates are unchanged. Evidence is retained in the ignored
 `herdr-pr-poll-race-red.log` and `herdr-pr-poll-race-green.log` files under `.local/`.
+
+## 2026-11-02 — Verify the regression fixture before accepting a red test
+
+The first missing-agent regression test failed because its replacement did not
+match the fixture's newline, leaving the original agent type in place. The
+corrected fixture reproduced `invalidResponse` for missing and null types before
+the fix. Check that fixtures exercise the intended input, not merely that the
+assertion fails. The first commit attempt also exposed an overlong test line;
+run the staged Swift format check before committing.

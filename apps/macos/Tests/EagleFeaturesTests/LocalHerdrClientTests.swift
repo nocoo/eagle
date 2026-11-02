@@ -35,6 +35,27 @@ struct LocalHerdrClientTests {
       ])
   }
 
+  @Test(
+    "missing agent kinds leave the rest of the roster available", arguments: ["missing", "null"]
+  )
+  func missingAgentKind(value: String) async throws {
+    let replacement = value == "missing" ? "" : #""agent":null,"#
+    let client = LocalHerdrClient { arguments in
+      Data(
+        (arguments == ["session", "list", "--json"]
+          ? herdrSessionFixture
+          : herdrSnapshotFixture.replacingOccurrences(
+            of: #""tab_id":"w1:t2","agent":"codex","#,
+            with: #""tab_id":"w1:t2","# + replacement)).utf8)
+    }
+    let snapshot = try await client.read()
+    let members = try #require(snapshot.teams.first?.members)
+    #expect(members.count == 3)
+    #expect(members[0].kind == "codex")
+    #expect(members[1].kind == "未知")
+    #expect(members[1].status == .unknown)
+  }
+
   @Test("no running sessions is distinct from an installed session with no agents")
   func emptySessions() async throws {
     let client = LocalHerdrClient { _ in Data(#"{"sessions":[]}"#.utf8) }
