@@ -1,5 +1,30 @@
 # 用户视角检查点
 
+## 2026-11-02 14:52 +08 — local macOS 0.16.1 installed
+
+- Built the ad-hoc, unnotarized `device-release` profile at 0.16.1, then safely stopped
+  the old UI, its Bots daemon and device helper before replacing the entire installed
+  bundle at `/Applications/Eagle for Mac.app`. The signed 0.16.0 bundle is retained at
+  `/Applications/.eagle-update.Y5qrIl/previous/Eagle for Mac.app` for rollback.
+- The installed release's global `eagle --version` says 0.16.1; the new App, its daemon
+  on 43117 and device helper are running. The catalog hash, its three Bot identities and
+  zero groups match the immediate pre-install baseline. Three earlier space-station Bot
+  directories are in `trash`, not the live catalog; their delete records predate the
+  installation. They were not restored or deleted by this work. The separate Electron
+  `/Applications/Eagle.app` remains running and was not touched.
+- Release checks: root `npm run check` 265 tests, browser 191 passed/11 existing skips,
+  macOS Swift 211+48+60+27 tests, Bots macOS Swift tests, Bots `check` 772 tests, and
+  17 scripted-model CLI/daemon acceptance cases. The initial browser run lacked the
+  pinned Chromium; the initial acceptance had an unproven late-write `ENOTEMPTY` and the
+  initial Bots coverage rerun had a local lock-port collision. The logs and explanations
+  are retained; after the scoped note-queue fix and browser install the gates passed.
+- A separate source-run Eagle Dev is open in the right pane on isolated root/port 43129;
+  it does not share the installed App's Bot data. No new Herdr collection, website
+  authentication, D1 or public deployment was verified. No GitHub/npm publication occurred.
+- Next: wait for the owner to supply a new test credential, then run bounded installed-App
+  regression. Detached origin/trigger writes and late watch callbacks are still not
+  proven fully drained; the note fix only covers writes already queued when close joins.
+
 ## 2026-11-02 14:16 +08 — interrupted shutdown regression recovered
 
 - A new WebSocket history test hung from 10:50 until the owner interrupted it: the
