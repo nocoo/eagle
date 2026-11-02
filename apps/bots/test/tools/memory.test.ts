@@ -19,7 +19,12 @@ import {
   memoryExtension,
 } from "../../src/tools/memory/tools.ts";
 import { createToolRegistry, selectToolExtensions } from "../../src/tools/registry.ts";
-import { MAX_MEMORY_CONTENT, MAX_MEMORY_KEY, type MemoryToolHost } from "../../src/tools/types.ts";
+import {
+  MAX_MEMORY_CONTENT,
+  MAX_MEMORY_KEY,
+  MAX_MEMORY_LINES,
+  type MemoryToolHost,
+} from "../../src/tools/types.ts";
 import { openWorkspace } from "../../src/tools/workspace.ts";
 
 const bench = async () => {
@@ -66,13 +71,100 @@ test("a record is one heading section and the preamble survives a rewrite", () =
     "",
   ].join("\n");
   const parsed = parseMemory(text);
-  assert.equal(parsed.preamble.trim(), "# Memory\n\n说明：这是给我自己看的。");
+  assert.equal(
+    parsed.preamble,
+    "# Memory\n\n说明：这是给我自己看的。\n",
+    "the preamble is kept byte for byte, up to the first heading",
+  );
   assert.deepEqual([...parsed.records.keys()], ["deploy", "oncall"]);
   assert.equal(parsed.records.get("oncall"), "周三甲。\n周四乙。");
 
   const again = parseMemory(renderMemory(parsed.preamble, parsed.records));
   assert.deepEqual(again.records, parsed.records, "parsing what we render is the same file");
   assert.match(renderMemory(parsed.preamble, parsed.records), /^# Memory/);
+});
+
+test("a body may hold its own level-2 headings without becoming another record", async () => {
+  const { host, done } = await bench();
+  try {
+    const body = "## 步骤\n先连 VPN。\n\n## 回滚\n`make rollback`。\n\n\\## 这不是标题\n普通一行。";
+    await host.write({ scope: "bot", key: "deploy", content: body });
+    await host.write({ scope: "bot", key: "zulu", content: "别的内容" });
+
+    assert.deepEqual(
+      (await host.list({ scope: "bot", limit: 20 })).items.map((item) => item.key),
+      ["deploy", "zulu"],
+      "a heading inside a body is not a new record",
+    );
+    assert.equal((await host.read({ scope: "bot", key: "deploy" }))?.content, body);
+    assert.equal((await host.read({ scope: "bot", key: "zulu" }))?.content, "别的内容");
+
+    // Writing a second record must not damage the first one's body.
+    await host.write({ scope: "bot", key: "alpha", content: "新的" });
+    assert.equal((await host.read({ scope: "bot", key: "deploy" }))?.content, body);
+  } finally {
+    await done();
+  }
+});
+
+test("an indented title and CRLF are read without losing the preamble", async () => {
+  const { dir, host, done } = await bench();
+  try {
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      botMemoryFile(dir, "b_self"),
+      "    # Memory\r\n\r\n  保留缩进。\r\n\r\n## k\r\none\r\ntwo\r\n",
+      "utf8",
+    );
+    const parsed = parseMemory(await readFile(botMemoryFile(dir, "b_self"), "utf8"));
+    assert.equal(parsed.preamble, "    # Memory\n\n  保留缩进。\n");
+    assert.equal(
+      await host.read({ scope: "bot", key: "k" }).then((one) => one?.content),
+      "one\ntwo",
+    );
+    await host.write({ scope: "bot", key: "later", content: "x" });
+    const written = await readFile(botMemoryFile(dir, "b_self"), "utf8");
+    assert.match(written, /^ {4}# Memory\n\n {2}保留缩进。\n/);
+    assert.equal(written.includes("\r"), false, "the daemon stores LF");
+  } finally {
+    await done();
+  }
+});
+
+test("a hand edit and another bot's file are read, not assumed", async () => {
+  const { dir, host, done } = await bench();
+  try {
+    await writeFile(botMemoryFile(dir, "b_other"), "## theirs\n别的 Bot 的笔记。\n", "utf8");
+    assert.deepEqual((await host.list({ scope: "bot", limit: 20 })).items, []);
+    await host.write({ scope: "bot", key: "mine", content: "自己的" });
+    assert.deepEqual(
+      (await host.list({ scope: "bot", limit: 20 })).items.map((item) => item.key),
+      ["mine"],
+      "scope bot is this bot's file only",
+    );
+    assert.equal(await host.read({ scope: "bot", key: "theirs" }), undefined);
+
+    const { appendFile } = await import("node:fs/promises");
+    await appendFile(globalMemoryFile(dir), "\n## 手写\n脚本写的。\n", "utf8");
+    assert.equal((await host.read({ scope: "global", key: "手写" }))?.content, "脚本写的。");
+  } finally {
+    await done();
+  }
+});
+
+test("the host creates its directory private and its files private", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bots-memory-mode-"));
+  try {
+    const dir = join(root, "nested", "memory");
+    const host = fileMemoryHost({ dir, botId: "b_self" });
+    await host.write({ scope: "global", key: "k", content: "x" });
+    assert.equal((await stat(dir)).mode & 0o777, 0o700);
+    assert.equal((await stat(globalMemoryFile(dir))).mode & 0o777, 0o600);
+    assert.equal((await stat(join(dir))).mode & 0o777, 0o700);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("a repeated heading is last-one-wins and rendering keeps one section per key", () => {
@@ -118,6 +210,43 @@ test("writing one key keeps the rest of the file and the scope files stay apart"
     assert.equal((await stat(globalMemoryFile(dir))).mode & 0o777, 0o600);
     assert.equal((await stat(dir)).mode & 0o777, 0o700);
     assert.match(botMemoryFile(dir, "b_self"), /b_self\.md$/);
+  } finally {
+    await done();
+  }
+});
+
+test("a record whose key starts with # is a record like any other", async () => {
+  const { host, done } = await bench();
+  try {
+    assert.deepEqual(await host.write({ scope: "bot", key: "#tag", content: "ok" }), {
+      key: "#tag",
+      bytes: 2,
+      created: true,
+    });
+    assert.equal((await host.read({ scope: "bot", key: "#tag" }))?.content, "ok");
+    await host.write({ scope: "bot", key: "a#b", content: "ok" });
+    assert.deepEqual(
+      (await host.list({ scope: "bot", limit: 20 })).items.map((item) => item.key),
+      ["#tag", "a#b"],
+    );
+  } finally {
+    await done();
+  }
+});
+
+test("a replayed write converges on its own content, not on the newer one", async () => {
+  const { host, done } = await bench();
+  try {
+    await host.write({ scope: "bot", key: "k", content: "old" });
+    await host.write({ scope: "bot", key: "k", content: "new" });
+    const replayed = await host.write({ scope: "bot", key: "k", content: "old" });
+    assert.deepEqual(replayed, { key: "k", bytes: 3, created: false });
+    assert.equal((await host.read({ scope: "bot", key: "k" }))?.content, "old");
+    assert.equal(
+      (await host.remove({ scope: "bot", key: "k" })).deleted,
+      true,
+      "a delete replay removes whatever is there",
+    );
   } finally {
     await done();
   }
@@ -182,6 +311,69 @@ test("keywords match with AND semantics and answer with a bounded excerpt", asyn
   }
 });
 
+test("excerpts stay inside their budget and survive Unicode case folding", async () => {
+  const { host, done } = await bench();
+  try {
+    const far = `${"x".repeat(300)}needle${"x".repeat(300)}`;
+    await host.write({ scope: "bot", key: "far", content: far });
+    const twoSided = (await host.search({ scope: "bot", query: "needle", limit: 20 })).items[0];
+    assert.ok(twoSided, "the far record matched");
+    assert.ok(twoSided.excerpt.length <= 200, `${twoSided.excerpt.length} characters`);
+    assert.match(twoSided.excerpt, /^….*…$/s);
+    assert.match(twoSided.excerpt, /needle/);
+
+    // İ lowercases to two code points: the window must still come from the original text.
+    await host.write({
+      scope: "bot",
+      key: "turkish",
+      content: `${"İ".repeat(300)}needle`,
+    });
+    const folded = (await host.search({ scope: "bot", query: "needle", limit: 20 })).items.find(
+      (item) => item.key === "turkish",
+    );
+    assert.ok(folded, "the match is found");
+    assert.match(folded.excerpt, /needle/);
+    assert.ok(folded.excerpt.length <= 200);
+  } finally {
+    await done();
+  }
+});
+
+test("a key hit outranks a body hit, and a key-only match still has an excerpt", async () => {
+  const { host, done } = await bench();
+  try {
+    await host.write({ scope: "bot", key: "needle", content: "a" });
+    await host.write({ scope: "bot", key: "z", content: "needle 只出现在正文 needle needle" });
+    const ranked = (await host.search({ scope: "bot", query: "needle", limit: 20 })).items;
+    assert.equal(ranked[0]?.key, "needle", "a key hit is weighted above body hits");
+    assert.equal(ranked[0]?.excerpt.includes("needle"), false, "a key-only match has no body hit");
+    assert.ok((ranked[0]?.excerpt.length ?? 0) > 0);
+  } finally {
+    await done();
+  }
+});
+
+test("a large search answer stays valid JSON and says what it dropped", async () => {
+  const { host, done } = await bench();
+  try {
+    for (let index = 0; index < 100; index += 1) {
+      await host.write({
+        scope: "bot",
+        key: `k${String(index).padStart(3, "0")}`,
+        content: "针" + "界".repeat(500),
+      });
+    }
+    const answer = await call(host, "memory_search", { scope: "bot", query: "针", limit: 100 });
+    assert.equal(answer.isError, undefined, answer.output);
+    assert.ok(Buffer.byteLength(answer.output, "utf8") < 50 * 1024, "under the tool-result cap");
+    const parsed = JSON.parse(answer.output) as { items: unknown[]; truncated: boolean };
+    assert.equal(parsed.truncated, true);
+    assert.ok(parsed.items.length > 0 && parsed.items.length < 100);
+  } finally {
+    await done();
+  }
+});
+
 test("search is bounded and says when it dropped matches", async () => {
   const { host, done } = await bench();
   try {
@@ -229,6 +421,11 @@ test("the store refuses a key or a body it cannot keep", async () => {
       new RegExp(`${MAX_MEMORY_KEY}`),
     );
     await assert.rejects(host.write({ scope: "bot", key: "a\nb", content: "x" }), /key/);
+    await assert.rejects(
+      host.write({ scope: "bot", key: "lines", content: "x\n".repeat(MAX_MEMORY_LINES + 1) }),
+      new RegExp(`${MAX_MEMORY_LINES}`),
+      "a body too tall to be read back in one result is refused",
+    );
     await assert.rejects(
       host.write({ scope: "bot", key: "ok", content: "   \n" }),
       /memory_delete/,
@@ -363,6 +560,25 @@ test("the tools answer in JSON, except a read, which is the record itself", asyn
 
     const removed = await call(host, "memory_delete", { scope: "global", key: "deploy" });
     assert.deepEqual(JSON.parse(removed.output), { key: "deploy", deleted: true });
+  } finally {
+    await done();
+  }
+});
+
+test("a hand-written record too large to return whole is refused, not cut", async () => {
+  const { dir, done } = await bench();
+  try {
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      botMemoryFile(dir, "b_self"),
+      `## huge\n${"x".repeat(MAX_MEMORY_CONTENT + 10)}\n`,
+      "utf8",
+    );
+    const host = fileMemoryHost({ dir, botId: "b_self" });
+    const answer = await call(host, "memory_read", { scope: "bot", key: "huge" });
+    assert.equal(answer.isError, true);
+    assert.match(answer.output, /read the file directly/);
   } finally {
     await done();
   }

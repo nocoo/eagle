@@ -364,9 +364,16 @@ preamble the daemon preserves verbatim and never interprets.
 
 - The key is the heading text trimmed, at most 120 characters, no newline. Identity is that
 exact text: `deploy` and `Deploy` are different records and a read requires the exact key.
-Search is case-insensitive.
-- A body keeps its own formatting. The daemon trims trailing whitespace and one separating
-blank line before the next heading, and writes records back in key order.
+Search is case-insensitive. A key may start with `#`; `## #tag` is the record `#tag`.
+- A body keeps its own formatting, headings included: a body line that would read as a record
+separator is written with one leading backslash (`## 步骤` becomes `\## 步骤`), and every
+backslash run in front of `##` is preserved by the same rule. Reading strips that one
+backslash, so any body round-trips exactly.
+- Line endings are stored as LF; a CRLF file is read normally and written back as LF. The
+daemon trims trailing whitespace and one separating blank line before the next heading, and
+writes records back in key order.
+- Everything before the first heading is kept byte for byte, including indentation — a file
+that starts with `    # Memory` still does after a write.
 - A repeated heading is last-one-wins on read; a write collapses the duplicates into one
 section. Content is never silently merged.
 - A missing or empty file is an empty scope, not an error.
@@ -384,28 +391,40 @@ model-supplied path.
 | --- | --- | --- | --- |
 | `memory_list` | `scope, cursor?, limit?` | `{items: [{key, bytes}], nextCursor?}` in stable key order; the cursor is the last key returned | Safe |
 | `memory_search` | `scope, query, limit?` | `{items: [{key, excerpt}], truncated}`; keys and bounded excerpts only, never whole records | Safe |
-| `memory_read` | `scope, key` | The record's markdown as plain text, no JSON wrapper; a missing key is an `isError` result naming the scope and a `memory_list` hint | Safe |
+| `memory_read` | `scope, key` | The record's markdown as plain text, no JSON wrapper; a missing key is an `isError` result naming the scope and a `memory_list` hint, and a hand-written record too large to return whole is refused rather than cut | Safe |
 | `memory_write` | `scope, key, content` | `{key, bytes, created}`; creates or replaces the whole record | Safe by value |
 | `memory_delete` | `scope, key` | `{key, deleted}`; deleting an absent key is success with `deleted: false` | Safe by value |
 
-Bounds: content at most 32 KiB of UTF-8 (a longer write is refused, never truncated), a write
-whose content is blank is refused with "use memory_delete", `query` at most 2 KiB, list/search
-default 20 and maximum 100, tool output at most 50 KiB. Every refusal is a model-visible
-`isError` result with the limit in it; no tool throws.
+Bounds: content at most 32 KiB of UTF-8 and 2000 lines (a longer write is refused, never
+truncated; the line cap is what lets a read return the whole record under the Harness's own
+2000-line result limit), a write whose content is blank is refused with "use memory_delete",
+`query` at most 2 KiB, list/search default 20 and maximum 100. Every refusal is a
+model-visible `isError` result with the limit in it; no tool throws.
+
+A result is kept under 48 KiB by dropping trailing items and reporting `truncated`, not by
+letting the Harness cut text: its 50 KiB cap would leave the JSON unparseable. `memory_list`
+pages from the last record the caller actually received, so a cut page loses nothing.
 
 `memory_write` replaces, so extending a note costs a `memory_read` first; the group's prompt
-section says so. It is replay-safe by value — the record is a function of the arguments, so a
-retry converges — which is the same precedent as `note_set`, and it needs no `opId` because
-nothing accumulates. Two concurrent writes to one key end at the last committed one.
+section says so. It is replay-safe by value — the record is a function of the arguments — the
+same precedent as `note_set`, and it needs no `opId` because nothing accumulates. That is
+convergence, not conflict protection: a replayed write puts its own content back, overwriting
+whatever was written after it, and a replayed delete removes whatever is there now. Two
+concurrent writes to one key end at the last committed one.
 
 #### Search, v1
 
 Whitespace tokens, case-insensitive; a record matches when every token occurs in its key or
-body. Ranking counts key occurrences before body occurrences, then key order. `excerpt` is one
-window of at most 200 characters around the first body match, whitespace collapsed. The stable
-guarantee is "matches are relevant to the query and each excerpt is a bounded window around a
-match"; the scoring function may improve — BM25, embeddings, a remote index — without a
-contract change. A result is never a full record, so a caller that needs content reads it.
+body. The score is `keyOccurrences × 3 + bodyOccurrences`, summed over the tokens, ties broken by
+key order — so one key hit outranks up to three body hits, not any number of them. `excerpt` is
+one window of at most 200 characters, ellipses included, whitespace collapsed; it starts 60
+characters before the first body match, or at the start of the body when the match is only in
+the key. The window is located on the original text, not on a lowercased copy, so Unicode case
+folding cannot shift it.
+
+The stable guarantee is "matches are relevant to the query and each excerpt is a bounded window
+around a match"; the scoring function may improve — BM25, embeddings, a remote index — without
+a contract change. A result is never a full record, so a caller that needs content reads it.
 
 #### Storage port
 
@@ -445,10 +464,13 @@ claim a precision the storage does not have; `createdAt`/`updatedAt` become addi
 store can answer them honestly. Likewise `memory_write` may later take an optional
 `expectedBytes` guard for an optimistic update — additive, never a change to the five calls.
 
-Each call re-reads the file and writes it back (temp file plus rename in the same directory),
-serialized per file inside the daemon, so two tools in one run cannot lose each other's
-records. An external script can still interleave: last committed write wins, and the daemon
-never merges.
+Every read re-reads the file, because a script is a writer too. Every mutation is a
+read-modify-write under a per-file queue, then an exclusively created scratch file renamed over
+the target in the same directory (mode 0600, leftover scratch removed on failure), so two tools
+in one run cannot lose each other's records. The directory is created 0700; an existing
+directory keeps whatever mode its owner set. An external script can still interleave: last
+committed write wins, and the daemon never merges. Rename gives visibility atomicity, not
+power-loss durability: nothing here fsyncs.
 
 #### Group wiring
 

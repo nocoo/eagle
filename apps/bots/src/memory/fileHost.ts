@@ -1,18 +1,18 @@
 // Memory v1 (docs/bots/EXTENSIONS-AND-TOOLS.md §6.1): two markdown files a person reads,
 // edits and scripts, and the only module that knows that format. The tools see the port in
 // tools/types.ts, so a later store replaces this file without changing a signature.
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   MAX_MEMORY_CONTENT,
   MAX_MEMORY_EXCERPT,
   MAX_MEMORY_KEY,
+  MAX_MEMORY_LINES,
   type MemoryScope,
   type MemoryToolHost,
 } from "../tools/types.ts";
 
 const EXCERPT_LEAD = 60;
-const HEADING = "## ";
 
 export const globalMemoryFile = (dir: string): string => join(dir, "global.md");
 export const botMemoryFile = (dir: string, botId: string): string => join(dir, `${botId}.md`);
@@ -29,12 +29,22 @@ export class MemoryStoreError extends Error {
 }
 
 export type ParsedMemory = {
-  /** Everything before the first heading: a title, a note for readers, kept verbatim. */
+  /** Everything before the first heading, kept byte for byte: a title, a note for readers. */
   readonly preamble: string;
   readonly records: Map<string, string>;
 };
 
-const trimBody = (lines: readonly string[]): string => lines.join("\n").replace(/\s+$/u, "");
+/** A record starts at `## key`; a body line that would look like one is escaped on the way out. */
+const SEPARATOR = /^##(?: |$)/u;
+const ESCAPABLE = /^(\\*)##(?: |$)/u;
+
+const isHeading = (line: string): boolean => SEPARATOR.test(line);
+const escapeBodyLine = (line: string): string => (ESCAPABLE.test(line) ? `\\${line}` : line);
+const unescapeBodyLine = (line: string): string =>
+  line.startsWith("\\") && ESCAPABLE.test(line.slice(1)) ? line.slice(1) : line;
+
+/** macOS and Windows editors both reach these files; the daemon stores and compares LF. */
+const normalizeNewlines = (text: string): string => text.replace(/\r\n?/gu, "\n");
 
 /** A record is one `## key` section and its body; a repeated key is last-one-wins. */
 export const parseMemory = (text: string): ParsedMemory => {
@@ -43,31 +53,34 @@ export const parseMemory = (text: string): ParsedMemory => {
   let key: string | undefined;
   let body: string[] = [];
   const flush = (): void => {
-    if (key !== undefined && key.length > 0) records.set(key, trimBody(body));
+    if (key !== undefined && key.length > 0) {
+      records.set(key, body.map(unescapeBodyLine).join("\n").replace(/\s+$/u, ""));
+    }
     key = undefined;
     body = [];
   };
-  for (const line of text.split("\n")) {
-    if (line.startsWith(HEADING)) {
+  for (const line of normalizeNewlines(text).split("\n")) {
+    if (isHeading(line)) {
       flush();
-      key = line.slice(HEADING.length).trim();
+      key = line.slice(2).trim();
       continue;
     }
     if (key === undefined) preamble.push(line);
     else body.push(line);
   }
   flush();
-  return { preamble: preamble.join("\n").trim(), records };
+  return { preamble: preamble.join("\n"), records };
 };
 
 export const renderMemory = (preamble: string, records: ReadonlyMap<string, string>): string => {
-  const head = preamble.trim();
-  const sections = [...records.keys()]
-    .sort()
-    .map((key) => `${HEADING}${key}\n${records.get(key) ?? ""}`);
+  const sections = [...records.keys()].sort().map((key) => {
+    const body = (records.get(key) ?? "").split("\n").map(escapeBodyLine).join("\n");
+    return `## ${key}\n${body}`;
+  });
   const body = sections.join("\n\n");
-  if (head.length === 0) return body.length === 0 ? "" : `${body}\n`;
-  return body.length === 0 ? `${head}\n` : `${head}\n\n${body}\n`;
+  if (preamble.length === 0) return body.length === 0 ? "" : `${body}\n`;
+  const head = preamble.endsWith("\n") ? preamble : `${preamble}\n`;
+  return body.length === 0 ? head : `${head}\n${body}\n`;
 };
 
 const missing = (error: unknown): boolean =>
@@ -82,16 +95,24 @@ const load = async (file: string): Promise<ParsedMemory> => {
   }
 };
 
-let temporary = 0;
+let scratchFiles = 0;
 const store = async (file: string, parsed: ParsedMemory): Promise<void> => {
+  // The directory is created private; an existing one keeps the mode its owner chose.
   await mkdir(dirname(file), { recursive: true, mode: 0o700 });
-  temporary += 1;
-  const scratch = `${file}.tmp-${process.pid}-${temporary}`;
-  await writeFile(scratch, renderMemory(parsed.preamble, parsed.records), {
-    encoding: "utf8",
-    mode: 0o600,
-  });
-  await rename(scratch, file);
+  scratchFiles += 1;
+  const scratch = `${file}.tmp-${process.pid}-${scratchFiles}`;
+  try {
+    // `wx` refuses a file that already exists, so a stale scratch is never adopted.
+    await writeFile(scratch, renderMemory(parsed.preamble, parsed.records), {
+      encoding: "utf8",
+      mode: 0o600,
+      flag: "wx",
+    });
+    await rename(scratch, file);
+  } catch (error) {
+    await rm(scratch, { force: true });
+    throw error;
+  }
 };
 
 /** One mutation at a time per file, so two tools in one run cannot lose each other's keys. */
@@ -116,19 +137,21 @@ const checkKey = (raw: string): string => {
     throw new MemoryStoreError(`a memory key is at most ${MAX_MEMORY_KEY} characters`);
   }
   if (/[\r\n]/u.test(key)) throw new MemoryStoreError("a memory key cannot contain a newline");
-  if (key.startsWith("#")) throw new MemoryStoreError("a memory key cannot start with #");
   return key;
 };
 
 const checkContent = (content: string): string => {
-  const body = content.replace(/\s+$/u, "");
+  const body = normalizeNewlines(content).replace(/\s+$/u, "");
   if (body.trim().length === 0) {
-    throw new MemoryStoreError(
-      "a memory with empty content is deleted, not written: use memory_delete",
-    );
+    throw new MemoryStoreError("a blank body is deleted, not written: use memory_delete");
   }
   if (Buffer.byteLength(body, "utf8") > MAX_MEMORY_CONTENT) {
     throw new MemoryStoreError(`a memory record is at most ${MAX_MEMORY_CONTENT} bytes`);
+  }
+  if (body.split("\n").length > MAX_MEMORY_LINES) {
+    throw new MemoryStoreError(
+      `a memory record is at most ${MAX_MEMORY_LINES} lines, so a read can return all of it`,
+    );
   }
   return body;
 };
@@ -149,18 +172,31 @@ const occurrences = (text: string, token: string): number => {
   return count;
 };
 
+const escaped = (token: string): string => token.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+
+/** The first body position of any token, found on the original text so indices stay comparable. */
+const firstMatch = (body: string, tokens: readonly string[]): number => {
+  let first = -1;
+  for (const token of tokens) {
+    const index = body.search(new RegExp(escaped(token), "iu"));
+    if (index !== -1 && (first === -1 || index < first)) first = index;
+  }
+  return first;
+};
+
+/** A window of at most `MAX_MEMORY_EXCERPT` characters, ellipses included. */
 const excerptOf = (body: string, tokens: readonly string[]): string => {
-  const lower = body.toLowerCase();
-  const found = tokens
-    .map((token) => lower.indexOf(token))
-    .filter((index) => index !== -1)
-    .sort((left, right) => left - right)[0];
-  const start = found === undefined ? 0 : Math.max(0, found - EXCERPT_LEAD);
+  const found = firstMatch(body, tokens);
+  const start = found === -1 ? 0 : Math.max(0, found - EXCERPT_LEAD);
+  const left = start > 0;
+  const budget = MAX_MEMORY_EXCERPT - (left ? 1 : 0);
+  const right = start + budget < body.length;
+  const room = right ? budget - 1 : budget;
   const window = body
-    .slice(start, start + MAX_MEMORY_EXCERPT)
+    .slice(start, start + room)
     .replace(/\s+/gu, " ")
     .trim();
-  return `${start > 0 ? "…" : ""}${window}${start + MAX_MEMORY_EXCERPT < body.length ? "…" : ""}`;
+  return `${left ? "…" : ""}${window}${right ? "…" : ""}`;
 };
 
 /**
@@ -218,9 +254,10 @@ export const fileMemoryHost = (options: {
   };
 
   const read: MemoryToolHost["read"] = async (input) => {
+    const key = input.key.trim();
     const parsed = await load(fileFor(input.scope));
-    const content = parsed.records.get(input.key.trim());
-    return content === undefined ? undefined : { key: input.key.trim(), content };
+    const content = parsed.records.get(key);
+    return content === undefined ? undefined : { key, content };
   };
 
   const write: MemoryToolHost["write"] = async (input) => {

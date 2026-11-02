@@ -13,6 +13,7 @@ import {
   MAX_MEMORY_CONTENT,
   MAX_MEMORY_KEY,
   MAX_MEMORY_LIMIT,
+  MAX_MEMORY_LINES,
   MAX_MEMORY_QUERY,
   type MemoryScope,
   type MemoryToolHost,
@@ -20,6 +21,26 @@ import {
 } from "../types.ts";
 
 export const MEMORY_TOOLS_EXTENSION = "bots-memory";
+
+/**
+ * A tool result is capped at 50 KiB by the Harness, which cuts text and would leave JSON
+ * unparseable. Keeping items under a smaller budget means the caller reads valid JSON and a
+ * `truncated` flag instead of a silent amputation.
+ */
+const MAX_RESULT_BYTES = 48 * 1024;
+
+const bounded = <T>(
+  items: readonly T[],
+  envelope: (kept: readonly T[]) => unknown,
+): readonly T[] => {
+  let kept: readonly T[] = [];
+  for (const item of items) {
+    const candidate = [...kept, item];
+    if (Buffer.byteLength(JSON.stringify(envelope(candidate)), "utf8") > MAX_RESULT_BYTES) break;
+    kept = candidate;
+  }
+  return kept;
+};
 
 const scopes = ["global", "bot"] as const;
 
@@ -99,10 +120,16 @@ export const createMemoryTools = (host: MemoryToolHost): readonly ToolRegistrati
           limit: limitOf(args.limit),
           ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
         });
+        const kept = bounded(page.items, (items) => ({
+          items,
+          nextCursor: "x".repeat(MAX_MEMORY_KEY),
+        }));
+        // A budget-cut page still pages from the last record the caller actually received.
+        const nextCursor = kept.length < page.items.length ? kept.at(-1)?.key : page.nextCursor;
         return result(
           text({
-            items: page.items,
-            ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+            items: kept,
+            ...(nextCursor === undefined ? {} : { nextCursor }),
           }),
         );
       } catch (error) {
@@ -129,7 +156,10 @@ export const createMemoryTools = (host: MemoryToolHost): readonly ToolRegistrati
           query: queryOf(args.query),
           limit: limitOf(args.limit),
         });
-        return result(text({ items: found.items, truncated: found.truncated }));
+        const kept = bounded(found.items, (items) => ({ items, truncated: true }));
+        return result(
+          text({ items: kept, truncated: found.truncated || kept.length < found.items.length }),
+        );
       } catch (error) {
         return result(failed(messageOf(error)));
       }
@@ -155,6 +185,18 @@ export const createMemoryTools = (host: MemoryToolHost): readonly ToolRegistrati
             ),
           );
         }
+        // A file edited by hand can hold more than this tool can return; refuse rather than
+        // hand the model a silently truncated record.
+        if (
+          Buffer.byteLength(record.content, "utf8") > MAX_MEMORY_CONTENT ||
+          record.content.split("\n").length > MAX_MEMORY_LINES
+        ) {
+          return result(
+            failed(
+              `"${record.key}" is larger than a memory record (${MAX_MEMORY_CONTENT} bytes, ${MAX_MEMORY_LINES} lines); read the file directly`,
+            ),
+          );
+        }
         return { output: [{ type: "text" as const, text: record.content }] };
       } catch (error) {
         return result(failed(messageOf(error)));
@@ -170,7 +212,7 @@ export const createMemoryTools = (host: MemoryToolHost): readonly ToolRegistrati
         description: `The record's name, at most ${MAX_MEMORY_KEY} characters; reuse it to replace`,
       }),
       content: Type.String({
-        description: "The whole record in markdown. An empty body is deleted instead",
+        description: "The whole record in markdown; a blank body is refused, so delete instead",
       }),
     }),
     replay: "safe",

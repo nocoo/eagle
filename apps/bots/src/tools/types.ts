@@ -30,6 +30,8 @@ export type MemoryScope = "global" | "bot";
 // the port, not to a store: a replacement must refuse the same inputs.
 export const MAX_MEMORY_KEY = 120;
 export const MAX_MEMORY_CONTENT = 32 * 1024;
+/** A record that fits this also fits one tool result, whose default cap is 2000 lines. */
+export const MAX_MEMORY_LINES = 2000;
 export const MAX_MEMORY_QUERY = 2 * 1024;
 export const MAX_MEMORY_EXCERPT = 200;
 export const MAX_MEMORY_LIMIT = 100;
