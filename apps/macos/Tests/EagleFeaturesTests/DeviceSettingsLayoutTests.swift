@@ -182,8 +182,7 @@ struct DeviceSettingsLayoutTests {
     #expect(attribute(toggle, "AXValue") as? Int == 1, "a running service reads as on")
 
     let press = NSSelectorFromString("accessibilityPerformPress")
-    try #require(toggle.responds(to: press))
-    toggle.perform(press)
+    #expect(try accessibilityBool(toggle, selector: press))
     try await waitUntil { control.stops == 1 && !model.enabled && !model.controlsBusy }
     #expect(control.stops == 1)
     #expect(!model.enabled)
@@ -203,16 +202,24 @@ struct DeviceSettingsLayoutTests {
     var releaseStart: CheckedContinuation<Void, Never>?
     control.startGate = { await withCheckedContinuation { releaseStart = $0 } }
     defer { releaseStart?.resume() }
-    stopped.perform(press)
+    #expect(try accessibilityBool(stopped, selector: press))
     try await waitUntil { releaseStart != nil }
     #expect(model.enabled)
     #expect(control.starts == 1)
     let release = try #require(releaseStart)
     releaseStart = nil
     release.resume()
-    try await waitUntil { control.starts == 2 && model.localReady }
+    try await waitUntil { control.starts == 2 && model.localReady && !model.controlsBusy }
     #expect(control.starts == 2)
     #expect(model.enabled)
+    try await waitUntil {
+      guard
+        let node = entries(host).first(where: {
+          attribute($0, "AXIdentifier") as? String == "devices.service"
+        })
+      else { return false }
+      return attribute(node, "AXValue") as? Int == 1
+    }
   }
 
   private func makeHost(
@@ -265,7 +272,10 @@ struct DeviceSettingsLayoutTests {
   }
 
   private func isEnabled(_ element: NSObject) throws -> Bool {
-    let selector = NSSelectorFromString("isAccessibilityEnabled")
+    try accessibilityBool(element, selector: NSSelectorFromString("isAccessibilityEnabled"))
+  }
+
+  private func accessibilityBool(_ element: NSObject, selector: Selector) throws -> Bool {
     try #require(element.responds(to: selector))
     let implementation = try #require(element.method(for: selector))
     let getter = unsafeBitCast(
