@@ -1081,3 +1081,18 @@ the production timeout and assertions on timeout and cancellation remain.
 A later CI run exposed the Herdr layout fixture checking device readiness before
 its asynchronous startup completed. The ready case now waits for startup before
 rendering, retaining the same readiness and accessibility assertions.
+
+## 2026-11-03 — Prove the pairing fixture changes its binding
+
+Several macOS CI runs stopped before checking refresh because an accessibility
+node was assumed to be an `NSCell` with a control view. A synthetic accessibility
+wrapper reproduced that assumption locally. Finding the editable native field by
+its accessibility frame removes the assumption; an enabled submit button proves
+the input reached SwiftUI state. Temporarily clearing the binding on directory
+change made the final preservation assertion fail, and the unmodified view passed.
+The clear button was not independently exposed in the accessibility tree, so its
+absence alone could not prove the binding was empty.
+
+The first coverage run also found a separate collision cleanup bug in the bundled
+Bots supervisor fixture: `rmSync` was called on a directory without recursive
+mode. The release must keep that failure visible until the fixture is corrected.

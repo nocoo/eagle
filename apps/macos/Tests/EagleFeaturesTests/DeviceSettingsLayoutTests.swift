@@ -107,15 +107,26 @@ struct DeviceSettingsLayoutTests {
     try await Task.sleep(for: .milliseconds(50))
     host.layoutSubtreeIfNeeded()
     #expect(entries(host).compactMap(title).contains("另一台设备的配对码"))
+    let submit = try #require(entries(host).first { title($0) == "添加设备" })
+    #expect(try !isEnabled(submit))
     let input = try #require(entries(host).first { title($0) == "另一台设备的配对码" })
-    let setter = NSSelectorFromString("setAccessibilityValue:")
-    try #require(input.responds(to: setter))
-    input.perform(setter, with: "unfinished-pairing-input")
-    let textField = try #require((input as? NSCell)?.controlView as? NSTextField)
-    textField.delegate?.controlTextDidChange?(
-      Notification(name: NSControl.textDidChangeNotification, object: textField))
+    let frame = try #require(input as? any NSAccessibilityElementProtocol).accessibilityFrame()
+    let fields = nativeViews(host).compactMap { $0 as? NSTextField }.filter { field in
+      field.isEditable
+        && window.convertToScreen(field.convert(field.bounds, to: nil)).intersects(frame)
+    }
+    #expect(fields.count == 1)
+    let textField = try #require(fields.first)
+    try #require(window.makeFirstResponder(textField))
+    let editor = try #require(window.fieldEditor(false, for: textField) as? NSTextView)
+    editor.insertText("unfinished-pairing-input", replacementRange: NSRange(location: 0, length: 0))
+    editor.didChangeText()
+    try await Task.sleep(for: .milliseconds(50))
+    let enabled = try #require(entries(host).first { title($0) == "添加设备" })
+    #expect(try isEnabled(enabled))
     control.directory = deviceDirectory(observation: "visible-change", online: true)
     await model.refresh()
+    #expect(model.directory?.observationRevision == "visible-change")
     try await Task.sleep(for: .milliseconds(20))
     let refreshed = try #require(entries(host).first { title($0) == "另一台设备的配对码" })
     #expect(attribute(refreshed, "AXValue") as? String == "unfinished-pairing-input")
@@ -222,6 +233,19 @@ struct DeviceSettingsLayoutTests {
     let legacy = NSSelectorFromString("accessibilityAttributeValue:")
     guard node.responds(to: legacy) else { return nil }
     return node.perform(legacy, with: name)?.takeUnretainedValue()
+  }
+
+  private func isEnabled(_ element: NSObject) throws -> Bool {
+    let selector = NSSelectorFromString("isAccessibilityEnabled")
+    try #require(element.responds(to: selector))
+    let implementation = try #require(element.method(for: selector))
+    let getter = unsafeBitCast(
+      implementation, to: (@convention(c) (AnyObject, Selector) -> Bool).self)
+    return getter(element, selector)
+  }
+
+  private func nativeViews(_ view: NSView) -> [NSView] {
+    [view] + view.subviews.flatMap(nativeViews)
   }
 
   private func entries(_ node: Any) -> [NSObject] {
