@@ -63,7 +63,7 @@ public enum EagleCLIKit {
   }
 
   private static var executableURL: URL {
-    (CommandLine.arguments.first.map { URL(fileURLWithPath: $0) } ?? URL(fileURLWithPath: ""))
+    (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments.first ?? ""))
       .resolvingSymlinksInPath()
   }
 
