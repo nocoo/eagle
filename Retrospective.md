@@ -1,5 +1,16 @@
 # Retrospective
 
+## 2026-11-02 — Wrong expected reason in installed CLI regression
+
+The installed-product regression deliberately selected an unregistered per-Bot model,
+then incorrectly asserted `model_error`. The protocol explicitly says a model ID other
+than the daemon's registered model settles `no_model`. The CLI preserved that exact
+reason and the matching terminal frame, and the original model was restored; the test
+script's exit 1 was caused by the wrong expectation, not by the product. Read the
+contract before assigning a failure reason, and retain the actual result rather than
+calling an expected refusal a product defect. The scripted `model_error` acceptance is
+separate evidence, not an installed live-provider test.
+
 ## 2026-11-02 — Local release checks exposed two shutdown boundaries
 
 The first isolated CLI acceptance for 0.16.1 failed while deleting its temporary root

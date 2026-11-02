@@ -1,5 +1,29 @@
 # 用户视角检查点
 
+## 2026-11-02 14:59 +08 — installed 0.16.1 limited regression
+
+- The owner's new test credential authenticated as a read/write/admin client. Its value
+  was passed in the CLI environment, not argv or the receipt; a literal-value scan of
+  the owned daemon logs and regression receipt found no occurrence.
+- A dedicated Bot `0.16.1 回归验证 145504` was created and retained. The installed CLI
+  invoked its real model and `bash`; the command returned 91 and exactly one observed
+  terminal `done` matched the submission. A second run invoked `sleep 12`: `--timeout 6`
+  exited 1 in 6.28s, and an independent watch observed one input and its later `done`
+  without aborting or resending. A quiet watch remained connected 64.18s and saw four
+  pongs, beyond the server's 60s idle deadline.
+- An unregistered per-Bot model yielded one matching `unanswered/no_model` frame and the
+  CLI preserved the same reason. The initial assertion incorrectly expected `model_error`;
+  the protocol says `no_model`, as recorded in Retrospective.md. The original model was
+  restored, a real follow-up chat succeeded, and history returned all four test prompts.
+  The actual live-provider `model_error` path was not tested; the scripted case is separate.
+- The three pre-install Bot IDs remain present; the regression Bot is idle and keeps its
+  original model. No Bot or group was deleted. Earlier space-station Bot directories remain
+  in `trash`, outside the live catalog. The installed App and daemon remain running; no
+  Herdr collection, website authentication, D1 or public deployment was exercised. Receipt:
+  `.local/eagle-0161-live-regression.json`.
+- The pre-existing default CLI credential's rejection remains unexplained. Detached origin
+  and trigger writes and late watch callbacks still lack a proven complete shutdown drain.
+
 ## 2026-11-02 14:52 +08 — local macOS 0.16.1 installed
 
 - Built the ad-hoc, unnotarized `device-release` profile at 0.16.1, then safely stopped
