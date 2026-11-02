@@ -97,7 +97,8 @@ is refused, without a second event.
 ## Record shape
 
 One JSON object per line: `<root>/logs/daemon-YYYYMMDD.jsonl`, rotated at 10 MB,
-five files kept.
+five files kept. Closing the file sink drains records already accepted, closes its
+file and refuses later writes; repeated or concurrent closes share the same shutdown.
 
 ```json
 {"ts":"2026-10-25T02:11:03.412Z","level":"info","layer":"core","evt":"core.submit.ok",

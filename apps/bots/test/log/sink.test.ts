@@ -42,6 +42,34 @@ test("writes one json record per line, rotates, and keeps the newest files", asy
   }
 });
 
+test("close drains accepted writes and never reopens for late writes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bots-sink-"));
+  const sink = new FileLogSink({ root, now: () => new Date("2026-01-02T00:00:00.000Z") });
+  const path = join(root, "logs", "daemon-20260102.jsonl");
+  try {
+    sink.write(record(1));
+    sink.write(record(2));
+    const first = sink.close();
+    sink.write(record(3));
+    const second = sink.close();
+    assert.equal(first, second, "concurrent callers wait for the same close");
+    await Promise.all([first, second]);
+    sink.write(record(4));
+    await sink.flush();
+    const rows = (await readFile(path, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { trace: string });
+    assert.deepEqual(
+      rows.map((row) => row.trace),
+      ["tr_sink_1", "tr_sink_2"],
+    );
+  } finally {
+    await sink.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("records below the minimum level never reach the file", async () => {
   const root = await mkdtemp(join(tmpdir(), "bots-sink-"));
   try {

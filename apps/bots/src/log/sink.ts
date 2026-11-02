@@ -40,6 +40,7 @@ export class FileLogSink {
   #day = "";
   #bytes = 0;
   #queue: Promise<void> = Promise.resolve();
+  #closing: Promise<void> | undefined;
 
   constructor(options: FileSinkOptions) {
     this.#dir = join(options.root, "logs");
@@ -54,7 +55,7 @@ export class FileLogSink {
 
   /** Never throws into a caller: a broken log file must not fail a request. */
   write(record: LogRecord): void {
-    if (rank(record.level) < rank(this.#minimum)) return;
+    if (this.#closing !== undefined || rank(record.level) < rank(this.#minimum)) return;
     const line = `${JSON.stringify(record)}\n`;
     this.#queue = this.#queue.then(() => this.#append(line)).catch(() => undefined);
   }
@@ -65,11 +66,14 @@ export class FileLogSink {
     await this.#handle?.sync().catch(() => undefined);
   }
 
-  async close(): Promise<void> {
-    await this.flush();
-    const handle = this.#handle;
-    this.#handle = undefined;
-    await handle?.close().catch(() => undefined);
+  close(): Promise<void> {
+    this.#closing ??= (async () => {
+      await this.flush();
+      const handle = this.#handle;
+      this.#handle = undefined;
+      await handle?.close().catch(() => undefined);
+    })();
+    return this.#closing;
   }
 
   async #append(line: string): Promise<void> {
