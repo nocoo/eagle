@@ -1,5 +1,20 @@
 # 用户视角检查点
 
+## 2026-11-02 19:35 +08 — the card is in the conversation
+
+- User-facing: an `ask_user` call now renders as a card in the transcript — header with
+  需要你确认 / 已回答 and 忽略, one block per question with a 单选/多选 badge, whole-row
+  options carrying a filled check when chosen, and a submit that stays disabled until every
+  question has a choice. The choices travel as labels only; the daemon writes the hidden
+  message, and the card turns read-only when that message arrives. A hidden answer never
+  appears as a chat turn.
+- Verified locally: macOS Swift tests 220 + 48 + 60 + 29, Bots `npm run check` (exit 0),
+  strict `swift format` lint on every touched file, and the new `ask-card-light|dark`
+  snapshots reviewed as images. The `ask_user` CLI acceptance from 18:40 still holds: the
+  daemon and the wire did not change in this pass.
+- Next broken hop: the owner has not clicked the card in the App; the answered state keeps
+  only 已回答 and does not reprint which labels were chosen after a reload.
+
 ## 2026-11-02 18:40 +08 — ask_user, proven through the CLI
 
 - The bot can now ask instead of guessing. `ask_user` (core group) takes one to five
