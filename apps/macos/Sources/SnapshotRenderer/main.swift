@@ -229,10 +229,10 @@ struct SnapshotRenderer {
       in: directory
     )
 
-    let tools = SettingsViewModel()
-    tools.selection = .tools
-    tools.gatewayCorePrompt = "你是一个务实、友好的 agent：先说结论，再给依据；做不到就直说。"
-    tools.gatewayMachinePrompt = MachinePromptPreview(
+    let prompts = SettingsViewModel()
+    prompts.selection = .prompts
+    prompts.gatewayCorePrompt = "你是一个务实、友好的 agent：先说结论，再给依据；做不到就直说。"
+    prompts.gatewayMachinePrompt = MachinePromptPreview(
       path: "/Users/me/workspace/personal/workflow/agents/AGENTS.md",
       text: """
         # system0 machine setup
@@ -240,6 +240,15 @@ struct SnapshotRenderer {
         一个维护机器指令、可复用技能和命令的来源。项目指令放在各仓根的 AGENTS.md。
         """
     )
+    capture(
+      SettingsView(model: prompts).preferredColorScheme(.light),
+      size: CGSize(width: 920, height: 720),
+      named: "settings-prompts",
+      in: directory
+    )
+
+    let tools = SettingsViewModel()
+    tools.selection = .tools
     capture(
       SettingsView(model: tools).preferredColorScheme(.light),
       size: CGSize(width: 920, height: 720),

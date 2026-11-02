@@ -13,6 +13,14 @@ struct SettingsTests {
     #expect(SettingsSection.bots.rawValue == "模型")
     #expect(SettingsSection.general.rawValue == "通用")
   }
+
+  @Test("the two prompts own a tab of their own, right after 工具")
+  func promptsSection() {
+    #expect(SettingsSection.prompts.rawValue == "提示词")
+    #expect(
+      SettingsSection.allCases.map(\.rawValue)
+        == ["通用", "模型", "工具", "提示词", "服务", "设备", "CLI", "用量与账单", "关于"])
+  }
 }
 
 /// The daemon fixture both settings pages read: one configured search provider.
@@ -656,7 +664,62 @@ struct SettingsGatewayTests {
     #expect(body?["baseUrl"] == nil, "the tools page never rewrites the gateway")
     #expect(model.gatewayCorePrompt == "新的人格")
     #expect(model.gatewayMachinePrompt?.path == "/m/AGENTS.md")
-    #expect(model.gatewayMessage == "已保存，工具与人格从下一轮开始生效")
+    #expect(model.gatewayMessage == "已保存，工具从下一轮开始生效")
+    GatewayHTTPStub.handler = nil
+  }
+
+  @Test("savePrompts sends the standing instruction and takes the answer back")
+  func savesPrompts() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    var body: [String: Any]?
+    GatewayHTTPStub.handler = { request in
+      if let data = gatewayHTTPBody(request) {
+        body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+      }
+      return (
+        200,
+        Data(
+          #"""
+          {"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true,"corePrompt":"只说结论。","toolGroups":["persona","machine","core","coding"]},"machinePrompt":{"path":"/m/AGENTS.md","text":"机器规则"}}
+          """#.utf8)
+      )
+    }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    model.gatewayCorePrompt = "只说结论。"
+    await model.savePrompts()
+    #expect(body?["corePrompt"] as? String == "只说结论。")
+    #expect(body?["baseUrl"] == nil, "the prompts page never rewrites the gateway")
+    #expect(model.gatewayCorePrompt == "只说结论。")
+    #expect(model.gatewayMachinePrompt?.path == "/m/AGENTS.md")
+    #expect(model.gatewayMessage == "已保存，提示词从下一轮开始生效")
+    GatewayHTTPStub.handler = nil
+  }
+
+  @Test("saving the prompts keeps the switches the 工具 page set")
+  func promptsSaveKeepsToolGroups() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    var body: [String: Any]?
+    GatewayHTTPStub.handler = { request in
+      if let data = gatewayHTTPBody(request) {
+        body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+      }
+      return (
+        200,
+        Data(
+          #"""
+          {"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true,"corePrompt":"","toolGroups":["persona","core","coding","herdr","agents","search"]}}
+          """#.utf8)
+      )
+    }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    model.setToolGroup("search", isOn: true)
+    model.setToolGroup("machine", isOn: false)
+    model.setToolGroup("trigger", isOn: false)
+    await model.savePrompts()
+    #expect(
+      body?["toolGroups"] as? [String]
+        == ["persona", "core", "coding", "herdr", "agents", "search"],
+      "only the two prompt groups changed, and the order is the daemon's")
     GatewayHTTPStub.handler = nil
   }
 

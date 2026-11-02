@@ -37,7 +37,7 @@ public final class SettingsViewModel: ObservableObject {
   @Published public var gatewayAPIKey = ""
   @Published public var gatewayThinkingLevel = SettingsViewModel.defaultThinkingLevel
   @Published public var gatewayToolGroups = SettingsViewModel.defaultToolGroups
-  /// The person's standing instruction, edited on the 工具 page and shared by every bot.
+  /// The person's standing instruction, edited on the 提示词 page and shared by every bot.
   @Published public var gatewayCorePrompt = ""
   @Published public var gatewayCorePromptChosen = false
   /// What the machine contributes and nobody edits here: the file the daemon read.
@@ -192,9 +192,19 @@ public final class SettingsViewModel: ObservableObject {
     }
   }
 
-  /// The 工具 page's own save: the standing instruction and the group switches, without
-  /// touching the gateway fields the 模型 page owns.
+  /// The 提示词 page's save: the standing instruction and the two prompt switches. The page
+  /// owns the persona and machine groups, so it saves the whole group set with them.
+  public func savePrompts() async {
+    await saveToolSettings(message: "已保存，提示词从下一轮开始生效")
+  }
+
+  /// The 工具 page's own save: the group switches, without touching the gateway fields the
+  /// 模型 page owns.
   public func saveTools() async {
+    await saveToolSettings(message: "已保存，工具从下一轮开始生效")
+  }
+
+  private func saveToolSettings(message: String) async {
     gatewayBusy = true
     defer { gatewayBusy = false }
     do {
@@ -205,7 +215,7 @@ public final class SettingsViewModel: ObservableObject {
       gatewayCorePrompt = snapshot.settings.corePrompt
       gatewayCorePromptChosen = false
       gatewayLoaded = true
-      gatewayMessage = "已保存，工具与人格从下一轮开始生效"
+      gatewayMessage = message
       NotificationCenter.default.post(name: .botsGatewayChanged, object: nil)
     } catch {
       gatewayMessage = (error as? ClientError)?.message ?? error.localizedDescription

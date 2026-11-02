@@ -41,6 +41,8 @@ public struct SettingsView: View {
         bots
       case .tools:
         tools
+      case .prompts:
+        prompts
       case .providers:
         providersPage
       case .machines:
@@ -182,9 +184,9 @@ public struct SettingsView: View {
     }
   }
 
-  /// The 工具 page: the two core prompts first, because they are the first sections of every
-  /// bot's system prompt, then the groups a person opts into.
-  private var tools: some View {
+  /// The 提示词 page: the two core prompts, because they are the first sections of every
+  /// bot's system prompt.
+  private var prompts: some View {
     VStack(alignment: .leading, spacing: 16) {
       SettingsCaption("Core")
       SettingsCard {
@@ -225,6 +227,26 @@ public struct SettingsView: View {
         }
       }
 
+      HStack(spacing: 10) {
+        SettingsActionButton("保存", prominent: true) {
+          Task { @MainActor in await model.savePrompts() }
+        }
+        .disabled(model.gatewayBusy)
+        if model.gatewayBusy { SpinnerArc(size: 12) }
+        if let message = model.gatewayMessage {
+          Text(message)
+            .font(Theme.TypeScale.note)
+            .foregroundStyle(Theme.Palette.textSecondary)
+        }
+        Spacer(minLength: 0)
+      }
+    }
+    .task { @MainActor in await model.loadGatewayIfNeeded() }
+  }
+
+  /// The 工具 page: the groups a person opts into, one switch each.
+  private var tools: some View {
+    VStack(alignment: .leading, spacing: 16) {
       SettingsCaption("工具")
       SettingsCard {
         VStack(spacing: 0) {

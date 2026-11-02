@@ -236,7 +236,7 @@ listed in [RUNTIME.md](RUNTIME.md#reserved-capability-enable-paths).
 
 Every bot's system prompt opens with two sections, before any tool describes itself:
 
-- **Core Prompt** — one paragraph the person writes in Settings → `工具`, shared by every bot
+- **Core Prompt** — one paragraph the person writes in Settings → `提示词`, shared by every bot
   on this machine ("who you are, how you work"). It defaults to one sentence and is bounded
   to 4 000 characters; an empty box renders nothing.
 - **Core Machine Prompt** — this machine's own instructions file, read-only. Eagle never

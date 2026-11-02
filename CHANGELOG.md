@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Settings → `提示词` is its own tab: the two core prompts (the standing instruction and the
+  read-only machine AGENTS.md) leave the 工具 page, which now holds only the tool switches.
+  Each page saves its own section and says so.
+
 ## macOS v0.16.1 — 2026-11-02
 
 - Enforce CLI response deadlines, keep quiet sockets alive, resolve the bundled version
