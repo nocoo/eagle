@@ -33,7 +33,7 @@ let settingsProviderJSON = #"""
 @Suite("Settings gateway", .serialized)
 @MainActor
 struct SettingsGatewayTests {
-  @Test("loadGateway fills the form and reports configuration state")
+  @Test("loadGateway fills the form without writing an action result")
   func loadGatewayConfigured() async throws {
     let (settings, session) = try settingsGatewayFixture()
     GatewayHTTPStub.handler = { request in
@@ -50,12 +50,12 @@ struct SettingsGatewayTests {
     #expect(model.gateway?.configured == true)
     #expect(model.gatewayBaseURL == "http://gw/v1")
     #expect(model.gatewayModel == "m1")
-    #expect(model.gatewayMessage == "已配置")
+    #expect(model.gatewayMessage == nil, "reading the form is not an action result")
     #expect(model.gatewayBusy == false)
     GatewayHTTPStub.handler = nil
   }
 
-  @Test("loadGateway reports when the daemon has no gateway yet")
+  @Test("an unconfigured gateway loads empty, with nothing to report")
   func loadGatewayUnconfigured() async throws {
     let (settings, session) = try settingsGatewayFixture()
     GatewayHTTPStub.handler = { _ in
@@ -69,7 +69,7 @@ struct SettingsGatewayTests {
     let model = SettingsViewModel(botsSettings: settings, urlSession: session)
     await model.loadGateway()
     #expect(model.gateway?.configured == false)
-    #expect(model.gatewayMessage == "尚未配置")
+    #expect(model.gatewayMessage == nil)
     GatewayHTTPStub.handler = nil
   }
 

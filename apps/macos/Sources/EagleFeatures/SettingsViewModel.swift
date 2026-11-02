@@ -109,7 +109,9 @@ public final class SettingsViewModel: ObservableObject {
         gatewayToolGroups = Self.normalizeToolGroups(settings.toolGroups)
       }
       if !gatewayCorePromptChosen { gatewayCorePrompt = settings.corePrompt }
-      gatewayMessage = settings.configured ? "已配置" : "尚未配置"
+      // Reading the form is not an action: only a save or a probe writes a result line, so a
+      // page that merely opened never shows state as if the person had just done something.
+      gatewayMessage = nil
     } catch {
       gatewayMessage = "无法读取 Bots 设置：\(error.localizedDescription)"
     }

@@ -214,6 +214,8 @@ public struct SettingsView: View {
       .padding(.vertical, 14)
     } else if let message = model.gatewayMessage {
       SettingsSectionNote(message)
+    } else if model.gateway?.configured == false {
+      SettingsSectionNote("尚未配置：填好地址与模型后保存")
     }
   }
 
