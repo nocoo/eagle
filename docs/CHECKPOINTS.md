@@ -1,5 +1,25 @@
 # 用户视角检查点
 
+## 2026-11-02 21:05 +08 — memory proven through the CLI, and two gates closed
+
+- User-facing: with the dev daemon serving the App, two scratch bots drove the memory tools
+  through `eagle-dev chat send --wait`. Bot A wrote `bot/deploy` with two `##` headings in
+  the body, searched `VPN`, wrote `global/team`; bot B (a separate bot) read `global/team`
+  and `global/oncall` and saw an empty `bot` scope. A person's `printf` append was read back
+  by the next turn, `memory_delete` removed one record, and deleting both bots left the
+  markdown files in place. The stored files: `## key` sections, headings in bodies escaped as
+  `\##`, LF only, 0600 files in a 0700 directory.
+- Verified locally: `apps/bots npm run check` (exit 0, 825 tests, 95.05% lines / 88.42%
+  branches / 90.40% functions), `apps/macos` 221 + 48 + 60 + 29 and `apps/bots-macos` 54 +
+  14 + 11 + 2 Swift tests, strict `swift format` lint in both packages, and three
+  consecutive full bots runs at 825/825.
+- Closed two gaps found on the way: `apps/bots-macos` now shares `apps/macos/.swift-format`
+  and is linted by pre-commit and CI; the e2e "the daemon exited with empty stderr" flake was
+  a real lock-port collision between two test roots (the singleton port is derived from the
+  root), now reported instead of swallowed.
+- Next broken hop: the App's expanded 记忆 row has not been clicked by hand; the global
+  records `team` and `oncall` written during this acceptance are still on the dev machine.
+
 ## 2026-11-02 20:20 +08 — memory is a group a bot can switch off
 
 - User-facing: 设置 → 可用工具 has a 记忆 row after Coding. Switched on (the default), a bot
