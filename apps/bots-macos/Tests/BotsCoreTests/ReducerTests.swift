@@ -372,66 +372,66 @@ extension ReducerTests {
   }
 }
 
-  func testTriggerListIsReplacedWholeAndSurvivesASnapshot() {
-    let first = TriggerSummary(
-      id: "t_9f2a1c3d04",
-      kind: .schedule,
-      name: "morning triage",
-      enabled: true,
-      schedule: TriggerSummary.Schedule(
-        cron: "0 9 * * *",
-        timezone: "Asia/Shanghai",
-        nextDueAt: "2026-10-29T01:00:00.000Z"
-      ),
-      counters: TriggerSummary.Counters(fired: 2)
-    )
-    let second = TriggerSummary(
-      id: "t_7b1e55aa10",
-      kind: .webhook,
-      name: "deploy notify",
-      enabled: false,
-      counters: TriggerSummary.Counters(fired: 3, dropped: 4)
-    )
+func testTriggerListIsReplacedWholeAndSurvivesASnapshot() {
+  let first = TriggerSummary(
+    id: "t_9f2a1c3d04",
+    kind: .schedule,
+    name: "morning triage",
+    enabled: true,
+    schedule: TriggerSummary.Schedule(
+      cron: "0 9 * * *",
+      timezone: "Asia/Shanghai",
+      nextDueAt: "2026-10-29T01:00:00.000Z"
+    ),
+    counters: TriggerSummary.Counters(fired: 2)
+  )
+  let second = TriggerSummary(
+    id: "t_7b1e55aa10",
+    kind: .webhook,
+    name: "deploy notify",
+    enabled: false,
+    counters: TriggerSummary.Counters(fired: 3, dropped: 4)
+  )
 
-    var state = Reducer.snapshot(ConversationSnapshot(botId: "b_1", triggers: [first]), rev: 1)
-    XCTAssertEqual(state.triggers, [first], "a snapshot carries the list")
+  var state = Reducer.snapshot(ConversationSnapshot(botId: "b_1", triggers: [first]), rev: 1)
+  XCTAssertEqual(state.triggers, [first], "a snapshot carries the list")
 
-    state = Reducer.apply(.triggers([first, second]), to: state, rev: 2)
-    XCTAssertEqual(state.triggers, [first, second], "the event replaces the whole list")
+  state = Reducer.apply(.triggers([first, second]), to: state, rev: 2)
+  XCTAssertEqual(state.triggers, [first, second], "the event replaces the whole list")
 
-    state = Reducer.apply(.triggers([second]), to: state, rev: 3)
-    XCTAssertEqual(state.triggers, [second], "a removed trigger leaves the list")
+  state = Reducer.apply(.triggers([second]), to: state, rev: 3)
+  XCTAssertEqual(state.triggers, [second], "a removed trigger leaves the list")
 
-    state = Reducer.snapshot(ConversationSnapshot(botId: "b_1"), rev: 4)
-    XCTAssertEqual(state.triggers, [], "a snapshot without triggers means none")
+  state = Reducer.snapshot(ConversationSnapshot(botId: "b_1"), rev: 4)
+  XCTAssertEqual(state.triggers, [], "a snapshot without triggers means none")
 
-    XCTAssertEqual(second.warning, "丢弃 4", "a dropped delivery is visible on the row")
-    XCTAssertNil(first.warning)
-  }
+  XCTAssertEqual(second.warning, "丢弃 4", "a dropped delivery is visible on the row")
+  XCTAssertNil(first.warning)
+}
 
-  func testAnOriginSurvivesTheSubmissionThatNamesTheEntry() {
-    let origin = MessageOrigin(
-      kind: .webhook,
-      label: "deploy notify"
-    )
-    let message = Message(
-      id: "e_1",
-      role: .user,
-      state: .complete,
-      createdAt: "2026-10-28T00:00:00.000Z",
-      blocks: [.text("deploy finished")],
-      origin: origin
-    )
-    var state = Reducer.snapshot(ConversationSnapshot(botId: "b_1", messages: [message]), rev: 1)
-    state = Reducer.apply(
-      .submission(
-        Submission(id: "s_1", requestId: "r_1", status: .placed, entryId: "e_1")
-      ),
-      to: state,
-      rev: 2
-    )
-    XCTAssertEqual(state.messages.first?.origin, origin, "attaching an id keeps the label")
-    XCTAssertEqual(state.messages.first?.requestId, "r_1")
-    XCTAssertEqual(origin.chip, "deploy notify")
-    XCTAssertNil(MessageOrigin(kind: .human).chip, "a person's message needs no chip")
-  }
+func testAnOriginSurvivesTheSubmissionThatNamesTheEntry() {
+  let origin = MessageOrigin(
+    kind: .webhook,
+    label: "deploy notify"
+  )
+  let message = Message(
+    id: "e_1",
+    role: .user,
+    state: .complete,
+    createdAt: "2026-10-28T00:00:00.000Z",
+    blocks: [.text("deploy finished")],
+    origin: origin
+  )
+  var state = Reducer.snapshot(ConversationSnapshot(botId: "b_1", messages: [message]), rev: 1)
+  state = Reducer.apply(
+    .submission(
+      Submission(id: "s_1", requestId: "r_1", status: .placed, entryId: "e_1")
+    ),
+    to: state,
+    rev: 2
+  )
+  XCTAssertEqual(state.messages.first?.origin, origin, "attaching an id keeps the label")
+  XCTAssertEqual(state.messages.first?.requestId, "r_1")
+  XCTAssertEqual(origin.chip, "deploy notify")
+  XCTAssertNil(MessageOrigin(kind: .human).chip, "a person's message needs no chip")
+}

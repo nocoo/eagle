@@ -1,7 +1,7 @@
 #!/bin/sh
 # Fast gate on the staged snapshot: Biome for web/worker/contracts, the Bots
-# project's own Biome for apps/bots, swift-format for the macOS package. Keep it
-# well under 30 seconds.
+# project's own Biome for apps/bots, swift-format for the macOS and bots-macos
+# packages. Keep it well under 30 seconds.
 set -eu
 cd "$(git rev-parse --show-toplevel)"
 
@@ -27,13 +27,18 @@ if [ -n "$bots" ]; then
   fi
 fi
 
-if printf '%s\n' "$staged" | grep -q '^apps/macos/.*\.swift$'; then
+if printf '%s\n' "$staged" | grep -qE '^apps/(macos|bots-macos)/.*\.swift$'; then
   echo "pre-commit: swift format"
   if [ -d /Applications/Xcode.app/Contents/Developer ]; then
     export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
   fi
   if command -v swift >/dev/null 2>&1; then
-    (cd apps/macos && swift format lint --strict --recursive Sources Scripts Tests)
+    if printf '%s\n' "$staged" | grep -q '^apps/macos/.*\.swift$'; then
+      (cd apps/macos && swift format lint --strict --recursive Sources Scripts Tests)
+    fi
+    if printf '%s\n' "$staged" | grep -q '^apps/bots-macos/.*\.swift$'; then
+      (cd apps/bots-macos && swift format lint --strict --recursive Sources Tests)
+    fi
   else
     echo "pre-commit: swift not installed, skipping Swift lint" >&2
   fi

@@ -313,9 +313,10 @@ public final class CatalogHTTPClient: CatalogPort, Sendable {
 
   /// The tools page: the standing instruction and the group switches, leaving the gateway
   /// fields the model page owns untouched (an absent field keeps its stored value).
-  public func saveToolSettings(corePrompt: String, toolGroups: [String])
-    async throws -> BotSettingsSnapshot
-  {
+  public func saveToolSettings(
+    corePrompt: String,
+    toolGroups: [String]
+  ) async throws -> BotSettingsSnapshot {
     try await saveSettings(body: ["corePrompt": corePrompt, "toolGroups": toolGroups])
   }
 

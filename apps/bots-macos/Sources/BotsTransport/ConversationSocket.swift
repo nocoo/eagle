@@ -552,9 +552,11 @@ public final class BotsConnection: ConversationPort {
     try require(botId).resync(trace: context.trace)
   }
 
-  public func loadHistory(before messageId: String, context: CommandContext, botId: String)
-    async throws
-  {
+  public func loadHistory(
+    before messageId: String,
+    context: CommandContext,
+    botId: String
+  ) async throws {
     try require(botId).loadHistory(before: messageId, limit: 50, trace: context.trace)
   }
 

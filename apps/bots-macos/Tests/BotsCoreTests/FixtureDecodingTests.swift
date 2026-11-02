@@ -94,8 +94,9 @@ final class FixtureDecodingTests: XCTestCase {
     XCTAssertEqual(args["path"], .string("."))
     XCTAssertEqual(args["limit"], .number(50))
     let result = snapshot.messages[2].blocks[0]
-    guard case .toolResult(let resultCallId, let resultName, let text, let isError, let durationMs) =
-      result
+    guard
+      case .toolResult(let resultCallId, let resultName, let text, let isError, let durationMs) =
+        result
     else {
       return XCTFail("the tool row carries its result")
     }

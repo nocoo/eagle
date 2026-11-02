@@ -75,7 +75,8 @@ public enum JSONValue: Codable, Sendable, Equatable, Hashable {
       if value.isEmpty { return "{}" }
       let keys = value.keys.sorted()
       if !pretty {
-        return "{\(keys.map { "\(Self.quote($0)):\(value[$0]?.render(pretty: false) ?? "null")" }.joined(separator: ","))}"
+        return
+          "{\(keys.map { "\(Self.quote($0)):\(value[$0]?.render(pretty: false) ?? "null")" }.joined(separator: ","))}"
       }
       let pad = String(repeating: " ", count: indent + 2)
       let lines = keys.map { key in

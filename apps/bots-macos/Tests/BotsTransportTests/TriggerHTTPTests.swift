@@ -58,18 +58,20 @@ final class TriggerHTTPTests: XCTestCase {
     var body: Data?
     StubProtocol.handler = { request in
       seen = request
-      body = request.httpBody ?? request.httpBodyStream.map { stream in
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 1024)
-        while stream.hasBytesAvailable {
-          let read = stream.read(&buffer, maxLength: buffer.count)
-          if read <= 0 { break }
-          data.append(buffer, count: read)
+      body =
+        request.httpBody
+        ?? request.httpBodyStream.map { stream in
+          stream.open()
+          defer { stream.close() }
+          var data = Data()
+          var buffer = [UInt8](repeating: 0, count: 1024)
+          while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: buffer.count)
+            if read <= 0 { break }
+            data.append(buffer, count: read)
+          }
+          return data
         }
-        return data
-      }
       let payload = """
         {"trigger":{"id":"t_9f2a1c3d04","kind":"schedule","name":"morning triage",
           "enabled":false,"prompt":"triage","counters":{"fired":0,"dropped":0,"refused":0}}}
