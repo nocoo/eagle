@@ -160,9 +160,10 @@ test("private helper config boots offline local tools; Bot port cannot change po
       "an uncertain remote operation cannot become a local retry",
     );
     const lostFile = join(root, "lost-response-count");
+    const releaseFile = join(root, "lost-response-release");
     const lostOperation = {
       kind: "command",
-      command: `printf x >> '${lostFile}'; sleep 0.1; cat '${lostFile}'`,
+      command: `printf x >> '${lostFile}'; while [ ! -f '${releaseFile}' ]; do sleep 0.05; done; cat '${lostFile}'`,
     };
     const lostRequest = {
       ...input,
@@ -172,12 +173,49 @@ test("private helper config boots offline local tools; Bot port cannot change po
       digest: await deviceDigest(canonicalDeviceJSON(lostOperation)),
     };
     const lostSocket = connect(socketPath);
-    lostSocket.end(
+    const lostClosed = new Promise<void>((resolveClosed) => {
+      lostSocket.once("close", () => resolveClosed());
+    });
+    let lostError: Error | undefined;
+    lostSocket.once("error", (error) => {
+      lostError = error;
+    });
+    let receivedResponse = false;
+    lostSocket.on("data", () => {
+      receivedResponse = true;
+    });
+    lostSocket.write(
       `${JSON.stringify({ requestId: randomUUID(), method: "execute", params: lostRequest })}\n`,
     );
-    await new Promise<void>((resolveClosed) =>
-      lostSocket.once("close", () => resolveClosed()),
+    const admissionDeadline = Date.now() + 5_000;
+    for (;;) {
+      if (lostError) throw lostError;
+      if (lostSocket.destroyed)
+        throw new Error("the request socket closed before admission");
+      if (Date.now() >= admissionDeadline)
+        throw new Error("the original operation was not admitted");
+      if (existsSync(lostFile)) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(
+      receivedResponse,
+      false,
+      "the operation must still be in flight",
     );
+    lostSocket.destroy();
+    await Promise.race([
+      lostClosed,
+      new Promise<never>((_, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error("request socket did not close")),
+          2_000,
+        );
+        timer.unref();
+      }),
+    ]);
+    if (lostError) throw lostError;
+    assert.equal(receivedResponse, false, "the reply must be lost");
+    writeFileSync(releaseFile, "", { mode: 0o600 });
     // Recovery is asynchronous on the service's own schedule, so wait on a wall-clock
     // deadline rather than a fixed attempt count; a slow runner must not read as a lost
     // operation, and the assertion stays exactly the same.

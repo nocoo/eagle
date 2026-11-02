@@ -1,5 +1,21 @@
 # Retrospective
 
+## 2026-11-02 — Lost response was not proof of admission
+
+The first 0.16.1 Linux CI run failed the device service's lost-response case: it queried
+an operation after closing its socket and expected `completed`, but got `unknown`. A
+reviewer reproduced a possible ordering in which the query pins the request while the
+original run is still awaiting its digest; the later run then becomes a `get` and never
+executes. CI did not capture the ordering, so that mechanism is plausible, not proven as
+that run's cause. A rerun of the same revision passed.
+
+The test now proves the operation has started using an isolated file marker, keeps the
+operation blocked until its socket is closed without a reply, and then queries the
+original ID. Its original 10-second recovery deadline and exact completion/once-only
+assertions remain. A negative control using a new operation ID produced `xx` and failed;
+the real same-ID test passes. This changes only the test fixture, not Agent behavior or
+its unknown-outcome safety policy.
+
 ## 2026-11-02 — Wrong expected reason in installed CLI regression
 
 The installed-product regression deliberately selected an unregistered per-Bot model,
