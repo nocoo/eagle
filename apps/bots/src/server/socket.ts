@@ -75,6 +75,8 @@ export type ConnectionDeps = {
   readonly label?: string;
   readonly register: (socket: WebSocket) => void;
   readonly unregister: (socket: WebSocket) => void;
+  readonly track: (work: Promise<void>) => void;
+  readonly isClosing: () => boolean;
   readonly idleMs?: number;
   /** How many bytes may sit unsent before the subscriber is treated as not reading. */
   readonly maxBufferedBytes?: number;
@@ -243,7 +245,7 @@ export const attachConnection = (
   let leased = false;
 
   socket.on("message", (data, isBinary) => {
-    if (closed) return;
+    if (closed || deps.isClosing()) return;
     armIdle();
     const text = isBinary ? undefined : data.toString();
     if (text === undefined) {
@@ -301,7 +303,7 @@ export const attachConnection = (
       );
       return;
     }
-    void dispatch(command, text);
+    deps.track(dispatch(command, text));
   });
 
   const dispatch = async (command: ClientCommand, text: string): Promise<void> => {

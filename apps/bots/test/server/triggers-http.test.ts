@@ -57,6 +57,31 @@ const call = async (
     ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
   });
 
+test("an unexpected ingress failure is logged and returns a bounded error", async () => {
+  const stack = await startStack({
+    ingress: {
+      deliver: async () => {
+        throw new Error("private detail");
+      },
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${stack.port}/v1/triggers/b_1/t_1234567890`, {
+      method: "POST",
+      body: "x",
+      signal: AbortSignal.timeout(1_000),
+    });
+    assert.equal(response.status, 500);
+    assert.equal((await response.text()).includes("private detail"), false);
+    assert.equal(
+      stack.records.filter((record) => record.evt === "transport.request.fail").length,
+      1,
+    );
+  } finally {
+    await stack.close();
+  }
+});
+
 test("detail is read-only and carries the prompt and a credential-free endpoint", async () => {
   const { api } = surface();
   const stack = await startStack({ triggers: api });

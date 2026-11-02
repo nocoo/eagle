@@ -39,6 +39,7 @@ import { attachConnection, CLOSE, MAX_CONNECTIONS, refuseUpgrade } from "./socke
 const Events = {
   authFail: declareEvent("transport.auth.fail"),
   openReject: declareEvent("transport.conn.open.reject"),
+  requestFail: declareEvent("transport.request.fail"),
 } as const;
 
 export type ServerOptions = {
@@ -452,8 +453,28 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
     actor.kind === "root" ||
     [...actor.scopes].some((held) => SCOPE_RANK[held] >= SCOPE_RANK[scope]);
 
+  const pendingRequests = new Set<Promise<void>>();
+  const track = (work: Promise<void>, refuse: () => void): void => {
+    const tracked = work.catch(() => {
+      log.emit("error", "transport", Events.requestFail, {
+        trace: `tr_http_${process.pid}`,
+        failure: serverFailure("internal", "transport"),
+        origin: true,
+      });
+      refuse();
+    });
+    pendingRequests.add(tracked);
+    void tracked.then(
+      () => pendingRequests.delete(tracked),
+      () => pendingRequests.delete(tracked),
+    );
+  };
   const server = createServer((request, response) => {
-    void route(request, response);
+    track(route(request, response), () => {
+      if (!response.destroyed && !response.headersSent)
+        json(response, 500, { error: { kind: "internal", message: "the request failed" } });
+      else response.destroy();
+    });
   });
   const wss = new WebSocketServer({ noServer: true });
 
@@ -1012,6 +1033,10 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
       return;
     }
     const actor = await authenticate(request.headers.authorization);
+    if (closing || socket.destroyed) {
+      if (!socket.destroyed) refuseUpgrade(socket, 503, "Service Unavailable");
+      return;
+    }
     if (actor === undefined) {
       log.emit("warn", "transport", Events.authFail, {
         trace: `tr_http_${process.pid}`,
@@ -1051,6 +1076,8 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         capabilities: options.capabilities,
         canWrite: allows(actor, "write"),
         ...(actor.kind === "client" ? { label: actor.client.name } : {}),
+        track: (work) => track(work, () => ws.terminate()),
+        isClosing: () => closing,
         register: (socket) => {
           sockets.add(socket);
         },
@@ -1065,7 +1092,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
   };
 
   server.on("upgrade", (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-    void upgrade(request, socket, head);
+    track(upgrade(request, socket, head), () => socket.destroy());
   });
 
   await new Promise<void>((resolve) => server.listen(options.port ?? 0, "127.0.0.1", resolve));
@@ -1089,6 +1116,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
     for (const socket of sockets) socket.terminate();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    await Promise.allSettled([...pendingRequests]);
   };
 
   return {

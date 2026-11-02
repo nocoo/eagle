@@ -441,10 +441,18 @@ Rules:
 5. Recovery scan at startup: for each catalogued bot, open + resume; keep active
    ones open, queue the rest for idle close. A failing bot is reported and
    skipped; the scan never aborts the daemon.
-6. Shutdown: stop accepting work, drain the admissions already in flight,
-   `close` every handle with a shared deadline. Handles that time out are
-   logged as quarantined; process exit releases the socket lock and the OS
-   closes their files. A timeout is never logged as success.
+6. Shutdown: stop accepting work, drain the admissions already in flight, and
+   `close` every handle with a shared deadline. Shutdown cancels retry timers; an
+   in-flight retry cannot reschedule or emit a late success. An open already in
+   flight closes its eventual handle rather than publishing it, using only the
+   remaining close budget. The owner returns a timeout when its wait expires, but
+   retains the root lock until pending opens have settled and all handles are known
+   closed. An unconfirmed close or failed opening retains the lock until process
+   exit; timeout is never reported as a successful shutdown. Process exit releases
+   the socket lock and the OS closes the files. HTTP routes, upgrades and WebSocket
+   commands already accepted are awaited before registry shutdown. Detached origin and
+   trigger writes are not yet drained, so a `closed` result does not yet prove that an
+   embedded caller can safely reuse the root.
 7. Delete order is part of the contract: mark the bot deleting (no new lease, no
    new open), drain the leases already granted with the close deadline, then take
    the lifecycle window, close, and move. The window cannot be taken first,

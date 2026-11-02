@@ -84,7 +84,7 @@ export type DaemonHandle = {
   readonly token: string;
   readonly daemon: Daemon;
   readonly registry: BotRegistry;
-  close(): Promise<void>;
+  close(): Promise<"closed" | "timeout">;
 };
 
 const packageVersion = (): string => {
@@ -708,30 +708,36 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     },
   });
   broadcast = daemon.broadcastCatalog;
-  const close = async (): Promise<void> => {
-    // One absolute deadline for the whole shutdown: a stalled socket grace, handle close
-    // or log flush must not add up past the configured budget.
-    const budget = canonical.closeDeadlineMs + 1_000;
-    let timer: NodeJS.Timeout | undefined;
-    const deadline = new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, budget);
-      timer.unref?.();
-    });
-    const stopped = (async () => {
-      // Producers stop first, then admissions already in flight settle, and only then may
-      // the registry close handles under them (TRIGGERS.md §3.6).
-      producers.stop();
-      await daemon.close();
-      await service.drain();
-      await registry.shutdown();
-      await sink.close();
-      await lock.close();
+  let closing: Promise<"closed" | "timeout"> | undefined;
+  const close = (): Promise<"closed" | "timeout"> => {
+    closing ??= (async () => {
+      // One absolute deadline for the whole shutdown: a stalled socket grace, handle close
+      // or log flush must not add up past the configured budget.
+      const budget = canonical.closeDeadlineMs + 1_000;
+      let timer: NodeJS.Timeout | undefined;
+      const deadline = new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), budget);
+        timer.unref?.();
+      });
+      const stopped = (async () => {
+        // Producers stop first, then admissions already in flight settle, and only then may
+        // the registry close handles under them (TRIGGERS.md §3.6).
+        producers.stop();
+        await daemon.close();
+        await service.drain();
+        const released = await registry.shutdown();
+        await sink.close();
+        if (!released) return "timeout" as const;
+        await lock.close();
+        return "closed" as const;
+      })();
+      try {
+        return await Promise.race([stopped, deadline]);
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
     })();
-    try {
-      await Promise.race([stopped, deadline]);
-    } finally {
-      if (timer !== undefined) clearTimeout(timer);
-    }
+    return closing;
   };
   return { config: canonical, port: daemon.port, token, daemon, registry, close };
 };

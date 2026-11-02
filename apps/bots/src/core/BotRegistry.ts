@@ -141,6 +141,9 @@ export class BotRegistry {
   #sequence = 0;
   /** Creations in flight, so two concurrent creates cannot both take the last slot. */
   #creating = 0;
+  #stopping = false;
+  #unsafeShutdown = false;
+  #shutdownDeadline: number | undefined;
 
   constructor(options: RegistryOptions) {
     this.#defaultModel = options.model;
@@ -669,6 +672,13 @@ export class BotRegistry {
         throw this.#unresolved(botId, trace);
       }
     }
+    if (this.#stopping) {
+      throw new ClassifiedFailure(
+        newFailure("internal", "core"),
+        "not_admitted",
+        "the daemon is shutting down",
+      );
+    }
     if (entry.state === "quarantined") {
       throw new ClassifiedFailure(
         newFailure("unknown_bot"),
@@ -765,15 +775,21 @@ export class BotRegistry {
     if (!entry.deleting) this.#scheduleIdle(entry);
   }
 
-  async shutdown(): Promise<void> {
+  async shutdown(): Promise<boolean> {
+    this.#stopping = true;
     const trace = this.#boot();
     // One shared deadline for the whole shutdown: a stalled handle must not multiply the
     // budget by the number of bots (ARCHITECTURE.md, "Bot lifecycle", rule 6).
-    const deadline = Date.now() + this.#options.closeDeadlineMs;
-    await Promise.all(
+    this.#shutdownDeadline ??= Date.now() + this.#options.closeDeadlineMs;
+    const deadline = this.#shutdownDeadline;
+    const closed = await Promise.all(
       [...this.#entries.values()].map(async (entry) => {
         this.#cancelTimers(entry);
-        if (entry.handle === undefined) return;
+        if (entry.opening !== undefined) {
+          await entry.opening.catch(() => undefined);
+          return entry.handle === undefined;
+        }
+        if (entry.handle === undefined) return true;
         const handle = entry.handle;
         entry.closing = true;
         const remaining = Math.max(1, deadline - Date.now());
@@ -788,13 +804,15 @@ export class BotRegistry {
           // The handle stays owned: quarantining without it would leave nothing to retry.
           entry.handle = handle;
           this.#quarantine(entry, trace);
-          return;
+          return false;
         }
         entry.handle = undefined;
         entry.state = "catalogued";
         entry.closing = false;
+        return true;
       }),
     );
+    return closed.every(Boolean) && !this.#unsafeShutdown;
   }
 
   /** The id never resolved, so nothing below core is reached: this is the origin. */
@@ -829,6 +847,22 @@ export class BotRegistry {
         trace,
       });
       entry.handle = handle;
+      if (this.#stopping) {
+        entry.closing = true;
+        const remaining = Math.max(1, (this.#shutdownDeadline ?? Date.now()) - Date.now());
+        const outcome = await handle.close(trace, remaining).catch(() => "timeout");
+        if (outcome === "timeout") this.#quarantine(entry, trace);
+        else {
+          entry.handle = undefined;
+          entry.state = "catalogued";
+          entry.closing = false;
+        }
+        throw new ClassifiedFailure(
+          newFailure("internal", "core"),
+          "not_admitted",
+          "the daemon is shutting down",
+        );
+      }
       entry.state = "idle";
       entry.unavailable = undefined;
       this.#options.log.emit("info", "core", Events.openOk, {
@@ -839,6 +873,13 @@ export class BotRegistry {
       if (entry.subscribers === 0) this.#scheduleIdle(entry);
       return handle;
     } catch (error) {
+      if (this.#stopping) {
+        if (entry.state === "opening") {
+          this.#unsafeShutdown = true;
+          entry.state = "unavailable";
+        }
+        throw error;
+      }
       const failure: Failure =
         error instanceof ClassifiedFailure ? error.failure : newFailure("storage_failed");
       entry.state = "unavailable";
@@ -869,6 +910,7 @@ export class BotRegistry {
   }
 
   #scheduleIdle(entry: Entry): void {
+    if (this.#stopping) return;
     entry.cancelIdle?.();
     const setTimer = this.#options.setTimer ?? defaultTimer;
     entry.cancelIdle = setTimer(() => {
@@ -939,11 +981,14 @@ export class BotRegistry {
       failure: newFailure("internal"),
       detail: { reason: "quarantine", quarantined: true },
     });
+    if (this.#stopping) return;
     const setTimer = this.#options.setTimer ?? defaultTimer;
     const retry = () => {
+      if (this.#stopping) return;
       void entry.handle
         ?.close(trace, this.#options.closeDeadlineMs)
         .then((outcome) => {
+          if (this.#stopping) return;
           if (outcome === "closed") {
             entry.handle = undefined;
             entry.state = "catalogued";
@@ -960,7 +1005,7 @@ export class BotRegistry {
           entry.cancelRetry = setTimer(retry, this.#options.quarantineRetryMs);
         })
         .catch(() => {
-          entry.cancelRetry = setTimer(retry, this.#options.quarantineRetryMs);
+          if (!this.#stopping) entry.cancelRetry = setTimer(retry, this.#options.quarantineRetryMs);
         });
     };
     entry.cancelRetry = setTimer(retry, this.#options.quarantineRetryMs);

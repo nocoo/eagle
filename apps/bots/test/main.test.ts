@@ -1,5 +1,6 @@
 // The composition root: one daemon over one root, wired from configuration, closed cleanly.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -8,8 +9,11 @@ import { join } from "node:path";
 import test from "node:test";
 import WebSocket from "ws";
 import { readConfig } from "../src/config.ts";
+import { BotDirectory } from "../src/core/BotDirectory.ts";
 import { startDaemon } from "../src/main.ts";
+import { PiDurableRuntime } from "../src/runtime/pi/PiDurableRuntime.ts";
 import { DEFAULT_CORE_PROMPT, readGateway, writeGateway } from "../src/server/gateway.ts";
+import { acquireLock, LockError } from "../src/server/singleton.ts";
 import { waitFor } from "./support/pi.ts";
 
 test("saved gateway credentials authorize model requests on every daemon boot", async () => {
@@ -144,7 +148,7 @@ test("the daemon starts from configuration and closes without leaving work behin
       }
       assert.equal(state, "idle", "creation warmed the bot through the composed opener");
     } finally {
-      await daemon.close();
+      assert.equal(await daemon.close(), "closed");
     }
     // A second daemon on the same root is refused only while the first one lives; after a
     // close the lock is free again.
@@ -152,6 +156,194 @@ test("the daemon starts from configuration and closes without leaving work behin
     await again.close();
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("shutdown retains the root lock until an in-flight open is closed", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "bots-opening-lock-"));
+  let release = () => {};
+  let markStarted = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const original = PiDurableRuntime.prototype.open;
+  context.mock.method(
+    PiDurableRuntime.prototype,
+    "open",
+    async function (this: PiDurableRuntime, spec: Parameters<typeof original>[0]) {
+      markStarted();
+      await gate;
+      return original.call(this, spec);
+    },
+  );
+  const daemon = await startDaemon(
+    readConfig({ argv: ["--root", root, "--port", "0"], env: { BOTS_CLOSE_DEADLINE_MS: "200" } }),
+  );
+  let opening: Promise<unknown> | undefined;
+  try {
+    const bot = await daemon.registry.create("Opening", "tr_opening_lock");
+    await started;
+    opening = daemon.registry.open(bot.id, "tr_join_opening").catch(() => undefined);
+    assert.equal(await daemon.close(), "timeout");
+    assert.equal(await daemon.close(), "timeout");
+    let unexpected: Awaited<ReturnType<typeof acquireLock>> | undefined;
+    try {
+      unexpected = await acquireLock({ root: daemon.config.root });
+      assert.fail("the root lock was released while the opener was still running");
+    } catch (error) {
+      if (!(error instanceof LockError) || error.reason !== "running") throw error;
+    } finally {
+      await unexpected?.close();
+    }
+  } finally {
+    release();
+    await opening;
+    await waitFor(async () => {
+      try {
+        const owner = await acquireLock({ root: daemon.config.root });
+        await owner.close();
+        return true;
+      } catch (error) {
+        if (error instanceof LockError && error.reason !== "collision") return false;
+        throw error;
+      }
+    }, "the root lock to be released after cleanup");
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("shutdown retains the root lock until an accepted catalog write finishes", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "bots-route-lock-"));
+  let release = () => {};
+  let markStarted = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const original = BotDirectory.prototype.create;
+  context.mock.method(
+    BotDirectory.prototype,
+    "create",
+    async function (this: BotDirectory, config: Parameters<typeof original>[0]) {
+      markStarted();
+      await gate;
+      return original.call(this, config);
+    },
+  );
+  const daemon = await startDaemon(
+    readConfig({ argv: ["--root", root, "--port", "0"], env: { BOTS_CLOSE_DEADLINE_MS: "200" } }),
+  );
+  const request = fetch(`http://127.0.0.1:${daemon.port}/v1/bots`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${daemon.token}`, "content-type": "application/json" },
+    body: JSON.stringify({ title: "Pending catalog write" }),
+  }).catch(() => undefined);
+  try {
+    await started;
+    assert.equal(await daemon.close(), "timeout");
+    await assert.rejects(
+      acquireLock({ root: daemon.config.root }),
+      (error: unknown) => error instanceof LockError && error.reason === "running",
+    );
+  } finally {
+    release();
+    await request;
+    await waitFor(
+      () => daemon.registry.summaries().some((bot) => bot.title === "Pending catalog write"),
+      "the accepted catalog write",
+    );
+    await waitFor(async () => {
+      try {
+        const owner = await acquireLock({ root: daemon.config.root });
+        await owner.close();
+        return true;
+      } catch (error) {
+        if (error instanceof LockError && error.reason !== "collision") return false;
+        throw error;
+      }
+    }, "the root lock to be released after the catalog write");
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a timed-out handle keeps its root locked until process exit", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bots-timeout-lock-"));
+  const script = `
+    import assert from 'node:assert/strict';
+    import { startDaemon } from ${JSON.stringify(import.meta.resolve("../src/main.ts"))};
+    import { readConfig } from ${JSON.stringify(import.meta.resolve("../src/config.ts"))};
+    import { acquireLock, LockError } from ${JSON.stringify(import.meta.resolve("../src/server/singleton.ts"))};
+    const daemon = await startDaemon(readConfig({ argv: ['--root', process.argv[1], '--port', '0'], env: {} }));
+    const bot = await daemon.registry.create('Timeout', 'tr_timeout_lock');
+    const handle = await daemon.registry.open(bot.id, 'tr_timeout_lock');
+    handle.close = async () => 'timeout';
+    assert.equal(await daemon.close(), 'timeout');
+    await assert.rejects(acquireLock({ root: daemon.config.root }),
+      error => error instanceof LockError && error.reason === 'running');
+    process.exit(0);
+  `;
+  try {
+    execFileSync(process.execPath, ["--input-type=module", "-e", script, root], {
+      timeout: 10_000,
+    });
+    const { realpath } = await import("node:fs/promises");
+    const owner = await acquireLock({ root: await realpath(root) });
+    await owner.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the daemon process reports shutdown success and timeout distinctly", async () => {
+  for (const timeout of [false, true]) {
+    const root = await mkdtemp(join(tmpdir(), "bots-signal-exit-"));
+    const script = `
+      import { readFile } from 'node:fs/promises';
+      import { join } from 'node:path';
+      import { PiDurableRuntime } from ${JSON.stringify(import.meta.resolve("../src/runtime/pi/PiDurableRuntime.ts"))};
+      let markOpened;
+      const opened = new Promise(resolve => { markOpened = resolve; });
+      const original = PiDurableRuntime.prototype.open;
+      PiDurableRuntime.prototype.open = async function(spec) {
+        const handle = await original.call(this, spec);
+        if (${timeout}) handle.close = async () => 'timeout';
+        markOpened();
+        return handle;
+      };
+      let start;
+      const write = process.stdout.write;
+      process.stdout.write = function(chunk) { start = JSON.parse(String(chunk)); return true; };
+      process.argv.splice(2, Infinity, '--root', process.argv[1], '--port', '0');
+      await import(${JSON.stringify(import.meta.resolve("../scripts/serve.ts"))});
+      process.stdout.write = write;
+      const token = (await readFile(join(process.argv[1], 'token'), 'utf8')).trim();
+      const response = await fetch('http://127.0.0.1:' + start.port + '/v1/bots', {
+        method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'Signal' })
+      });
+      if (response.status !== 201) throw new Error('bot creation failed');
+      await opened;
+      process.kill(process.pid, 'SIGTERM');
+    `;
+    try {
+      let status = 0;
+      try {
+        execFileSync(process.execPath, ["--input-type=module", "-e", script, root], {
+          timeout: 10_000,
+        });
+      } catch (error) {
+        if (typeof error !== "object" || error === null || !("status" in error)) throw error;
+        status = error.status as number;
+      }
+      assert.equal(status, timeout ? 1 : 0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   }
 });
 

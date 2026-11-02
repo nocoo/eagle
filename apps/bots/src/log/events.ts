@@ -25,6 +25,7 @@ export const EVENTS = {
   "transport.conn.close.ok": true,
   "transport.conn.close.end": true,
   "transport.auth.fail": true,
+  "transport.request.fail": true,
   "transport.frame.recv.ok": true,
   "transport.frame.send.ok": true,
   "transport.frame.send.drop": true,

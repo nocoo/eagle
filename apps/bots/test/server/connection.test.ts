@@ -39,6 +39,10 @@ const connect = (options: { maxBufferedBytes?: number; idleMs?: number } = {}) =
     capabilities: {},
     register: () => undefined,
     unregister: () => undefined,
+    track: (work) => {
+      void work;
+    },
+    isClosing: () => false,
     registry: {
       summaries: () => [],
       state: () => undefined,

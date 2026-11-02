@@ -44,7 +44,7 @@ const settle = async (times = 8): Promise<void> => {
 const bench = async (
   options: {
     busy?: readonly string[];
-    closeOutcome?: "closed" | "timeout";
+    closeOutcome?: "closed" | "timeout" | "rejected";
     bots?: readonly string[];
     /** Held open, so a close or a warm-up open can be observed in flight. */
     closeGate?: Promise<void>;
@@ -82,6 +82,8 @@ const bench = async (
   let openGate = options.openGate;
   let busyGate = options.busyGate;
   let opens = 0;
+  let closes = 0;
+  const closeDeadlines: number[] = [];
   const specs: RuntimeBotSpec[] = [];
   const levels: string[] = [];
   const groupCalls: (readonly string[])[] = [];
@@ -106,13 +108,17 @@ const bench = async (
           return busy ? { run: true, tasks: false } : handle.busy();
         },
         close: async (_trace: string, deadlineMs: number) => {
+          closes += 1;
+          closeDeadlines.push(deadlineMs);
           if (options.waitDeadline === true) {
             await new Promise((resolve) => setTimeout(resolve, deadlineMs));
             return "timeout" as const;
           }
           if (options.closeGate !== undefined) await options.closeGate;
+          if (options.closeOutcome === "rejected") throw new Error("close failed");
+          if (options.closeOutcome === "timeout") return "timeout" as const;
           await handle.close("tr_close_probe", 100);
-          return options.closeOutcome ?? "closed";
+          return "closed" as const;
         },
       };
     },
@@ -134,6 +140,8 @@ const bench = async (
     levels,
     groupCalls,
     opens: () => opens,
+    closes: () => closes,
+    closeDeadlines,
     setCloseOutcome: (outcome: "closed" | "timeout") => {
       options.closeOutcome = outcome;
     },
@@ -395,6 +403,118 @@ test("a timed-out close quarantines and refuses open and delete", async () => {
     );
   } finally {
     await setup.cleanup();
+  }
+});
+
+test("shutdown keeps a timed-out handle quarantined without scheduling a retry", async () => {
+  const setup = await bench({ bots: ["stuck"], closeOutcome: "timeout" });
+  try {
+    await setup.registry.start();
+    assert.equal(await setup.registry.shutdown(), false);
+    assert.equal(setup.registry.state("b_bot0"), "quarantined");
+    assert.equal(setup.timers.pending(), 0);
+    await setup.timers.advance(10_000);
+    assert.equal(setup.timers.pending(), 0);
+    assert.ok(setup.records.some((record) => record.evt === "core.bot.close.degrade"));
+    assert.ok(!setup.records.some((record) => record.evt === "core.bot.close.ok"));
+  } finally {
+    await setup.cleanup();
+  }
+});
+
+test("a warm-up finishing after shutdown starts is closed instead of published", async () => {
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const setup = await bench({ openGate: gate });
+  try {
+    await setup.registry.start();
+    const bot = await setup.registry.create("warming", "tr_warm_shutdown");
+    const opening = setup.registry.open(bot.id, "tr_join_shutdown");
+    const shutdown = setup.registry.shutdown();
+    release?.();
+    await assert.rejects(opening, /shut.*down/i);
+    assert.equal(await shutdown, true);
+    assert.equal(setup.closes(), 1);
+    assert.equal(setup.registry.handleOf(bot.id), undefined);
+    assert.equal(setup.timers.pending(), 0);
+  } finally {
+    release?.();
+    await setup.cleanup();
+  }
+});
+
+test("late warm-up close failures retain ownership without another deadline", async () => {
+  for (const outcome of ["timeout", "rejected"] as const) {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const setup = await bench({ openGate: gate, closeOutcome: outcome });
+    try {
+      await setup.registry.start();
+      const bot = await setup.registry.create("warming", "tr_warm_failure");
+      const opening = setup.registry.open(bot.id, "tr_join_failure");
+      const shutdown = setup.registry.shutdown();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      release();
+      await assert.rejects(opening, /shut.*down/i);
+      assert.equal(await shutdown, false, outcome);
+      assert.equal(setup.registry.state(bot.id), "quarantined", outcome);
+      assert.notEqual(setup.registry.handleOf(bot.id), undefined, outcome);
+      assert.deepEqual(setup.closeDeadlines, [1], outcome);
+      assert.equal(setup.timers.pending(), 0, outcome);
+    } finally {
+      release();
+      await setup.cleanup();
+    }
+  }
+});
+
+test("an in-flight quarantine retry cannot outlive shutdown", async () => {
+  for (const outcome of ["timeout", "closed", "rejected"] as const) {
+    const setup = await bench({ bots: ["stuck"] });
+    try {
+      await setup.registry.start();
+      const handle = await setup.registry.open("b_bot0", "tr_retry_shutdown");
+      let calls = 0;
+      let started: (() => void) | undefined;
+      let finish: ((outcome: "closed" | "timeout") => void) | undefined;
+      let fail: (() => void) | undefined;
+      const retryStarted = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      handle.close = async () => {
+        calls += 1;
+        if (calls === 1) return "timeout";
+        if (calls === 3) return "closed";
+        started?.();
+        return new Promise((resolve, reject) => {
+          finish = resolve;
+          fail = () => reject(new Error("retry failed"));
+        });
+      };
+      await setup.timers.advance(1_000);
+      assert.equal(setup.registry.state("b_bot0"), "quarantined");
+      await setup.timers.advance(5_000);
+      await retryStarted;
+      await setup.registry.shutdown();
+      const successCount = setup.records.filter(
+        (record) => record.evt === "core.bot.close.ok",
+      ).length;
+      if (outcome === "rejected") fail?.();
+      else finish?.(outcome);
+      await settle();
+      assert.equal(setup.timers.pending(), 0, outcome);
+      assert.equal(
+        setup.records.filter((record) => record.evt === "core.bot.close.ok").length,
+        successCount,
+        outcome,
+      );
+    } finally {
+      await setup.cleanup();
+    }
   }
 });
 

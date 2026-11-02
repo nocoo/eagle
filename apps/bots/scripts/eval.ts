@@ -576,6 +576,7 @@ const runCase = async (
   const modelPort = await listen(model.server);
   let handle: DaemonHandle | undefined;
   let botId = "";
+  let report: Report;
   try {
     if (usesCli && options.cli === undefined) {
       failure(
@@ -625,7 +626,7 @@ const runCase = async (
     // Triggers and workspace files exist before the bot opens, so its first store read sees them.
     if (study.triggers !== undefined || study.workspace !== undefined) {
       await handle.daemon.close();
-      await handle.close();
+      if ((await handle.close()) !== "closed") failure("the daemon did not release its root");
       const botDir = join(root, "bots", botId);
       if (study.triggers !== undefined) {
         const lines = study.triggers.map((trigger, index) => {
@@ -975,19 +976,23 @@ const runCase = async (
       );
     }
     view.close();
-    return { id: study.id, ok: true, detail: `${view.rows.length} rows` };
+    report = { id: study.id, ok: true, detail: `${view.rows.length} rows` };
   } catch (error) {
-    return {
+    report = {
       id: study.id,
       ok: false,
       detail: error instanceof Error ? error.message : String(error),
     };
   } finally {
-    await handle?.close().catch(() => undefined);
+    const released =
+      handle === undefined || (await handle.close().catch(() => "timeout")) === "closed";
     await new Promise<void>((resolve_) => model.server.close(() => resolve_()));
-    if (!options.keep) await rm(root, { recursive: true, force: true });
+    if (!options.keep && released) await rm(root, { recursive: true, force: true });
     else process.stdout.write(`kept the eval root: ${root}\n`);
+    if (!released)
+      report = { id: study.id, ok: false, detail: "the daemon did not release its root" };
   }
+  return report;
 };
 
 const main = async (): Promise<void> => {

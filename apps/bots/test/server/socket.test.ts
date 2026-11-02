@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import net from "node:net";
 import test from "node:test";
 import { WebSocket } from "ws";
+import { ClientStore } from "../../src/server/clients.ts";
 import { closeCode, frameQueue, hello, nextFrame, send, startStack } from "../support/server.ts";
 
 const tr = (name: string) => `tr_${name}_0123456`;
@@ -499,6 +500,94 @@ test("shutting down closes 4010 so the client reconnects with backoff", async ()
     await stack.daemon.close();
     assert.equal(await closing, 4010, "the close code names a shutdown, not a crash");
   } finally {
+    await stack.close();
+  }
+});
+
+test("shutdown waits for a WebSocket history command already in flight", {
+  timeout: 8_000,
+}, async (context) => {
+  const stack = await startStack();
+  let release = () => {};
+  let markStarted = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  context.mock.method(stack.service, "history", async () => {
+    markStarted();
+    await gate;
+    return { messages: [], hasMore: false };
+  });
+  try {
+    const botId = await stack.createBot("History");
+    const socket = stack.connect();
+    const frames = frameQueue(socket);
+    await send(socket, hello);
+    await frames.next();
+    await send(socket, { type: "subscribe", botId, trace: tr("history_subscribe") });
+    await frames.next();
+    await send(socket, { type: "history", before: "e_10", limit: 1, trace: tr("history_wait") });
+    await Promise.race([
+      started,
+      new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => reject(new Error("history dispatch did not start")), 1_000);
+        timer.unref();
+      }),
+    ]);
+    const closedSocket = closeCode(socket);
+    let completed = false;
+    const shutdown = stack.daemon.close().then(() => {
+      completed = true;
+    });
+    await closedSocket;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(completed, false);
+    release();
+    await shutdown;
+  } finally {
+    release();
+    await stack.close();
+  }
+});
+
+test("an upgrade waiting for authentication is refused after shutdown starts", async (context) => {
+  let release = () => {};
+  let markStarted = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  context.mock.method(ClientStore.prototype, "authenticate", async () => {
+    markStarted();
+    await gate;
+    return {
+      client: { id: "c_test", name: "test", scopes: ["read"], createdAt: "2026-01-01" },
+      scopes: new Set(["read" as const]),
+    };
+  });
+  const stack = await startStack();
+  const socket = stack.connect({ token: "non-root-test-token" });
+  const outcome = new Promise<string>((resolve) => {
+    socket.once("open", () => resolve("open"));
+    socket.once("unexpected-response", (_request, response) =>
+      resolve(`http:${response.statusCode}`),
+    );
+    socket.once("error", () => resolve("error"));
+  });
+  try {
+    await started;
+    const closing = stack.daemon.close();
+    release();
+    assert.equal(await outcome, "http:503");
+    await closing;
+  } finally {
+    release();
+    socket.terminate();
     await stack.close();
   }
 });
