@@ -26,6 +26,8 @@ public final class SettingsViewModel: ObservableObject {
   @Published public var providerMessage: String?
   /// Which card the last result line belongs to, so one card's action never reports in the other.
   @Published public var providerMessageService: String?
+  /// A failed read of the whole list, which belongs to neither card.
+  @Published public var providerLoadError: String?
   /// The daemon's usage statistics; nil until the 用量 tab is opened.
   @Published public var usageReport: UsageReport?
   @Published public var usageBusy = false
@@ -257,6 +259,10 @@ public final class SettingsViewModel: ObservableObject {
     guard !providerBusy else { return }
     providerBusy = true
     defer { providerBusy = false }
+    // A read replaces whatever the last action said, and it belongs to neither card.
+    providerLoadError = nil
+    providerMessage = nil
+    providerMessageService = nil
     do {
       providers = try await client().loadProviders()
       for provider in providers where provider.isDecision {
@@ -265,9 +271,8 @@ public final class SettingsViewModel: ObservableObject {
         }
         if providerModels[provider.id] == nil { providerModels[provider.id] = provider.model }
       }
-      providerMessage = nil
     } catch {
-      providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
+      providerLoadError = (error as? ClientError)?.message ?? error.localizedDescription
     }
   }
 
@@ -294,6 +299,17 @@ public final class SettingsViewModel: ObservableObject {
 
   public var selectedDecisionProvider: ProviderSettings? {
     selectedProvider(in: ProviderSettings.decisionService)
+  }
+
+  /// What the row's own buttons may offer right now: a draft must be saved before a probe, and a
+  /// provider that requires a key is not testable until one is stored.
+  public func canSaveProvider(_ provider: ProviderSettings) -> Bool {
+    providerHasChanges(provider)
+  }
+
+  public func canTestProvider(_ provider: ProviderSettings) -> Bool {
+    guard !providerHasChanges(provider) else { return false }
+    return provider.hasApiKey || !provider.keyRequired
   }
 
   /// A typed key is a draft; for a decision provider the address and model are drafts too.
@@ -337,6 +353,29 @@ public final class SettingsViewModel: ObservableObject {
       providerProbe[id] = nil
       providerMessageService = provider.service
       providerMessage = "已保存"
+    } catch {
+      providerMessageService = provider.service
+      providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
+    }
+  }
+
+  /// Clears a key the provider does not need: a relay can go back to carrying its own credential.
+  public func clearProviderKey(_ id: String) async {
+    guard !providerBusy else { return }
+    guard let provider = providers.first(where: { $0.id == id }), !provider.keyRequired else {
+      return
+    }
+    providerBusy = true
+    providerMessage = nil
+    defer { providerBusy = false }
+    do {
+      let saved = try await client().saveProvider(
+        id: id, apiKey: "", enabled: nil, baseUrl: nil, model: nil)
+      providers = providers.map { $0.id == id ? saved : $0 }
+      providerKeys[id] = ""
+      providerProbe[id] = nil
+      providerMessageService = provider.service
+      providerMessage = "已清除 Key"
     } catch {
       providerMessageService = provider.service
       providerMessage = (error as? ClientError)?.message ?? error.localizedDescription

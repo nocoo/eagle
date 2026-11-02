@@ -412,7 +412,9 @@ protocol, so only its address, model name and key rule differ:
 
 `baseUrl` is the API root: the daemon appends `/v1/systemone`. A typed root ending in `/v1`
 or `/v1/systemone` collapses to the same root, so the field accepts the address a person
-already uses for the model gateway.
+already uses for the model gateway. Credentials (`user:pass@`), a query and a fragment are
+refused: the public shape echoes the address back, and the appended path cannot survive one
+that already carries them.
 
 ```json
 { "id": "jev-relay", "title": "Jev 中转站", "service": "decision", "kind": "systemone",
@@ -425,8 +427,8 @@ already uses for the model gateway.
 - **The key is write-only and lives in the user's config**, not in the daemon root or a
   bot's directory: `<XDG_CONFIG_HOME or ~/.config>/eagle-bots/providers.json`, mode 0600. A
   `PUT` with an omitted key keeps the stored one; an empty key for a provider whose
-  `keyRequired` is true is a `400` and writes nothing. The public shape only says whether
-  a key is set.
+  `keyRequired` is true is a `400` and writes nothing, while an empty key for a provider
+  that does not need one clears it. The public shape only says whether a key is set.
 - **Selection is exclusive within a service and independent across them.** `PUT` with
   `enabled: true` requires a saved or supplied nonblank key when `keyRequired` is true, and
   atomically deselects the other providers of the same service without deleting their keys.
@@ -452,8 +454,12 @@ already uses for the model gateway.
   model listing cannot prove a relay: `jev-relay` answers `/v1/models` from a cache that
   does not even list its Jev model. The result reports ok, a message, the latency, and
   for a decision the model asked for (`model`) and the model named in the answer
-  (`resolvedModel`). An answer that is not a valid `choice` over the criteria, or a key
-  the provider refuses, is reported as a failed probe; nothing is saved.
+  (`resolvedModel`, absent when the answer names none: the requested alias is not evidence
+  of what answered). An answer is usable only when its winner is one of the criteria (own
+  keys, not prototype names), its probabilities are a distribution over exactly those
+  criteria within the same 0.02 rounding tolerance Falcon uses, and its confidence, when
+  present, is in `[0,1]`. Anything else, or a key the provider refuses, is a failed probe;
+  nothing is saved.
 - An unknown provider is a `400`; a refused key reads as "the provider refused the API key".
 
 ## Usage statistics

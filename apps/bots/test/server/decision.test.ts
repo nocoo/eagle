@@ -143,7 +143,7 @@ test("a timeout is a reachability failure and does not claim a decision", async 
   assert.match(probe.message, /超时/);
 });
 
-test("an answer with no model and no distribution still proves the decision", async () => {
+test("an answer that names no model reports none instead of the request alias", async () => {
   const probe = await probeDecision(
     { baseUrl: "http://relay.test", model: "jev-latest", apiKey: "k" },
     {
@@ -152,8 +152,9 @@ test("an answer with no model and no distribution still proves the decision", as
     },
   );
   assert.equal(probe.ok, true);
-  assert.equal(probe.resolvedModel, "jev-latest", "the requested model stands in");
-  assert.equal(probe.message, "连接成功 · jev-latest · merge");
+  assert.equal(probe.resolvedModel, undefined, "an unnamed model is not evidence");
+  assert.equal(probe.model, "jev-latest");
+  assert.equal(probe.message, "连接成功 · merge");
 });
 
 test("a stored address that is not a URL fails without a request", async () => {
@@ -170,4 +171,64 @@ test("a stored address that is not a URL fails without a request", async () => {
   assert.equal(probe.ok, false);
   assert.match(probe.message, /http/);
   assert.equal(asked, false);
+});
+
+// The address is echoed back by the settings page, so a credential inside it would be a key in
+// plain sight; a query or a fragment cannot carry the appended `/v1/systemone` either.
+test("an address carrying credentials, a query or a fragment is refused", async () => {
+  for (const baseUrl of [
+    "http://user:secret-key@relay.test/v1",
+    "http://relay.test/v1?region=local",
+    "http://relay.test/v1#frag",
+  ]) {
+    assert.equal(decisionRoot(baseUrl), undefined, baseUrl);
+    let asked = false;
+    const probe = await probeDecision(
+      { baseUrl, model: "jev-latest", apiKey: "k" },
+      {
+        fetch: async () => {
+          asked = true;
+          return chooser("test");
+        },
+      },
+    );
+    assert.equal(probe.ok, false, baseUrl);
+    assert.equal(asked, false, "a refused address never reaches the network");
+  }
+});
+
+test("an answer that is not a distribution over the criteria is not usable", async () => {
+  for (const body of [
+    // A prototype name is not one of the criteria.
+    Response.json({ model: "jev", answers: { next_step: { type: "choice", choice: "toString" } } }),
+    // Scores that do not sum to one are not probabilities.
+    Response.json({
+      model: "jev",
+      answers: {
+        next_step: {
+          type: "choice",
+          choice: "test",
+          probabilities: { test: 0.9, merge: 0.9 },
+        },
+      },
+    }),
+    Response.json({
+      model: "jev",
+      answers: {
+        next_step: {
+          type: "choice",
+          choice: "test",
+          probabilities: { test: 0.6, merge: 0.4 },
+          confidence: "0.6",
+        },
+      },
+    }),
+  ]) {
+    const probe = await probeDecision(
+      { baseUrl: "http://relay.test", model: "jev-latest", apiKey: "k" },
+      { fetch: async () => body.clone() },
+    );
+    assert.equal(probe.ok, false, await body.clone().text());
+    assert.match(probe.message, /决策/);
+  }
 });

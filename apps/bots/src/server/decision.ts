@@ -10,14 +10,22 @@ export const DECISION_TEST_TIMEOUT_MS = 20_000;
 
 const SYSTEMONE_PATH = "/v1/systemone";
 
+/** Why an address was refused; one wording for the form and the probe. */
+export const ADDRESS_REFUSED = "地址需要 http 或 https 的 API 根，不能带凭据、查询或片段";
+
 /**
  * The API root of a System One endpoint. A person may paste the address they use for the model
  * gateway (`…/v1`) or the full endpoint; both collapse to the root, and the result is idempotent
- * because the path is appended again rather than kept.
+ * because the path is appended again rather than kept. Credentials, a query or a fragment are
+ * refused: the settings page echoes this address back, and `/v1/systemone` cannot be appended to
+ * one that already carries them.
  */
 export const decisionRoot = (value: string): string | undefined => {
   const normalized = normalizeBaseUrl(value);
   if (normalized === undefined) return undefined;
+  const url = new URL(normalized);
+  if (url.username.length > 0 || url.password.length > 0) return undefined;
+  if (url.search.length > 0 || url.hash.length > 0) return undefined;
   return normalized.replace(/\/v1\/systemone$/, "").replace(/\/v1$/, "");
 };
 
@@ -57,13 +65,19 @@ const readAnswer = (
   if (!isObject(answer)) return undefined;
   if (answer.type !== undefined && answer.type !== "choice") return undefined;
   const choice = answer.choice;
-  if (typeof choice !== "string" || !(choice in CRITERIA)) return undefined;
+  // Own keys only: a prototype name such as `toString` is not one of the criteria.
+  if (typeof choice !== "string" || !Object.hasOwn(CRITERIA, choice)) return undefined;
+  if (answer.confidence !== undefined && !isProbability(answer.confidence)) return undefined;
   let probability: number | undefined;
   if (answer.probabilities !== undefined) {
     if (!isObject(answer.probabilities)) return undefined;
     const keys = Object.keys(answer.probabilities).sort();
     if (keys.join(",") !== Object.keys(CRITERIA).sort().join(",")) return undefined;
-    if (!Object.values(answer.probabilities).every(isProbability)) return undefined;
+    const values = Object.values(answer.probabilities);
+    if (!values.every(isProbability)) return undefined;
+    // A distribution, not a set of scores: Falcon accepts the same 0.02 rounding tolerance.
+    const total = values.reduce<number>((sum, value) => sum + (value as number), 0);
+    if (Math.abs(total - 1) > 0.02) return undefined;
     const winner = answer.probabilities[choice];
     probability = typeof winner === "number" ? winner : undefined;
   }
@@ -88,7 +102,7 @@ export const probeDecision = async (
   const request = options.fetch ?? fetch;
   const root = decisionRoot(target.baseUrl);
   if (root === undefined) {
-    return { ok: false, message: "地址必须是 http 或 https 开头的 URL", latencyMs: 0 };
+    return { ok: false, message: ADDRESS_REFUSED, latencyMs: 0 };
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? DECISION_TEST_TIMEOUT_MS);
@@ -126,14 +140,19 @@ export const probeDecision = async (
     if (answer === undefined) {
       return { ok: false, message: "返回内容不是 System One 决策", latencyMs: elapsed() };
     }
-    const resolved = answer.resolvedModel ?? target.model;
     const probability = answer.probability === undefined ? "" : ` ${answer.probability.toFixed(2)}`;
+    // The answer's own model name is evidence; the requested alias is not. A relay that names
+    // none reports none rather than claiming the alias was what answered.
+    const resolved = answer.resolvedModel;
     return {
       ok: true,
-      message: `连接成功 · ${resolved} · ${answer.choice}${probability}`,
+      message:
+        resolved === undefined
+          ? `连接成功 · ${answer.choice}${probability}`
+          : `连接成功 · ${resolved} · ${answer.choice}${probability}`,
       latencyMs: elapsed(),
       model: target.model,
-      resolvedModel: resolved,
+      ...(resolved === undefined ? {} : { resolvedModel: resolved }),
     };
   } catch (error) {
     const aborted = error instanceof Error && error.name === "AbortError";

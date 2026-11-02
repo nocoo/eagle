@@ -34,7 +34,7 @@ import { createDaemonModels } from "./runtime/pi/models.ts";
 import { PiDurableRuntime, type PiSettings } from "./runtime/pi/PiDurableRuntime.ts";
 import { loadToken } from "./server/auth.ts";
 import { ClientStore } from "./server/clients.ts";
-import { decisionRoot, probeDecision } from "./server/decision.ts";
+import { ADDRESS_REFUSED, decisionRoot, probeDecision } from "./server/decision.ts";
 import { armDevToken } from "./server/devToken.ts";
 import {
   DEFAULT_CORE_PROMPT,
@@ -804,7 +804,7 @@ export const createProviderService = async (
         delete next.baseUrl;
       } else {
         const root = decisionRoot(typed);
-        if (root === undefined) return { error: "地址必须是 http 或 https 开头的 URL" };
+        if (root === undefined) return { error: ADDRESS_REFUSED };
         if (root === definition.baseUrl) delete next.baseUrl;
         else next.baseUrl = root;
       }

@@ -130,7 +130,8 @@ struct SettingsGatewayTests {
 
     GatewayHTTPStub.handler = { _ in (401, Data()) }
     await model.loadProviders()
-    #expect(model.providerMessage != nil)
+    #expect(model.providerLoadError != nil, "a refused read is a page-level failure")
+    #expect(model.providerMessage == nil)
     GatewayHTTPStub.handler = nil
   }
 
@@ -409,6 +410,83 @@ struct SettingsGatewayTests {
     #expect(model.providerProbe["jev-relay"]?.resolvedModel == "jev-1.14.0")
     #expect(model.providerMessage == nil)
     GatewayHTTPStub.handler = nil
+  }
+
+  @Test("a relay's optional key can be cleared again")
+  func clearOptionalKey() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    var body: [String: Any] = [:]
+    GatewayHTTPStub.handler = { request in
+      #expect(request.url?.path == "/v1/providers/jev-relay")
+      if let data = gatewayHTTPBody(request) {
+        body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+      }
+      return (
+        200,
+        Data(
+          #"{"provider":{"id":"jev-relay","title":"Jev 中转站","service":"decision","kind":"systemone","baseUrl":"http://127.0.0.1:3425","model":"typesafe/jev-latest","docsUrl":"","keyLabel":"中转站 API Key","keyRequired":false,"hasApiKey":false,"enabled":true,"defaults":{"baseUrl":"http://127.0.0.1:3425","model":"typesafe/jev-latest"}}}"#
+            .utf8)
+      )
+    }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    model.providers = [
+      settingsProvider(
+        id: "jev-relay", title: "Jev 中转站", service: ProviderSettings.decisionService,
+        kind: "systemone", baseUrl: "http://127.0.0.1:3425", model: "typesafe/jev-latest",
+        keyRequired: false, hasApiKey: true, enabled: true)
+    ]
+    await model.clearProviderKey("jev-relay")
+    #expect(body["apiKey"] as? String == "", "an empty key is the way back to no key")
+    #expect(model.providers.first?.hasApiKey == false)
+    #expect(model.providerMessage == "已清除 Key")
+    await model.clearProviderKey("unknown")
+    GatewayHTTPStub.handler = nil
+  }
+
+  @Test("a failed read belongs to the page rather than to the last card that acted")
+  func providerLoadErrorIsPageLevel() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    GatewayHTTPStub.handler = { _ in
+      (200, Data(#"{"provider":\#(settingsDecisionProviderJSON)}"#.utf8))
+    }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    model.providers = [
+      settingsProvider(
+        id: "falcon", title: "Falcon", service: ProviderSettings.decisionService,
+        kind: "systemone", baseUrl: "http://127.0.0.1:19823", model: "jev-latest",
+        hasApiKey: true, enabled: true)
+    ]
+    model.providerKeys["falcon"] = "falcon_key"
+    await model.saveProvider("falcon")
+    #expect(model.providerMessageService == ProviderSettings.decisionService)
+
+    GatewayHTTPStub.handler = { _ in (401, Data()) }
+    await model.loadProviders()
+    #expect(model.providerLoadError != nil)
+    #expect(model.providerMessage == nil, "a read is not an action result")
+    #expect(model.providerMessageService == nil, "the read belongs to neither card")
+    GatewayHTTPStub.handler = nil
+  }
+
+  @Test("the row's buttons follow the key rule and the draft")
+  func providerButtonPredicates() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    let keyless = settingsProvider(
+      id: "jev-relay", title: "Jev 中转站", service: ProviderSettings.decisionService,
+      kind: "systemone", baseUrl: "http://127.0.0.1:3425", model: "typesafe/jev-latest",
+      keyRequired: false, hasApiKey: false, enabled: true)
+    let demanding = settingsProvider(
+      id: "raven", title: "Raven", service: ProviderSettings.decisionService,
+      kind: "systemone", baseUrl: "http://127.0.0.1:7024", model: "microsoft-decision-1",
+      hasApiKey: false, enabled: false)
+    model.providers = [keyless, demanding]
+    #expect(model.canTestProvider(keyless), "a relay with no key is testable")
+    #expect(model.canTestProvider(demanding) == false, "a missing required key is not")
+    #expect(model.canSaveProvider(keyless) == false, "nothing typed, nothing to save")
+    model.providerModels["jev-relay"] = "typesafe/jev-preview"
+    #expect(model.canSaveProvider(model.providers[0]))
+    #expect(model.canTestProvider(model.providers[0]) == false, "a draft is saved before probing")
   }
 
   @Test("choosing a decision provider leaves the search choice alone")

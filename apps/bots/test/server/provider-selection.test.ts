@@ -226,6 +226,11 @@ test("an address and a model name are overridden and reverted without a release"
     });
     assert.ok((await service.save("jev-relay", { baseUrl: "ftp://relay" })).error);
     assert.ok((await service.save("jev-relay", { baseUrl: "not-a-url" })).error);
+    // The settings page echoes the address back, so a credential in it would be a visible key.
+    assert.ok(
+      (await service.save("jev-relay", { baseUrl: "http://user:a-real-secret@relay.test" })).error,
+    );
+    assert.equal(JSON.stringify(await readProviders(path)).includes("a-real-secret"), false);
     await service.save("jev-relay", { baseUrl: "", model: "" });
     const reverted = service.public().find((provider) => provider.id === "jev-relay");
     assert.equal(reverted?.baseUrl, "http://127.0.0.1:3425");
@@ -246,6 +251,16 @@ test("a relay that brings its own upstream key is selectable with no key at all"
       (await service.save("typesafe", { enabled: true })).error,
       "a provider that needs a key still refuses a bare selection",
     );
+    // An optional key can be set and cleared again, so a person is never stuck with one.
+    await service.save("jev-relay", { apiKey: "relay-only" });
+    assert.equal(service.public().find((provider) => provider.id === "jev-relay")?.hasApiKey, true);
+    await service.save("jev-relay", { apiKey: "" });
+    assert.equal(
+      service.public().find((provider) => provider.id === "jev-relay")?.hasApiKey,
+      false,
+      "an empty key clears the optional one",
+    );
+    assert.equal(service.public().find((provider) => provider.id === "jev-relay")?.enabled, true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

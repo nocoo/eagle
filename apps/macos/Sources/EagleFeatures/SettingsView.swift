@@ -543,6 +543,10 @@ public struct SettingsView: View {
 
   private var providersPage: some View {
     VStack(alignment: .leading, spacing: 12) {
+      if let error = model.providerLoadError {
+        SettingsSectionNote(error, destructive: true)
+          .padding(.horizontal, 4)
+      }
       providerSection(
         ProviderSettings.searchService,
         title: "搜索",
