@@ -89,6 +89,7 @@ because extensions can capture Bot-specific services and directories.
 | `agents` | `bots-agents` | Optional | All three child-agent tools when selected |
 | `herdr` | `bots-herdr`, `tool-search` | Optional | `tool_search`; the eight Herdr tools are deferred |
 | `search` | `bots-search`, `tool-search` | Optional, **off by default** | `tool_search` is offered; `web_search` and `web_fetch` are deferred |
+| `decision` | `bots-decision`, `tool-search` | Optional, **off by default** | `tool_search` is offered; `decide`, `classify`, `assess`, `rate` and `judge` are deferred |
 | `trigger` | `bots-trigger`, `tool-search` | Optional, **on by default** | `tool_search` is offered; the five `trigger_*` tools are deferred |
 
 `ask_user` is the person-interface tool: it takes one to five questions, each single or
@@ -101,7 +102,8 @@ reads. Nothing waits on a human: the tool call is already complete when the card
 a person may ignore the card, which the bot is told in the same message.
 
 Current defaults select `persona`, `machine`, `core`, `coding`, `memory`, `herdr`, `agents` and
-`trigger`; `search` and `peers` stay off until a person turns them on. `memory` is a default
+`trigger`; `search`, `decision` and `peers` stay off until a person turns them on. `search` and
+`decision` are opt-in for the same reason: each call leaves the machine and spends money. `memory` is a default
 because remembering is a habit rather than a discovered capability (§6.1), not because the
 group-name list happened to widen. `trigger` is on by default because a Bot that cannot
 create its own schedule or webhook cannot answer "every morning, check this". Settings are daemon-wide and applied to
@@ -121,12 +123,12 @@ loader. The normal daemon installs search even before configuration: its tools
 can explain a missing selection without making an external request. A test/host
 that supplies no search client installs no search extension or loader for it.
 
-There are **36 tool names** with all current groups registered: five filesystem/coding tools,
+There are **41 tool names** with all current groups registered: five filesystem/coding tools,
 two pull-report tools, three child-agent tools, eight Herdr tools, two search tools, five
-trigger tools, three peer tools, five memory tools, three shared-device tools (only when the
-daemon supplies a device socket) and one SDK loader. With the default selection (no `search`,
-no `peers`) the eager tools are offered at once and the Herdr, trigger and device tools wait
-behind `tool_search`.
+decision tools, five trigger tools, three peer tools, five memory tools, three shared-device
+tools (only when the daemon supplies a device socket) and one SDK loader. With the default
+selection (no `search`, no `decision`, no `peers`) the eager tools are offered at once and the
+Herdr, decision, trigger and device tools wait behind `tool_search`.
 
 ### Filesystem and coding
 
@@ -152,6 +154,11 @@ Do not add custom paging, edit matching or process execution already provided by
 | --- | --- | --- | --- |
 | `search` / `web_search` | `query, count?, needContent?` | Ranked title, URL, snippet and summary; content on request, through the user's selected search provider | Unsafe |
 | `search` / `web_fetch` | `url` | One page as Markdown through the same provider, at most 50 KiB of model-facing text | Safe |
+| `decision` / `decide` | `state, question, options[{label, description?}], allowNone?` | One `choice` answer: the option, its full `probabilities` and `confidence`, plus the resolved model | Unsafe |
+| `decision` / `classify` | `state, labels, mode, allowNone?, threshold?` | `single` is one `choice` over the labels; `multi` sends one `noul` per label in a **single** request and returns every label's probability with the ones above `threshold` named | Unsafe |
+| `decision` / `assess` | `state, statement` | The probability that one yes/no statement is true; no fabricated confidence, and 0.3–0.7 is called out as unsure | Unsafe |
+| `decision` / `rate` | `state, question, levels[2..20]` | A position on the scale (`score`, possibly between levels), the `legend`, `probabilities` and `confidence` | Unsafe |
+| `decision` / `judge` | `state, questions[{id, type, instructions, criteria?}]` | Every answer keyed by its id, from one request; mixed `choice`/`noul`/`score` | Unsafe |
 
 Both are deferred. Settings -> Services -> Search stores independent DeepSeek and
 Tavily keys and explicitly selects one provider (`GET /v1/providers`, PROTOCOL.md
@@ -168,7 +175,20 @@ Native basic search/extraction is explicit, with no automatic paid depth upgrade
 Timeouts and cancellation reach both providers; raw provider fields are normalized
 inside their adapters, never by the Bot or its UI.
 Each performed call books one `search` call in the usage statistics, so the Settings page
-shows search next to model spend.
+shows search next to model spend. The decision tools book the request's own `input_tokens`
+under `decision`, and a missing count is booked as one call rather than as zero tokens: a
+relay's price is unknown, so no cost is invented.
+
+Every decision tool maps one call to one `POST /v1/systemone` with the configured provider and
+its model (docs/bots/PROTOCOL.md, "Providers"). The tools never retry: an answer may already
+have been paid for. `judge` exists because TypeSafe evaluates every question in a request in
+parallel, so asking five questions in one call is one round trip; the section text tells the
+model to prefer it over repeated single calls, to keep one atomic judgment per question, and
+not to act on an answer below `confidence` 0.5 (or a noul between 0.3 and 0.7) without
+confirming with the person. A reply that is not a valid answer for the questions asked — an
+option outside the criteria, a set of numbers that is not a distribution, a missing answer or
+an extra one — is refused by the transport, so a malformed relay becomes a tool error rather
+than a decision.
 
 ### Child conversations and terminal agents
 
@@ -212,6 +232,7 @@ Paths in this table are relative to `apps/bots/`.
 | Herdr CLI adapter | `test/tools/herdr-client.test.ts` | Executable fixture responses, argv/result handling, deadlines, cancellation, large/split output; not acceptance of every installed live agent kind |
 | Child agents | `test/tools/agents.test.ts` | Real Harness/SQLite spawn -> send -> answer with a deterministic model; dedicated stop, invalid-target, interrupted-send and one-level negative tests are still needed |
 | Search | `test/tools/search.test.ts`, `test/runtime/search-tools.test.ts`, `test/server/providers.test.ts`, `test/main.test.ts` | Documented request/response shape, refused key, deferred flags, one booked call per search, blank query refused; provider store is 0600, write-only and never returned; HTTP round trip behind the bearer |
+| Decision | `test/tools/decision.test.ts`, `test/tools/decision-transport.test.ts`, `test/server/provider-selection.test.ts`, `test/tools/catalog.test.ts` | One request per call (including `classify multi` and `judge`), options and levels mapped to the wire, malformed arguments refused before any request, a refused or malformed reply becoming a readable error, `input_tokens` booked under `decision`, the selection read per call and never fallen back from, and the group listed in the catalogue |
 | Deferred discovery | `test/runtime/deferred-tools.test.ts` | Model calls `tool_search`, then the discovered `herdr_list`; persistence across compaction is an SDK-source fact, not a separate regression established here |
 | Hot refresh | `test/runtime/tool-groups.test.ts`, `test/core/registry.test.ts`, `test/core/service.test.ts` | Warm enable/disable, cached switching, no interrupted answer, same-value retry, failed refresh and single failure identity |
 | Wire round trip | `test/e2e/tools.test.ts` | Real socket tool rows and later snapshot, encoded-size clamp, A -> B -> A refresh without extra model calls/watches, `1011` reconnect recovery |

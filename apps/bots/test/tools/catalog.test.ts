@@ -18,6 +18,7 @@ test("every group is described, with the tools it actually contributes", () => {
       "herdr",
       "agents",
       "search",
+      "decision",
       "trigger",
       "peers",
     ],
@@ -34,6 +35,7 @@ test("every group is described, with the tools it actually contributes", () => {
     "memory_delete",
   ]);
   assert.deepEqual(names("search"), ["web_search", "web_fetch"]);
+  assert.deepEqual(names("decision"), ["decide", "classify", "assess", "rate", "judge"]);
   assert.deepEqual(names("trigger"), [
     "trigger_create",
     "trigger_list",

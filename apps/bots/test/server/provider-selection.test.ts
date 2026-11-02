@@ -304,3 +304,64 @@ test("the probe follows the provider's kind, address and model", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// A judgment reads the selection at call time, so a new key or another relay applies to the next
+// decision instead of the next conversation (docs/bots/PROTOCOL.md, "Providers").
+test("a judgment follows the selected decision provider on every call", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bots-decision-select-"));
+  const seen: string[] = [];
+  const question = {
+    state: "A small change has not been tested.",
+    questions: {
+      next_step: {
+        type: "choice" as const,
+        instructions: "Choose.",
+        criteria: { test: "a", merge: "b" },
+      },
+    },
+  };
+  try {
+    const service = await createProviderService({
+      path: join(root, "providers.json"),
+      fetch: async (url, init) => {
+        seen.push(
+          `${new URL(String(url)).origin}${new URL(String(url)).pathname}|${new Headers(init?.headers).get("authorization")}`,
+        );
+        return Response.json({
+          model: "jev-1.14.0",
+          answers: {
+            next_step: {
+              type: "choice",
+              choice: "test",
+              probabilities: { test: 0.9, merge: 0.1 },
+              confidence: 0.8,
+            },
+          },
+          usage: { input_tokens: 12, output_tokens: 1 },
+        });
+      },
+    });
+    await assert.rejects(() => service.decision.ask(question), /决策服务商/);
+    assert.deepEqual(seen, [], "no selection means no request");
+
+    await service.save("typesafe", { apiKey: "apikey-one", enabled: true });
+    const official = await service.decision.ask(question);
+    assert.equal(official.model, "jev-1.14.0");
+    assert.equal(official.inputTokens, 12);
+    assert.deepEqual(official.answers.next_step, {
+      type: "choice",
+      choice: "test",
+      probabilities: { test: 0.9, merge: 0.1 },
+      confidence: 0.8,
+    });
+
+    await service.save("jev-relay", { enabled: true });
+    await service.decision.ask(question);
+    assert.deepEqual(seen, [
+      "https://api.typesafe.ai/v1/systemone|Bearer apikey-one",
+      "http://127.0.0.1:3425/v1/systemone|null",
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

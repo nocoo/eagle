@@ -16,6 +16,12 @@ import {
 import type { Log } from "../log/log.ts";
 import { AGENTS_TOOLS_EXTENSION, agentsExtension } from "./agents/tools.ts";
 import { createAskTool } from "./ask.ts";
+import type { DecisionClient } from "./decision/client.ts";
+import {
+  type createDecisionTools,
+  DECISION_TOOLS_EXTENSION,
+  decisionExtension,
+} from "./decision/tools.ts";
 import { SocketDevicePort } from "./devices/port.ts";
 import {
   DEVICE_EXTENSION,
@@ -64,6 +70,7 @@ const GROUP_EXTENSIONS: Record<ToolGroup, readonly string[]> = {
   herdr: [HERDR_TOOLS_EXTENSION, toolSearch.name],
   agents: [AGENTS_TOOLS_EXTENSION],
   search: [SEARCH_TOOLS_EXTENSION, toolSearch.name],
+  decision: [DECISION_TOOLS_EXTENSION, toolSearch.name],
   trigger: [TRIGGER_TOOLS_EXTENSION, toolSearch.name],
   peers: [PEERS_TOOLS_EXTENSION, toolSearch.name],
 };
@@ -133,6 +140,8 @@ const catalogSearch: SearchClient = {
   fetchPage: refuse,
 };
 
+const catalogDecision: DecisionClient = { ask: refuse };
+
 const catalogMemory: MemoryToolHost = {
   botId: "catalog",
   list: refuse,
@@ -178,6 +187,7 @@ export const createCatalogRegistry = (): RegistryReader =>
       devices: { socketPath: "/nonexistent-catalogue.sock", botId: "catalog" },
       herdr: { client: createHerdrClient(), stateDir: "/", botId: "catalog" },
       search: { client: catalogSearch, botId: "catalog" },
+      decision: { client: catalogDecision, botId: "catalog" },
       trigger: catalogTrigger,
       peers: catalogPeers,
       memory: catalogMemory,
@@ -209,6 +219,10 @@ export type ToolRegistryOptions = {
   readonly herdr?: Omit<HerdrToolOptions, "workspace">;
   /** Web search needs a provider client; absent when no key is configured. */
   readonly search?: Omit<Parameters<typeof searchExtension>[0], "botId"> & {
+    readonly botId: string;
+  };
+  /** Typed judgments need a decision client; absent only where no provider store exists. */
+  readonly decision?: Omit<Parameters<typeof createDecisionTools>[0], "botId"> & {
     readonly botId: string;
   };
   /** Trigger tools act on this bot's own definitions; absent in a build without storage. */
@@ -281,6 +295,7 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
   if (devices !== undefined) registry.install(deviceExtension(devices));
   registry.install(agentsExtension());
   if (options.search !== undefined) registry.install(searchExtension(options.search));
+  if (options.decision !== undefined) registry.install(decisionExtension(options.decision));
   if (options.trigger !== undefined) registry.install(triggerExtension(options.trigger));
   if (options.peers !== undefined) registry.install(peersExtension(options.peers));
   if (options.pulls !== undefined) registry.install(pullsExtension(options.pulls));
@@ -289,6 +304,7 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
   if (
     herdr !== undefined ||
     options.search !== undefined ||
+    options.decision !== undefined ||
     options.trigger !== undefined ||
     options.peers !== undefined
   ) {

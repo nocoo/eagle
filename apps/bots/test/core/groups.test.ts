@@ -33,4 +33,13 @@ test("core and coding cannot be turned off and unknown names are dropped", () =>
     "coding",
   ]);
   assert.deepEqual(resolveToolGroups(["herdr"]), ["core", "coding", "herdr"]);
+  // A judgment spends money per call, so the group is opt-in and never implied by another.
+  assert.equal(DEFAULT_TOOL_GROUPS.includes("decision"), false);
+  assert.deepEqual(resolveToolGroups(["decision"]), ["core", "coding", "decision"]);
+  assert.deepEqual(resolveToolGroups(["decision", "search"]), [
+    "core",
+    "coding",
+    "search",
+    "decision",
+  ]);
 });

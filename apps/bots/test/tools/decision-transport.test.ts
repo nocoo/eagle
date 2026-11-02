@@ -3,7 +3,7 @@
 // every one of those and a model listing cannot tell them apart.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { decisionRoot, probeDecision } from "../../src/server/decision.ts";
+import { decisionRoot, probeDecision, systemOne } from "../../src/tools/decision/systemone.ts";
 
 const answer = (body: Record<string, unknown>) => Response.json(body);
 
@@ -245,4 +245,119 @@ test("an answer that is not a distribution over the criteria is not usable", asy
     assert.equal(probe.ok, false, await body.clone().text());
     assert.match(probe.message, /决策/);
   }
+});
+
+const transport = { baseUrl: "http://relay.test", model: "jev-latest", apiKey: "k" };
+const ask = (body: () => Promise<Response>, questions?: Record<string, unknown>) =>
+  systemOne(
+    transport,
+    {
+      state: "x",
+      questions: (questions ?? {
+        urgency: { type: "noul", instructions: "urgent?" },
+      }) as never,
+    },
+    { fetch: (async () => body()) as unknown as typeof fetch },
+  );
+
+test("a noul, a score and their token usage are read as typed answers", async () => {
+  const noul = await ask(async () =>
+    Response.json({
+      model: "jev-1.14.0",
+      answers: { urgency: { type: "noul", noul: 0.88 } },
+      usage: { input_tokens: 93, output_tokens: 3 },
+    }),
+  );
+  assert.deepEqual(noul.answers.urgency, { type: "noul", noul: 0.88 });
+  assert.equal(noul.inputTokens, 93);
+  assert.equal(noul.outputTokens, 3);
+
+  const score = await ask(
+    async () =>
+      Response.json({
+        answers: {
+          friction: {
+            type: "score",
+            score: 1.4,
+            legend: ["calm", "annoyed", "angry"],
+            probabilities: [0.1, 0.6, 0.3],
+            confidence: 0.2,
+          },
+        },
+      }),
+    { friction: { type: "score", instructions: "how annoyed?", criteria: ["a", "b", "c"] } },
+  );
+  assert.deepEqual(score.answers.friction, {
+    type: "score",
+    score: 1.4,
+    legend: ["calm", "annoyed", "angry"],
+    probabilities: [0.1, 0.6, 0.3],
+    confidence: 0.2,
+  });
+  assert.equal(score.model, undefined, "a reply without a model names none");
+});
+
+test("an answer of the wrong type or outside the levels is refused", async () => {
+  const cases: (() => Promise<Response>)[] = [
+    // A noul outside [0,1].
+    async () => Response.json({ answers: { urgency: { type: "noul", noul: 1.4 } } }),
+    // A noul where a score was asked for.
+    async () => Response.json({ answers: { friction: { type: "noul", noul: 0.2 } } }),
+    // A score past the last level.
+    async () =>
+      Response.json({
+        answers: {
+          friction: {
+            type: "score",
+            score: 3,
+            legend: ["a", "b"],
+            probabilities: [0.5, 0.5],
+          },
+        },
+      }),
+    // A legend that does not match the levels asked for.
+    async () =>
+      Response.json({
+        answers: { friction: { type: "score", score: 1, legend: ["a"], probabilities: [1] } },
+      }),
+    // An extra answer for a question nobody asked.
+    async () =>
+      Response.json({
+        answers: {
+          urgency: { type: "noul", noul: 0.5 },
+          bonus: { type: "noul", noul: 0.5 },
+        },
+      }),
+  ];
+  for (const [index, body] of cases.entries()) {
+    const questions =
+      index === 0 || index === 4
+        ? { urgency: { type: "noul", instructions: "?" } }
+        : { friction: { type: "score", instructions: "?", criteria: ["a", "b"] } };
+    await assert.rejects(
+      () => ask(body, questions as never),
+      /System One/,
+      `case ${index} should be refused`,
+    );
+  }
+});
+
+test("a caller's cancellation is reported as a cancellation, not a timeout", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(
+    () =>
+      systemOne(
+        transport,
+        { state: "x", questions: { urgency: { type: "noul", instructions: "?" } } },
+        {
+          signal: controller.signal,
+          fetch: (async (_url: string | URL, init?: RequestInit) => {
+            if (init?.signal?.aborted === true) throw new DOMException("aborted", "AbortError");
+            return Response.json({});
+          }) as unknown as typeof fetch,
+        },
+      ),
+    /请求已取消/,
+  );
 });

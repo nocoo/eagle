@@ -3018,3 +3018,17 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   Falcon relay with a real token, authentication and D1. The App's rendering of these
   rows is covered by the rendered-tree suite and the owner's dev App, not by a live
   screenshot.
+
+## 2026-11-03 07:20 +08 — The decision tool group
+
+- A new `decision` tool group (off by default) gives a bot five tools over the selected decision
+  provider: `decide` (choice), `classify` (single choice or per-label Noul fan-out in **one**
+  request), `assess` (Noul), `rate` (score) and `judge` (mixed questions in one request). The
+  System One transport moved into `tools/decision/` so its reply contract and the tools that
+  consume it live together; `server/` reaches exactly one file there, the address rule, which
+  the architecture allowlist now records.
+- `npm run check` in `apps/bots` passed (coverage 95.17/88.18/90.69; `systemone.ts`
+  100/89.7/100), root `npm run check` passed with the official Node 26 build, `apps/macos` and
+  `apps/bots-macos` tests pass with strict formatting, and the 工具 page snapshot shows the new
+  row. Not verified: a real bot run against the live provider (the acceptance is the owner's dev
+  App plus a `tests/eval` pass), the relay paths with real credentials, authentication and D1.

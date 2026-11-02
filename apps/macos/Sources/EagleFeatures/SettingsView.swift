@@ -381,6 +381,10 @@ public struct SettingsView: View {
         group: SettingsViewModel.searchToolGroup)
       Divider().overlay(Theme.Palette.line)
       toolGroupRow(
+        "decision", "决策", detail: "向决策模型要结构化判断：分类、是/否概率、评分，以及一次问多题；服务商在“服务”里配置",
+        group: SettingsViewModel.decisionToolGroup)
+      Divider().overlay(Theme.Palette.line)
+      toolGroupRow(
         "trigger", "触发器", detail: "让 Bot 自己安排定时任务与 Webhook；开关在侧栏",
         group: SettingsViewModel.triggerToolGroup)
       Divider().overlay(Theme.Palette.line)

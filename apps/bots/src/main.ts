@@ -34,7 +34,6 @@ import { createDaemonModels } from "./runtime/pi/models.ts";
 import { PiDurableRuntime, type PiSettings } from "./runtime/pi/PiDurableRuntime.ts";
 import { loadToken } from "./server/auth.ts";
 import { ClientStore } from "./server/clients.ts";
-import { probeDecision } from "./server/decision.ts";
 import { armDevToken } from "./server/devToken.ts";
 import {
   DEFAULT_CORE_PROMPT,
@@ -52,8 +51,6 @@ import {
 } from "./server/gateway.ts";
 import { type Daemon, startServer, type TriggerIngress } from "./server/http.ts";
 import {
-  ADDRESS_REFUSED,
-  decisionRoot,
   PROVIDERS,
   type ProviderApi,
   type ProviderConfig,
@@ -69,6 +66,9 @@ import {
 import { acquireLock, LockError } from "./server/singleton.ts";
 import { toServerEvent } from "./server/socket.ts";
 import { UsageStore } from "./server/usage.ts";
+import { ADDRESS_REFUSED, decisionRoot } from "./tools/decision/address.ts";
+import type { DecisionClient } from "./tools/decision/client.ts";
+import { probeDecision, systemOne } from "./tools/decision/systemone.ts";
 import {
   MACHINE_PROMPT_CANDIDATES,
   type MachinePrompt,
@@ -372,6 +372,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     corePrompt: () => gateway?.corePrompt,
     machinePrompt: () => machinePrompt(),
     search: () => providers.client,
+    decision: () => providers.decision,
     trigger: async (spec) =>
       triggerHost(spec.id, await triggerStoreFor(spec.id), async (triggerId) => {
         const queue = queues.get(`${spec.id}/${triggerId}`);
@@ -757,7 +758,13 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
 
 export const createProviderService = async (
   options: { readonly path?: string; readonly fetch?: typeof fetch } = {},
-): Promise<ProviderApi & { readonly client: SearchClient; secrets(): readonly string[] }> => {
+): Promise<
+  ProviderApi & {
+    readonly client: SearchClient;
+    readonly decision: DecisionClient;
+    secrets(): readonly string[];
+  }
+> => {
   const path = options.path ?? providersPath();
   let configs = await readProviders(path);
   let queue = Promise.resolve();
@@ -833,6 +840,29 @@ export const createProviderService = async (
   return {
     public: () => publicProviders(configs),
     secrets: () => Object.values(configs).map((config) => config.apiKey),
+    // Resolved per call, so a new key or another relay applies to the next judgment. This is the
+    // only place a tool reaches a decision provider, and it never falls back to another one.
+    decision: {
+      ask: async (request, signal) => {
+        const definition = selectedProvider(configs, "decision");
+        if (definition === undefined) {
+          throw new Error("请先在服务中选择一个已保存 Key 的决策服务商。");
+        }
+        const config = configs[definition.id];
+        return systemOne(
+          {
+            baseUrl: config?.baseUrl ?? definition.baseUrl,
+            model: config?.model ?? definition.model,
+            apiKey: config?.apiKey ?? "",
+          },
+          request,
+          {
+            ...(signal === undefined ? {} : { signal }),
+            ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+          },
+        );
+      },
+    } satisfies DecisionClient,
     save(id, input) {
       const result = queue.then(() => save(id, input));
       queue = result.then(

@@ -461,6 +461,10 @@ that already carries them.
   present, is in `[0,1]`. Anything else, or a key the provider refuses, is a failed probe;
   nothing is saved.
 - An unknown provider is a `400`; a refused key reads as "the provider refused the API key".
+- **A selected decision provider also backs the `decision` tool group** (`decide`, `classify`,
+  `assess`, `rate`, `judge`): each tool call is one `POST /v1/systemone`, the selection is read
+  per call, and a missing selection is a tool error rather than a silent fallback. The group is
+  off by default.
 
 ## Usage statistics
 
@@ -481,9 +485,11 @@ and on every write.
                { "source": "search", "totalTokens": 0, "calls": 40, "costUsd": 0 } ] } }
 ```
 
-- Sources: `model` spends tokens, `search` spends calls (one per search or fetch); `sources`
-  lists each one's share, busiest first, so a client shows where the work went. `model` and
-  `search` are today's set; the store keys on a string, so the next spender needs no migration.
+- Sources: `model` spends tokens, `search` spends calls (one per search or fetch), and
+  `decision` spends input tokens (one per judgment; Jev bills input only and output is free,
+  so a relay whose price is unknown is never given a made-up cost); `sources` lists each one's
+  share, busiest first, so a client shows where the work went. The store keys on a string, so
+  the next spender needs no migration.
 - The first schema counted tokens only; the daemon migrates that day table into the `model`
   source when it opens the store.
 - `days` is the requested window (1–90, default 30), oldest first, with a zero row for a day

@@ -65,8 +65,8 @@ public final class SettingsViewModel: ObservableObject {
   /// Every group the daemon knows, in display order; the daemon owns which are installed.
   /// The two core prompts lead, because they are the first sections of the system prompt.
   public static let toolGroups = [
-    "persona", "machine", "core", "coding", "memory", "herdr", "agents", "search", "trigger",
-    "peers",
+    "persona", "machine", "core", "coding", "memory", "herdr", "agents", "search", "decision",
+    "trigger", "peers",
   ]
   /// What a daemon that predates a new group is assumed to run: both core prompts are on,
   /// memory is on because remembering is a habit, and the rest is opt-in.
@@ -80,6 +80,7 @@ public final class SettingsViewModel: ObservableObject {
   public static let herdrToolGroup = "herdr"
   public static let agentsToolGroup = "agents"
   public static let searchToolGroup = "search"
+  public static let decisionToolGroup = "decision"
   public static let triggerToolGroup = "trigger"
   public static let peersToolGroup = "peers"
   private var gatewayThinkingLevelChosen = false

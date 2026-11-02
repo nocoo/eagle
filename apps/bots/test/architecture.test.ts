@@ -32,11 +32,14 @@ const EDGES: ReadonlyArray<{
     allows: (target) => target.startsWith("src/core/") || target.startsWith("src/protocol/"),
   },
   {
+    // `server/` reaches the tool layer for exactly one thing: the address rule a decision
+    // provider is stored under, which the outbound transport in `tools/decision/` also needs.
     prefix: "src/server/",
     allows: (target) =>
       target.startsWith("src/core/") ||
       target.startsWith("src/protocol/") ||
-      target.startsWith("src/server/"),
+      target.startsWith("src/server/") ||
+      target === "src/tools/decision/address.ts",
   },
   {
     // A caller of the invocation port: it may reach the two core ports and the log, and

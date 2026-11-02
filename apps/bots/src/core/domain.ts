@@ -429,6 +429,7 @@ export const TOOL_GROUP_NAMES = [
   "herdr",
   "agents",
   "search",
+  "decision",
   "trigger",
   "peers",
 ] as const;

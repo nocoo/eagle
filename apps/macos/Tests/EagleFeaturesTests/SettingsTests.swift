@@ -14,6 +14,20 @@ struct SettingsTests {
     #expect(SettingsSection.general.rawValue == "通用")
   }
 
+  @Test("the tool page lists the decision group between search and triggers")
+  func decisionGroupIsListed() {
+    let groups = SettingsViewModel.toolGroups
+    let decision = try? #require(groups.firstIndex(of: SettingsViewModel.decisionToolGroup))
+    let search = try? #require(groups.firstIndex(of: SettingsViewModel.searchToolGroup))
+    let trigger = try? #require(groups.firstIndex(of: SettingsViewModel.triggerToolGroup))
+    #expect(decision != nil && search != nil && trigger != nil)
+    #expect(decision == search.map { $0 + 1 })
+    #expect(decision.map { $0 + 1 } == trigger)
+    #expect(
+      SettingsViewModel.defaultToolGroups.contains(SettingsViewModel.decisionToolGroup) == false,
+      "a judgment spends money per call, so it is opt-in")
+  }
+
   @Test("the two prompts own a tab of their own, right after 工具")
   func promptsSection() {
     #expect(SettingsSection.prompts.rawValue == "提示词")

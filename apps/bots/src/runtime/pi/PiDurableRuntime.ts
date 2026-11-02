@@ -43,6 +43,7 @@ import type {
 } from "../../core/RuntimePort.ts";
 import { type DeclaredEvent, declareEvent } from "../../log/events.ts";
 import type { Log } from "../../log/log.ts";
+import type { DecisionClient } from "../../tools/decision/client.ts";
 import { createHerdrClient } from "../../tools/herdr/client.ts";
 import type { MachinePrompt } from "../../tools/machine/tools.ts";
 import { createToolRegistry, selectToolExtensions } from "../../tools/registry.ts";
@@ -160,6 +161,8 @@ export type PiRuntimeOptions = {
   readonly workspaceRoot?: (spec: RuntimeBotSpec) => string;
   /** The web-search client for a bot, absent when no provider key is configured. */
   readonly search?: (spec: RuntimeBotSpec) => SearchClient | undefined;
+  /** The decision client for a bot: one request per judgment, resolved per call. */
+  readonly decision?: (spec: RuntimeBotSpec) => DecisionClient | undefined;
   /** The trigger tools' host for a bot, bound to that bot's own definitions. */
   readonly trigger?: (spec: RuntimeBotSpec) => Promise<TriggerToolHost | undefined>;
   /** The peer tools' host for a bot, bound to that bot as the sender. */
@@ -203,6 +206,7 @@ export class PiDurableRuntime implements RuntimePort {
       );
       const groups = resolveToolGroups(spec.toolGroups);
       const search = this.#options.search?.(spec);
+      const decision = this.#options.decision?.(spec);
       const trigger = await this.#options.trigger?.(spec);
       const peers = await this.#options.peers?.(spec);
       const pulls = await this.#options.pulls?.(spec);
@@ -239,6 +243,15 @@ export class PiDurableRuntime implements RuntimePort {
           : {
               search: {
                 client: search,
+                botId: spec.id,
+                ...(this.#options.usage === undefined ? {} : { meter: this.#options.usage }),
+              },
+            }),
+        ...(decision === undefined
+          ? {}
+          : {
+              decision: {
+                client: decision,
                 botId: spec.id,
                 ...(this.#options.usage === undefined ? {} : { meter: this.#options.usage }),
               },
