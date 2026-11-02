@@ -192,23 +192,30 @@ struct LocalHerdrClientTests {
 
   @Test("timeout and cancellation also bound inherited stdout after the command exits")
   func inheritedStdout() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
     let shell = URL(fileURLWithPath: "/bin/sh")
-    let arguments = ["-c", "/bin/sleep 1 & exit 0"]
-    let start = ContinuousClock.now
+    func arguments(_ marker: URL) -> [String] {
+      ["-c", #"(/bin/sleep 5; : > "$1") 2>/dev/null & exit 0"#, "test", marker.path]
+    }
+    let timeoutMarker = directory.appendingPathComponent("timeout")
     await #expect(throws: HerdrReadError.timeout) {
       try await LocalHerdrClient.run(
-        executable: shell, arguments: arguments, environment: [:], timeout: .milliseconds(100))
+        executable: shell, arguments: arguments(timeoutMarker), environment: [:],
+        timeout: .milliseconds(100))
     }
-    #expect(start.duration(to: .now) < .milliseconds(700))
+    #expect(!FileManager.default.fileExists(atPath: timeoutMarker.path))
 
+    let cancelMarker = directory.appendingPathComponent("cancel")
     let reading = Task {
-      try await LocalHerdrClient.run(executable: shell, arguments: arguments, environment: [:])
+      try await LocalHerdrClient.run(
+        executable: shell, arguments: arguments(cancelMarker), environment: [:])
     }
     try await Task.sleep(for: .milliseconds(100))
-    let cancelled = ContinuousClock.now
     reading.cancel()
     await #expect(throws: CancellationError.self) { try await reading.value }
-    #expect(cancelled.duration(to: .now) < .milliseconds(700))
+    #expect(!FileManager.default.fileExists(atPath: cancelMarker.path))
   }
 
   @Test("closed stdout does not exempt a running command from the deadline")

@@ -1056,3 +1056,9 @@ assertion fails. The first commit attempt also exposed an overlong test line;
 run the staged Swift format check before committing. A later review found that
 trimming turn IDs could associate distinct records; IDs are now validated without
 normalizing them, with a regression covering the mismatch across cached reads.
+
+The first bounded-stdout test also asserted a 700 ms wall-clock deadline. A busy
+GitHub runner correctly returned a timeout but scheduled the assertion after
+958 ms, failing CI. The regression now checks completion before the inherited
+pipe holder finishes, rather than treating scheduler latency as product behavior;
+the production timeout and assertions on timeout and cancellation remain.
