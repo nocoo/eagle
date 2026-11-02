@@ -4,9 +4,8 @@ Status: **development guide and proposed tool roadmap**, 2026-10-28.
 The native baseline includes consolidation (`cd8971c`) and Registry refresh
 (`e5f2200`); the inventory also includes the current first-party search providers.
 The SDK remains `@earendil-works/pi-durable@1.4.0`. Every item marked **planned** is a design for
-review, not an installed tool, enabled capability or passing test. §6.1 carries the `memory`
-group interface (two markdown scopes, five tools, storage port) designed 2026-11-02 and not yet
-installed.
+review, not an installed tool, enabled capability or passing test. The `memory` group (§6.1) was
+designed and built on 2026-11-02: two markdown scopes, five eager tools, one storage port.
 
 [PLAN.md](PLAN.md) owns delivery status; this guide owns tool taxonomy, naming
 and extension-development rules. [RUNTIME.md](RUNTIME.md) owns runtime semantics,
@@ -85,7 +84,8 @@ because extensions can capture Bot-specific services and directories.
 | Group | Native extension names | Selection | Initial model visibility |
 | --- | --- | --- | --- |
 | `core` | `bots-tools` | Mandatory | `list`, `note_set`, `ask_user` |
-| `coding` | `coding-tools` (`CodingTools`) | Mandatory | `read`, `write`, `edit`, `bash` |
+| `coding` | `coding-tools` (`CodingTools`), `bots-pulls` | Mandatory | `read`, `write`, `edit`, `bash`, `pr_register`, `pr_list` |
+| `memory` | `bots-memory` | Optional, **on by default** | All five memory tools, eager: no loader |
 | `agents` | `bots-agents` | Optional | All three child-agent tools when selected |
 | `herdr` | `bots-herdr`, `tool-search` | Optional | `tool_search`; the eight Herdr tools are deferred |
 | `search` | `bots-search`, `tool-search` | Optional, **off by default** | `tool_search` is offered; `web_search` and `web_fetch` are deferred |
@@ -100,8 +100,10 @@ client reports labels, the daemon checks them against the card and writes the te
 reads. Nothing waits on a human: the tool call is already complete when the card appears, and
 a person may ignore the card, which the bot is told in the same message.
 
-Current defaults select `core`, `coding`, `herdr`, `agents` and `trigger`; `search` stays
-off until a person turns it on. `trigger` is on by default because a Bot that cannot
+Current defaults select `persona`, `machine`, `core`, `coding`, `memory`, `herdr`, `agents` and
+`trigger`; `search` and `peers` stay off until a person turns them on. `memory` is a default
+because remembering is a habit rather than a discovered capability (§6.1), not because the
+group-name list happened to widen. `trigger` is on by default because a Bot that cannot
 create its own schedule or webhook cannot answer "every morning, check this". Settings are daemon-wide and applied to
 existing/new Bots, not independently editable group policies for each sidebar
 Bot. `core` and `coding` are normalized back in even for an empty selection;
@@ -119,11 +121,12 @@ loader. The normal daemon installs search even before configuration: its tools
 can explain a missing selection without making an external request. A test/host
 that supplies no search client installs no search extension or loader for it.
 
-There are **20 tool names** with all current groups registered: five filesystem/
-coding tools, three child-agent tools, eight Herdr tools, two search tools and one
-SDK loader. With the default selection (no `search`) ten are initially offered and
-eight are deferred; selecting `search` defers two more tools and reuses the same
-`tool_search` loader.
+There are **36 tool names** with all current groups registered: five filesystem/coding tools,
+two pull-report tools, three child-agent tools, eight Herdr tools, two search tools, five
+trigger tools, three peer tools, five memory tools, three shared-device tools (only when the
+daemon supplies a device socket) and one SDK loader. With the default selection (no `search`,
+no `peers`) the eager tools are offered at once and the Herdr, trigger and device tools wait
+behind `tool_search`.
 
 ### Filesystem and coding
 
@@ -309,11 +312,14 @@ discover it. Discovery metadata must contain enough domain vocabulary to match.
 
 ### 6.1 Memory: a person's notes and a Bot's own notes
 
-Status: **designed interface, 2026-11-02**. No memory tool is installed yet; the tool rows
-below are a contract, not an inventory. This section owns the model-facing surface, the v1
-file format and the port a later store must satisfy. It replaces the earlier plan that kept
-records inside the daemon database under `shared`/`private` scopes: the storage changed, the
-five operations did not.
+Status: **as built, 2026-11-02** — `src/memory/fileHost.ts` (the only module that knows the
+format), `src/tools/memory/tools.ts` (the five tools), the port in `src/tools/types.ts` and the
+group wiring in `src/tools/registry.ts` and `src/core/domain.ts`. Evidence: the group's unit
+tests plus one runtime test per layer, a socket test asserting the tool row and its snapshot
+copy, and the App's settings row. This section owns the model-facing surface, the v1 file
+format and the port a later store must satisfy. It replaces the earlier plan that kept records
+inside the daemon database under `shared`/`private` scopes: the storage changed, the five
+operations did not.
 
 #### Two scopes, two files
 

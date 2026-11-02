@@ -870,21 +870,24 @@ The extension/tool track has its own proposed sequence in
 
 1. Add child discovery with `agent_list`, direct-parent target validation and the
    missing negative/stop/recovery tests for existing delegation tools.
-2. Add the optional `memory` group whose interface is fixed in
-   [§6.1](EXTENSIONS-AND-TOOLS.md#61-memory-a-persons-notes-and-a-bots-own-notes):
-   `memory_list`, `memory_search`, `memory_read`, `memory_write`, `memory_delete`
-   over `global` (`global.md`) and `bot` (`<botId>.md`) scopes in a person-editable
-   markdown directory, eager rather than deferred, and on by default by decision.
-   Ship the storage behind `MemoryToolHost` so a later store keeps the five calls.
+2. ~~Add the optional `memory` group.~~ **Built 2026-11-02** as
+   [§6.1](EXTENSIONS-AND-TOOLS.md#61-memory-a-persons-notes-and-a-bots-own-notes)
+   specifies: `memory_list`, `memory_search`, `memory_read`, `memory_write`,
+   `memory_delete` over `global` (`global.md`) and `bot` (`<botId>.md`) scopes in a
+   person-editable directory, eager, on by default, storage behind
+   `MemoryToolHost`. `npm run check` in `apps/bots` is green at 808 tests with
+   94.95% lines / 88.28% branches / 90.33% functions; the App shows one settings
+   row and the transport fallback matches. Not yet verified on an installed App
+   against a live daemon.
 3. Add optional `search`: `web_search` and `web_fetch`, separating URL discovery
    from page retrieval and proving bounded, cancellable provider calls.
 4. Add optional `peers`: `peer_list`, `peer_send`, `peer_read`, with durable
    cross-Bot admission, observable settlement and bounded routing.
 
-`search`, `trigger` and `peers` have shipped (as `trigger`/`peers` tool faces);
-`memory` and `agent_list` are designed, not implemented. A new group is never made a
-default by widening the group-name list: `memory` is a default because §6.1 records
-that decision, and any other group needs the same written reason first.
+`search`, `trigger`, `peers` and `memory` have shipped; `agent_list` is designed and not
+implemented. A new group is never made a default by widening the group-name list: `memory`
+is a default because §6.1 records that decision, and any other group needs the same written
+reason first.
 
 ### What the adapter can do today (rows 23-36, signed off)
 
