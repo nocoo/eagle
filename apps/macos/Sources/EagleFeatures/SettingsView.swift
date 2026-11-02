@@ -436,12 +436,6 @@ public struct SettingsView: View {
           }
         }
       }
-      Text("Key 独立保存在本机，保存不会切换服务商。选择后从下一次调用生效，不会自动切换。")
-        .font(Theme.TypeScale.note)
-        .foregroundStyle(Theme.Palette.textSecondary)
-      Text("测试会使用已保存的 Key 发起一次搜索，可能消耗服务额度。")
-        .font(Theme.TypeScale.note)
-        .foregroundStyle(Theme.Palette.textMuted)
     }
     .task { await model.loadProviders() }
   }
