@@ -1,5 +1,15 @@
 # Retrospective
 
+## 2026-11-02 — Shell expansion corrupted acceptance prompts
+
+While testing the released CLI, three messages included an unbraced shell variable
+immediately followed by Chinese punctuation. On this machine, `$d；` expanded into
+replacement characters rather than the intended path and punctuation. The complete
+path was also present earlier in each message, but the repeated scope instruction was
+corrupted; this was a test-harness mistake, not evidence of an Eagle encoding defect.
+Reproduce suspicious text at the shell boundary before attributing it to the product.
+Use `${d}；` and inspect the submitted message when paths or safety boundaries matter.
+
 ## 2026-11-01 — Three ways this session produced work I could not trust
 
 1. A Python rewrite helper wrote `t` into `p`: it replaced `DaemonClient.swift` with the
