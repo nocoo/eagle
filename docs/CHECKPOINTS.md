@@ -1,5 +1,18 @@
 # 用户视角检查点
 
+## 2026-11-03 07:01 +08 — macOS 0.17.0 asset published
+
+- `macos-v0.17.0` points to `2d696e1`, whose GitHub root and macOS checks
+  passed. The published GitHub Release contains the ad-hoc, un-notarized zip;
+  its asset digest matches the locally verified extracted bundle. The old
+  online macOS claim remains 0.16.1 until the declaration is deployed.
+- The current dev App is running for hand inspection, but no manual rendering
+  acceptance or new live Herdr collection has been recorded. Authentication
+  and D1 were not exercised for this app release. Bots check and eval passed
+  locally; no Agent or website version was bumped.
+- Next: commit and push the verified app declaration, verify its exact CI and
+  deployment, then check `/api/live` reports 0.17.0 and the release asset.
+
 ## 2026-11-03 06:45 +08 — macOS 0.17.0 release candidate
 
 - Source version is 0.17.0; the GitHub asset has not been uploaded and the

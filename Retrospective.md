@@ -1105,3 +1105,8 @@ then releases the controlled startup and waits for readiness; its switch and
 start-count assertions remain. An initial short-circuit expression failed Swift
 compilation because the throwing operator itself needed `try`; separating the
 guard from the throwing call fixed the compile error.
+
+Publishing the 0.17.0 draft succeeded, but the immediately chained verification
+asked `gh release view` for the unsupported `isLatest` field. The error was in the
+read, not publication; checking the release and latest endpoint separately proved
+the asset was already published and avoided repeating the mutation.
