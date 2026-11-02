@@ -41,6 +41,7 @@ export type ClientCommand =
       readonly type: "answer";
       readonly entryId: string;
       readonly answers?: readonly (readonly string[])[];
+      readonly chosen?: readonly string[];
       readonly skipped?: boolean;
       readonly trace: string;
     }
@@ -330,14 +331,22 @@ export function decodeCommand(raw: Record<string, unknown>): ClientCommand {
           : arr(ctx, raw.answers, "answers").map((entry) =>
               arr(ctx, entry, "answers[]").map((label) => anyStr(ctx, label, "answers[][]")),
             );
+      const chosen =
+        raw.chosen === undefined
+          ? undefined
+          : arr(ctx, raw.chosen, "chosen").map((label) => anyStr(ctx, label, "chosen[]"));
       const skipped = raw.skipped === undefined ? undefined : bool(ctx, raw.skipped, "skipped");
-      if ((answers === undefined) === (skipped !== true)) {
-        fail(ctx, "answer carries either answers or a skip");
+      const carried = [answers !== undefined, chosen !== undefined, skipped === true].filter(
+        (present) => present,
+      ).length;
+      if (carried !== 1) {
+        fail(ctx, "answer carries exactly one of answers, chosen or skipped");
       }
       return {
         type,
         entryId: str(ctx, raw.entryId, "entryId"),
         ...(answers === undefined ? {} : { answers }),
+        ...(chosen === undefined ? {} : { chosen }),
         ...(skipped === undefined ? {} : { skipped }),
         trace: str(ctx, raw.trace, "trace"),
       };

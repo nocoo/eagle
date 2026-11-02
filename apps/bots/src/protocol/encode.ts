@@ -315,6 +315,7 @@ export const encodeCommand = (command: ClientCommand): Wire => {
         type: "answer",
         entryId: command.entryId,
         ...(command.answers === undefined ? {} : { answers: command.answers }),
+        ...(command.chosen === undefined ? {} : { chosen: command.chosen }),
         ...(command.skipped === undefined ? {} : { skipped: command.skipped }),
         trace: command.trace,
       };

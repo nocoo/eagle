@@ -132,7 +132,7 @@ public struct Commands: Sendable {
       \(config.binaryName) whoami                  the credential and its scopes
       \(config.binaryName) bots list|show|create|update|move|delete
       \(config.binaryName) groups list|create|rename|order|delete
-      \(config.binaryName) chat send|watch|history|abort <bot>
+      \(config.binaryName) chat send|watch|history|answer|abort <bot>
       \(config.binaryName) usage [--days N]
 
     Every command takes --json. Destructive commands need --yes.
@@ -408,7 +408,7 @@ public struct Commands: Sendable {
 
   private func chat(tokens: [String]) async throws {
     guard let sub = tokens.first else {
-      throw CLIError.usage("chat send|watch|history|abort <bot>")
+      throw CLIError.usage("chat send|watch|history|answer|abort <bot>")
     }
     let rest = Array(tokens.dropFirst())
     switch sub {
@@ -418,6 +418,8 @@ public struct Commands: Sendable {
       try await watch(rest)
     case "history":
       try await history(rest)
+    case "answer":
+      try await answer(rest)
     case "abort":
       try await abort(rest)
     default:
@@ -487,7 +489,12 @@ public struct Commands: Sendable {
           answers[id] = text
           lastAnswer = text
         }
-        if printer.wantsJSON(arguments) { printer.json(frame) }
+        if printer.wantsJSON(arguments) {
+          printer.json(frame)
+        } else {
+          // A card is part of the answer: an agent reading this output must see it.
+          for line in Self.questionLines(message) { printer.text(line) }
+        }
       } else if type == "submission", frame["requestId"] as? String == requestId {
         if printer.wantsJSON(arguments) { printer.json(frame) }
         let status = frame["status"] as? String ?? ""
@@ -508,6 +515,51 @@ public struct Commands: Sendable {
     }
   }
 
+  /// Answers an ask_user card by naming the labels the person chose. The cards themselves are
+  /// printed by `watch` and `send --wait`, so an agent reads the options and answers in one go.
+  private func answer(_ tokens: [String]) async throws {
+    let arguments = try Arguments.parse(
+      tokens, valueFlags: ["entry", "choose"], switchFlags: ["json", "skip"])
+    let name = try arguments.positional(0, "<bot>")
+    let entry = try arguments.required("entry")
+    let skipped = arguments.switches.contains("skip")
+    let chosen = (arguments.value("choose") ?? "")
+      .split(separator: ",")
+      .map { $0.trimmingCharacters(in: .whitespaces) }
+      .filter { !$0.isEmpty }
+    guard skipped ? chosen.isEmpty : !chosen.isEmpty else {
+      throw CLIError.usage("pass --choose label[,label] or --skip, not both")
+    }
+    let bot = try await resolve(name)
+    let botId = bot["id"] as? String ?? name
+    let socket = try await client.connect(clientName: "eagle-cli/\(EagleCLIKit.version)")
+    defer { socket.close() }
+    _ = try await socket.subscribe(botId: botId)
+    try await socket.answer(entryId: entry, chosen: chosen, skipped: skipped)
+    while true {
+      let frame = try await socket.read()
+      let type = frame["type"] as? String ?? ""
+      if type == "submission" {
+        if printer.wantsJSON(arguments) { printer.json(frame) }
+        let status = frame["status"] as? String ?? ""
+        if status == "unanswered" {
+          throw CLIError.refused(
+            kind: "unanswered", message: "the answer was not admitted: \(frame["reason"] ?? "?")")
+        }
+        if !printer.wantsJSON(arguments) {
+          printer.text(skipped ? "skipped \(entry)" : "answered \(entry)")
+        }
+        return
+      }
+      if type == "error" {
+        if printer.wantsJSON(arguments) { printer.json(frame) }
+        throw CLIError.refused(
+          kind: frame["kind"] as? String ?? "refused",
+          message: frame["message"] as? String ?? "the daemon refused the answer")
+      }
+    }
+  }
+
   private func watch(_ tokens: [String]) async throws {
     let arguments = try Arguments.parse(tokens, valueFlags: [], switchFlags: ["json"])
     let name = try arguments.positional(0, "<bot>")
@@ -521,7 +573,8 @@ public struct Commands: Sendable {
       printer.json(frame)
     } else {
       for message in snapshot["messages"] as? [JSONObject] ?? [] {
-        printer.text(Self.messageLine(message))
+        if let line = Self.messageLine(message) { printer.text(line) }
+        for line in Self.questionLines(message) { printer.text(line) }
       }
     }
     while true {
@@ -530,7 +583,8 @@ public struct Commands: Sendable {
         printer.json(frame)
       } else if frame["type"] as? String == "append", let message = frame["message"] as? JSONObject
       {
-        printer.text(Self.messageLine(message))
+        if let line = Self.messageLine(message) { printer.text(line) }
+        for line in Self.questionLines(message) { printer.text(line) }
       }
     }
   }
@@ -573,7 +627,7 @@ public struct Commands: Sendable {
       return
     }
     for message in frame["messages"] as? [JSONObject] ?? [] {
-      printer.text(Self.messageLine(message))
+      if let line = Self.messageLine(message) { printer.text(line) }
     }
   }
 
@@ -631,13 +685,45 @@ public struct Commands: Sendable {
     return parts.joined(separator: "  ")
   }
 
-  static func messageLine(_ message: JSONObject) -> String {
+  /// A hidden message is the person's answer to a card: the card already showed it, so the
+  /// transcript skips the text and keeps only the fact that it was answered.
+  static func messageLine(_ message: JSONObject) -> String? {
+    if message["hidden"] as? Bool == true {
+      let entry = message["answersTo"] as? String
+      return entry.map { "[answered \($0)]" }
+    }
     let role = message["role"] as? String ?? "?"
     let origin = message["origin"] as? JSONObject
     let author = origin?["label"] as? String
     let who = author.map { "\(role):\($0)" } ?? role
     let text = text(of: message)
     return "[\(who)] \(text.replacingOccurrences(of: "\n", with: " "))"
+  }
+
+  /// An ask_user card, one line per question, then the exact command that answers it: the
+  /// CLI prints the options rather than making the caller decode the tool call.
+  static func questionLines(_ message: JSONObject) -> [String] {
+    let entry = message["id"] as? String ?? "?"
+    if message["hidden"] as? Bool == true { return [] }
+    var lines: [String] = []
+    for block in message["blocks"] as? [JSONObject] ?? [] {
+      guard block["type"] as? String == "toolCall", block["name"] as? String == "ask_user",
+        let args = block["args"] as? JSONObject,
+        let questions = args["questions"] as? [JSONObject]
+      else { continue }
+      for question in questions {
+        let prompt = question["prompt"] as? String ?? ""
+        let kind = question["kind"] as? String == "multi" ? "多选" : "单选"
+        let labels = (question["options"] as? [JSONObject] ?? [])
+          .compactMap { $0["label"] as? String }
+          .joined(separator: " | ")
+        lines.append("[question \(entry)] (\(kind)) \(prompt): \(labels)")
+      }
+      if !lines.isEmpty {
+        lines.append("answer: --entry \(entry) --choose <label>[,<label>] (or --skip)")
+      }
+    }
+    return lines
   }
 
   static func text(of message: JSONObject) -> String {

@@ -189,6 +189,18 @@ public final class SocketSession: @unchecked Sendable {
     ])
   }
 
+  /// Answers an ask_user card: the daemon reads the questions out of that entry and composes
+  /// the hidden message the bot reads next, so the CLI never writes it.
+  public func answer(entryId: String, chosen: [String], skipped: Bool) async throws {
+    var command: JSONObject = ["type": "answer", "entryId": entryId, "trace": Self.trace()]
+    if skipped {
+      command["skipped"] = true
+    } else {
+      command["chosen"] = chosen
+    }
+    try await write(command)
+  }
+
   public func abort() async throws {
     try await write(["type": "abort", "trace": Self.trace()])
   }

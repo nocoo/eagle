@@ -898,10 +898,12 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         const entryId = isObject(body) ? body.entryId : undefined;
         const skipped = isObject(body) ? body.skipped : undefined;
         const answers = isObject(body) ? body.answers : undefined;
+        const chosen = isObject(body) ? body.chosen : undefined;
         const shaped =
           typeof entryId === "string" &&
-          (answers === undefined || (Array.isArray(answers) && answers.every(isStringList)));
-        if (!shaped || (answers === undefined && skipped !== true)) {
+          (answers === undefined || (Array.isArray(answers) && answers.every(isStringList))) &&
+          (chosen === undefined || isStringList(chosen));
+        if (!shaped || (answers === undefined && chosen === undefined && skipped !== true)) {
           json(response, 400, {
             error: {
               kind: "invalid_command",
@@ -913,6 +915,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         const record = await options.service.answerBot(botId, {
           entryId,
           ...(answers === undefined ? {} : { answers: answers as string[][] }),
+          ...(chosen === undefined ? {} : { chosen: chosen as string[] }),
           ...(skipped === true ? { skipped: true } : {}),
           trace: `tr_http_${++sequence}`,
         });

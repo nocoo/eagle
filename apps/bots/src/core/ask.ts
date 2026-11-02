@@ -24,7 +24,10 @@ export type AnswerInput = {
   /** The caller's own trace, so the admission is logged against one command. */
   readonly trace?: string;
   readonly skipped?: boolean;
+  /** One list per question, in the card's order: what the App sends. */
   readonly answers?: readonly (readonly string[])[];
+  /** A flat list of chosen labels, in any order: what the CLI sends. */
+  readonly chosen?: readonly string[];
 };
 
 const invalid = (message: string): DirectoryError => new DirectoryError("invalid_answer", message);
@@ -66,6 +69,29 @@ export const questionsOf = (message: Message): readonly AskQuestion[] | undefine
   return undefined;
 };
 
+/** A flat list of labels grouped by the question each label belongs to; ambiguity refuses. */
+const groupChosen = (
+  questions: readonly AskQuestion[],
+  chosen: readonly string[],
+): readonly (readonly string[])[] => {
+  const grouped: string[][] = questions.map(() => []);
+  for (const label of chosen) {
+    const owners = questions
+      .map((question, index) =>
+        question.options.some((option) => option.label === label) ? index : -1,
+      )
+      .filter((index) => index >= 0);
+    const owner = owners[0];
+    if (owners.length !== 1 || owner === undefined) {
+      throw invalid(
+        owners.length === 0 ? `"${label}" is not an option` : `"${label}" is ambiguous`,
+      );
+    }
+    grouped[owner]?.push(label);
+  }
+  return grouped;
+};
+
 /**
  * The message the bot reads next. It names the call it answers, so the conversation can close
  * that card, and it repeats each prompt with the labels that were chosen: the model never has to
@@ -75,7 +101,7 @@ export const answerText = (questions: readonly AskQuestion[], input: AnswerInput
   if (input.skipped === true) {
     return `The person skipped the questions from ${input.entryId} without answering. Continue without them, and do not ask the same questions again in this turn.`;
   }
-  const answers = input.answers;
+  const answers = input.chosen === undefined ? input.answers : groupChosen(questions, input.chosen);
   if (answers === undefined || answers.length !== questions.length) {
     throw invalid("every question needs one list of choices");
   }

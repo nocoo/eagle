@@ -100,8 +100,16 @@ come from the daemon; a bot may also be named by its exact title when that title
 | `eagle chat send <bot> --text T [--wait] [--timeout 120]` | write | Subscribes, sends, and with `--wait` prints the answer once the run settles |
 | `eagle chat watch <bot>` | read | Streams every append and delta until interrupted; another client's messages appear too |
 | `eagle chat history <bot> [--limit N] [--before e_12]` | read | Older messages, oldest first; without `--before` it pages from the oldest message the CLI just saw |
+| `eagle chat answer <bot> --entry e_12 --choose L[,L] \| --skip` | write | Answers an `ask_user` card: the daemon composes the hidden message the bot reads |
 | `eagle chat abort <bot>` | write | Withdraws the running input and the queue |
 | `eagle usage [--days N]` | read | Token and call totals over the retention window |
+
+A card from `ask_user` is printed by `chat watch` and `chat send --wait` as one line per
+question, with the entry id to answer, and then the exact `chat answer` form. `--choose`
+takes a comma-separated list of option labels; the daemon checks every label against the
+card and refuses one that is not in it. `--skip` ignores the whole card, which the bot is
+told in the same message. The chat is never blocked by a card: the tool call it belongs to
+already returned, and the answer arrives as a hidden user message that starts the next turn.
 
 `chat send --wait --timeout N` waits at most N positive seconds after sending for the
 submission's terminal record. A timeout ends only the CLI's wait: the daemon continues

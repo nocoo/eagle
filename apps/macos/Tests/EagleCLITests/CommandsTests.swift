@@ -357,3 +357,38 @@ struct CommandsTests {
     #expect(StubTransport.calls.first?.bearer == "Bearer \(token)")
   }
 }
+
+@Suite("CLI questions")
+struct QuestionLinesTests {
+  @Test("an ask_user call prints its options and the command that answers it")
+  func cardLines() {
+    let message: [String: Any] = [
+      "id": "e_11",
+      "role": "assistant",
+      "blocks": [
+        [
+          "type": "toolCall", "callId": "c_2", "name": "ask_user",
+          "args": [
+            "questions": [
+              [
+                "prompt": "要不要继续？", "kind": "single",
+                "options": [["label": "继续"], ["label": "停止"]],
+              ]
+            ]
+          ],
+        ]
+      ],
+    ]
+    let lines = Commands.questionLines(message)
+    #expect(lines.first == "[question e_11] (单选) 要不要继续？: 继续 | 停止")
+    #expect(lines.last?.contains("--entry e_11 --choose") == true)
+  }
+
+  @Test("a hidden answer is not chat: only the fact that the card was answered")
+  func hiddenAnswer() {
+    let message: [String: Any] = [
+      "id": "e_16", "role": "user", "hidden": true, "answersTo": "e_11", "blocks": [],
+    ]
+    #expect(Commands.messageLine(message) == "[answered e_11]")
+  }
+}

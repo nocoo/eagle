@@ -91,3 +91,13 @@ test("an answer that does not fit the card is refused, not guessed", () => {
     /not an option/,
   );
 });
+
+test("a flat list of labels is grouped by the question it belongs to", () => {
+  const text = answerText(questions, { entryId: "e_7", chosen: ["browser", "release"] });
+  assert.match(text, /1\. Which branch\?\n {3}chosen: release/);
+  assert.match(text, /2\. Which checks\?\n {3}chosen: browser/);
+  assert.throws(
+    () => answerText(questions, { entryId: "e_7", chosen: ["trunk"] }),
+    /not an option/,
+  );
+});

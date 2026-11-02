@@ -508,6 +508,7 @@ export const attachConnection = (
         {
           entryId: command.entryId,
           ...(command.answers === undefined ? {} : { answers: command.answers }),
+          ...(command.chosen === undefined ? {} : { chosen: command.chosen }),
           ...(command.skipped === undefined ? {} : { skipped: command.skipped }),
           trace,
         },
