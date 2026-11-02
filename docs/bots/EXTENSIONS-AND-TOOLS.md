@@ -485,7 +485,9 @@ joins `MANDATORY_TOOL_GROUPS`. It is **eager**: five small schemas are a habit, 
 discovered capability, so `memory` does not select `tool-search`. Switching the group off
 removes the five tools and the prompt section and leaves both files untouched. The macOS
 Tools page gains one row; the daemon's `describeToolCatalog` supplies the tool list under it,
-so no App release is needed when a tool name changes. Deleting a Bot leaves its file in place:
+so no App release is needed when a tool name changes. An existing `gateway.json` gains the
+group once, the same way the core-prompt groups arrived: the stored file records a version, so
+a switch-off after that save survives a restart. Deleting a Bot leaves its file in place:
 it is the person's notes, ids are never reused, and nothing inherits it.
 
 Prompt section, in one paragraph: memory holds what outlives this conversation — a decision, a

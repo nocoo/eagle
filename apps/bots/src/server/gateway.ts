@@ -119,8 +119,16 @@ export const DEFAULT_CORE_PROMPT =
   "你是一个务实、友好的 agent：先说结论，再给依据；做不到就直说，不要编。";
 /** The protocol's own bound for a standing instruction. */
 export const MAX_CORE_PROMPT = 4_000;
-/** Written by versions that already knew the two core prompt groups. */
-const FILE_VERSION = 2;
+/** Each version names the groups a stored list could not have known yet. */
+const FILE_VERSION = 3;
+/** Groups that a file written before this version could not name, in the order they arrived. */
+const GAINED_GROUPS: readonly {
+  readonly version: number;
+  readonly groups: readonly ToolGroup[];
+}[] = [
+  { version: 2, groups: ["persona", "machine"] },
+  { version: 3, groups: ["memory"] },
+];
 const TEST_TIMEOUT_MS = 8_000;
 
 export const gatewayPath = (root: string): string => join(root, FILE);
@@ -161,19 +169,20 @@ export const readGateway = async (root: string): Promise<GatewayConfig | undefin
 };
 
 /**
- * A file written before the core prompt groups existed could not name them, so a version-1
- * file gains them once: the person's other choices stay as they were, and the next write
- * records the version, which makes a deliberate "off" survive a restart.
+ * A file written before a group existed could not name it, so an older file gains the groups
+ * that arrived since: the person's other choices stay as they were, and the next write records
+ * the version, which makes a deliberate "off" survive a restart.
  */
 const readGroups = (raw: Record<string, unknown>): readonly ToolGroup[] => {
   if (raw.toolGroups === undefined) return DEFAULT_TOOL_GROUPS;
   const stored = Array.isArray(raw.toolGroups)
     ? raw.toolGroups.filter((name): name is string => typeof name === "string")
     : [];
-  if (typeof raw.version === "number" && raw.version >= FILE_VERSION) {
-    return resolveToolGroups(stored);
-  }
-  return resolveToolGroups([...stored, "persona", "machine"]);
+  const version = typeof raw.version === "number" ? raw.version : 0;
+  const gained = GAINED_GROUPS.filter((entry) => entry.version > version).flatMap(
+    (entry) => entry.groups,
+  );
+  return resolveToolGroups([...stored, ...gained]);
 };
 
 /** Writes the settings atomically with 0600: the key is a secret like the token. */

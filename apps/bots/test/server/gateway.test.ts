@@ -189,7 +189,7 @@ test("the gateway's model list is read for a per-bot picker and never throws", a
   }
 });
 
-test("a version-1 file gains the core prompt groups once, a version-2 file keeps the choice", async () => {
+test("a version-1 file gains every later group once, a saved choice keeps them off", async () => {
   const bench_ = await bench();
   try {
     const legacy = {
@@ -202,7 +202,14 @@ test("a version-1 file gains the core prompt groups once, a version-2 file keeps
     };
     await writeFile(gatewayPath(bench_.root), JSON.stringify(legacy), "utf8");
     const migrated = await readGateway(bench_.root);
-    assert.deepEqual(migrated?.toolGroups, ["persona", "machine", "core", "coding", "herdr"]);
+    assert.deepEqual(migrated?.toolGroups, [
+      "persona",
+      "machine",
+      "core",
+      "coding",
+      "memory",
+      "herdr",
+    ]);
     assert.equal(migrated?.corePrompt, DEFAULT_CORE_PROMPT, "a file without one gets the default");
 
     // Saving records the version, so an explicit choice (here: the two prompts off) survives.
@@ -211,7 +218,12 @@ test("a version-1 file gains the core prompt groups once, a version-2 file keeps
     const stored = await readGateway(bench_.root);
     assert.deepEqual(stored?.toolGroups, ["core", "coding", "herdr"]);
     const raw = JSON.parse(await readFile(gatewayPath(bench_.root), "utf8")) as { version: number };
-    assert.equal(raw.version, 2);
+    assert.equal(raw.version, 3);
+
+    // A version-2 file gains memory the same way, and only once.
+    const earlier = { ...legacy, version: 2, toolGroups: ["core", "coding"] };
+    await writeFile(gatewayPath(bench_.root), JSON.stringify(earlier), "utf8");
+    assert.deepEqual((await readGateway(bench_.root))?.toolGroups, ["core", "coding", "memory"]);
   } finally {
     await bench_.cleanup();
   }
