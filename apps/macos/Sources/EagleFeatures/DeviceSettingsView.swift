@@ -14,11 +14,18 @@ public struct DeviceSettingsView: View {
   }
 
   public var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
+    VStack(alignment: .leading, spacing: 12) {
       connectionStatus
       serviceAddressCard
       SettingsCard {
-        pairingContent.padding(.vertical, 18)
+        VStack(spacing: 0) {
+          SettingsSectionHeader("配对", detail: "用一次性配对码把另一台设备加入这个群") {
+            EmptyView()
+          }
+          Divider().overlay(Theme.Palette.line)
+          pairingContent
+            .padding(.vertical, 16)
+        }
       }
       directoryCard
     }
@@ -41,32 +48,55 @@ public struct DeviceSettingsView: View {
   }
 
   private var connectionStatus: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      HStack(spacing: 18) {
-        if model.isStarting { SpinnerArc(size: 12) }
-        Label(model.localReady ? "本机可用" : "本机未就绪", systemImage: "desktopcomputer")
-          .foregroundStyle(
-            model.localReady ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
-        Label(cloudLabel, systemImage: "network")
-          .foregroundStyle(Theme.Palette.textSecondary)
-        Spacer(minLength: 0)
-        Toggle("设备服务", isOn: serviceBinding)
-          .toggleStyle(.switch)
-          .tint(Theme.Palette.accentStrong)
-          .font(Theme.TypeScale.note)
-          .disabled(!model.canToggleService)
-          .accessibilityIdentifier("devices.service")
-        SettingsActionButton("刷新") {
-          Task {
-            await model.startIfNeeded()
-            await model.refresh()
+    SettingsCard {
+      VStack(spacing: 0) {
+        SettingsSectionHeader("设备服务", detail: "这台 Mac 的执行服务，以及它和云端的连接") {
+          HStack(spacing: 10) {
+            if model.isStarting { SpinnerArc(size: 12) }
+            SettingsActionButton("刷新") {
+              Task {
+                await model.startIfNeeded()
+                await model.refresh()
+              }
+            }
+            .disabled(model.controlsBusy)
+            Toggle("", isOn: serviceBinding)
+              .labelsHidden()
+              .toggleStyle(.switch)
+              .tint(Theme.Palette.accentStrong)
+              .disabled(!model.canToggleService)
+              .accessibilityIdentifier("devices.service")
+              .accessibilityLabel("设备服务")
           }
         }
-        .disabled(model.controlsBusy)
+        Divider().overlay(Theme.Palette.line)
+        SettingsSectionRow("本机", detail: "另一个设备向这台 Mac 发起执行时用它") {
+          statusLabel(
+            model.localReady ? "本机可用" : "本机未就绪",
+            systemImage: "desktopcomputer",
+            tint: model.localReady ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
+        }
+        Divider().overlay(Theme.Palette.line)
+        SettingsSectionRow("云端", detail: "设备目录与配对都走这条连接") {
+          statusLabel(cloudLabel, systemImage: "network", tint: Theme.Palette.textSecondary)
+        }
+        if hasServiceRecovery {
+          Divider().overlay(Theme.Palette.line)
+          serviceRecovery
+            .padding(.vertical, 16)
+        }
       }
-      .font(Theme.TypeScale.note)
-      serviceRecovery
     }
+  }
+
+  private var hasServiceRecovery: Bool {
+    model.errorMessage != nil || model.canRetryService
+  }
+
+  private func statusLabel(_ text: String, systemImage: String, tint: Color) -> some View {
+    Label(text, systemImage: systemImage)
+      .font(Theme.TypeScale.note)
+      .foregroundStyle(tint)
   }
 
   /// The one control that starts and stops the local service: every other action on this page
@@ -81,47 +111,54 @@ public struct DeviceSettingsView: View {
   /// A published App names no relay: this field is where a person points it at their own.
   private var serviceAddressCard: some View {
     SettingsCard {
-      VStack(alignment: .leading, spacing: 10) {
-        HStack(spacing: 12) {
-          SettingsTextField(
-            "https://devices.example.com", text: $model.serviceAddressDraft)
-          SettingsActionButton("保存") {
-            Task { await model.saveServiceAddress() }
-          }
-          .disabled(model.controlsBusy)
-        }
-        Text(
-          model.needsServiceAddress
+      VStack(spacing: 0) {
+        SettingsSectionHeader(
+          "服务地址",
+          detail: model.needsServiceAddress
             ? "这台 Mac 还没有可连接的设备服务地址。填写你自己部署的 relay 地址后才会连接；App 不自带任何默认地址。"
             : "设备服务地址由你配置，App 不内置默认值；修改后会重启本机服务。"
-        )
-        .font(Theme.TypeScale.note)
-        .foregroundStyle(Theme.Palette.textMuted)
-        .fixedSize(horizontal: false, vertical: true)
+        ) {
+          EmptyView()
+        }
         .accessibilityIdentifier("devices.serviceAddress")
+        Divider().overlay(Theme.Palette.line)
+        SettingsSectionRow("Relay 地址", detail: "例如 https://devices.example.com") {
+          HStack(spacing: 10) {
+            SettingsTextField(
+              "https://devices.example.com", text: $model.serviceAddressDraft
+            )
+            .frame(width: 300)
+            SettingsActionButton("保存", prominent: true) {
+              Task { await model.saveServiceAddress() }
+            }
+            .fixedSize()
+            .disabled(model.controlsBusy)
+          }
+        }
       }
-      .padding(.vertical, 18)
     }
   }
 
   @ViewBuilder private var serviceRecovery: some View {
-    if let message = model.errorMessage {
-      Label(message, systemImage: "exclamationmark.triangle")
-        .font(Theme.TypeScale.note)
-        .foregroundStyle(Theme.Palette.destructive)
-        .fixedSize(horizontal: false, vertical: true)
-        .accessibilityIdentifier("devices.error")
-      if model.needsBackgroundApproval {
-        HStack {
-          SettingsActionButton("打开系统设置") { model.openSystemSettings() }
-          SettingsActionButton("已允许，重试") { Task { await model.startIfNeeded() } }
+    VStack(alignment: .leading, spacing: 10) {
+      if let message = model.errorMessage {
+        SettingsSectionNote(message, destructive: true)
+          .padding(.bottom, 0)
+          .accessibilityIdentifier("devices.error")
+        if model.needsBackgroundApproval {
+          HStack(spacing: 10) {
+            SettingsActionButton("打开系统设置") { model.openSystemSettings() }
+            SettingsActionButton("已允许，重试") { Task { await model.startIfNeeded() } }
+              .disabled(model.controlsBusy)
+          }
+        }
+      }
+      if model.canRetryService {
+        HStack(spacing: 10) {
+          SettingsActionButton("重试") { Task { await model.retryService() } }
             .disabled(model.controlsBusy)
         }
       }
-    }
-    if model.canRetryService {
-      SettingsActionButton("重试") { Task { await model.retryService() } }
-        .disabled(model.controlsBusy)
     }
   }
 
@@ -324,42 +361,45 @@ public struct DeviceSettingsView: View {
   }
 
   private var directoryCard: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      SettingsCaption("我的设备")
-      if model.directory != nil && model.directoryIsStale {
-        SettingsCaption("以下为上次读取的目录，当前状态尚未确认。")
-      }
-      SettingsCard {
-        VStack(spacing: 0) {
-          if !hasLocalDirectoryEntry {
-            localDevicePlaceholder
-            if let directory = model.directory, !directory.devices.isEmpty {
-              Divider().overlay(Theme.Palette.line)
-            }
+    SettingsCard {
+      VStack(spacing: 0) {
+        SettingsSectionHeader(
+          "我的设备",
+          detail: model.directory != nil && model.directoryIsStale
+            ? "以下为上次读取的目录，当前状态尚未确认。"
+            : "这个群里可以互相执行的设备"
+        ) {
+          EmptyView()
+        }
+        Divider().overlay(Theme.Palette.line)
+        if !hasLocalDirectoryEntry {
+          localDevicePlaceholder
+          if let directory = model.directory, !directory.devices.isEmpty {
+            Divider().overlay(Theme.Palette.line)
           }
-          if let directory = model.directory {
-            ForEach(directory.devices) { device in
-              HStack(alignment: .top, spacing: 12) {
-                DeviceSummaryView(
-                  device: device, isLocal: device.deviceId == directory.localDeviceId,
-                  localReady: model.localReady, stale: model.directoryIsStale,
-                  showsPolicy: false,
-                  serviceEnabled: model.enabled)
-                HStack(spacing: 16) {
-                  policyMenu(for: device)
-                  if directory.groupId != nil {
-                    SettingsActionButton("移除") {
-                      removing = device
-                    }
-                    .disabled(
-                      !model.enabled || !model.localReady || model.controlsBusy
-                        || model.directoryIsStale)
+        }
+        if let directory = model.directory {
+          ForEach(directory.devices) { device in
+            HStack(alignment: .top, spacing: 12) {
+              DeviceSummaryView(
+                device: device, isLocal: device.deviceId == directory.localDeviceId,
+                localReady: model.localReady, stale: model.directoryIsStale,
+                showsPolicy: false,
+                serviceEnabled: model.enabled)
+              HStack(spacing: 16) {
+                policyMenu(for: device)
+                if directory.groupId != nil {
+                  SettingsActionButton("移除") {
+                    removing = device
                   }
+                  .disabled(
+                    !model.enabled || !model.localReady || model.controlsBusy
+                      || model.directoryIsStale)
                 }
               }
-              .padding(.vertical, 14)
-              if device.id != directory.devices.last?.id { Divider().overlay(Theme.Palette.line) }
             }
+            .padding(.vertical, 16)
+            if device.id != directory.devices.last?.id { Divider().overlay(Theme.Palette.line) }
           }
         }
       }

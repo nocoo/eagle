@@ -1,5 +1,17 @@
 # 用户视角检查点
 
+## 2026-11-02 17:40 +08 — settings layout unified on the 服务 shape
+
+- User-facing: 通用, 模型, 工具, 提示词, 服务, 设备, 用量 and 关于 now share one section card:
+  a header with the section name, a one-line detail and the control of that section, rows on
+  the same 16 pt rhythm and hairlines, and the action's result inside the same card. The
+  snapshot renderer produced 服务, 工具, 提示词, 通用, 设备, 用量 and 关于 images for review;
+  one squashed save button on the 设备 page was found that way and fixed with `fixedSize()`.
+- Verified locally: macOS Swift tests 214 + 48 + 60 + 27, strict `swift format` lint, and the
+  dev App rebuilt from source on port 43117 with the owner's Bots catalog untouched. No Herdr
+  collection, website authentication, D1 or public deployment was involved.
+- Next broken hop: the owner reviews the pages by hand; the CLI page has no snapshot scene,
+  so its credential rows were only read, not rendered.
 ## 2026-11-02 17:13 +08 — macOS release asset published
 
 - The owner authorized the full release and requested push before publication. `main`
@@ -18,6 +30,7 @@
   Public health was read only. The next hop is to push the now-verified 0.16.1 published
   version claim, wait for that exact revision's Check and Deploy, and verify `/api/live`.
   Detached origin/trigger writes and late watch callbacks still lack a proven full drain.
+ shape)
 
 ## 2026-11-02 14:59 +08 — installed 0.16.1 limited regression
 

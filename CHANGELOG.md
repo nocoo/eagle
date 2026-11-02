@@ -5,6 +5,9 @@
 - Settings → `提示词` is its own tab: the two core prompts (the standing instruction and the
   read-only machine AGENTS.md) leave the 工具 page, which now holds only the tool switches.
   Each page saves its own section and says so.
+- Every settings page follows the 服务 section shape: a card header names the section and
+  carries its control, rows sit on one 16 pt rhythm with hairline dividers, and the result
+  of an action closes the card that produced it. The 用量与账单 tab is now 用量.
 
 ## macOS v0.16.1 — 2026-11-02
 

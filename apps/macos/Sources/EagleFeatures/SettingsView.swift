@@ -15,6 +15,8 @@ public struct SettingsView: View {
   private let onClose: () -> Void
   private let daemon: BotsDaemonSupervisor?
   private let showsCloseButton: Bool
+  /// The width every text field on a settings row takes, so the right column lines up.
+  private static let fieldWidth: CGFloat = 300
 
   public init(
     model: SettingsViewModel = SettingsViewModel(),
@@ -59,123 +61,126 @@ public struct SettingsView: View {
   }
 
   private var general: some View {
-    VStack(alignment: .leading, spacing: 18) {
-      SettingsCard {
-        VStack(spacing: 0) {
-          SettingsRow("登录时自动启动", detail: "让 Eagle 在后台保持机器在线") {
-            Toggle("", isOn: $model.launchAtLogin)
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-          }
-          Divider().overlay(Theme.Palette.line)
-          SettingsRow("显示未聚焦的 Space", detail: "侧栏同时列出所有 Herdr 工作区") {
-            Toggle("", isOn: $model.showUnfocusedSpaces)
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-          }
-          Divider().overlay(Theme.Palette.line)
-          SettingsRow("加载 Mock 数据", detail: "在侧栏显示示例分组与示例对话") {
-            Toggle("", isOn: $loadMockData)
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-          }
-          Divider().overlay(Theme.Palette.line)
-          SettingsRow("隐藏工具调用", detail: "对话里不显示工具调用和结果") {
-            Toggle("", isOn: $hideToolCalls)
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-          }
-          Divider().overlay(Theme.Palette.line)
-          SettingsRow("外观", detail: "浅色、深色或跟随系统") {
-            PillSelect(
-              options: [
-                .init("system", "跟随系统"),
-                .init("light", "浅色"),
-                .init("dark", "深色"),
-              ],
-              selection: $appearance
-            )
-          }
-        }
+    sectionCard(
+      "外观与启动", detail: "打开 App 时的行为，以及对话里显示什么"
+    ) {
+      SettingsSectionRow("登录时自动启动", detail: "让 Eagle 在后台保持机器在线") {
+        Toggle("", isOn: $model.launchAtLogin)
+          .labelsHidden()
+          .toggleStyle(.switch)
+          .tint(Theme.Palette.accentStrong)
+      }
+      Divider().overlay(Theme.Palette.line)
+      SettingsSectionRow("显示未聚焦的 Space", detail: "侧栏同时列出所有 Herdr 工作区") {
+        Toggle("", isOn: $model.showUnfocusedSpaces)
+          .labelsHidden()
+          .toggleStyle(.switch)
+          .tint(Theme.Palette.accentStrong)
+      }
+      Divider().overlay(Theme.Palette.line)
+      SettingsSectionRow("加载 Mock 数据", detail: "在侧栏显示示例分组与示例对话") {
+        Toggle("", isOn: $loadMockData)
+          .labelsHidden()
+          .toggleStyle(.switch)
+          .tint(Theme.Palette.accentStrong)
+      }
+      Divider().overlay(Theme.Palette.line)
+      SettingsSectionRow("隐藏工具调用", detail: "对话里不显示工具调用和结果") {
+        Toggle("", isOn: $hideToolCalls)
+          .labelsHidden()
+          .toggleStyle(.switch)
+          .tint(Theme.Palette.accentStrong)
+      }
+      Divider().overlay(Theme.Palette.line)
+      SettingsSectionRow("外观", detail: "浅色、深色或跟随系统") {
+        PillSelect(
+          options: [
+            .init("system", "跟随系统"),
+            .init("light", "浅色"),
+            .init("dark", "深色"),
+          ],
+          selection: $appearance
+        )
       }
     }
   }
 
+  /// One settings section: the card, the header that names it, and the divider that opens the
+  /// body. Every page is built from this, so the title, the rhythm and the inset never drift.
+  private func sectionCard<Trailing: View, Body: View>(
+    _ title: String,
+    detail: String,
+    @ViewBuilder trailing: () -> Trailing,
+    @ViewBuilder body: () -> Body
+  ) -> some View {
+    SettingsCard {
+      VStack(spacing: 0) {
+        SettingsSectionHeader(title, detail: detail, trailing: trailing)
+        Divider().overlay(Theme.Palette.line)
+        body()
+      }
+    }
+  }
+
+  /// A section with no control of its own: the header carries only the title and its line.
+  private func sectionCard<Body: View>(
+    _ title: String,
+    detail: String,
+    @ViewBuilder body: () -> Body
+  ) -> some View {
+    sectionCard(title, detail: detail, trailing: { EmptyView() }, body: body)
+  }
+
   /// Model gateway: the one place a person configures the bot's endpoint, key and model.
   private var bots: some View {
-    VStack(alignment: .leading, spacing: 18) {
+    VStack(alignment: .leading, spacing: 12) {
       if let daemon {
-        SettingsCaption("Bot 服务")
-        BotsDaemonCard(daemon: daemon)
+        daemonSection(daemon)
       }
-      SettingsCaption("Bot 使用这台机器上的模型网关，保存后立即生效。")
-      SettingsCard {
-        VStack(alignment: .leading, spacing: 14) {
-          gatewayField(
-            "网关地址",
-            detail: "OpenAI 兼容地址，例如 http://127.0.0.1:3425/v1"
-          ) {
-            SettingsTextField("https://…/v1", text: $model.gatewayBaseURL)
+      sectionCard(
+        "模型网关", detail: "Bot 使用这台机器上的网关，保存后立即生效"
+      ) {
+        HStack(spacing: 10) {
+          if model.gatewayBusy { SpinnerArc(size: 12) }
+          SettingsActionButton("测试连接") {
+            Task { @MainActor in await model.testGateway() }
           }
-          gatewayField(
-            "API Key",
-            detail: model.gateway?.hasApiKey == true ? "已保存；留空则保持不变" : "与网关匹配的密钥"
-          ) {
-            SettingsTextField(
-              model.gateway?.hasApiKey == true ? "已保存" : "sk-…",
-              text: $model.gatewayAPIKey,
-              secure: true
-            )
+          .disabled(model.gatewayBusy)
+          SettingsActionButton("保存", prominent: true) {
+            Task { @MainActor in await model.saveGateway() }
           }
-          gatewayField("模型", detail: "Bot 使用的模型 id，例如 auto/gpt-6-luna") {
-            SettingsTextField("模型 id", text: $model.gatewayModel)
-          }
-          gatewayField("思考等级", detail: "Bot 的推理努力程度，保存后立即生效") {
-            HStack(spacing: 0) {
-              thinkingLevelMenu
-              Spacer(minLength: 0)
-            }
-          }
-          HStack(spacing: 10) {
-            SettingsActionButton("测试连接") {
-              Task { @MainActor in await model.testGateway() }
-            }
-            .disabled(model.gatewayBusy)
-            SettingsActionButton("保存", prominent: true) {
-              Task { @MainActor in await model.saveGateway() }
-            }
-            .disabled(model.gatewayBusy)
-            if model.gatewayBusy { SpinnerArc(size: 12) }
-            Spacer(minLength: 0)
-            if let probe = model.gatewayProbe {
-              Label(
-                "\(probe.message) · \(probe.latencyMs) ms",
-                systemImage: probe.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-              )
-              .font(Theme.TypeScale.note)
-              .foregroundStyle(probe.ok ? Theme.Palette.accentStrong : Theme.Palette.destructive)
-              // The gateway's own live endpoint names the build behind the address.
-              if let health = probe.health, health.ok {
-                Text(health.version.map { "live 报告 \($0)" } ?? "live 报告正常")
-                  .font(Theme.TypeScale.note)
-                  .foregroundStyle(Theme.Palette.textSecondary)
-              } else if probe.health?.status == 404 {
-                Text("该地址没有 /api/live，已用 /models 探测")
-                  .font(Theme.TypeScale.note)
-                  .foregroundStyle(Theme.Palette.textMuted)
-              }
-            } else if let message = model.gatewayMessage {
-              Text(message)
-                .font(Theme.TypeScale.note)
-                .foregroundStyle(Theme.Palette.textSecondary)
-            }
-          }
+          .disabled(model.gatewayBusy)
         }
-        .padding(.vertical, 16)
+      } body: {
+        SettingsSectionRow(
+          "网关地址", detail: "OpenAI 兼容地址，例如 127.0.0.1:3425/v1"
+        ) {
+          SettingsTextField("https://…/v1", text: $model.gatewayBaseURL)
+            .frame(width: Self.fieldWidth)
+        }
+        Divider().overlay(Theme.Palette.line)
+        SettingsSectionRow(
+          "API Key",
+          detail: model.gateway?.hasApiKey == true ? "已保存；留空则保持不变" : "与网关匹配的密钥"
+        ) {
+          SettingsTextField(
+            model.gateway?.hasApiKey == true ? "已保存" : "sk-…",
+            text: $model.gatewayAPIKey,
+            secure: true
+          )
+          .frame(width: Self.fieldWidth)
+        }
+        Divider().overlay(Theme.Palette.line)
+        SettingsSectionRow("模型", detail: "Bot 使用的模型 id，例如 auto/gpt-6-luna") {
+          SettingsTextField("模型 id", text: $model.gatewayModel)
+            .frame(width: Self.fieldWidth)
+        }
+        Divider().overlay(Theme.Palette.line)
+        SettingsSectionRow("思考等级", detail: "Bot 的推理努力程度，保存后立即生效") {
+          thinkingLevelMenu
+        }
+        Divider().overlay(Theme.Palette.line)
+        gatewayProbeNote
       }
     }
     .task { @MainActor in
@@ -184,148 +189,211 @@ public struct SettingsView: View {
     }
   }
 
+  /// What the last probe or save answered, in the card that owns the action.
+  @ViewBuilder private var gatewayProbeNote: some View {
+    if let probe = model.gatewayProbe {
+      VStack(alignment: .leading, spacing: 6) {
+        Label(
+          "\(probe.message) · \(probe.latencyMs) ms",
+          systemImage: probe.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+        )
+        .font(Theme.TypeScale.note)
+        .foregroundStyle(probe.ok ? Theme.Palette.accentStrong : Theme.Palette.destructive)
+        // The gateway's own live endpoint names the build behind the address.
+        if let health = probe.health, health.ok {
+          Text(health.version.map { "live 报告 \($0)" } ?? "live 报告正常")
+            .font(Theme.TypeScale.note)
+            .foregroundStyle(Theme.Palette.textSecondary)
+        } else if probe.health?.status == 404 {
+          Text("该地址没有 /api/live，已用 /models 探测")
+            .font(Theme.TypeScale.note)
+            .foregroundStyle(Theme.Palette.textMuted)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.vertical, 14)
+    } else if let message = model.gatewayMessage {
+      SettingsSectionNote(message)
+    }
+  }
+
+  /// The daemon's live state: whether it runs and who started it, where its root is, and the
+  /// switch that decides whether the App keeps it running.
+  private func daemonSection(_ daemon: BotsDaemonSupervisor) -> some View {
+    sectionCard("Bot 服务", detail: "根目录 \(daemon.rootPath) · 端口 \(daemon.port)") {
+      BotsDaemonActions(daemon: daemon)
+    } body: {
+      SettingsSectionRow("状态", detail: daemonStateDetail(daemon)) {
+        HStack(spacing: 8) {
+          Circle()
+            .fill(daemonStatusTint(daemon))
+            .frame(width: 8, height: 8)
+          Text(daemonStatusText(daemon))
+            .font(.system(size: 13))
+            .foregroundStyle(Theme.Palette.textPrimary)
+        }
+      }
+      Divider().overlay(Theme.Palette.line)
+      SettingsSectionRow("启动 App 时自动运行", detail: "关掉后 daemon 只能手动启动") {
+        Toggle(
+          "",
+          isOn: Binding(
+            get: { daemon.autoStart }, set: { daemon.autoStart = $0 })
+        )
+        .labelsHidden()
+        .toggleStyle(.switch)
+        .tint(Theme.Palette.accentStrong)
+      }
+      if case .failed(let message) = daemon.status {
+        Divider().overlay(Theme.Palette.line)
+        SettingsSectionNote(message, destructive: true)
+          .padding(.top, 12)
+      }
+    }
+  }
+
+  private func daemonStatusText(_ daemon: BotsDaemonSupervisor) -> String {
+    switch daemon.status {
+    case .stopped: return "未运行"
+    case .starting: return "正在启动…"
+    case .running(let version, let pid, let external):
+      return "运行中 · v\(version) · pid \(pid)\(external ? "（外部）" : "")"
+    case .failed: return "启动失败"
+    }
+  }
+
+  private func daemonStateDetail(_ daemon: BotsDaemonSupervisor) -> String {
+    switch daemon.status {
+    case .running(_, _, let external):
+      return external ? "由外部启动，不随 App 退出" : "由这个 App 启动"
+    default: return "本机 Bots daemon"
+    }
+  }
+
+  private func daemonStatusTint(_ daemon: BotsDaemonSupervisor) -> Color {
+    switch daemon.status {
+    case .stopped: return Theme.Palette.textMuted
+    case .starting: return Theme.Palette.avatarTint(3)
+    case .running: return Theme.Palette.accentStrong
+    case .failed: return Theme.Palette.destructive
+    }
+  }
+
   /// The 提示词 page: the two core prompts, because they are the first sections of every
   /// bot's system prompt.
   private var prompts: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      SettingsCaption("Core")
-      SettingsCard {
-        VStack(alignment: .leading, spacing: 0) {
-          SettingsRow("Core Prompt", detail: "每个 Bot 都先读这段话：它是谁、怎么做事") {
-            Toggle("", isOn: toolGroupBinding(SettingsViewModel.personaToolGroup))
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-          }
-          SettingsTextArea(
-            "例如：你是一个务实、友好的 agent。先说结论，再给依据。",
-            text: Binding(
-              get: { model.gatewayCorePrompt },
-              set: { next in
-                // A person typing owns the field: a later reload must not overwrite it.
-                model.gatewayCorePromptChosen = true
-                model.gatewayCorePrompt = next
-              }
-            )
-          )
-          .padding(.horizontal, 16)
-          .padding(.top, 10)
-          .padding(.bottom, 14)
-
-          Divider().overlay(Theme.Palette.line)
-
-          SettingsRow(
-            "Core Machine Prompt",
-            detail: "这台机器的 AGENTS.md，只读；先找共享入口，再找 pi、Codex、Claude Code"
-          ) {
-            Toggle("", isOn: toolGroupBinding(SettingsViewModel.machineToolGroup))
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-          }
-          machinePromptPreview
-        }
-      }
-
+    sectionCard(
+      "系统提示词", detail: "每个 Bot 的提示词都以这两段开头，改完从下一轮开始生效"
+    ) {
       HStack(spacing: 10) {
+        if model.gatewayBusy { SpinnerArc(size: 12) }
         SettingsActionButton("保存", prominent: true) {
           Task { @MainActor in await model.savePrompts() }
         }
         .disabled(model.gatewayBusy)
-        if model.gatewayBusy { SpinnerArc(size: 12) }
-        if let message = model.gatewayMessage {
-          Text(message)
-            .font(Theme.TypeScale.note)
-            .foregroundStyle(Theme.Palette.textSecondary)
-        }
-        Spacer(minLength: 0)
+      }
+    } body: {
+      SettingsSectionRow("Core Prompt", detail: "它是谁、怎么做事") {
+        Toggle("", isOn: toolGroupBinding(SettingsViewModel.personaToolGroup))
+          .labelsHidden()
+          .toggleStyle(.switch)
+          .tint(Theme.Palette.accentStrong)
+      }
+      SettingsTextArea(
+        "例如：你是一个务实、友好的 agent。先说结论，再给依据。",
+        text: Binding(
+          get: { model.gatewayCorePrompt },
+          set: { next in
+            // A person typing owns the field: a later reload must not overwrite it.
+            model.gatewayCorePromptChosen = true
+            model.gatewayCorePrompt = next
+          }
+        )
+      )
+      .padding(.bottom, 16)
+      Divider().overlay(Theme.Palette.line)
+      SettingsSectionRow(
+        "Core Machine Prompt",
+        detail: "这台机器的 AGENTS.md，只读；先找共享入口，再找 pi、Codex、Claude Code"
+      ) {
+        Toggle("", isOn: toolGroupBinding(SettingsViewModel.machineToolGroup))
+          .labelsHidden()
+          .toggleStyle(.switch)
+          .tint(Theme.Palette.accentStrong)
+      }
+      machinePromptPreview
+      if let message = model.gatewayMessage {
+        Divider().overlay(Theme.Palette.line)
+        SettingsSectionNote(message)
+          .padding(.top, 12)
       }
     }
     .task { @MainActor in await model.loadGatewayIfNeeded() }
   }
 
-  /// The 工具 page: the groups a person opts into, one switch each.
+  /// The 工具 page: every group a person can switch, one row each.
   private var tools: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      SettingsCaption("工具")
-      SettingsCard {
-        VStack(spacing: 0) {
-          SettingsRow(
-            "Core 基础工具", detail: "列出文件与目录；始终启用"
-          ) {
-            Toggle("", isOn: .constant(true))
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-              .disabled(true)
-          }
-          Divider().overlay(Theme.Palette.line)
-          SettingsRow("Coding 编码工具", detail: "原生读取、写入、编辑与命令执行；始终启用") {
-            Toggle("", isOn: .constant(true))
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-              .disabled(true)
-          }
-          Divider().overlay(Theme.Palette.line)
-          SettingsRow("Herdr 终端协作", detail: "让 Bot 开终端工作区、派发和读取子 agent") {
-            Toggle("", isOn: toolGroupBinding(SettingsViewModel.herdrToolGroup))
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-          }
-          Divider().overlay(Theme.Palette.line)
-          SettingsRow("子 Agent", detail: "把独立任务委派给子 agent，拿回它的答案") {
-            Toggle("", isOn: toolGroupBinding(SettingsViewModel.agentsToolGroup))
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-          }
-          Divider().overlay(Theme.Palette.line)
-          SettingsRow("搜索", detail: "web_search 与 web_fetch；在“服务”里保存 Key 并选择搜索服务商") {
-            Toggle("", isOn: toolGroupBinding(SettingsViewModel.searchToolGroup))
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-          }
-          Divider().overlay(Theme.Palette.line)
-          SettingsRow(
-            "触发器",
-            detail: "Bot 自己设置定时任务与 Webhook；开关与详情在侧栏，修改仍由 Bot 完成"
-          ) {
-            Toggle("", isOn: toolGroupBinding(SettingsViewModel.triggerToolGroup))
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-          }
-          Divider().overlay(Theme.Palette.line)
-          SettingsRow(
-            "Bot 互通",
-            detail: "让 Bot 一对一给别的 Bot 发消息并读回它的回答；每个来回每边最多 10 条"
-          ) {
-            Toggle("", isOn: toolGroupBinding(SettingsViewModel.peersToolGroup))
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-          }
-        }
-      }
-
+    sectionCard(
+      "可用工具", detail: "Bot 能做的事，改完从下一轮开始生效"
+    ) {
       HStack(spacing: 10) {
+        if model.gatewayBusy { SpinnerArc(size: 12) }
         SettingsActionButton("保存", prominent: true) {
           Task { @MainActor in await model.saveTools() }
         }
         .disabled(model.gatewayBusy)
-        if model.gatewayBusy { SpinnerArc(size: 12) }
-        if let message = model.gatewayMessage {
-          Text(message)
-            .font(Theme.TypeScale.note)
-            .foregroundStyle(Theme.Palette.textSecondary)
-        }
-        Spacer(minLength: 0)
+      }
+    } body: {
+      toolRow("Core 基础工具", detail: "列出文件与目录；始终启用", alwaysOn: true)
+      Divider().overlay(Theme.Palette.line)
+      toolRow("Coding 编码工具", detail: "原生读取、写入、编辑与命令执行；始终启用", alwaysOn: true)
+      Divider().overlay(Theme.Palette.line)
+      toolRow(
+        "Herdr 终端协作", detail: "让 Bot 开终端工作区、派发和读取子 agent",
+        group: SettingsViewModel.herdrToolGroup)
+      Divider().overlay(Theme.Palette.line)
+      toolRow(
+        "子 Agent", detail: "把独立任务委派给子 agent，拿回它的答案",
+        group: SettingsViewModel.agentsToolGroup)
+      Divider().overlay(Theme.Palette.line)
+      toolRow(
+        "搜索", detail: "web_search 与 web_fetch；在“服务”里保存 Key 并选择搜索服务商",
+        group: SettingsViewModel.searchToolGroup)
+      Divider().overlay(Theme.Palette.line)
+      toolRow(
+        "触发器", detail: "Bot 自己设置定时任务与 Webhook；开关与详情在侧栏，修改仍由 Bot 完成",
+        group: SettingsViewModel.triggerToolGroup)
+      Divider().overlay(Theme.Palette.line)
+      toolRow(
+        "Bot 互通", detail: "让 Bot 一对一给别的 Bot 发消息并读回它的回答；每个来回每边最多 10 条",
+        group: SettingsViewModel.peersToolGroup)
+      if let message = model.gatewayMessage {
+        Divider().overlay(Theme.Palette.line)
+        SettingsSectionNote(message)
+          .padding(.top, 12)
       }
     }
     .task { @MainActor in await model.loadGatewayIfNeeded() }
+  }
+
+  /// One tool switch. The two core groups run always; the rest follow the person's choice.
+  private func toolRow(
+    _ title: String, detail: String, group: String = "", alwaysOn: Bool = false
+  ) -> some View {
+    SettingsSectionRow(title, detail: detail) {
+      if alwaysOn {
+        Toggle("", isOn: .constant(true))
+          .labelsHidden()
+          .toggleStyle(.switch)
+          .tint(Theme.Palette.accentStrong)
+          .disabled(true)
+      } else {
+        Toggle("", isOn: toolGroupBinding(group))
+          .labelsHidden()
+          .toggleStyle(.switch)
+          .tint(Theme.Palette.accentStrong)
+      }
+    }
   }
 
   /// What the machine contributes, read-only: the file a person would open and what it says.
@@ -351,8 +419,6 @@ public struct SettingsView: View {
           .foregroundStyle(Theme.Palette.textMuted)
       }
     }
-    .padding(.horizontal, 16)
-    .padding(.top, 10)
     .padding(.bottom, 16)
   }
 
@@ -361,23 +427,6 @@ public struct SettingsView: View {
       get: { model.isToolGroupEnabled(name) },
       set: { model.setToolGroup(name, isOn: $0) }
     )
-  }
-
-  private func gatewayField<Content: View>(
-    _ title: String,
-    detail: String,
-    @ViewBuilder content: () -> Content
-  ) -> some View {
-    VStack(alignment: .leading, spacing: 5) {
-      Text(title)
-        .font(.system(size: 13.5, weight: .medium))
-        .foregroundStyle(Theme.Palette.textPrimary)
-      content()
-        .frame(maxWidth: 460)
-      Text(detail)
-        .font(.system(size: 11.5))
-        .foregroundStyle(Theme.Palette.textMuted)
-    }
   }
 
   /// The seven reasoning levels as a popup, drawn like the other capsules so the tab keeps one style.
@@ -407,34 +456,22 @@ public struct SettingsView: View {
   }
 
   private var providersPage: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      SettingsCard {
-        VStack(alignment: .leading, spacing: 0) {
-          HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-              Text("搜索")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.Palette.textPrimary)
-              Text("网页检索与正文提取，共用一个服务商")
-                .font(Theme.TypeScale.note)
-                .foregroundStyle(Theme.Palette.textSecondary)
-            }
-            Spacer(minLength: 0)
-            if model.providerBusy { SpinnerArc(size: 12) }
-            searchProviderMenu
-          }
-          .padding(.vertical, 16)
-          ForEach(model.providers) { provider in
-            Divider().overlay(Theme.Palette.line)
-            searchProviderRow(provider)
-          }
-          if let message = model.providerMessage {
-            Text(message)
-              .font(Theme.TypeScale.note)
-              .foregroundStyle(Theme.Palette.textSecondary)
-              .padding(.bottom, 12)
-          }
-        }
+    sectionCard(
+      "搜索", detail: "网页检索与正文提取，共用一个服务商"
+    ) {
+      HStack(spacing: 10) {
+        if model.providerBusy { SpinnerArc(size: 12) }
+        searchProviderMenu
+      }
+    } body: {
+      ForEach(Array(model.providers.enumerated()), id: \.element.id) { index, provider in
+        if index > 0 { Divider().overlay(Theme.Palette.line) }
+        searchProviderRow(provider)
+      }
+      if let message = model.providerMessage {
+        Divider().overlay(Theme.Palette.line)
+        SettingsSectionNote(message)
+          .padding(.top, 12)
       }
     }
     .task { await model.loadProviders() }
@@ -530,69 +567,54 @@ public struct SettingsView: View {
   }
 
   private var usage: some View {
-    VStack(alignment: .leading, spacing: 18) {
+    VStack(alignment: .leading, spacing: 12) {
       if model.usageReport == nil {
-        SettingsCard {
-          HStack(spacing: 10) {
-            if model.usageBusy { SpinnerArc() }
-            Text(model.usageBusy ? "正在读取用量…" : "还没有用量数据")
-              .font(Theme.TypeScale.note)
-              .foregroundStyle(Theme.Palette.textSecondary)
-            Spacer(minLength: 0)
-          }
-          .padding(.vertical, 14)
+        sectionCard("用量", detail: "所有 Bot 的 token、调用与花费") {
+          SettingsSectionNote(model.usageBusy ? "正在读取用量…" : "还没有用量数据")
+            .padding(.top, 14)
         }
       } else {
-        SettingsCard {
-          VStack(spacing: 0) {
-            ForEach(model.usageSummaryRows, id: \.id) { row in
-              if row.id != model.usageSummaryRows.first?.id {
-                Divider().overlay(Theme.Palette.line)
-              }
-              SettingsRow(row.title, detail: row.detail) {
-                Text(row.value)
-                  .font(Theme.TypeScale.mono)
-                  .foregroundStyle(Theme.Palette.textPrimary)
-              }
+        sectionCard("用量", detail: "所有 Bot 的 token、调用与花费") {
+          ForEach(model.usageSummaryRows, id: \.id) { row in
+            if row.id != model.usageSummaryRows.first?.id {
+              Divider().overlay(Theme.Palette.line)
+            }
+            SettingsSectionRow(row.title, detail: row.detail) {
+              Text(row.value)
+                .font(Theme.TypeScale.mono)
+                .foregroundStyle(Theme.Palette.textPrimary)
             }
           }
+          Divider().overlay(Theme.Palette.line)
+          SettingsSectionNote("保留 \(retentionDays) 天，按本机日期切分")
+            .padding(.top, 12)
         }
         usageChart
         usageSources
         usageBots
-        SettingsCaption("保留 \(model.usageReport?.retentionDays ?? 90) 天，按本机日期切分")
       }
     }
     .task { await model.loadUsage() }
   }
 
+  private var retentionDays: Int {
+    model.usageReport?.retentionDays ?? 90
+  }
+
   /// Where the work went: models spend tokens, search spends calls.
   private var usageSources: some View {
     let rows = model.usageSourceRows
-    return VStack(alignment: .leading, spacing: 6) {
-      SettingsCaption("来源")
-      SettingsCard {
-        if rows.isEmpty {
-          HStack(spacing: 8) {
-            Image(systemName: "square.stack.3d.up")
-              .font(.system(size: 12))
-              .foregroundStyle(Theme.Palette.textMuted)
-            Text("还没有消耗记录")
-              .font(Theme.TypeScale.note)
-              .foregroundStyle(Theme.Palette.textSecondary)
-            Spacer(minLength: 0)
-          }
-          .padding(.vertical, 12)
-        } else {
-          VStack(spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-              if index > 0 { Divider().overlay(Theme.Palette.line) }
-              SettingsRow(row.title, detail: "") {
-                Text(row.value)
-                  .font(Theme.TypeScale.mono)
-                  .foregroundStyle(Theme.Palette.textPrimary)
-              }
-            }
+    return sectionCard("来源", detail: "模型花 token，搜索花调用") {
+      if rows.isEmpty {
+        SettingsSectionNote("还没有消耗记录")
+          .padding(.top, 14)
+      } else {
+        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+          if index > 0 { Divider().overlay(Theme.Palette.line) }
+          SettingsSectionRow(row.title, detail: "") {
+            Text(row.value)
+              .font(Theme.TypeScale.mono)
+              .foregroundStyle(Theme.Palette.textPrimary)
           }
         }
       }
@@ -603,25 +625,22 @@ public struct SettingsView: View {
   private var usageChart: some View {
     let days = model.usageReport?.days ?? []
     let peak = days.map(\.totalTokens).max() ?? 0
-    return VStack(alignment: .leading, spacing: 6) {
-      SettingsCaption("近 30 天")
-      SettingsCard {
-        HStack(alignment: .bottom, spacing: 3) {
-          ForEach(days) { day in
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-              .fill(
-                day.totalTokens == 0
-                  ? Theme.Palette.line
-                  : Theme.Palette.accentFill.opacity(0.85)
-              )
-              .frame(height: barHeight(day.totalTokens, peak: peak))
-              .frame(maxWidth: .infinity)
-              .help("\(UsageFormat.shortDay(day.day)) · \(UsageFormat.tokens(day.totalTokens))")
-          }
+    return sectionCard("近 30 天", detail: "每天一条，最忙的一天填满卡片") {
+      HStack(alignment: .bottom, spacing: 3) {
+        ForEach(days) { day in
+          RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(
+              day.totalTokens == 0
+                ? Theme.Palette.line
+                : Theme.Palette.accentFill.opacity(0.85)
+            )
+            .frame(height: barHeight(day.totalTokens, peak: peak))
+            .frame(maxWidth: .infinity)
+            .help("\(UsageFormat.shortDay(day.day)) · \(UsageFormat.tokens(day.totalTokens))")
         }
-        .frame(height: 56, alignment: .bottom)
-        .padding(.vertical, 10)
       }
+      .frame(height: 56, alignment: .bottom)
+      .padding(.vertical, 16)
     }
   }
 
@@ -632,30 +651,17 @@ public struct SettingsView: View {
 
   private var usageBots: some View {
     let bots = model.usageBotRows
-    return VStack(alignment: .leading, spacing: 6) {
-      SettingsCaption("消耗最多")
-      SettingsCard {
-        if bots.isEmpty {
-          HStack(spacing: 8) {
-            Image(systemName: "chart.bar")
-              .font(.system(size: 12))
-              .foregroundStyle(Theme.Palette.textMuted)
-            Text("近 90 天还没有消耗")
-              .font(Theme.TypeScale.note)
-              .foregroundStyle(Theme.Palette.textSecondary)
-            Spacer(minLength: 0)
-          }
-          .padding(.vertical, 12)
-        } else {
-          VStack(spacing: 0) {
-            ForEach(Array(bots.enumerated()), id: \.element.id) { index, bot in
-              if index > 0 { Divider().overlay(Theme.Palette.line) }
-              SettingsRow(bot.title, detail: bot.detail) {
-                Text(bot.value)
-                  .font(Theme.TypeScale.mono)
-                  .foregroundStyle(Theme.Palette.textPrimary)
-              }
-            }
+    return sectionCard("消耗最多", detail: "近 \(retentionDays) 天花得最多的 5 个 Bot") {
+      if bots.isEmpty {
+        SettingsSectionNote("近 \(retentionDays) 天还没有消耗")
+          .padding(.top, 14)
+      } else {
+        ForEach(Array(bots.enumerated()), id: \.element.id) { index, bot in
+          if index > 0 { Divider().overlay(Theme.Palette.line) }
+          SettingsSectionRow(bot.title, detail: bot.detail) {
+            Text(bot.value)
+              .font(Theme.TypeScale.mono)
+              .foregroundStyle(Theme.Palette.textPrimary)
           }
         }
       }
@@ -714,18 +720,23 @@ public struct SettingsView: View {
 
   /// Identity, the update check and where to get the code; the app's own versions below.
   private var about: some View {
-    VStack(alignment: .leading, spacing: 18) {
+    VStack(alignment: .leading, spacing: 12) {
       SettingsCard {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(spacing: 0) {
+          SettingsSectionHeader(
+            "Eagle", detail: "多机工作态势 · 本地优先"
+          ) {
+            SettingsActionButton("检查更新") {
+              Task { await model.checkForUpdates() }
+            }
+          }
+          Divider().overlay(Theme.Palette.line)
           HStack(alignment: .center, spacing: 18) {
             aboutMark
             VStack(alignment: .leading, spacing: 4) {
               Text(DevAppIdentity.currentDisplayName)
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(Theme.Palette.textPrimary)
-              Text("多机工作态势 · 本地优先")
-                .font(Theme.TypeScale.note)
-                .foregroundStyle(Theme.Palette.textSecondary)
               HStack(spacing: 8) {
                 Text(model.appVersion.display)
                   .font(Theme.TypeScale.mono)
@@ -745,12 +756,8 @@ public struct SettingsView: View {
               }
             }
             Spacer(minLength: 0)
-            SettingsActionButton("检查更新") {
-              Task { await model.checkForUpdates() }
-            }
           }
           .padding(.vertical, 20)
-
           Divider().overlay(Theme.Palette.line)
           updateSummary
             .padding(.vertical, 14)
@@ -758,52 +765,44 @@ public struct SettingsView: View {
       }
 
       if let github = model.links.github {
-        SettingsCard {
-          VStack(spacing: 0) {
-            SettingsRow("GitHub", detail: github.absoluteString) {
-              SettingsActionButton("打开") { NSWorkspace.shared.open(github) }
-            }
-            .padding(.vertical, 12)
-            if let release = model.links.release {
-              Divider().overlay(Theme.Palette.line)
-              SettingsRow("版本发布", detail: release.absoluteString) {
-                SettingsActionButton("打开") { NSWorkspace.shared.open(release) }
-              }
-              .padding(.vertical, 12)
+        sectionCard("链接", detail: "代码与发布都在 GitHub") {
+          SettingsSectionRow("GitHub", detail: github.absoluteString) {
+            SettingsActionButton("打开") { NSWorkspace.shared.open(github) }
+          }
+          if let release = model.links.release {
+            Divider().overlay(Theme.Palette.line)
+            SettingsSectionRow("版本发布", detail: release.absoluteString) {
+              SettingsActionButton("打开") { NSWorkspace.shared.open(release) }
             }
           }
         }
       }
 
-      SettingsCard {
-        VStack(spacing: 0) {
-          SettingsRow("应用", detail: "界面、设备与 Bot 的控制台") {
-            Text(model.appVersion.display)
-              .font(Theme.TypeScale.mono)
-              .foregroundStyle(Theme.Palette.textPrimary)
-          }
-          .padding(.vertical, 12)
-          Divider().overlay(Theme.Palette.line)
-          SettingsRow("Bot 服务", detail: botServiceDetail) {
-            Text(botServiceVersion)
-              .font(Theme.TypeScale.mono)
-              .foregroundStyle(Theme.Palette.textPrimary)
-          }
-          .padding(.vertical, 12)
-          Divider().overlay(Theme.Palette.line)
-          SettingsRow("设备服务", detail: "本机执行与配对；身份只存放在本机") {
-            Text(devices.localReady ? "已就绪" : "未就绪")
-              .font(Theme.TypeScale.note)
-              .foregroundStyle(
-                devices.localReady ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
-          }
-          .padding(.vertical, 12)
+      sectionCard("版本", detail: "这个 App 与它启动的两个本机服务") {
+        SettingsSectionRow("应用", detail: "界面、设备与 Bot 的控制台") {
+          Text(model.appVersion.display)
+            .font(Theme.TypeScale.mono)
+            .foregroundStyle(Theme.Palette.textPrimary)
+        }
+        Divider().overlay(Theme.Palette.line)
+        SettingsSectionRow("Bot 服务", detail: botServiceDetail) {
+          Text(botServiceVersion)
+            .font(Theme.TypeScale.mono)
+            .foregroundStyle(Theme.Palette.textPrimary)
+        }
+        Divider().overlay(Theme.Palette.line)
+        SettingsSectionRow("设备服务", detail: "本机执行与配对；身份只存放在本机") {
+          Text(devices.localReady ? "已就绪" : "未就绪")
+            .font(Theme.TypeScale.note)
+            .foregroundStyle(
+              devices.localReady ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
         }
       }
 
       Text("\(String(Calendar.current.component(.year, from: Date()))) Eagle · 数据保留在这台机器上")
         .font(Theme.TypeScale.note)
         .foregroundStyle(Theme.Palette.textMuted)
+        .padding(.leading, 4)
     }
     .task { await model.checkForUpdatesIfNeeded() }
   }
@@ -853,80 +852,28 @@ public struct SettingsView: View {
   }
 }
 
-/// The daemon's live state: running (and who started it), stopped or failed, with the root
-/// and port the app is wired to. This is where a first-run problem such as a missing Node
-/// becomes visible instead of a silent connection error.
-private struct BotsDaemonCard: View {
+/// The daemon's own controls, in the header of the Bot 服务 section: restart, stop, or start
+/// it, so a stopped service is one click from running again.
+private struct BotsDaemonActions: View {
   @ObservedObject var daemon: BotsDaemonSupervisor
 
   var body: some View {
-    SettingsCard {
-      VStack(alignment: .leading, spacing: 10) {
-        HStack(spacing: 8) {
-          Circle()
-            .fill(tint)
-            .frame(width: 8, height: 8)
-          Text(statusText)
-            .font(.system(size: 14))
-            .foregroundStyle(Theme.Palette.textPrimary)
-          Spacer(minLength: 8)
-          actions
-        }
-        Text("根目录 \(daemon.rootPath) · 端口 \(daemon.port)")
-          .font(.system(size: 11.5, design: .monospaced))
-          .foregroundStyle(Theme.Palette.textMuted)
-          .lineLimit(1)
-          .truncationMode(.middle)
-        if case .failed(let message) = daemon.status {
-          Text(message)
-            .font(Theme.TypeScale.note)
-            .foregroundStyle(Theme.Palette.destructive)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        Toggle("启动 App 时自动运行", isOn: $daemon.autoStart)
-          .toggleStyle(.switch)
-          .tint(Theme.Palette.accentStrong)
-          .font(.system(size: 13))
-      }
-      .padding(.vertical, 14)
-    }
-  }
-
-  @ViewBuilder
-  private var actions: some View {
     switch daemon.status {
     case .starting:
       SpinnerArc(size: 12)
     case .running(_, _, let external):
-      if !external {
-        SettingsActionButton("重启") { Task { await daemon.restart() } }
-        SettingsActionButton("停止") { Task { await daemon.stop() } }
-      } else {
+      if external {
         Text("由外部启动，不随 App 退出")
           .font(Theme.TypeScale.note)
           .foregroundStyle(Theme.Palette.textMuted)
+      } else {
+        HStack(spacing: 10) {
+          SettingsActionButton("重启") { Task { await daemon.restart() } }
+          SettingsActionButton("停止") { Task { await daemon.stop() } }
+        }
       }
     case .stopped, .failed:
       SettingsActionButton("启动", prominent: true) { Task { await daemon.startIfNeeded() } }
-    }
-  }
-
-  private var statusText: String {
-    switch daemon.status {
-    case .stopped: return "未运行"
-    case .starting: return "正在启动…"
-    case .running(let version, let pid, let external):
-      return "运行中 · v\(version) · pid \(pid)\(external ? "（外部）" : "")"
-    case .failed: return "启动失败"
-    }
-  }
-
-  private var tint: Color {
-    switch daemon.status {
-    case .stopped: return Theme.Palette.textMuted
-    case .starting: return Theme.Palette.avatarTint(3)
-    case .running: return Theme.Palette.accentStrong
-    case .failed: return Theme.Palette.destructive
     }
   }
 }

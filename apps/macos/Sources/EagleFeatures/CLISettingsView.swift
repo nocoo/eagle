@@ -16,7 +16,7 @@ public struct CLISettingsView: View {
   }
 
   public var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
+    VStack(alignment: .leading, spacing: 12) {
       serviceCard
       if let token = model.issuedToken {
         issuedCard(token)
@@ -24,63 +24,62 @@ public struct CLISettingsView: View {
       credentialsCard
       skillCard
       if let failure = model.failure {
-        Text(failure)
-          .font(Theme.TypeScale.note)
-          .foregroundStyle(Theme.Palette.destructive)
-          .fixedSize(horizontal: false, vertical: true)
+        SettingsSectionNote(failure, destructive: true)
+          .padding(.leading, 4)
           .accessibilityIdentifier("cli.failure")
       }
       if let message = model.message {
-        Text(message)
-          .font(Theme.TypeScale.note)
-          .foregroundStyle(Theme.Palette.textSecondary)
+        SettingsSectionNote(message)
+          .padding(.leading, 4)
       }
     }
     .task { await model.load() }
   }
 
   private var serviceCard: some View {
-    SettingsCard {
-      VStack(spacing: 0) {
-        SettingsRow(
-          "本机 CLI",
-          detail: model.canInstall
-            ? "让其他 agent 用 \(model.commandName) 管理 Bot 并和它们对话"
-            : "源码运行时没有内置 CLI，只能查看与撤销凭据"
-        ) {
-          HStack(spacing: 10) {
-            if model.busy { SpinnerArc(size: 12) }
-            Toggle("", isOn: installBinding)
-              .labelsHidden()
-              .toggleStyle(.switch)
-              .tint(Theme.Palette.accentStrong)
-              .disabled(model.busy || (!model.installed && !model.canInstall))
-              .accessibilityIdentifier("cli.switch")
-              .accessibilityLabel("启用本机 CLI")
+    VStack(alignment: .leading, spacing: 12) {
+      SettingsCard {
+        VStack(spacing: 0) {
+          SettingsSectionHeader(
+            "本机 CLI",
+            detail: model.canInstall
+              ? "让其他 agent 用 \(model.commandName) 管理 Bot 并和它们对话"
+              : "源码运行时没有内置 CLI，只能查看与撤销凭据"
+          ) {
+            HStack(spacing: 10) {
+              if model.busy { SpinnerArc(size: 12) }
+              Toggle("", isOn: installBinding)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(Theme.Palette.accentStrong)
+                .disabled(model.busy || (!model.installed && !model.canInstall))
+                .accessibilityIdentifier("cli.switch")
+                .accessibilityLabel("启用本机 CLI")
+            }
           }
-        }
-        Divider().overlay(Theme.Palette.line)
-        SettingsRow("命令", detail: model.linkLabel) {
-          Text(model.commandName)
-            .font(Theme.TypeScale.mono)
-            .foregroundStyle(Theme.Palette.textPrimary)
-            .textSelection(.enabled)
-        }
-        Divider().overlay(Theme.Palette.line)
-        SettingsRow("配置", detail: model.configLabel) {
-          Text(model.binaryLabel)
-            .font(Theme.TypeScale.note)
-            .foregroundStyle(Theme.Palette.textSecondary)
-        }
-        if let hint = model.pathHint {
           Divider().overlay(Theme.Palette.line)
-          Text(hint)
-            .font(Theme.TypeScale.note)
-            .foregroundStyle(Theme.Palette.textMuted)
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 10)
-            .accessibilityIdentifier("cli.pathHint")
+          SettingsSectionRow("命令", detail: model.linkLabel) {
+            Text(model.commandName)
+              .font(Theme.TypeScale.mono)
+              .foregroundStyle(Theme.Palette.textPrimary)
+              .textSelection(.enabled)
+          }
+          Divider().overlay(Theme.Palette.line)
+          SettingsSectionRow("配置", detail: model.configLabel) {
+            Text(model.binaryLabel)
+              .font(Theme.TypeScale.note)
+              .foregroundStyle(Theme.Palette.textSecondary)
+          }
+          if let hint = model.pathHint {
+            Divider().overlay(Theme.Palette.line)
+            Text(hint)
+              .font(Theme.TypeScale.note)
+              .foregroundStyle(Theme.Palette.textMuted)
+              .textSelection(.enabled)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .padding(.vertical, 14)
+              .accessibilityIdentifier("cli.pathHint")
+          }
         }
       }
     }
@@ -106,58 +105,56 @@ public struct CLISettingsView: View {
 
   /// The secret exists in this card and nowhere else: it is never shown again.
   private func issuedCard(_ token: String) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      SettingsCaption("新凭据只显示这一次，请立刻复制给要使用它的 agent。")
-      SettingsCard {
-        HStack(spacing: 10) {
-          Text(token)
-            .font(Theme.TypeScale.mono)
-            .foregroundStyle(Theme.Palette.textPrimary)
-            .textSelection(.enabled)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .accessibilityIdentifier("cli.token")
-          Spacer(minLength: 0)
-          SettingsActionButton(copiedToken ? "已复制" : "复制") {
-            copy(token, feedback: $copiedToken)
+    SettingsCard {
+      VStack(spacing: 0) {
+        SettingsSectionHeader(
+          "新凭据", detail: "只显示这一次，请立刻复制给要使用它的 agent"
+        ) {
+          HStack(spacing: 10) {
+            SettingsActionButton(copiedToken ? "已复制" : "复制") {
+              copy(token, feedback: $copiedToken)
+            }
+            .accessibilityIdentifier("cli.copy.token")
+            .accessibilityLabel(copiedToken ? "已复制" : "复制凭据")
+            SettingsActionButton("完成") { model.dismissIssuedToken() }
           }
-          .accessibilityIdentifier("cli.copy.token")
-          .accessibilityLabel(copiedToken ? "已复制" : "复制凭据")
-          SettingsActionButton("完成") { model.dismissIssuedToken() }
         }
-        .padding(.vertical, 14)
+        Divider().overlay(Theme.Palette.line)
+        Text(token)
+          .font(Theme.TypeScale.mono)
+          .foregroundStyle(Theme.Palette.textPrimary)
+          .textSelection(.enabled)
+          .lineLimit(1)
+          .truncationMode(.middle)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.vertical, 16)
+          .accessibilityIdentifier("cli.token")
       }
     }
   }
 
   private var credentialsCard: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 12) {
-        SettingsCaption("凭据")
-        Spacer(minLength: 0)
-        SettingsActionButton("新建凭据", prominent: true) {
-          showsIssueRow.toggle()
-          model.dismissIssuedToken()
+    SettingsCard {
+      VStack(spacing: 0) {
+        SettingsSectionHeader("凭据", detail: "每个使用 CLI 的 agent 一个，可单独撤销") {
+          SettingsActionButton("新建凭据", prominent: true) {
+            showsIssueRow.toggle()
+            model.dismissIssuedToken()
+          }
+          .disabled(model.busy)
         }
-        .disabled(model.busy)
-      }
-      SettingsCard {
-        VStack(spacing: 0) {
-          if showsIssueRow {
-            issueRow
-            Divider().overlay(Theme.Palette.line)
-          }
-          if model.clients.isEmpty {
-            Text("还没有 CLI 凭据")
-              .font(Theme.TypeScale.note)
-              .foregroundStyle(Theme.Palette.textSecondary)
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .padding(.vertical, 14)
-          }
-          ForEach(Array(model.clients.enumerated()), id: \.element.id) { index, client in
-            if index > 0 { Divider().overlay(Theme.Palette.line) }
-            row(client)
-          }
+        Divider().overlay(Theme.Palette.line)
+        if showsIssueRow {
+          issueRow
+          Divider().overlay(Theme.Palette.line)
+        }
+        if model.clients.isEmpty {
+          SettingsSectionNote("还没有 CLI 凭据")
+            .padding(.top, 14)
+        }
+        ForEach(Array(model.clients.enumerated()), id: \.element.id) { index, client in
+          if index > 0 { Divider().overlay(Theme.Palette.line) }
+          row(client)
         }
       }
     }
@@ -194,7 +191,7 @@ public struct CLISettingsView: View {
           .foregroundStyle(Theme.Palette.textMuted)
       }
     }
-    .padding(.vertical, 14)
+    .padding(.vertical, 16)
   }
 
   private func scopeBinding(_ scope: String) -> Binding<Bool> {
@@ -245,7 +242,7 @@ public struct CLISettingsView: View {
         .accessibilityIdentifier("cli.revoke.\(client.name)")
       }
     }
-    .padding(.vertical, 12)
+    .padding(.vertical, 16)
   }
 
   private func detail(_ client: CLIClient) -> String {
@@ -270,26 +267,23 @@ public struct CLISettingsView: View {
   }
 
   private var skillCard: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      SettingsCaption("交给 agent 的自描述文档")
-      SettingsCard {
-        HStack(spacing: 12) {
-          VStack(alignment: .leading, spacing: 4) {
-            Text("\(model.commandName) --skill")
-              .font(Theme.TypeScale.mono)
-              .foregroundStyle(Theme.Palette.textPrimary)
-            Text("一次调用就能读到命令表、退出码和规则，形状与 herdr --skill 相同。")
-              .font(Theme.TypeScale.note)
-              .foregroundStyle(Theme.Palette.textSecondary)
-          }
-          Spacer(minLength: 0)
+    SettingsCard {
+      VStack(spacing: 0) {
+        SettingsSectionHeader(
+          "自描述文档", detail: "一次调用就能读到命令表、退出码和规则，形状与 herdr --skill 相同"
+        ) {
           SettingsActionButton(copiedCommand ? "已复制" : "复制命令") {
             copy("\(model.commandName) --skill", feedback: $copiedCommand)
           }
           .accessibilityIdentifier("cli.copy.skill")
           .accessibilityLabel(copiedCommand ? "已复制" : "复制命令")
         }
-        .padding(.vertical, 14)
+        Divider().overlay(Theme.Palette.line)
+        Text("\(model.commandName) --skill")
+          .font(Theme.TypeScale.mono)
+          .foregroundStyle(Theme.Palette.textPrimary)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.vertical, 16)
       }
     }
   }

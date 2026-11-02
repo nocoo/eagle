@@ -23,22 +23,6 @@ public struct SettingsCard<Content: View>: View {
   }
 }
 
-/// Section heading above a card, e.g. `Bot 的电脑`.
-public struct SettingsCaption: View {
-  private let text: String
-
-  public init(_ text: String) {
-    self.text = text
-  }
-
-  public var body: some View {
-    Text(text)
-      .font(Theme.TypeScale.note)
-      .foregroundStyle(Theme.Palette.textSecondary)
-      .padding(.leading, 4)
-  }
-}
-
 /// A capsule that opens a menu of choices: it looks like the pill above, but a click shows the
 /// options instead of silently cycling the value.
 public struct PillSelect<Value: Hashable>: View {
@@ -124,8 +108,41 @@ public struct InfoBanner: View {
   }
 }
 
-/// Settings row with a label and a trailing control slot.
-public struct SettingsRow<Trailing: View>: View {
+/// Section header inside a card: title, one line of what it covers, and the control that
+/// belongs to the section on the right. The 服务 page set this shape; every page follows it.
+public struct SettingsSectionHeader<Trailing: View>: View {
+  private let title: String
+  private let detail: String?
+  private let trailing: Trailing
+
+  public init(_ title: String, detail: String? = nil, @ViewBuilder trailing: () -> Trailing) {
+    self.title = title
+    self.detail = detail
+    self.trailing = trailing()
+  }
+
+  public var body: some View {
+    HStack(alignment: .center, spacing: 12) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text(title)
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundStyle(Theme.Palette.textPrimary)
+        if let detail {
+          Text(detail)
+            .font(Theme.TypeScale.note)
+            .foregroundStyle(Theme.Palette.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+      Spacer(minLength: 0)
+      trailing
+    }
+    .padding(.vertical, 16)
+  }
+}
+
+/// A row at the section rhythm: label and detail on the left, one control on the right.
+public struct SettingsSectionRow<Trailing: View>: View {
   private let title: String
   private let detail: String?
   private let trailing: Trailing
@@ -146,12 +163,34 @@ public struct SettingsRow<Trailing: View>: View {
           Text(detail)
             .font(Theme.TypeScale.note)
             .foregroundStyle(Theme.Palette.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
       }
       Spacer(minLength: 0)
       trailing
     }
-    .frame(height: Theme.Metric.settingsRowHeight)
+    .padding(.vertical, 16)
+  }
+}
+
+/// What a section says after an action: the save's result, or why it failed. It closes the
+/// card the action lives in, so the answer sits under the control that produced it.
+public struct SettingsSectionNote: View {
+  private let text: String
+  private let destructive: Bool
+
+  public init(_ text: String, destructive: Bool = false) {
+    self.text = text
+    self.destructive = destructive
+  }
+
+  public var body: some View {
+    Text(text)
+      .font(Theme.TypeScale.note)
+      .foregroundStyle(destructive ? Theme.Palette.destructive : Theme.Palette.textSecondary)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.bottom, 12)
   }
 }
 

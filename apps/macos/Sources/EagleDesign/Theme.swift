@@ -182,7 +182,6 @@ public enum Theme {
     public static let conversationMaxContentWidth: CGFloat = 720
 
     public static let settingsRailWidth: CGFloat = 190
-    public static let settingsRowHeight: CGFloat = 46
     public static let settingsCardRadius: CGFloat = 14
     public static let settingsCardInset: CGFloat = 20
     public static let settingsContentInset: CGFloat = 28
