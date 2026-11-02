@@ -190,6 +190,46 @@ struct LocalHerdrClientTests {
     }
   }
 
+  @Test("timeout and cancellation also bound inherited stdout after the command exits")
+  func inheritedStdout() async throws {
+    let shell = URL(fileURLWithPath: "/bin/sh")
+    let arguments = ["-c", "/bin/sleep 1 & exit 0"]
+    let start = ContinuousClock.now
+    await #expect(throws: HerdrReadError.timeout) {
+      try await LocalHerdrClient.run(
+        executable: shell, arguments: arguments, environment: [:], timeout: .milliseconds(100))
+    }
+    #expect(start.duration(to: .now) < .milliseconds(700))
+
+    let reading = Task {
+      try await LocalHerdrClient.run(executable: shell, arguments: arguments, environment: [:])
+    }
+    try await Task.sleep(for: .milliseconds(100))
+    let cancelled = ContinuousClock.now
+    reading.cancel()
+    await #expect(throws: CancellationError.self) { try await reading.value }
+    #expect(cancelled.duration(to: .now) < .milliseconds(700))
+  }
+
+  @Test("closed stdout does not exempt a running command from the deadline")
+  func closedStdout() async throws {
+    await #expect(throws: HerdrReadError.timeout) {
+      try await LocalHerdrClient.run(
+        executable: URL(fileURLWithPath: "/bin/sh"),
+        arguments: ["-c", "exec 1>&-; exec /bin/sleep 1"], environment: [:],
+        timeout: .milliseconds(100))
+    }
+  }
+
+  @Test("the exact output limit is returned without truncation")
+  func outputLimit() async throws {
+    let output = try await LocalHerdrClient.run(
+      executable: URL(fileURLWithPath: "/usr/bin/head"),
+      arguments: ["-c", "2097152", "/dev/zero"], environment: [:])
+    #expect(output.count == 2 * 1024 * 1024)
+    #expect(output.allSatisfy { $0 == 0 })
+  }
+
   @Test("cancelling a reader terminates its command")
   func cancelledRead() async throws {
     let reading = Task {

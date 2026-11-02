@@ -48,8 +48,8 @@ Expanded inspector preview:
 
 While this panel is visible, the App reads `herdr session list --json`, then
 `herdr --session <name> api snapshot` for each running local session, waiting
-three seconds after each completed read. Each command has a ten-second timeout;
-refreshes never overlap. Each session's membership and state come from one
+three seconds after each completed read. Each command and its stdout have a
+ten-second timeout; refreshes never overlap. Each session's membership and state come from one
 snapshot. It never starts Herdr, reads terminal transcripts, sends agent input,
 or uses the device
 execution queue. There is no remote-machine collection or cloud storage in this

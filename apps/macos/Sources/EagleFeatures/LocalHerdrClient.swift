@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public enum HerdrAgentStatus: String, Sendable {
@@ -199,36 +200,44 @@ public struct LocalHerdrClient: Sendable {
     process.standardInput = FileHandle.nullDevice
     process.standardOutput = output
     process.standardError = FileHandle.nullDevice
+    let deadline = ContinuousClock.now.advanced(by: timeout)
     do { try process.run() } catch { throw HerdrReadError.unavailable }
     try? output.fileHandleForWriting.close()
-    let reader = Task.detached(priority: .utility) {
-      defer { try? output.fileHandleForReading.close() }
-      var data = Data()
-      while let chunk = try output.fileHandleForReading.read(upToCount: 65536), !chunk.isEmpty {
-        data.append(chunk)
-        guard data.count <= 2 * 1024 * 1024 else {
-          if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-          throw HerdrReadError.invalidResponse
+    defer {
+      if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+      try? output.fileHandleForReading.close()
+    }
+    let descriptor = output.fileHandleForReading.fileDescriptor
+    let flags = fcntl(descriptor, F_GETFL)
+    guard flags >= 0, fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) >= 0 else {
+      throw HerdrReadError.unavailable
+    }
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: 65536)
+    var eof = false
+    while true {
+      try Task.checkCancellation()
+      guard ContinuousClock.now < deadline else { throw HerdrReadError.timeout }
+      if !eof {
+        let count = Darwin.read(descriptor, &buffer, buffer.count)
+        if count > 0 {
+          guard data.count + count <= 2 * 1024 * 1024 else {
+            throw HerdrReadError.invalidResponse
+          }
+          data.append(contentsOf: buffer.prefix(count))
+          continue
+        }
+        if count == 0 {
+          eof = true
+        } else if errno != EAGAIN && errno != EINTR {
+          throw HerdrReadError.unavailable
         }
       }
-      return data
-    }
-    do {
-      let deadline = ContinuousClock.now.advanced(by: timeout)
-      while process.isRunning {
-        try Task.checkCancellation()
-        guard ContinuousClock.now < deadline else { throw HerdrReadError.timeout }
-        try await Task.sleep(for: .milliseconds(25))
+      if eof && !process.isRunning {
+        guard process.terminationStatus == 0 else { throw HerdrReadError.unavailable }
+        return data
       }
-      let data = try await reader.value
-      try Task.checkCancellation()
-      guard process.terminationStatus == 0 else { throw HerdrReadError.unavailable }
-      return data
-    } catch {
-      // Only this short-lived read command is owned here, never the Herdr server.
-      if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-      _ = try? await reader.value
-      throw error
+      try await Task.sleep(for: .milliseconds(25))
     }
   }
 
