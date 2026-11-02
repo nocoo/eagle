@@ -1,5 +1,24 @@
 # 用户视角检查点
 
+## 2026-11-02 20:20 +08 — memory is a group a bot can switch off
+
+- User-facing: 设置 → 可用工具 has a 记忆 row after Coding. Switched on (the default), a bot
+  can `memory_list`, `memory_search`, `memory_read`, `memory_write`, `memory_delete` over two
+  scopes: `global` (`~/.config/eagle-bots/memory/global.md`, shared by every bot on the
+  machine) and `bot` (`<botId>.md`, its own). Both files are ordinary markdown a person or a
+  script edits: `## key` sections, LF line endings, a heading inside a body escaped as `\##`.
+  Switched off, the five tools and the group's prompt section disappear and the files stay.
+- Verified locally: `apps/bots npm run check` (exit 0, 823 tests, 94.99% lines / 88.48%
+  branches / 90.32% functions), including a real-Harness run that writes then searches, a
+  socket test that asserts the live tool row plus its snapshot copy, and `apps/macos` +
+  `apps/bots-macos` `swift test` (358) with strict `swift format` lint. Three read-only review
+  rounds found real defects — a body heading could split a record and overwrite another, the
+  Harness 50 KiB cap left search JSON unparseable, an excerpt could carry 202 characters or
+  split an emoji, and a page could exceed its promised 48 KiB — all fixed with tests.
+- Next broken hop: the owner has not used the row in the running dev App, and no bot has
+  written a memory through the live daemon yet. The dev daemon booted before this change
+  stores the pre-memory group list, so the switch may need one save before new Bots show it.
+
 ## 2026-11-02 19:35 +08 — the card is in the conversation
 
 - User-facing: an `ask_user` call now renders as a card in the transcript — header with
