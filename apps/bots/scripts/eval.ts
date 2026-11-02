@@ -38,6 +38,12 @@ type CaseFile = {
     readonly enabled?: boolean;
   }[];
   readonly model: { readonly script: readonly ScriptedReply[]; readonly repeatLast?: boolean };
+  /** What the same local server answers at `/v1/systemone`, so a decision tool runs for real. */
+  readonly systemone?: {
+    readonly model?: string;
+    readonly answers: Readonly<Record<string, unknown>>;
+    readonly usage?: { readonly input_tokens?: number; readonly output_tokens?: number };
+  };
   /** `mint` (default) writes a development agent token; `none` leaves it unwritten. */
   readonly devToken?: "mint" | "none";
   readonly steps: readonly Step[];
@@ -155,7 +161,11 @@ function failure(message: string): never {
  * hold until the case releases it, so a test about aborting knows the answer is really
  * in flight instead of guessing with a sleep.
  */
-const scriptedModel = (script: readonly ScriptedReply[], repeatLast: boolean) => {
+const scriptedModel = (
+  script: readonly ScriptedReply[],
+  repeatLast: boolean,
+  systemone: CaseFile["systemone"],
+) => {
   const requests: { readonly lastInput: string; readonly tools: number }[] = [];
   const waiters = new Map<string, (() => void)[]>();
   let arrivals = 0;
@@ -174,6 +184,22 @@ const scriptedModel = (script: readonly ScriptedReply[], repeatLast: boolean) =>
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
     request.on("end", () => {
+      if (request.url?.endsWith("/v1/systemone") === true) {
+        if (systemone === undefined) {
+          response.writeHead(404, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: { message: "this case scripts no decision" } }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            model: systemone.model ?? "jev-eval",
+            answers: systemone.answers,
+            usage: systemone.usage ?? { input_tokens: 21, output_tokens: 2 },
+          }),
+        );
+        return;
+      }
       if (request.url?.endsWith("/models") === true) {
         response.writeHead(200, { "content-type": "application/json" });
         response.end(JSON.stringify({ data: [{ id: "eval-model", object: "model" }] }));
@@ -572,7 +598,7 @@ const runCase = async (
   const devTokenPath = join(home, ".config", "eagle-dev", "token");
   /** Values a step captured, addressed by later steps as `{{name.path}}`. */
   const captured = new Map<string, unknown>();
-  const model = scriptedModel(study.model.script, study.model.repeatLast === true);
+  const model = scriptedModel(study.model.script, study.model.repeatLast === true, study.systemone);
   const modelPort = await listen(model.server);
   let handle: DaemonHandle | undefined;
   let botId = "";
@@ -589,6 +615,7 @@ const runCase = async (
       await mkdir(dirname(devTokenPath), { recursive: true, mode: 0o700 });
       await writeFile(devTokenPath, `${devToken}\n`, { mode: 0o600 });
       captured.set("dev", { token: devToken, path: devTokenPath, home });
+      captured.set("model", { url: `http://127.0.0.1:${modelPort}` });
     }
     /** Only a case that drives the CLI arms the development credential. */
     const daemonEnv = (): Readonly<Record<string, string>> =>
@@ -764,10 +791,16 @@ const runCase = async (
             .replace("<bot>", botId)
             .replace(/<trigger:([^>]+)>/g, (_all, name: string) => byName.get(name)?.id ?? "");
           // The owner's bearer by default: a case that tests a refusal states its own.
+          const headers: Record<string, string> = {
+            authorization: `Bearer ${token2}`,
+            ...(step.body === undefined ? {} : { "content-type": "application/json" }),
+          };
+          for (const [name, value] of Object.entries(step.headers ?? {}))
+            headers[name] = fill(value);
           const response = await fetch(`http://127.0.0.1:${handle.port}${path}`, {
             method: step.method,
-            headers: { authorization: `Bearer ${token2}`, ...(step.headers ?? {}) },
-            ...(step.body === undefined ? {} : { body: step.body }),
+            headers,
+            ...(step.body === undefined ? {} : { body: fill(step.body) }),
           });
           if (step.expectStatus !== undefined && response.status !== step.expectStatus) {
             failure(`${step.method} ${path} answered ${response.status}`);
