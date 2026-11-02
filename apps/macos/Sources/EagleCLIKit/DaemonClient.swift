@@ -141,6 +141,9 @@ public struct DaemonClient: Sendable {
 public final class SocketSession: @unchecked Sendable {
   private let task: URLSessionWebSocketTask
   private let clientName: String
+  private let lock = NSLock()
+  private var heartbeat: Task<Void, Never>?
+  private var closed = false
 
   init(task: URLSessionWebSocketTask, clientName: String) {
     self.task = task
@@ -152,6 +155,7 @@ public final class SocketSession: @unchecked Sendable {
     let frame = try await read()
     switch frame["type"] as? String {
     case "welcome":
+      startHeartbeat()
       return
     case "error":
       let kind = frame["kind"] as? String ?? "handshake"
@@ -222,7 +226,30 @@ public final class SocketSession: @unchecked Sendable {
   }
 
   public nonisolated func close() {
+    lock.withLock {
+      closed = true
+      heartbeat?.cancel()
+      heartbeat = nil
+    }
     task.cancel(with: .goingAway, reason: nil)
+  }
+
+  private func startHeartbeat() {
+    lock.withLock {
+      guard !closed else { return }
+      heartbeat = Task { [weak self] in
+        while !Task.isCancelled {
+          try? await Task.sleep(for: .seconds(15))
+          guard !Task.isCancelled, let self else { return }
+          do {
+            try await self.write(["type": "ping"])
+          } catch {
+            self.close()
+            return
+          }
+        }
+      }
+    }
   }
 
   private func write(_ frame: JSONObject) async throws {

@@ -1,0 +1,42 @@
+{
+  "id": "cli-heartbeat",
+  "title": "CLI send and watch stay connected beyond the server idle deadline",
+  "kind": "chat",
+  "notes": "The real daemon closes a client without protocol pings after 60 seconds. A slow answer and a quiet watch must both outlive that deadline.",
+  "timeoutMs": 155000,
+  "model": {
+    "script": [{ "text": "long task finished", "delayMs": 63000 }]
+  },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval cli-heartbeat",
+        "--text",
+        "long task",
+        "--wait",
+        "--timeout",
+        "80",
+        "--json"
+      ],
+      "stdoutContains": "long task finished",
+      "timeoutMs": 75000
+    },
+    {
+      "kind": "cli",
+      "args": ["chat", "watch", "eval cli-heartbeat", "--json"],
+      "stdoutContains": "long task finished",
+      "expectTimeout": true,
+      "timeoutMs": 63000
+    }
+  ],
+  "expect": {
+    "messages": [
+      { "role": "user", "contains": "long task" },
+      { "role": "assistant", "contains": "long task finished" }
+    ],
+    "modelRequests": { "max": 1 }
+  }
+}
