@@ -217,22 +217,27 @@ public final class CatalogHTTPClient: CatalogPort, Sendable {
       .providers
   }
 
-  /// Saves a provider's key or enable flag; nil fields are left alone.
+  /// Saves a provider's key, enable flag, or the address and model it overrides: a nil field is
+  /// left alone, an empty address or model returns that provider to its catalogue value.
   public func saveProvider(
     id: String,
     apiKey: String?,
-    enabled: Bool?
+    enabled: Bool?,
+    baseUrl: String? = nil,
+    model: String? = nil
   ) async throws -> ProviderSettings {
     struct Payload: Decodable { let provider: ProviderSettings }
     var body: [String: Any] = [:]
     if let apiKey { body["apiKey"] = apiKey }
     if let enabled { body["enabled"] = enabled }
+    if let baseUrl { body["baseUrl"] = baseUrl }
+    if let model { body["model"] = model }
     return try await request(
       path: "/v1/providers/\(id)", method: "PUT", body: body, as: Payload.self
     ).provider
   }
 
-  /// Probes one provider with a single search; nothing is saved.
+  /// Probes one provider: one search, or one minimal decision. Nothing is saved.
   public func testProvider(id: String) async throws -> ProviderProbe {
     struct Payload: Decodable { let result: ProviderProbe }
     return try await request(

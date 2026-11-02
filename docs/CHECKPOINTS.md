@@ -2973,3 +2973,21 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 - Next: verify current-head CI and report the device pairing failure if it
   persists. Failed checks skipped automatic deployment; no live deployment was
   manually initiated.
+
+## 2026-11-03 05:53 +08 — Decision providers on the 服务 page
+
+- The daemon's provider catalogue now serves two services: `search` (unchanged) and
+  `decision` (`typesafe`, `falcon`, `falcon-relay`, `jev-relay`, `raven`). Selection is
+  exclusive within a service and independent across them; a decision provider stores an
+  optional address and model override; `test` sends one minimal `choice` question and
+  reports the resolved model. `apps/bots` `check` passed (coverage 95.13/88.49/90.45),
+  root `npm run check` passed with the official Node 26 build, and both Swift packages'
+  tests and strict formatting pass.
+- Verified by hand against the real endpoints before implementing: the official TypeSafe
+  root answers `/v1/systemone` and `/v1/models` with the owner's test key; `jev-relay` on
+  `127.0.0.1:3425` answers `typesafe/jev-latest` with the official answer shape and
+  ignores the client key; it answers `/v1/models` from a cache that omits that model, which
+  is why the probe is a real decision instead of a listing. Falcon's local port answered
+  401 without a source key; Raven was not running.
+- Not verified: the App's own page against a live daemon (the owner's dev App run is next),
+  Raven and Falcon with real credentials, authentication and D1 (unchanged by this work).

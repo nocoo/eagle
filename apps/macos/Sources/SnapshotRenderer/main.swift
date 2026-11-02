@@ -1,4 +1,5 @@
 import AppKit
+import BotsCore
 import BotsTransport
 import EagleDesign
 import EagleDevices
@@ -364,10 +365,32 @@ struct SnapshotRenderer {
       let providers = SettingsViewModel(
         botsSettings: settings.settings, urlSession: settings.session)
       providers.selection = .providers
+      // The page fills its rows from an async read; the review image shows the state after it.
+      providers.providers = SnapshotHTTPStub.decodedProviders
+      for provider in providers.providers where provider.isDecision {
+        providers.providerAddresses[provider.id] = provider.baseUrl
+        providers.providerModels[provider.id] = provider.model
+      }
       capture(
         SettingsView(model: providers).preferredColorScheme(scheme),
-        size: CGSize(width: 920, height: 720),
+        size: CGSize(width: 920, height: 900),
         named: "settings-providers-\(name)",
+        in: directory,
+        appearance: scheme == .dark ? .darkAqua : .aqua
+      )
+      let expanded = SettingsViewModel(
+        botsSettings: settings.settings, urlSession: settings.session)
+      expanded.selection = .providers
+      expanded.providers = SnapshotHTTPStub.decodedProviders
+      for provider in expanded.providers where provider.isDecision {
+        expanded.providerAddresses[provider.id] = provider.baseUrl
+        expanded.providerModels[provider.id] = provider.model
+      }
+      capture(
+        SettingsView(model: expanded, expandsProviderDetails: ["typesafe"])
+          .preferredColorScheme(scheme),
+        size: CGSize(width: 920, height: 900),
+        named: "settings-providers-address-\(name)",
         in: directory,
         appearance: scheme == .dark ? .darkAqua : .aqua
       )
@@ -685,17 +708,42 @@ struct SnapshotRenderer {
 /// Answers the two settings reads with static JSON so a snapshot needs no daemon.
 final class SnapshotHTTPStub: URLProtocol {
   private static let provider = """
-    {"id":"deepseek-search","title":"DeepSeek","kind":"deepseek-search",
-     "baseUrl":"https://api.deepseek.com",
+    {"id":"deepseek-search","title":"DeepSeek","service":"search","kind":"deepseek-search",
+     "baseUrl":"https://api.deepseek.com","model":"",
      "docsUrl":"https://api-docs.deepseek.com/guides/search/",
-     "keyLabel":"DeepSeek API Key","hasApiKey":true,"enabled":true}
+     "keyLabel":"DeepSeek API Key","keyRequired":true,"hasApiKey":true,"enabled":true,
+     "defaults":{"baseUrl":"https://api.deepseek.com","model":""}}
     """
 
   private static let tavily = """
-    {"id":"tavily-search","title":"Tavily","kind":"tavily-search",
-     "baseUrl":"https://api.tavily.com",
+    {"id":"tavily-search","title":"Tavily","service":"search","kind":"tavily-search",
+     "baseUrl":"https://api.tavily.com","model":"",
      "docsUrl":"https://docs.tavily.com/documentation/quickstart",
-     "keyLabel":"Tavily API Key","hasApiKey":true,"enabled":false}
+     "keyLabel":"Tavily API Key","keyRequired":true,"hasApiKey":true,"enabled":false,
+     "defaults":{"baseUrl":"https://api.tavily.com","model":""}}
+    """
+
+  private static let typesafe = """
+    {"id":"typesafe","title":"TypeSafe","service":"decision","kind":"systemone",
+     "baseUrl":"https://api.typesafe.ai","model":"jev-latest",
+     "docsUrl":"https://docs.typesafe.ai/introduction",
+     "keyLabel":"TypeSafe API Key","keyRequired":true,"hasApiKey":true,"enabled":true,
+     "defaults":{"baseUrl":"https://api.typesafe.ai","model":"jev-latest"}}
+    """
+
+  private static let relay = """
+    {"id":"jev-relay","title":"Jev 中转站","service":"decision","kind":"systemone",
+     "baseUrl":"http://127.0.0.1:3425","model":"typesafe/jev-latest","docsUrl":"",
+     "keyLabel":"中转站 API Key（可留空）","keyRequired":false,"hasApiKey":false,"enabled":false,
+     "defaults":{"baseUrl":"http://127.0.0.1:3425","model":"typesafe/jev-latest"}}
+    """
+
+  private static let raven = """
+    {"id":"raven","title":"Raven","service":"decision","kind":"systemone",
+     "baseUrl":"http://127.0.0.1:7024","model":"microsoft-decision-1",
+     "docsUrl":"https://github.com/nocoo/raven/blob/main/docs/30-systemone.md",
+     "keyLabel":"Raven API Key","keyRequired":true,"hasApiKey":false,"enabled":false,
+     "defaults":{"baseUrl":"http://127.0.0.1:7024","model":"microsoft-decision-1"}}
     """
 
   private static let usage = """
@@ -719,6 +767,16 @@ final class SnapshotHTTPStub: URLProtocol {
      "toolGroups":["core","coding","herdr","agents"]}
     """
 
+  /// The same five providers the page lists, decoded for a render that needs no run loop.
+  static var decodedProviders: [ProviderSettings] {
+    let json =
+      "{\"providers\":["
+      + [provider, tavily, typesafe, relay, raven].joined(separator: ",")
+      + "]}"
+    struct Payload: Decodable { let providers: [ProviderSettings] }
+    return (try? JSONDecoder().decode(Payload.self, from: Data(json.utf8)))?.providers ?? []
+  }
+
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
@@ -726,7 +784,9 @@ final class SnapshotHTTPStub: URLProtocol {
     let path = request.url?.path ?? ""
     let body: String
     switch path {
-    case "/v1/providers": body = "{\"providers\":[\(Self.provider),\(Self.tavily)]}"
+    case "/v1/providers":
+      body =
+        "{\"providers\":[\(Self.provider),\(Self.tavily),\(Self.typesafe),\(Self.relay),\(Self.raven)]}"
     case "/v1/usage": body = "{\"usage\":\(Self.usage)}"
     case "/v1/settings": body = "{\"settings\":\(Self.gateway)}"
     default: body = "{}"

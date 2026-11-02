@@ -106,9 +106,9 @@ version, the instance id, the pid and a bot count, never bot content.
 | `PATCH` | `/v1/groups/:id` | `{ "title" }` | `{ "group": BotGroup }` |
 | `PUT` | `/v1/groups/order` | `{ "ids": [string] }` — every group once, in display order | `{ "groups": [BotGroup] }` |
 | `DELETE` | `/v1/groups/:id` | — | `204`, or `409` while a bot is filed under it |
-| `GET` | `/v1/providers` | — | `{ "providers": [Provider] }` |
-| `PUT` | `/v1/providers/:id` | `{ "apiKey"?, "enabled"? }` | `{ "provider": Provider }` |
-| `POST` | `/v1/providers/:id/test` | — | `{ "result": { "ok", "message", "latencyMs", "results"? } }` |
+| `GET` | `/v1/providers` | — | `{ "providers": [Provider] }` — both services in one list |
+| `PUT` | `/v1/providers/:id` | `{ "apiKey"?, "enabled"?, "baseUrl"?, "model"? }` | `{ "provider": Provider }` |
+| `POST` | `/v1/providers/:id/test` | — | `{ "result": { "ok", "message", "latencyMs", "results"?, "model"?, "resolvedModel"? } }` |
 | `GET` | `/v1/usage?days=` | — | `{ "usage": UsageReport }` — statistics over the daemon's retained days |
 | `GET` | `/v1/models` | — | `{ "models": [string] }` — the gateway's ids, empty when it cannot be asked |
 | `POST` | `/v1/bots/:botId/answers` | `{ "entryId", "answers"?: [[label]], "skipped"?: true }` | `{ "submission": Submission }` |
@@ -391,28 +391,55 @@ revision and ignore it under I8.
 
 ## Providers
 
-Third-party services a bot's tools may call. The catalogue is code (`id`, `title`,
-`kind`, `baseUrl`, `docsUrl`, `keyLabel`); the first entry is `deepseek-search`, whose
-search and fetch APIs back the `web_search`/`web_fetch` tools. The search section
-also offers `tavily-search`. Each provider stores one independent key; the user
-selects at most one provider to serve both operations.
+Third-party services a bot's tools may call, in two services that are chosen apart.
+
+| Service | Serves | Providers (`id`) |
+| --- | --- | --- |
+| `search` | `web_search` / `web_fetch` | `deepseek-search`, `tavily-search` |
+| `decision` | System One questions (`POST /v1/systemone`) | `typesafe`, `falcon`, `falcon-relay`, `jev-relay`, `raven` |
+
+The catalogue is code (`id`, `title`, `service`, `kind`, `baseUrl`, `model`, `docsUrl`,
+`keyLabel`, `keyRequired`). Every decision provider speaks the same TypeSafe System One
+protocol, so only its address, model name and key rule differ:
+
+| `id` | Address | Model | Key |
+| --- | --- | --- | --- |
+| `typesafe` | `https://api.typesafe.ai` | `jev-latest` | TypeSafe API key |
+| `falcon` | `http://127.0.0.1:19823` | `jev-latest` | Falcon source key |
+| `falcon-relay` | `https://falcon.hexly.ai` | `jev-latest` | relay Bearer token |
+| `jev-relay` | `http://127.0.0.1:3425` | `typesafe/jev-latest` | optional: the relay may carry its own |
+| `raven` | `http://127.0.0.1:7024` | `microsoft-decision-1` | Raven API key |
+
+`baseUrl` is the API root: the daemon appends `/v1/systemone`. A typed root ending in `/v1`
+or `/v1/systemone` collapses to the same root, so the field accepts the address a person
+already uses for the model gateway.
 
 ```json
-{ "id": "deepseek-search", "title": "DeepSeek 搜索", "kind": "deepseek-search",
-  "baseUrl": "https://api.deepseek.com",
-  "docsUrl": "https://api-docs.deepseek.com/guides/search/",
-  "keyLabel": "DeepSeek API Key", "hasApiKey": true, "enabled": true }
+{ "id": "jev-relay", "title": "Jev 中转站", "service": "decision", "kind": "systemone",
+  "baseUrl": "http://127.0.0.1:3425", "model": "typesafe/jev-latest",
+  "docsUrl": "", "keyLabel": "中转站 API Key（可留空）", "keyRequired": false,
+  "hasApiKey": false, "enabled": true,
+  "defaults": { "baseUrl": "http://127.0.0.1:3425", "model": "typesafe/jev-latest" } }
 ```
 
 - **The key is write-only and lives in the user's config**, not in the daemon root or a
   bot's directory: `<XDG_CONFIG_HOME or ~/.config>/eagle-bots/providers.json`, mode 0600. A
-  `PUT` with an omitted key keeps the stored one; an empty key is a `400` and writes nothing.
-  The public shape only says whether a key is set.
-- **Selection is exclusive.** `PUT` with `enabled: true` requires a saved or supplied
-  nonblank key and atomically deselects the other search providers without deleting
-  their keys. Saving only a key never changes selection. `enabled: false` deselects
-  that provider. Concurrent saves serialize; failed writes change neither keys nor
-  the active route. Ambiguous persisted selections do not pick a provider by order.
+  `PUT` with an omitted key keeps the stored one; an empty key for a provider whose
+  `keyRequired` is true is a `400` and writes nothing. The public shape only says whether
+  a key is set.
+- **Selection is exclusive within a service and independent across them.** `PUT` with
+  `enabled: true` requires a saved or supplied nonblank key when `keyRequired` is true, and
+  atomically deselects the other providers of the same service without deleting their keys.
+  Choosing a decision provider never changes the search choice, and the reverse holds.
+  Saving only a key never changes selection; `enabled: false` deselects that provider.
+  Concurrent saves serialize; failed writes change neither keys nor the active route.
+  Ambiguous persisted selections do not pick a provider by order.
+- **`baseUrl` and `model` are overridable per provider.** A `PUT` that sends them stores an
+  override only while it differs from the catalogue value, so an address or a model name can
+  move without a release; an empty string reverts to the catalogue value. `defaults` always
+  reports what the catalogue says, and the public `baseUrl`/`model` are the values in use.
+  An address must be an absolute `http`/`https` URL; a search provider has neither field and
+  refuses them with a `400`.
 - **The Bot API is provider-independent.** `web_search(query, count?, needContent?)`
   and `web_fetch(url)` keep identical schemas, results and usage accounting. The
   daemon installs its routing client even before a provider is selected; the optional
@@ -420,8 +447,13 @@ selects at most one provider to serve both operations.
   returns a configuration error and sends no external request. Selection/key changes
   apply at the next invocation, including existing conversations. In-flight requests
   retain their original client. Failures never fall back to another provider.
-- **`test` spends one search**: it asks the provider for a single result and reports
-  reachability, the message and the latency. It saves nothing.
+- **`test` spends one real call.** A search provider is asked for a single result. A
+  decision provider is asked one minimal `choice` question with two criteria, because a
+  model listing cannot prove a relay: `jev-relay` answers `/v1/models` from a cache that
+  does not even list its Jev model. The result reports ok, a message, the latency, and
+  for a decision the model asked for (`model`) and the model named in the answer
+  (`resolvedModel`). An answer that is not a valid `choice` over the criteria, or a key
+  the provider refuses, is reported as a failed probe; nothing is saved.
 - An unknown provider is a `400`; a refused key reads as "the provider refused the API key".
 
 ## Usage statistics

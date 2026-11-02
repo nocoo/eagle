@@ -765,10 +765,58 @@ test("provider keys are saved behind the bearer and never returned", async () =>
         [
           ["deepseek-search", true, false],
           ["tavily-search", true, true],
+          ["typesafe", false, false],
+          ["falcon", false, false],
+          ["falcon-relay", false, false],
+          ["jev-relay", false, false],
+          ["raven", false, false],
         ],
       );
       const unauthenticated = await fetch(`http://127.0.0.1:${daemon.port}/v1/providers`);
       assert.equal(unauthenticated.status, 401);
+
+      const decision = await fetch(`http://127.0.0.1:${daemon.port}/v1/providers/raven`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          apiKey: "rk-http-fixture",
+          enabled: true,
+          baseUrl: "http://127.0.0.1:7024/v1",
+          model: "auto",
+        }),
+      });
+      assert.equal(decision.status, 200);
+      const chosen = (
+        (await decision.json()) as {
+          provider: { id: string; baseUrl: string; model: string; enabled: boolean };
+        }
+      ).provider;
+      assert.equal(chosen.baseUrl, "http://127.0.0.1:7024", "a typed /v1 collapses to the root");
+      assert.equal(chosen.model, "auto");
+      assert.equal(chosen.enabled, true);
+      assert.equal(
+        (
+          (await (
+            await fetch(`http://127.0.0.1:${daemon.port}/v1/providers`, { headers })
+          ).json()) as { providers: { id: string; enabled: boolean }[] }
+        ).providers
+          .filter((provider) => provider.enabled)
+          .map((provider) => provider.id)
+          .join(","),
+        "tavily-search,raven",
+        "both services are chosen at once",
+      );
+      const badAddress = await fetch(`http://127.0.0.1:${daemon.port}/v1/providers/raven`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ baseUrl: "127.0.0.1:7024" }),
+      });
+      assert.equal(badAddress.status, 400);
+      const searchOverride = await fetch(
+        `http://127.0.0.1:${daemon.port}/v1/providers/tavily-search`,
+        { method: "PUT", headers, body: JSON.stringify({ model: "x" }) },
+      );
+      assert.equal(searchOverride.status, 400, "a search provider has no model to override");
     } finally {
       await daemon.close();
     }

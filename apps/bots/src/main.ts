@@ -34,6 +34,7 @@ import { createDaemonModels } from "./runtime/pi/models.ts";
 import { PiDurableRuntime, type PiSettings } from "./runtime/pi/PiDurableRuntime.ts";
 import { loadToken } from "./server/auth.ts";
 import { ClientStore } from "./server/clients.ts";
+import { decisionRoot, probeDecision } from "./server/decision.ts";
 import { armDevToken } from "./server/devToken.ts";
 import {
   DEFAULT_CORE_PROMPT,
@@ -53,6 +54,7 @@ import { type Daemon, startServer, type TriggerIngress } from "./server/http.ts"
 import {
   PROVIDERS,
   type ProviderApi,
+  type ProviderConfig,
   type ProviderDefinition,
   type PublicProvider,
   providerDefinition,
@@ -768,28 +770,60 @@ export const createProviderService = async (
       : createTavilySearch(http);
   };
   const selectedClient = (): SearchClient => {
-    const definition = selectedProvider(configs);
+    const definition = selectedProvider(configs, "search");
     if (definition === undefined) throw new Error("请先在服务中选择一个已保存 Key 的搜索服务商。");
     return clientFor(definition);
   };
   const save: ProviderApi["save"] = async (id, input) => {
     const definition = providerDefinition(id);
     if (definition === undefined) return { error: `未知的服务：${id}` };
+    if (
+      definition.service !== "decision" &&
+      (input.baseUrl !== undefined || input.model !== undefined)
+    ) {
+      return { error: "搜索服务没有可覆盖的地址或模型" };
+    }
     const current = configs[id] ?? { apiKey: "", enabled: false };
     const apiKey = input.apiKey === undefined ? current.apiKey : input.apiKey.trim();
-    if ((input.apiKey !== undefined || input.enabled === true) && apiKey.length === 0) {
+    if (
+      definition.keyRequired &&
+      (input.apiKey !== undefined || input.enabled === true) &&
+      apiKey.length === 0
+    ) {
       return { error: "请先保存 API Key" };
     }
-    const next = { ...configs, [id]: { apiKey, enabled: input.enabled ?? current.enabled } };
-    if (input.enabled === true) {
-      for (const provider of PROVIDERS) {
-        const config = next[provider.id];
-        if (config !== undefined && provider.id !== id)
-          next[provider.id] = { ...config, enabled: false };
+    const next: { -readonly [K in keyof ProviderConfig]: ProviderConfig[K] } = {
+      apiKey,
+      enabled: input.enabled ?? current.enabled,
+    };
+    if (current.baseUrl !== undefined) next.baseUrl = current.baseUrl;
+    if (current.model !== undefined) next.model = current.model;
+    if (input.baseUrl !== undefined) {
+      const typed = input.baseUrl.trim();
+      if (typed.length === 0) {
+        delete next.baseUrl;
+      } else {
+        const root = decisionRoot(typed);
+        if (root === undefined) return { error: "地址必须是 http 或 https 开头的 URL" };
+        if (root === definition.baseUrl) delete next.baseUrl;
+        else next.baseUrl = root;
       }
     }
-    await writeProviders(next, path);
-    configs = next;
+    if (input.model !== undefined) {
+      const model = input.model.trim();
+      if (model.length === 0 || model === definition.model) delete next.model;
+      else next.model = model;
+    }
+    const saved = { ...configs, [id]: next };
+    if (input.enabled === true) {
+      for (const provider of PROVIDERS) {
+        if (provider.id === id || provider.service !== definition.service) continue;
+        const config = saved[provider.id];
+        if (config !== undefined) saved[provider.id] = { ...config, enabled: false };
+      }
+    }
+    await writeProviders(saved, path);
+    configs = saved;
     return {
       provider: publicProviders(configs).find((provider) => provider.id === id) as PublicProvider,
     };
@@ -807,8 +841,22 @@ export const createProviderService = async (
     },
     async test(id) {
       const definition = providerDefinition(id);
-      if (definition === undefined || !configs[id]?.apiKey.trim()) {
+      if (definition === undefined) {
+        return { ok: false, message: `未知的服务：${id}`, latencyMs: 0 };
+      }
+      const config = configs[id];
+      if (definition.keyRequired && !config?.apiKey.trim()) {
         return { ok: false, message: "还没有保存这个服务的 API Key", latencyMs: 0 };
+      }
+      if (definition.kind === "systemone") {
+        return probeDecision(
+          {
+            baseUrl: config?.baseUrl ?? definition.baseUrl,
+            model: config?.model ?? definition.model,
+            apiKey: config?.apiKey ?? "",
+          },
+          options.fetch === undefined ? {} : { fetch: options.fetch },
+        );
       }
       const started = performance.now();
       try {

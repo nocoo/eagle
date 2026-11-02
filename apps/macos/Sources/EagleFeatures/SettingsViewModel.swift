@@ -13,12 +13,19 @@ extension Notification.Name {
 @MainActor
 public final class SettingsViewModel: ObservableObject {
   @Published public var selection: SettingsSection = .bots
-  /// Third-party providers (search today), loaded when the 服务 tab opens.
+  /// Third-party providers for the two services (search and decision), loaded when the
+  /// 服务 tab opens.
   @Published public var providers: [ProviderSettings] = []
   @Published public var providerKeys: [String: String] = [:]
+  /// Address and model drafts for a decision provider: the daemon stores them only when they
+  /// differ from the catalogue, and an empty field asks for the catalogue value again.
+  @Published public var providerAddresses: [String: String] = [:]
+  @Published public var providerModels: [String: String] = [:]
   @Published public var providerBusy = false
   @Published public var providerProbe: [String: ProviderProbe] = [:]
   @Published public var providerMessage: String?
+  /// Which card the last result line belongs to, so one card's action never reports in the other.
+  @Published public var providerMessageService: String?
   /// The daemon's usage statistics; nil until the 用量 tab is opened.
   @Published public var usageReport: UsageReport?
   @Published public var usageBusy = false
@@ -252,64 +259,123 @@ public final class SettingsViewModel: ObservableObject {
     defer { providerBusy = false }
     do {
       providers = try await client().loadProviders()
+      for provider in providers where provider.isDecision {
+        if providerAddresses[provider.id] == nil {
+          providerAddresses[provider.id] = provider.baseUrl
+        }
+        if providerModels[provider.id] == nil { providerModels[provider.id] = provider.model }
+      }
       providerMessage = nil
     } catch {
       providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
     }
   }
 
-  /// A typed key is a draft: an empty field keeps the stored one.
-  public func saveProvider(_ id: String) async {
-    guard !providerBusy else { return }
-    providerBusy = true
-    providerMessage = nil
-    defer { providerBusy = false }
-    let typed = providerKeys[id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    do {
-      let saved = try await client().saveProvider(
-        id: id, apiKey: typed.isEmpty ? nil : typed, enabled: nil)
-      providers = providers.map { $0.id == id ? saved : $0 }
-      if providerKeys[id]?.trimmingCharacters(in: .whitespacesAndNewlines) == typed {
-        providerKeys[id] = ""
-      }
-      providerProbe[id] = nil
-      providerMessage = "已保存"
-    } catch {
-      providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
-    }
+  public func providers(in service: String) -> [ProviderSettings] {
+    providers.filter { $0.service == service }
+  }
+
+  public var searchProviders: [ProviderSettings] { providers(in: ProviderSettings.searchService) }
+
+  public var decisionProviders: [ProviderSettings] {
+    providers(in: ProviderSettings.decisionService)
+  }
+
+  /// The one provider of a service in use, or nothing: the daemon enforces the same rule, and a
+  /// page shows a selection this app cannot see as "no choice".
+  public func selectedProvider(in service: String) -> ProviderSettings? {
+    let chosen = providers.filter { $0.enabled && $0.service == service }
+    return chosen.count == 1 ? chosen.first : nil
   }
 
   public var selectedSearchProvider: ProviderSettings? {
-    let selected = providers.filter { $0.enabled && $0.hasApiKey }
-    return selected.count == 1 ? selected.first : nil
+    selectedProvider(in: ProviderSettings.searchService)
+  }
+
+  public var selectedDecisionProvider: ProviderSettings? {
+    selectedProvider(in: ProviderSettings.decisionService)
+  }
+
+  /// A typed key is a draft; for a decision provider the address and model are drafts too.
+  public func providerHasChanges(_ provider: ProviderSettings) -> Bool {
+    let typed = (providerKeys[provider.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    if !typed.isEmpty { return true }
+    guard provider.isDecision else { return false }
+    let address = (providerAddresses[provider.id] ?? provider.baseUrl)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let model = (providerModels[provider.id] ?? provider.model)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return address != provider.baseUrl || model != provider.model
+  }
+
+  /// Saves every draft of one provider at once: the key when one was typed, and for a decision
+  /// provider the address and model, where an empty field asks for the catalogue value.
+  public func saveProvider(_ id: String) async {
+    guard !providerBusy else { return }
+    guard let provider = providers.first(where: { $0.id == id }) else { return }
+    providerBusy = true
+    providerMessage = nil
+    defer { providerBusy = false }
+    let typed = (providerKeys[id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let address =
+      provider.isDecision
+      ? (providerAddresses[id] ?? provider.baseUrl).trimmingCharacters(in: .whitespacesAndNewlines)
+      : nil
+    let model =
+      provider.isDecision
+      ? (providerModels[id] ?? provider.model).trimmingCharacters(in: .whitespacesAndNewlines)
+      : nil
+    do {
+      let saved = try await client().saveProvider(
+        id: id, apiKey: typed.isEmpty ? nil : typed, enabled: nil, baseUrl: address, model: model)
+      providers = providers.map { $0.id == id ? saved : $0 }
+      providerKeys[id] = ""
+      if provider.isDecision {
+        providerAddresses[id] = saved.baseUrl
+        providerModels[id] = saved.model
+      }
+      providerProbe[id] = nil
+      providerMessageService = provider.service
+      providerMessage = "已保存"
+    } catch {
+      providerMessageService = provider.service
+      providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
+    }
   }
 
   public func setProviderEnabled(_ id: String, _ enabled: Bool) async {
     guard !providerBusy else { return }
-    guard let index = providers.firstIndex(where: { $0.id == id }) else { return }
-    if enabled && !providers[index].hasApiKey {
+    guard let provider = providers.first(where: { $0.id == id }) else { return }
+    if enabled && provider.keyRequired && !provider.hasApiKey {
+      providerMessageService = provider.service
       providerMessage = "请先保存这个服务商的 API Key"
       return
     }
-    guard enabled ? selectedSearchProvider?.id != id : providers[index].enabled else { return }
+    guard enabled ? selectedProvider(in: provider.service)?.id != id : provider.enabled else {
+      return
+    }
     providerBusy = true
     defer { providerBusy = false }
     do {
-      let saved = try await client().saveProvider(id: id, apiKey: nil, enabled: enabled)
-      providers = providers.map { provider in
-        if provider.id == id { return saved }
-        var other = provider
-        if saved.enabled { other.enabled = false }
-        return other
+      let saved = try await client().saveProvider(
+        id: id, apiKey: nil, enabled: enabled, baseUrl: nil, model: nil)
+      providers = providers.map { other in
+        if other.id == id { return saved }
+        var updated = other
+        // Only the same service is exclusive; the other service keeps its own choice.
+        if saved.enabled && other.service == provider.service { updated.enabled = false }
+        return updated
       }
       providerMessage = nil
     } catch {
+      providerMessageService = provider.service
       providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
     }
   }
 
   public func testProvider(_ id: String) async {
     guard !providerBusy else { return }
+    let service = providers.first(where: { $0.id == id })?.service
     providerBusy = true
     providerMessage = nil
     providerProbe[id] = nil
@@ -317,6 +383,7 @@ public final class SettingsViewModel: ObservableObject {
     do {
       providerProbe[id] = try await client().testProvider(id: id)
     } catch {
+      providerMessageService = service
       providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
     }
   }

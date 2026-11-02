@@ -694,25 +694,37 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
           const body = await readBody(request);
           if (
             !isObject(body) ||
-            Object.keys(body).some((key) => !["apiKey", "enabled"].includes(key))
+            Object.keys(body).some(
+              (key) => !["apiKey", "enabled", "baseUrl", "model"].includes(key),
+            )
           ) {
             json(response, 400, {
               error: {
                 kind: "invalid_command",
-                message: "send an apiKey, an enabled flag, or both",
+                message: "send an apiKey, an enabled flag, a baseUrl, a model, or any of them",
               },
             });
             return;
           }
-          const input: { apiKey?: string; enabled?: boolean } = {};
-          if (body.apiKey !== undefined) {
-            if (typeof body.apiKey !== "string") {
-              json(response, 400, {
-                error: { kind: "invalid_command", message: "apiKey must be a string" },
-              });
-              return;
+          const input: {
+            apiKey?: string;
+            enabled?: boolean;
+            baseUrl?: string;
+            model?: string;
+          } = {};
+          let malformed: string | undefined;
+          for (const field of ["apiKey", "baseUrl", "model"] as const) {
+            const value = body[field];
+            if (value === undefined) continue;
+            if (typeof value !== "string") {
+              malformed = `${field} must be a string`;
+              break;
             }
-            input.apiKey = body.apiKey;
+            input[field] = value;
+          }
+          if (malformed !== undefined) {
+            json(response, 400, { error: { kind: "invalid_command", message: malformed } });
+            return;
           }
           if (body.enabled !== undefined) {
             if (typeof body.enabled !== "boolean") {

@@ -511,29 +511,58 @@ public struct Usage: Codable, Hashable, Sendable {
   }
 }
 
+/// What the catalogue says a provider's address and model are, so a page can name the value an
+/// override falls back to (docs/bots/PROTOCOL.md, "Providers").
+public struct ProviderDefaults: Codable, Sendable, Equatable, Hashable {
+  public var baseUrl: String
+  public var model: String
+
+  public init(baseUrl: String, model: String) {
+    self.baseUrl = baseUrl
+    self.model = model
+  }
+}
+
 /// A third-party service a bot's tools may call (docs/bots/PROTOCOL.md, "Providers").
 public struct ProviderSettings: Codable, Sendable, Equatable, Identifiable {
+  /// The two services; each is chosen on its own, so one provider of each can be in use.
+  public static let searchService = "search"
+  public static let decisionService = "decision"
+
   public var id: String
   public var title: String
+  public var service: String
   public var kind: String
+  /// The address and model in use: the catalogue value unless an override was saved.
   public var baseUrl: String
+  public var model: String
   public var docsUrl: String
   public var keyLabel: String
+  /// A relay may carry its own upstream credential, so its key field is optional.
+  public var keyRequired: Bool
   public var hasApiKey: Bool
   public var enabled: Bool
+  public var defaults: ProviderDefaults
+
+  public var isDecision: Bool { service == Self.decisionService }
 
   public init(
-    id: String, title: String, kind: String, baseUrl: String, docsUrl: String,
-    keyLabel: String, hasApiKey: Bool, enabled: Bool
+    id: String, title: String, service: String, kind: String, baseUrl: String, model: String,
+    docsUrl: String, keyLabel: String, keyRequired: Bool, hasApiKey: Bool, enabled: Bool,
+    defaults: ProviderDefaults
   ) {
     self.id = id
     self.title = title
+    self.service = service
     self.kind = kind
     self.baseUrl = baseUrl
+    self.model = model
     self.docsUrl = docsUrl
     self.keyLabel = keyLabel
+    self.keyRequired = keyRequired
     self.hasApiKey = hasApiKey
     self.enabled = enabled
+    self.defaults = defaults
   }
 }
 
@@ -543,12 +572,20 @@ public struct ProviderProbe: Codable, Sendable, Equatable {
   public var message: String
   public var latencyMs: Int
   public var results: Int?
+  /// A decision probe reports the model it asked for and the one the answer names.
+  public var model: String?
+  public var resolvedModel: String?
 
-  public init(ok: Bool, message: String, latencyMs: Int, results: Int? = nil) {
+  public init(
+    ok: Bool, message: String, latencyMs: Int, results: Int? = nil, model: String? = nil,
+    resolvedModel: String? = nil
+  ) {
     self.ok = ok
     self.message = message
     self.latencyMs = latencyMs
     self.results = results
+    self.model = model
+    self.resolvedModel = resolvedModel
   }
 }
 

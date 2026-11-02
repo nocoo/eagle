@@ -107,9 +107,11 @@ public protocol CatalogPort: AnyObject {
   func moveBot(id: String, groupId: String?) async throws -> BotSummary
   /// The third-party providers and their saved state.
   func loadProviders() async throws -> [ProviderSettings]
-  /// Saves one provider's key or enable flag.
-  func saveProvider(id: String, apiKey: String?, enabled: Bool?) async throws -> ProviderSettings
-  /// Probes one provider with a single search.
+  /// Saves one provider's key, enable flag, or the address and model it overrides.
+  func saveProvider(
+    id: String, apiKey: String?, enabled: Bool?, baseUrl: String?, model: String?
+  ) async throws -> ProviderSettings
+  /// Probes one provider: one search, or one minimal decision.
   func testProvider(id: String) async throws -> ProviderProbe
   /// Usage statistics over the retained window.
   func loadUsage(days: Int) async throws -> UsageReport
