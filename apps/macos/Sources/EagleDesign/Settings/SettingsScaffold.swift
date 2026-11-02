@@ -57,7 +57,13 @@ public struct SettingsRail: View {
           .frame(height: 40)
           .background(
             RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
-              .fill(section == selection ? Theme.Palette.line.opacity(0.7) : .clear)
+              .fill(section == selection ? Theme.Palette.selection : .clear)
+          )
+          .overlay(
+            RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
+              .strokeBorder(
+                section == selection ? Theme.Palette.line : .clear,
+                lineWidth: Theme.Metric.hairline)
           )
           .contentShape(Rectangle())
         }
@@ -69,7 +75,8 @@ public struct SettingsRail: View {
     .padding(.top, 16)
     .frame(width: Theme.Metric.settingsRailWidth)
     .frame(maxHeight: .infinity, alignment: .top)
-    .background(Theme.Palette.surface)
+    // The rail keeps the main window's own surface: grey field, white card for the open tab.
+    .background(Theme.Palette.canvas)
   }
 }
 

@@ -42,6 +42,8 @@ public final class SettingsViewModel: ObservableObject {
   @Published public var gatewayCorePromptChosen = false
   /// What the machine contributes and nobody edits here: the file the daemon read.
   @Published public var gatewayMachinePrompt: MachinePromptPreview?
+  /// What each group gives a bot today; empty until the daemon has answered once.
+  @Published public var toolCatalog: [ToolGroupCatalog] = []
   @Published public var gatewayProbe: GatewayProbe?
   @Published public var gatewayBusy = false
   @Published public var gatewayMessage: String?
@@ -101,6 +103,7 @@ public final class SettingsViewModel: ObservableObject {
       let settings = snapshot.settings
       gateway = settings
       gatewayMachinePrompt = snapshot.machinePrompt
+      if let tools = snapshot.tools { toolCatalog = tools }
       gatewayLoaded = true
       if gatewayBaseURL.isEmpty { gatewayBaseURL = settings.baseUrl }
       if gatewayModel.isEmpty { gatewayModel = settings.model }
@@ -214,6 +217,7 @@ public final class SettingsViewModel: ObservableObject {
         corePrompt: gatewayCorePrompt, toolGroups: resolvedToolGroups)
       gateway = snapshot.settings
       gatewayMachinePrompt = snapshot.machinePrompt
+      if let tools = snapshot.tools { toolCatalog = tools }
       gatewayCorePrompt = snapshot.settings.corePrompt
       gatewayCorePromptChosen = false
       gatewayLoaded = true

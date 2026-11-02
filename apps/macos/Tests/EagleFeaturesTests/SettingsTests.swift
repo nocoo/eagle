@@ -723,6 +723,44 @@ struct SettingsGatewayTests {
     GatewayHTTPStub.handler = nil
   }
 
+  @Test("the tools page learns what each group holds from the daemon")
+  func loadsToolCatalog() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    GatewayHTTPStub.handler = { _ in
+      (
+        200,
+        Data(
+          #"""
+          {"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true},"machinePrompt":null,"tools":[{"group":"coding","tools":[{"name":"bash","description":"Run a command."},{"name":"read","description":"Read a file."}]},{"group":"search","tools":[]}]}
+          """#.utf8)
+      )
+    }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    await model.loadGateway()
+    #expect(model.toolCatalog.map(\.group) == ["coding", "search"])
+    #expect(model.toolCatalog.first?.tools.map(\.name) == ["bash", "read"])
+    #expect(model.toolCatalog.first?.tools.first?.description == "Run a command.")
+    #expect(model.toolCatalog.last?.tools.isEmpty == true, "an empty group stays listed")
+    GatewayHTTPStub.handler = nil
+  }
+
+  @Test("a daemon without a catalogue leaves the tool list empty rather than guessing")
+  func loadsWithoutToolCatalog() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    GatewayHTTPStub.handler = { _ in
+      (
+        200,
+        Data(
+          #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true}}"#
+            .utf8)
+      )
+    }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    await model.loadGateway()
+    #expect(model.toolCatalog.isEmpty)
+    GatewayHTTPStub.handler = nil
+  }
+
   @Test("both core prompts are on by default and can be switched off")
   func defaults() {
     let model = SettingsViewModel()

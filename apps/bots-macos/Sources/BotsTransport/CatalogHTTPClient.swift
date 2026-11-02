@@ -47,11 +47,39 @@ public struct MachinePromptPreview: Decodable, Sendable, Equatable {
   }
 }
 
+/// One tool a group contributes: what it is called and what it is for.
+public struct ToolDescription: Decodable, Sendable, Equatable, Identifiable {
+  public var name: String
+  public var description: String
+
+  public var id: String { name }
+
+  public init(name: String, description: String) {
+    self.name = name
+    self.description = description
+  }
+}
+
+/// What one tool group gives a bot today, so the settings page shows the surface a switch owns.
+public struct ToolGroupCatalog: Decodable, Sendable, Equatable, Identifiable {
+  public var group: String
+  public var tools: [ToolDescription]
+
+  public var id: String { group }
+
+  public init(group: String, tools: [ToolDescription]) {
+    self.group = group
+    self.tools = tools
+  }
+}
+
 /// One read of the daemon's settings: the values that can be edited, plus what the machine
 /// contributes to every prompt and never accepts edits for.
 public struct BotSettingsSnapshot: Sendable, Equatable {
   public var settings: GatewaySettings
   public var machinePrompt: MachinePromptPreview?
+  /// Absent from a daemon that predates the catalogue; nil then, so the page shows no list.
+  public var tools: [ToolGroupCatalog]?
 }
 
 /// The daemon's probe of a gateway: reachability, auth and how long it took.
@@ -259,10 +287,12 @@ public final class CatalogHTTPClient: CatalogPort, Sendable {
     struct Payload: Decodable {
       let settings: GatewaySettings
       let machinePrompt: MachinePromptPreview?
+      let tools: [ToolGroupCatalog]?
     }
     let payload = try await request(
       path: "/v1/settings", method: "GET", body: nil, as: Payload.self)
-    return BotSettingsSnapshot(settings: payload.settings, machinePrompt: payload.machinePrompt)
+    return BotSettingsSnapshot(
+      settings: payload.settings, machinePrompt: payload.machinePrompt, tools: payload.tools)
   }
 
   /// Saving applies the gateway to new bots and moves live conversations to the model and level.
@@ -293,10 +323,12 @@ public final class CatalogHTTPClient: CatalogPort, Sendable {
     struct Payload: Decodable {
       let settings: GatewaySettings
       let machinePrompt: MachinePromptPreview?
+      let tools: [ToolGroupCatalog]?
     }
     let payload = try await request(
       path: "/v1/settings", method: "PUT", body: body, as: Payload.self)
-    return BotSettingsSnapshot(settings: payload.settings, machinePrompt: payload.machinePrompt)
+    return BotSettingsSnapshot(
+      settings: payload.settings, machinePrompt: payload.machinePrompt, tools: payload.tools)
   }
 
   /// Probes the values typed in the form; an omitted key tests the stored one.

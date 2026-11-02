@@ -1,5 +1,23 @@
 # 用户视角检查点
 
+## 2026-11-02 19:10 +08 — the tool surface is readable in Settings
+
+- User-facing: every row on the 工具 page opens to the tools that group gives a bot right now,
+  each with the daemon's own one-line description. Group lines were rewritten as positioning
+  ("读、写、改文件与执行命令…") instead of naming tools, so adding a tool no longer stales the
+  copy. Nothing on the page can disable a single tool: the group switch is still the only
+  control, and the daemon gained no per-tool setting.
+- The daemon answers the catalogue from the registry it installs, built once at start with
+  hosts that refuse to run: `describeToolCatalog(createCatalogRegistry())`. `tool_search` is
+  excluded because it is how a deferred group arrives, not a tool of the group. Reported in
+  both `/v1/settings` responses, additive and read-only.
+- Verified locally: Bots `npm run check` (its own gate, 194 files linted, coverage 95.37 /
+  88.44 / 90.45), macOS Swift tests 216 + 48 + 60 + 27, strict `swift format` lint, and a
+  snapshot of the expanded 搜索 group. No Herdr collection, website authentication, D1 or
+  public deployment was involved.
+- Next broken hop: the owner reviews the expanded rows by hand; per-tool switches remain
+  unbuilt by choice, so a group is still all-or-nothing for the model.
+
 ## 2026-11-02 17:40 +08 — settings layout unified on the 服务 shape
 
 - User-facing: 通用, 模型, 工具, 提示词, 服务, 设备, 用量 and 关于 now share one section card:

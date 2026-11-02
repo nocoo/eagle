@@ -5,6 +5,11 @@
 - Settings → `提示词` is its own tab: the two core prompts (the standing instruction and the
   read-only machine AGENTS.md) leave the 工具 page, which now holds only the tool switches.
   Each page saves its own section and says so.
+- The 工具 page opens every group: one chevron shows the tools that group gives a bot, with
+  the daemon's own description of each. Group lines now say what a group is for instead of
+  naming its tools, so an added tool does not stale the copy. The catalogue is read-only —
+  the group switch is still the only thing that changes what a bot can do.
+- The settings rail keeps the main window's surface: grey field, white card for the open tab.
 - Every settings page follows the 服务 section shape: a card header names the section and
   carries its control, rows sit on one 16 pt rhythm with hairline dividers, and the result
   of an action closes the card that produced it. The 用量与账单 tab is now 用量.

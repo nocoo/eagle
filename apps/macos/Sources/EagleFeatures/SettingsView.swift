@@ -17,15 +17,19 @@ public struct SettingsView: View {
   private let showsCloseButton: Bool
   /// The width every text field on a settings row takes, so the right column lines up.
   private static let fieldWidth: CGFloat = 300
+  /// Which tool groups are open; collapsed by default, the page reads as a list of switches.
+  @State private var expandedToolGroups: Set<String> = []
 
   public init(
     model: SettingsViewModel = SettingsViewModel(),
     onClose: @escaping () -> Void = {},
     daemon: BotsDaemonSupervisor? = nil,
     devices: DeviceSettingsViewModel = .shared,
-    showsCloseButton: Bool = true
+    showsCloseButton: Bool = true,
+    expandsToolGroups: Set<String> = []
   ) {
     _model = StateObject(wrappedValue: model)
+    _expandedToolGroups = State(initialValue: expandsToolGroups)
     self.onClose = onClose
     self.daemon = daemon
     self.devices = devices
@@ -333,7 +337,9 @@ public struct SettingsView: View {
     .task { @MainActor in await model.loadGatewayIfNeeded() }
   }
 
-  /// The 工具 page: every group a person can switch, one row each.
+  /// The 工具 page: every group a person can switch, one row each, and the tools it gives one
+  /// chevron away. Group lines say what the group is for, never which tools it holds: the list
+  /// under the row is the daemon's own answer, and it changes without a new App release.
   private var tools: some View {
     sectionCard(
       "可用工具", detail: "Bot 能做的事，改完从下一轮开始生效"
@@ -346,28 +352,32 @@ public struct SettingsView: View {
         .disabled(model.gatewayBusy)
       }
     } body: {
-      toolRow("Core 基础工具", detail: "列出文件与目录；始终启用", alwaysOn: true)
+      toolGroupRow(
+        "core", "Core 基础工具", detail: "工作区的文件浏览，和 Bot 在侧栏里的那一行状态",
+        alwaysOn: true)
       Divider().overlay(Theme.Palette.line)
-      toolRow("Coding 编码工具", detail: "原生读取、写入、编辑与命令执行；始终启用", alwaysOn: true)
+      toolGroupRow(
+        "coding", "Coding 编码工具", detail: "读、写、改文件与执行命令；Bot 干活的主力",
+        alwaysOn: true)
       Divider().overlay(Theme.Palette.line)
-      toolRow(
-        "Herdr 终端协作", detail: "让 Bot 开终端工作区、派发和读取子 agent",
+      toolGroupRow(
+        "herdr", "Herdr 终端协作", detail: "把终端工作区当作 Bot 的手脚：开、派发、读回",
         group: SettingsViewModel.herdrToolGroup)
       Divider().overlay(Theme.Palette.line)
-      toolRow(
-        "子 Agent", detail: "把独立任务委派给子 agent，拿回它的答案",
+      toolGroupRow(
+        "agents", "子 Agent", detail: "把独立任务交给子 agent，等它拿回结果",
         group: SettingsViewModel.agentsToolGroup)
       Divider().overlay(Theme.Palette.line)
-      toolRow(
-        "搜索", detail: "web_search 与 web_fetch；在“服务”里保存 Key 并选择搜索服务商",
+      toolGroupRow(
+        "search", "搜索", detail: "按需查网页并读正文；服务商在“服务”里配置",
         group: SettingsViewModel.searchToolGroup)
       Divider().overlay(Theme.Palette.line)
-      toolRow(
-        "触发器", detail: "Bot 自己设置定时任务与 Webhook；开关与详情在侧栏，修改仍由 Bot 完成",
+      toolGroupRow(
+        "trigger", "触发器", detail: "让 Bot 自己安排定时任务与 Webhook；开关在侧栏",
         group: SettingsViewModel.triggerToolGroup)
       Divider().overlay(Theme.Palette.line)
-      toolRow(
-        "Bot 互通", detail: "让 Bot 一对一给别的 Bot 发消息并读回它的回答；每个来回每边最多 10 条",
+      toolGroupRow(
+        "peers", "Bot 互通", detail: "让 Bot 之间一对一对话，每个来回都有上限",
         group: SettingsViewModel.peersToolGroup)
       if let message = model.gatewayMessage {
         Divider().overlay(Theme.Palette.line)
@@ -378,24 +388,90 @@ public struct SettingsView: View {
     .task { @MainActor in await model.loadGatewayIfNeeded() }
   }
 
-  /// One tool switch. The two core groups run always; the rest follow the person's choice.
-  private func toolRow(
-    _ title: String, detail: String, group: String = "", alwaysOn: Bool = false
+  /// One tool group: its name, what it is for, its switch, and its own tools when opened.
+  private func toolGroupRow(
+    _ id: String,
+    _ title: String,
+    detail: String,
+    group: String = "",
+    alwaysOn: Bool = false
   ) -> some View {
-    SettingsSectionRow(title, detail: detail) {
-      if alwaysOn {
-        Toggle("", isOn: .constant(true))
+    let expanded = expandedToolGroups.contains(id)
+    return VStack(alignment: .leading, spacing: 0) {
+      HStack(alignment: .center, spacing: 12) {
+        Button {
+          withAnimation(.easeOut(duration: 0.16)) {
+            if expanded {
+              expandedToolGroups.remove(id)
+            } else {
+              expandedToolGroups.insert(id)
+            }
+          }
+        } label: {
+          HStack(alignment: .center, spacing: 8) {
+            Image(systemName: "chevron.right")
+              .font(.system(size: 10, weight: .semibold))
+              .foregroundStyle(Theme.Palette.textMuted)
+              .rotationEffect(.degrees(expanded ? 90 : 0))
+            VStack(alignment: .leading, spacing: 3) {
+              Text(title)
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.Palette.textPrimary)
+              Text(detail)
+                .font(Theme.TypeScale.note)
+                .foregroundStyle(Theme.Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+          }
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title)的工具")
+        .accessibilityValue(expanded ? "已展开" : "已折叠")
+        Spacer(minLength: 0)
+        Toggle("", isOn: alwaysOn ? .constant(true) : toolGroupBinding(group))
           .labelsHidden()
           .toggleStyle(.switch)
           .tint(Theme.Palette.accentStrong)
-          .disabled(true)
-      } else {
-        Toggle("", isOn: toolGroupBinding(group))
-          .labelsHidden()
-          .toggleStyle(.switch)
-          .tint(Theme.Palette.accentStrong)
+          .disabled(alwaysOn)
+      }
+      .padding(.vertical, 16)
+      if expanded {
+        toolList(for: group)
+          .padding(.bottom, 16)
       }
     }
+  }
+
+  /// What the daemon says the group holds right now, in its own words.
+  @ViewBuilder private func toolList(for group: String) -> some View {
+    let tools = model.toolCatalog.first { $0.group == group }?.tools ?? []
+    VStack(alignment: .leading, spacing: 10) {
+      if model.toolCatalog.isEmpty {
+        Text("还没有读到工具清单")
+          .font(Theme.TypeScale.note)
+          .foregroundStyle(Theme.Palette.textMuted)
+      } else if tools.isEmpty {
+        Text("这一组现在没有可用的工具")
+          .font(Theme.TypeScale.note)
+          .foregroundStyle(Theme.Palette.textMuted)
+      } else {
+        ForEach(tools) { tool in
+          HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(tool.name)
+              .font(Theme.TypeScale.mono)
+              .foregroundStyle(Theme.Palette.textPrimary)
+              .frame(width: 132, alignment: .leading)
+            Text(tool.description)
+              .font(Theme.TypeScale.note)
+              .foregroundStyle(Theme.Palette.textSecondary)
+              .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+          }
+        }
+      }
+    }
+    .padding(.leading, 18)
   }
 
   /// What the machine contributes, read-only: the file a person would open and what it says.

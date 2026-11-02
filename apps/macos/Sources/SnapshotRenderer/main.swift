@@ -249,8 +249,21 @@ struct SnapshotRenderer {
 
     let tools = SettingsViewModel()
     tools.selection = .tools
+    tools.toolCatalog = [
+      ToolGroupCatalog(
+        group: "search",
+        tools: [
+          ToolDescription(
+            name: "web_search",
+            description:
+              "Search the live web and return ranked pages (title, URL, snippet, summary)."),
+          ToolDescription(
+            name: "web_fetch",
+            description: "Fetch one web page and return its title and content as Markdown."),
+        ])
+    ]
     capture(
-      SettingsView(model: tools).preferredColorScheme(.light),
+      SettingsView(model: tools, expandsToolGroups: ["search"]).preferredColorScheme(.light),
       size: CGSize(width: 920, height: 720),
       named: "settings-tools",
       in: directory
