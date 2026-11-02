@@ -16,6 +16,7 @@ struct HerdrTeamsLayoutTests {
     control.directory = managedDeviceDirectory()
     if mode == "unavailable" { control.startError = NSError(domain: "fixture", code: 1) }
     if mode == "disabled" { await devices.setEnabled(false) }
+    if mode == "ready" { await devices.startIfNeeded() }
     let metadata = try MetadataLogFixture()
     defer { metadata.remove() }
     try metadata.write(metadata.header + metadata.turn + metadata.window)

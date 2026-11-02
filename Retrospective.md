@@ -1062,3 +1062,6 @@ GitHub runner correctly returned a timeout but scheduled the assertion after
 958 ms, failing CI. The regression now checks completion before the inherited
 pipe holder finishes, rather than treating scheduler latency as product behavior;
 the production timeout and assertions on timeout and cancellation remain.
+A later CI run exposed the Herdr layout fixture checking device readiness before
+its asynchronous startup completed. The ready case now waits for startup before
+rendering, retaining the same readiness and accessibility assertions.
