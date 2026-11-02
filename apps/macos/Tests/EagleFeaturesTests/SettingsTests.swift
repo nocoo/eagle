@@ -269,7 +269,8 @@ struct SettingsGatewayTests {
     #expect(model.gatewayBaseURL == "http://typed/v1")
     #expect(model.gatewayModel == "typed-model")
     #expect(
-      model.gatewayToolGroups == ["persona", "machine", "core", "coding", "agents", "trigger"])
+      model.gatewayToolGroups
+        == ["persona", "machine", "core", "coding", "memory", "agents", "trigger"])
     GatewayHTTPStub.handler = nil
   }
 
@@ -377,7 +378,7 @@ struct SettingsGatewayTests {
     model.setToolGroup("herdr", isOn: true)
     #expect(
       model.gatewayToolGroups
-        == ["persona", "machine", "core", "coding", "herdr", "agents", "trigger"])
+        == ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"])
   }
 
   @Test("loadGatewayIfNeeded fetches only once")
@@ -526,11 +527,11 @@ struct SettingsGatewayTests {
       let parsed = try JSONSerialization.jsonObject(with: try #require(body)) as? [String: Any]
       #expect(
         parsed?["toolGroups"] as? [String]
-          == ["persona", "machine", "core", "coding", "herdr", "agents", "trigger"])
+          == ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"])
       return (
         200,
         Data(
-          #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true,"toolGroups":["persona","machine","core","coding","herdr","agents","trigger"]}}"#
+          #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true,"toolGroups":["persona","machine","core","coding","memory","herdr","agents","trigger"]}}"#
             .utf8)
       )
     }
@@ -550,7 +551,7 @@ struct SettingsGatewayTests {
       let parsed = try JSONSerialization.jsonObject(with: try #require(body)) as? [String: Any]
       #expect(
         parsed?["toolGroups"] as? [String]
-          == ["persona", "machine", "core", "coding", "agents", "trigger"])
+          == ["persona", "machine", "core", "coding", "memory", "agents", "trigger"])
       return (
         200,
         Data(
@@ -590,7 +591,11 @@ struct SettingsGatewayTests {
     model.gatewayModel = "m1"
     await model.saveGateway()
     #expect(
-      saved == ["persona", "machine", "core", "coding", "herdr", "agents", "search", "trigger"])
+      saved
+        == [
+          "persona", "machine", "core", "coding", "memory", "herdr", "agents", "search",
+          "trigger",
+        ])
 
     GatewayHTTPStub.handler = { request in
       #expect(request.httpMethod == "GET")
@@ -605,6 +610,17 @@ struct SettingsGatewayTests {
     await reloaded.loadGateway()
     #expect(reloaded.isToolGroupEnabled("search"), "a stored search group survives the read")
     GatewayHTTPStub.handler = nil
+  }
+
+  @Test("the memory group is on by default and can be switched off")
+  func memoryGroup() {
+    let model = SettingsViewModel()
+    #expect(model.isToolGroupEnabled("memory"), "a new group starts on")
+    model.setToolGroup("memory", isOn: false)
+    #expect(model.isToolGroupEnabled("memory") == false)
+    #expect(
+      model.gatewayToolGroups
+        == ["persona", "machine", "core", "coding", "herdr", "agents", "trigger"])
   }
 
   @Test("saveGateway surfaces daemon errors")
@@ -718,7 +734,7 @@ struct SettingsGatewayTests {
     await model.savePrompts()
     #expect(
       body?["toolGroups"] as? [String]
-        == ["persona", "core", "coding", "herdr", "agents", "search"],
+        == ["persona", "core", "coding", "memory", "herdr", "agents", "search"],
       "only the two prompt groups changed, and the order is the daemon's")
     GatewayHTTPStub.handler = nil
   }

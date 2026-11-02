@@ -361,6 +361,10 @@ public struct SettingsView: View {
         alwaysOn: true)
       Divider().overlay(Theme.Palette.line)
       toolGroupRow(
+        "memory", "记忆", detail: "跨对话的长期记忆：全局共享与本 Bot 专属，用文件存放，可脚本编辑",
+        group: SettingsViewModel.memoryToolGroup)
+      Divider().overlay(Theme.Palette.line)
+      toolGroupRow(
         "herdr", "Herdr 终端协作", detail: "把终端工作区当作 Bot 的手脚：开、派发、读回",
         group: SettingsViewModel.herdrToolGroup)
       Divider().overlay(Theme.Palette.line)

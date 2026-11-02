@@ -30,7 +30,7 @@ public struct GatewaySettings: Decodable, Sendable, Equatable {
     thinkingLevel = try container.decodeIfPresent(String.self, forKey: .thinkingLevel) ?? "medium"
     toolGroups =
       try container.decodeIfPresent([String].self, forKey: .toolGroups)
-      ?? ["persona", "machine", "core", "coding", "herdr", "agents", "trigger"]
+      ?? ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"]
     corePrompt = try container.decodeIfPresent(String.self, forKey: .corePrompt) ?? ""
   }
 }

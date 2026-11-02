@@ -146,7 +146,8 @@ final class CatalogHTTPClientTests: XCTestCase {
     // A daemon that predates the level or the groups reports none; the client assumes defaults.
     XCTAssertEqual(loaded.settings.thinkingLevel, "medium")
     XCTAssertEqual(
-      loaded.settings.toolGroups, ["persona", "machine", "core", "coding", "herdr", "agents", "trigger"])
+      loaded.settings.toolGroups,
+      ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"])
     // An omitted key must not be sent, so the daemon keeps the stored one.
     let saved = try await client.saveGateway(
       baseURL: "http://x/v1", model: "m2", thinkingLevel: "xhigh", toolGroups: ["core", "coding"],
