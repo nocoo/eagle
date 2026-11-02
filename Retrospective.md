@@ -1097,3 +1097,11 @@ The first coverage run also found a separate collision cleanup bug in the bundle
 Bots supervisor fixture: `rmSync` was called on a directory without recursive
 mode. Injecting the collision reproduced the failure; the fixture now removes
 only its own temporary directory recursively, and the full coverage run passes.
+
+The next CI run reached the device switch test and saw the enable state before
+its nested startup task incremented the fixture's start count. A gated start
+reproduced the exact failure. The test now waits for the actual stopped state,
+then releases the controlled startup and waits for readiness; its switch and
+start-count assertions remain. An initial short-circuit expression failed Swift
+compilation because the throwing operator itself needed `try`; separating the
+guard from the throwing call fixed the compile error.

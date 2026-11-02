@@ -273,6 +273,7 @@ struct DeviceSettingsViewModelTests {
   var stops = 0
   var openedSettings = 0
   var stopGate: (() async -> Void)?
+  var startGate: (() async -> Void)?
   var statusGate: (() async -> Void)?
   var stopError: (any Error)?
   var startError: (any Error)?
@@ -285,6 +286,7 @@ struct DeviceSettingsViewModelTests {
   func start(
     confirm: @escaping @MainActor @Sendable (DeviceApprovalRequest) async -> Bool
   ) async throws {
+    await startGate?()
     starts += 1
     if let startError { throw startError }
     self.confirm = confirm

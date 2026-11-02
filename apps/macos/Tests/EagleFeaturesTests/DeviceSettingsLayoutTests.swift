@@ -184,13 +184,33 @@ struct DeviceSettingsLayoutTests {
     let press = NSSelectorFromString("accessibilityPerformPress")
     try #require(toggle.responds(to: press))
     toggle.perform(press)
-    try await Task.sleep(for: .milliseconds(50))
+    try await waitUntil { control.stops == 1 && !model.enabled && !model.controlsBusy }
     #expect(control.stops == 1)
     #expect(!model.enabled)
-    #expect(attribute(toggle, "AXValue") as? Int == 0, "a stopped service reads as off")
+    try await waitUntil {
+      guard
+        let node = entries(host).first(where: {
+          attribute($0, "AXIdentifier") as? String == "devices.service"
+        })
+      else { return false }
+      guard attribute(node, "AXValue") as? Int == 0 else { return false }
+      return try isEnabled(node)
+    }
+    let stopped = try #require(
+      entries(host).first { attribute($0, "AXIdentifier") as? String == "devices.service" })
+    #expect(attribute(stopped, "AXValue") as? Int == 0, "a stopped service reads as off")
 
-    toggle.perform(press)
-    try await Task.sleep(for: .milliseconds(50))
+    var releaseStart: CheckedContinuation<Void, Never>?
+    control.startGate = { await withCheckedContinuation { releaseStart = $0 } }
+    defer { releaseStart?.resume() }
+    stopped.perform(press)
+    try await waitUntil { releaseStart != nil }
+    #expect(model.enabled)
+    #expect(control.starts == 1)
+    let release = try #require(releaseStart)
+    releaseStart = nil
+    release.resume()
+    try await waitUntil { control.starts == 2 && model.localReady }
     #expect(control.starts == 2)
     #expect(model.enabled)
   }
@@ -233,6 +253,15 @@ struct DeviceSettingsLayoutTests {
     let legacy = NSSelectorFromString("accessibilityAttributeValue:")
     guard node.responds(to: legacy) else { return nil }
     return node.perform(legacy, with: name)?.takeUnretainedValue()
+  }
+
+  private func waitUntil(_ condition: () throws -> Bool) async throws {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+    while ContinuousClock.now < deadline {
+      if try condition() { return }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    throw NSError(domain: "DeviceSettingsLayoutTests", code: 1)
   }
 
   private func isEnabled(_ element: NSObject) throws -> Bool {
