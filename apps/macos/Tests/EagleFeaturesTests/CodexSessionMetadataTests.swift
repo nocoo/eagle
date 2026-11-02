@@ -27,18 +27,57 @@ struct CodexSessionMetadataTests {
     let reader = CodexSessionMetadataReader(root: fixture.root)
     _ = await reader.read(sessionID: fixture.id)
     let next =
-      #"{"type":"turn_context","payload":{"model":"gpt-6.1-sol","reasoning_effort":"xhigh"}}"#
+      #"{"type":"turn_context","payload":{"turn_id":"turn-2","model":"gpt-6.1-sol","reasoning_effort":"xhigh"}}"#
     try fixture.append(next)
     #expect(await reader.read(sessionID: fixture.id).model == "gpt-6-astra")
     try fixture.append("\n")
     #expect(
       await reader.read(sessionID: fixture.id)
         == HerdrAgentMetadata(model: "gpt-6.1-sol", reasoningEffort: "xhigh"))
-    try fixture.append(fixture.window)
+    try fixture.append(fixture.window.replacingOccurrences(of: "turn-1", with: "turn-2"))
     #expect(await reader.read(sessionID: fixture.id).contextWindow == 257_400)
     try fixture.append(#"{"type":"turn_context","payload":{"model":"another-model"}}"# + "\n")
     #expect(
       await reader.read(sessionID: fixture.id) == HerdrAgentMetadata(model: "another-model"))
+  }
+
+  @Test("turn boundaries never mix models with another turn's context window")
+  func turnBoundaries() async throws {
+    let fixture = try MetadataLogFixture()
+    defer { fixture.remove() }
+    let startA =
+      #"{"type":"event_msg","payload":{"type":"task_started","turn_id":"a","model_context_window":100000}}"#
+      + "\n"
+    let contextA =
+      #"{"type":"turn_context","payload":{"turn_id":"a","model":"model-a","effort":"high"}}"# + "\n"
+    let startB =
+      #"{"type":"event_msg","payload":{"type":"task_started","turn_id":"b","model_context_window":200000}}"#
+      + "\n"
+    let contextB =
+      #"{"type":"turn_context","payload":{"turn_id":"b","model":"model-b","effort":"xhigh"}}"#
+      + "\n"
+    try fixture.write(fixture.header + startA)
+    let reader = CodexSessionMetadataReader(root: fixture.root)
+    #expect(await reader.read(sessionID: fixture.id) == HerdrAgentMetadata(contextWindow: 100_000))
+    try fixture.append(contextA)
+    #expect(
+      await reader.read(sessionID: fixture.id)
+        == HerdrAgentMetadata(model: "model-a", reasoningEffort: "high", contextWindow: 100_000))
+    try fixture.append(startB)
+    #expect(await reader.read(sessionID: fixture.id) == HerdrAgentMetadata(contextWindow: 200_000))
+    try fixture.append(contextB)
+    #expect(
+      await reader.read(sessionID: fixture.id)
+        == HerdrAgentMetadata(model: "model-b", reasoningEffort: "xhigh", contextWindow: 200_000))
+    try fixture.append(
+      #"{"type":"event_msg","payload":{"type":"token_count","info":{"model_context_window":300000}}}"#
+        + "\n")
+    #expect(
+      await reader.read(sessionID: fixture.id)
+        == HerdrAgentMetadata(model: "model-b", reasoningEffort: "xhigh", contextWindow: 200_000))
+    try fixture.append(
+      #"{"type":"event_msg","payload":{"type":"task_started","turn_id":"c"}}"# + "\n")
+    #expect(await reader.read(sessionID: fixture.id) == HerdrAgentMetadata())
   }
 
   @Test("a large transcript is bounded while recent metadata beyond a small tail remains readable")
@@ -137,7 +176,7 @@ struct CodexSessionMetadataTests {
     defer { fixture.remove() }
     try fixture.write(
       fixture.header + "not-json\n"
-        + #"{"type":"turn_context","payload":{"model":"recorded","collaboration_mode":{"settings":{"reasoning_effort":"high"}}}}"#
+        + #"{"type":"turn_context","payload":{"turn_id":"turn-3","model":"recorded","collaboration_mode":{"settings":{"reasoning_effort":"high"}}}}"#
         + "\n"
         + #"{"type":"event_msg","payload":{"type":"token_count","info":{"model_context_window":-1}}}"#
         + "\n")
@@ -146,7 +185,7 @@ struct CodexSessionMetadataTests {
       await reader.read(sessionID: fixture.id)
         == HerdrAgentMetadata(model: "recorded", reasoningEffort: "high"))
     try fixture.append(
-      #"{"type":"event_msg","payload":{"type":"task_started","model_context_window":1000000}}"#
+      #"{"type":"event_msg","payload":{"type":"task_started","turn_id":"turn-3","model_context_window":1000000}}"#
         + "\n")
     #expect(await reader.read(sessionID: fixture.id).contextWindow == 1_000_000)
     try fixture.append(#"{"type":"turn_context","payload":{"model":"","effort":""}}"# + "\n")
@@ -159,9 +198,11 @@ struct MetadataLogFixture {
   let id = "11111111-1111-4111-8111-111111111111"
   var file: URL { root.appendingPathComponent("2026/11/02/rollout-test-\(id).jsonl") }
   var header: String { #"{"type":"session_meta","payload":{"id":""# + id + #""}}"# + "\n" }
-  let turn = #"{"type":"turn_context","payload":{"model":"gpt-6-astra","effort":"max"}}"# + "\n"
+  let turn =
+    #"{"type":"turn_context","payload":{"turn_id":"turn-1","model":"gpt-6-astra","effort":"max"}}"#
+    + "\n"
   let window =
-    #"{"type":"event_msg","payload":{"type":"token_count","info":{"model_context_window":257400}}}"#
+    #"{"type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","model_context_window":257400}}"#
     + "\n"
 
   init() throws {

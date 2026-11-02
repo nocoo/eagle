@@ -39,7 +39,7 @@ actor CodexSessionMetadataReader {
       if let previous, previous.file == file, previous.inode == inode,
         previous.size == size, previous.modified == modified
       {
-        return previous.metadata
+        return previous.state.metadata
       }
 
       let handle = try FileHandle(forReadingFrom: file)
@@ -57,13 +57,13 @@ actor CodexSessionMetadataReader {
       // Keep reads bounded; add a metadata index only if larger turns require it.
       var start = size > readLimit ? size - readLimit : 0
       var skipsFirstLine = start > 0
-      var metadata = HerdrAgentMetadata()
+      var state = TurnState()
       if let previous, previous.file == file, previous.inode == inode, size > previous.size,
         size - previous.offset <= readLimit
       {
         start = previous.offset
         skipsFirstLine = false
-        metadata = previous.metadata
+        state = previous.state
       }
       try Task.checkCancellation()
       try handle.seek(toOffset: start)
@@ -76,30 +76,39 @@ actor CodexSessionMetadataReader {
           .enumerated()
         {
           if skipsFirstLine && index == 0 { continue }
-          guard line.contains("\"turn_context\"") || line.contains("\"model_context_window\""),
+          guard
+            line.contains("\"turn_context\"") || line.contains("\"task_started\"")
+              || line.contains("\"model_context_window\""),
             let event = Self.decode(Data(line.utf8))
           else { continue }
           let payload = event.payload
+          let turn = Self.clean(payload.turnId)
+          let matches = turn != nil && turn == state.turnId
           if event.type == "turn_context" {
-            metadata = HerdrAgentMetadata(
+            state.metadata = HerdrAgentMetadata(
               model: Self.clean(payload.model),
               reasoningEffort: Self.clean(
                 payload.effort ?? payload.reasoningEffort
                   ?? payload.collaborationMode?.settings?.reasoningEffort),
-              contextWindow: Self.positive(payload.modelContextWindow))
-          } else if event.type == "event_msg",
-            ["task_started", "token_count"].contains(payload.type),
+              contextWindow: Self.positive(payload.modelContextWindow)
+                ?? (matches ? state.metadata.contextWindow : nil))
+            state.turnId = turn
+          } else if event.type == "event_msg", payload.type == "task_started" {
+            if !matches { state.metadata = HerdrAgentMetadata() }
+            state.turnId = turn
+            state.metadata.contextWindow = Self.positive(payload.modelContextWindow)
+          } else if event.type == "event_msg", payload.type == "token_count", matches,
             let window = Self.positive(
               payload.modelContextWindow ?? payload.info?.modelContextWindow)
           {
-            metadata.contextWindow = window
+            state.metadata.contextWindow = window
           }
         }
       }
       cache[id] = Cached(
-        file: file, size: size, inode: inode, modified: modified, offset: offset, metadata: metadata
+        file: file, size: size, inode: inode, modified: modified, offset: offset, state: state
       )
-      return metadata
+      return state.metadata
     } catch {
       cache[id] = nil
       return HerdrAgentMetadata()
@@ -145,13 +154,18 @@ actor CodexSessionMetadataReader {
     return try? decoder.decode(Event.self, from: data)
   }
 
+  private struct TurnState {
+    var turnId: String?
+    var metadata = HerdrAgentMetadata()
+  }
+
   private struct Cached {
     let file: URL
     let size: UInt64
     let inode: UInt64
     let modified: Date
     let offset: UInt64
-    let metadata: HerdrAgentMetadata
+    let state: TurnState
   }
 
   private struct Event: Decodable {
@@ -159,6 +173,7 @@ actor CodexSessionMetadataReader {
     let payload: Payload
     struct Payload: Decodable {
       let id: String?
+      let turnId: String?
       let type: String?
       let model: String?
       let effort: String?
@@ -168,13 +183,15 @@ actor CodexSessionMetadataReader {
       let collaborationMode: Collaboration?
 
       enum CodingKeys: String, CodingKey {
-        case id, type, model, effort, reasoningEffort, modelContextWindow, info, collaborationMode
+        case id, turnId, type, model, effort, reasoningEffort, modelContextWindow, info,
+          collaborationMode
       }
 
       // An invalid optional field must not hide the current turn's model change.
       init(from decoder: Decoder) throws {
         let container = try? decoder.container(keyedBy: CodingKeys.self)
         id = try? container?.decode(String.self, forKey: .id)
+        turnId = try? container?.decode(String.self, forKey: .turnId)
         type = try? container?.decode(String.self, forKey: .type)
         model = try? container?.decode(String.self, forKey: .model)
         effort = try? container?.decode(String.self, forKey: .effort)

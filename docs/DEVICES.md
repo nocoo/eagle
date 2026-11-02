@@ -59,8 +59,10 @@ Model details are optional local enrichment, independent of lifecycle state.
 For Codex, a matching `agent_session` kind and exact session ID identify the
 session log under `CODEX_HOME/sessions` (default `~/.codex/sessions`); the log's
 session header must agree. Only model, reasoning effort and context-window
-metadata are retained. Unchanged files reuse cached metadata; growing files are
-read incrementally, from the last complete record. Discovery is limited to one
+metadata are retained. A window is associated with a model only when the events
+share a recorded turn ID; unassociated token counts cannot supply a window.
+Unchanged files reuse cached metadata; growing files are read incrementally, from
+the last complete record. Discovery is limited to one
 scan per 30 seconds and 10,000 entries; initial, replacement and large-gap reads
 use at most the last 8 MiB, after validating a session header within 64 KiB.
 Metadata outside these bounds remains unknown until it is recorded again.
