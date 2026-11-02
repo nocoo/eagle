@@ -95,7 +95,7 @@ struct HerdrTeamsViewModelTests {
   }
 }
 
-@MainActor private final class HerdrObservationClock {
+@MainActor final class HerdrObservationClock {
   var waiter: CheckedContinuation<Void, any Error>?
 
   func wait() async throws {

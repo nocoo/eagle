@@ -2654,3 +2654,20 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   typography, padding and text wrapping only. Root check (265 tests) and browser
   checks (191 passed, 11 existing platform exclusions) passed earlier and cover
   unchanged sources. No implementation or installation step remains.
+
+## 2026-11-02 17:49 +08 — PR screenshot and CI fixture correction
+
+- PR [#116](https://github.com/nocoo/eagle/pull/116) targets nocoo/main. The three
+  submitted commits merge cleanly with the observed upstream 0.16.1 head. Its
+  description now embeds the reviewed inspector screenshot from an immutable
+  commit URL; the public PNG bytes match the local artifact.
+- The first GitHub CI run passed both jobs. After adding the screenshot, the
+  macOS coverage job exposed the layout fixture's real-time polling race. A
+  delayed local rendering step reproduced it; using the existing controllable
+  observation clock fixes it without changing App behavior or assertions.
+- Native checks pass all 369 cases, including the forced slow-render case, and
+  coverage remains 91.7%. The installed App and its earlier verified five-team,
+  six-member receipt remain applicable; no new installation, Herdr collection,
+  authentication, D1 or cloud change was performed for this correction.
+- Next: push the fixture correction through normal hooks, verify current-head
+  GitHub CI, then send the authorized Teams review request to `nocoli`.

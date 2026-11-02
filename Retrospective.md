@@ -954,3 +954,17 @@ Independent read-only review also found that an equal-size, same-inode log rewri
 was treated as an append after its timestamp changed. A regression test reproduced
 stale model metadata. Reusing the old read offset now requires actual file growth;
 rewrites take the bounded reload path.
+
+## 2026-11-02 — Herdr layout CI timer race
+
+PR #116's screenshot-only follow-up exposed a race in the layout fixture: its
+second read intentionally fails, but a busy CI renderer allowed the real
+three-second polling timer to consume that failure before the fresh-state checks.
+The earlier CI run of the same App code passed. A temporary 3.2-second render
+pause reproduced the two status assertions locally in both device-service cases.
+
+The layout fixture now reuses the observation tests' controllable clock. The same
+slow-render reproduction passes with every original assertion intact, as does the
+91.7% coverage gate. The temporary pause was removed; production timing, test
+limits and release gates are unchanged. Evidence is retained in the ignored
+`herdr-pr-poll-race-red.log` and `herdr-pr-poll-race-green.log` files under `.local/`.

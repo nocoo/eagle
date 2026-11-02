@@ -26,11 +26,14 @@ struct HerdrTeamsLayoutTests {
           .utf8)
     }.read()
     var reads = 0
-    let herdr = HerdrTeamsViewModel(read: {
-      reads += 1
-      if reads > 1 { throw HerdrReadError.unavailable }
-      return snapshot
-    })
+    // Rendering speed must not consume the failure reserved for the refresh action.
+    let clock = HerdrObservationClock()
+    let herdr = HerdrTeamsViewModel(
+      read: {
+        reads += 1
+        if reads > 1 { throw HerdrReadError.unavailable }
+        return snapshot
+      }, observationWait: { try await clock.wait() })
     NSApplication.shared.setActivationPolicy(.prohibited)
     NSApplication.shared.perform(
       NSSelectorFromString("accessibilitySetValue:forAttribute:"),
