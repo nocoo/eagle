@@ -870,16 +870,21 @@ The extension/tool track has its own proposed sequence in
 
 1. Add child discovery with `agent_list`, direct-parent target validation and the
    missing negative/stop/recovery tests for existing delegation tools.
-2. Add optional `memory`: `memory_list`, `memory_search`, `memory_read`,
-   `memory_write`, `memory_delete`, with explicit shared/private scope. Make the
-   one native discovery loader independent of Herdr in this slice.
+2. Add the optional `memory` group whose interface is fixed in
+   [§6.1](EXTENSIONS-AND-TOOLS.md#61-memory-a-persons-notes-and-a-bots-own-notes):
+   `memory_list`, `memory_search`, `memory_read`, `memory_write`, `memory_delete`
+   over `global` (`global.md`) and `bot` (`<botId>.md`) scopes in a person-editable
+   markdown directory, eager rather than deferred, and on by default by decision.
+   Ship the storage behind `MemoryToolHost` so a later store keeps the five calls.
 3. Add optional `search`: `web_search` and `web_fetch`, separating URL discovery
    from page retrieval and proving bounded, cancellable provider calls.
 4. Add optional `peers`: `peer_list`, `peer_send`, `peer_read`, with durable
    cross-Bot admission, observable settlement and bounded routing.
 
-All four tool rows are planned, not implemented. New groups remain optional and
-must not become default-enabled merely by extending the group-name list.
+`search`, `trigger` and `peers` have shipped (as `trigger`/`peers` tool faces);
+`memory` and `agent_list` are designed, not implemented. A new group is never made a
+default by widening the group-name list: `memory` is a default because §6.1 records
+that decision, and any other group needs the same written reason first.
 
 ### What the adapter can do today (rows 23-36, signed off)
 
