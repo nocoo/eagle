@@ -295,6 +295,115 @@ test("bad arguments are refused before anything is sent", async () => {
   assert.equal(tooMany.result.isError, true);
 });
 
+test("the answer must fit the output the tool can return", async () => {
+  const { requests, run } = fixture(() => choiceAnswer({ test: 1, merge: 0 }, "test"));
+  const options = Array.from({ length: 200 }, (_, index) => ({
+    label: `选项${index}`.padEnd(64, "网"),
+  }));
+  const { result, text } = await run("decide", {
+    state: "x",
+    question: "?",
+    options: options.map((option) => ({ label: option.label })),
+  });
+  assert.equal(result.isError, true);
+  assert.match(text, /输出|选项/);
+  assert.deepEqual(requests, [], "an oversized answer is refused before it is paid for");
+});
+
+test("a label the criteria map cannot hold is refused, not dropped", async () => {
+  const { requests, run } = fixture(() => choiceAnswer());
+  const reserved = await run("decide", {
+    state: "x",
+    question: "?",
+    options: [{ label: "__proto__" }, { label: "ok" }],
+  });
+  assert.equal(reserved.result.isError, true);
+  assert.match(reserved.text, /保留|__proto__/);
+
+  const duplicateNone = await run("classify", {
+    state: "x",
+    labels: ["none", "bug"],
+    allowNone: true,
+  });
+  assert.equal(duplicateNone.result.isError, true, "an existing `none` label is not overwritten");
+  assert.deepEqual(requests, []);
+});
+
+test("a blank question and an untyped criterion are refused", async () => {
+  const { requests, run } = fixture(() => choiceAnswer());
+  const blank = await run("decide", {
+    state: "x",
+    question: "   ",
+    options: [{ label: "a" }, { label: "b" }],
+  });
+  assert.equal(blank.result.isError, true);
+  const blankRate = await run("rate", { state: "x", question: "\t", levels: ["a", "b"] });
+  assert.equal(blankRate.result.isError, true);
+  const numberCriterion = await run("judge", {
+    state: "x",
+    questions: [{ id: "q", type: "choice", instructions: "?", criteria: { a: 42, b: null } }],
+  });
+  assert.equal(numberCriterion.result.isError, true, "a criterion must be text, JSON or null");
+  const arrayNoul = await run("judge", {
+    state: "x",
+    questions: [{ id: "q", type: "noul", instructions: "?", criteria: ["a", "b"] }],
+  });
+  assert.equal(arrayNoul.result.isError, true, "noul criteria is a true/false map, not a list");
+  assert.deepEqual(requests, []);
+});
+
+test("a successful call is booked even when the usage write or the token count fails", async () => {
+  const booked: UsageEntry[] = [];
+  const tools = createDecisionTools({
+    client: {
+      async ask(request) {
+        return {
+          answers: Object.fromEntries(
+            Object.keys(request.questions).map((id) => [id, choiceAnswer()]),
+          ),
+          inputTokens: 0,
+        };
+      },
+    },
+    botId: "b_1",
+    meter: { record: (entry) => booked.push(entry) },
+  });
+  const decide = tools.find((tool) => tool.name === "decide");
+  assert.ok(decide);
+  const args = { state: "x", question: "?", options: [{ label: "a" }, { label: "b" }] };
+  const ok = await decide.execute(args as never, {} as never, {} as never);
+  assert.equal(ok.isError, undefined);
+  assert.deepEqual(
+    booked,
+    [{ botId: "b_1", source: "decision", calls: 1 }],
+    "a zero-token count is still one call, not an invisible one",
+  );
+});
+
+test("a usage write that throws does not discard a paid answer", async () => {
+  const tools = createDecisionTools({
+    client: {
+      async ask() {
+        return { answers: { next_step: choiceAnswer() }, inputTokens: 12 };
+      },
+    },
+    botId: "b_1",
+    meter: {
+      record() {
+        throw new Error("the statistics table is full");
+      },
+    },
+  });
+  const decide = tools.find((tool) => tool.name === "decide");
+  assert.ok(decide);
+  const result = await decide.execute(
+    { state: "x", question: "?", options: [{ label: "a" }, { label: "b" }] } as never,
+    {} as never,
+    {} as never,
+  );
+  assert.equal(result.isError, undefined, "the answer is the product; the meter is a side channel");
+});
+
 test("a missing provider becomes an error the model can read", async () => {
   const tools = createDecisionTools({
     client: {

@@ -47,6 +47,12 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const isProbability = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 
+/** Equal key sets, compared one key at a time: a joined string would let "a,b" collide with "b". */
+const sameKeys = (left: readonly string[], right: readonly string[]): boolean =>
+  left.length === right.length &&
+  left.every((key) => right.includes(key)) &&
+  right.every((key) => left.includes(key));
+
 const sumsToOne = (values: readonly number[]): boolean =>
   Math.abs(values.reduce((sum, value) => sum + value, 0) - 1) <= DISTRIBUTION_TOLERANCE;
 
@@ -62,8 +68,7 @@ const readChoice = (
   // Own keys only: a prototype name such as `toString` is not one of the criteria.
   if (typeof choice !== "string" || !Object.hasOwn(criteria, choice)) shapeRefused();
   if (!isObject(answer.probabilities)) shapeRefused();
-  const keys = Object.keys(answer.probabilities).sort();
-  if (keys.join(",") !== Object.keys(criteria).sort().join(",")) shapeRefused();
+  if (!sameKeys(Object.keys(answer.probabilities), Object.keys(criteria))) shapeRefused();
   const values = Object.values(answer.probabilities);
   if (!values.every(isProbability)) shapeRefused();
   if (!sumsToOne(values as number[])) shapeRefused();

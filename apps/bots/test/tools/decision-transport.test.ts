@@ -361,3 +361,50 @@ test("a caller's cancellation is reported as a cancellation, not a timeout", asy
     /请求已取消/,
   );
 });
+
+// Two option sets are equal only when every key matches. A joined string would let the keys
+// {"a,b","c"} pass for {"a","b,c"}, which is a different request.
+test("a comma inside an option name does not make two option sets equal", async () => {
+  const questions = {
+    next_step: {
+      type: "choice" as const,
+      instructions: "?",
+      criteria: { "a,b": "x", c: "y" },
+    },
+  };
+  const valid = await ask(
+    async () =>
+      Response.json({
+        answers: {
+          next_step: {
+            type: "choice",
+            choice: "a,b",
+            probabilities: { "a,b": 0.6, c: 0.4 },
+          },
+        },
+      }),
+    questions,
+  );
+  assert.deepEqual(valid.answers.next_step, {
+    type: "choice",
+    choice: "a,b",
+    probabilities: { "a,b": 0.6, c: 0.4 },
+  });
+  await assert.rejects(
+    () =>
+      ask(
+        async () =>
+          Response.json({
+            answers: {
+              next_step: {
+                type: "choice",
+                choice: "a,b",
+                probabilities: { a: 0.5, "b,c": 0.5 },
+              },
+            },
+          }),
+        questions,
+      ),
+    /System One/,
+  );
+});

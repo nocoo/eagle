@@ -30,7 +30,11 @@ export const NOUL_UNSURE_HIGH = 0.7;
 export const DEFAULT_CLASSIFY_THRESHOLD = 0.7;
 
 const QUESTION_ID = "next_step";
-const RESERVED_IDS = new Set(["__proto__", "constructor", "prototype"]);
+/** A name the criteria map would not hold as an own key, or would shadow. */
+const RESERVED_NAMES = new Set(["__proto__", "constructor", "prototype"]);
+/** A conservative bound on the bytes an answer costs in the tool result: 4 bytes per character
+ *  plus punctuation, so an answer the harness would clip is refused before it is paid for. */
+const ANSWER_HEADROOM = 12 * 1024;
 
 export type DecisionToolOptions = {
   readonly client: DecisionClient;
@@ -106,6 +110,33 @@ const readState = (value: unknown): DecisionEntry | undefined => {
   return undefined;
 };
 
+/** A question the model can answer: not blank, and not something the criteria map cannot hold. */
+const readQuestion = (value: unknown): string | undefined => {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text.length === 0 ? undefined : text;
+};
+
+/** What TypeSafe accepts where text goes: a string, JSON, or null. Not a number, not a boolean. */
+const isEntry = (value: unknown): boolean =>
+  typeof value === "string" ||
+  value === null ||
+  (typeof value === "object" && !Array.isArray(value)) ||
+  Array.isArray(value);
+
+/** Every label must be its own key in the criteria map, so a reserved name is refused. */
+const reservedLabel = (labels: readonly string[]): string | undefined =>
+  labels.find((label) => RESERVED_NAMES.has(label.trim()));
+
+/**
+ * Would the answer fit the text this tool can return? A label costs its own characters twice
+ * (key and probability) plus punctuation, so a legal but huge request is refused here instead
+ * of arriving as a clipped JSON line the model cannot parse.
+ */
+const answerFits = (labels: readonly string[]): boolean => {
+  const characters = labels.reduce((total, label) => total + label.length + 24, 0);
+  return characters * 4 <= ANSWER_HEADROOM;
+};
+
 const readLabels = (value: unknown): string[] | undefined => {
   if (!Array.isArray(value)) return undefined;
   const labels = value.map((label) => (typeof label === "string" ? label.trim() : ""));
@@ -148,11 +179,12 @@ const readJudgeQuestions = (
     return `questions 需要 1-${MAX_JUDGE_QUESTIONS} 道题。`;
   }
   const questions: [string, DecisionQuestion][] = [];
+  const budget: string[] = [];
   const seen = new Set<string>();
   for (const entry of value as readonly QuestionInput[]) {
     const id = typeof entry?.id === "string" ? entry.id.trim() : "";
     if (id.length === 0 || id.length > 64) return "每道题需要一个 1-64 字符的 id。";
-    if (RESERVED_IDS.has(id)) return `题号 ${id} 是保留名，请换一个。`;
+    if (RESERVED_NAMES.has(id)) return `题号 ${id} 是保留名，请换一个。`;
     if (seen.has(id)) return `题号 ${id} 重复了。`;
     seen.add(id);
     if (entry.type !== "choice" && entry.type !== "noul" && entry.type !== "score") {
@@ -170,6 +202,13 @@ const readJudgeQuestions = (
       if (labels.length < 2 || labels.length > MAX_OPTIONS) {
         return `题 ${id} 需要 2-${MAX_OPTIONS} 个选项。`;
       }
+      if (labels.some((label) => RESERVED_NAMES.has(label))) {
+        return `题 ${id} 的选项名里有保留名。`;
+      }
+      if (!Object.values(criteria).every(isEntry)) {
+        return `题 ${id} 的选项描述只能是文本、JSON 或 null。`;
+      }
+      for (const label of labels) budget.push(label);
       questions.push([
         id,
         {
@@ -185,6 +224,10 @@ const readJudgeQuestions = (
       if (!Array.isArray(criteria) || criteria.length < 2 || criteria.length > MAX_LEVELS) {
         return `题 ${id} 是 score，criteria 需要是 2-${MAX_LEVELS} 个等级的数组。`;
       }
+      if (!criteria.every(isEntry)) {
+        return `题 ${id} 的等级描述只能是文本、JSON 或 null。`;
+      }
+      for (const level of criteria) budget.push(typeof level === "string" ? level : "");
       questions.push([
         id,
         {
@@ -196,16 +239,30 @@ const readJudgeQuestions = (
       continue;
     }
     const criteria = entry.criteria;
+    if (criteria !== undefined) {
+      if (typeof criteria !== "object" || criteria === null || Array.isArray(criteria)) {
+        return `题 ${id} 是 noul，criteria 需要是 {true, false} 的对象或省略。`;
+      }
+      if (!Object.values(criteria).every(isEntry)) {
+        return `题 ${id} 的 criteria 只能是文本、JSON 或 null。`;
+      }
+      if (Object.keys(criteria).some((key) => !["true", "false"].includes(key))) {
+        return `题 ${id} 的 noul criteria 只认 true 与 false。`;
+      }
+    }
     questions.push([
       id,
       {
         type: "noul",
         instructions: entry.instructions as DecisionEntry,
-        ...(typeof criteria === "object" && criteria !== null && !Array.isArray(criteria)
-          ? { criteria: criteria as { true?: DecisionEntry; false?: DecisionEntry } }
-          : {}),
+        ...(criteria === undefined
+          ? {}
+          : { criteria: criteria as { true?: DecisionEntry; false?: DecisionEntry } }),
       },
     ]);
+  }
+  if (!answerFits(budget)) {
+    return "答案会超过工具输出上限，请减少题目、选项或缩短文字。";
   }
   return Object.fromEntries(questions);
 };
@@ -219,16 +276,21 @@ export const createDecisionTools = (options: DecisionToolOptions) => {
   ) => {
     try {
       const reply_ = await options.client.ask({ state, questions }, context.abortSignal);
-      if (reply_.inputTokens === undefined) {
-        options.meter?.record({ botId: options.botId, source: "decision", calls: 1 });
-      } else {
-        // Input tokens are what Jev bills; output is free, so nothing is invented here.
-        options.meter?.record({
-          botId: options.botId,
-          source: "decision",
-          tokens: reply_.inputTokens,
-          costUsd: 0,
-        });
+      // Jev bills input only and a relay's price is unknown, so nothing is invented; a call
+      // without a usable token count is still one call, not an invisible one.
+      try {
+        options.meter?.record(
+          reply_.inputTokens === undefined || reply_.inputTokens === 0
+            ? { botId: options.botId, source: "decision", calls: 1 }
+            : {
+                botId: options.botId,
+                source: "decision",
+                tokens: reply_.inputTokens,
+                costUsd: 0,
+              },
+        );
+      } catch {
+        // The statistics are a side channel: a failed booking must not discard a paid answer.
       }
       return reply_;
     } catch (error) {
@@ -269,6 +331,8 @@ export const createDecisionTools = (options: DecisionToolOptions) => {
       execute: async (args, _api, context) => {
         const state = readState(args.state);
         if (state === undefined) return refusal("state 需要是非空文本或一个 JSON 结构。");
+        const question = readQuestion(args.question);
+        if (question === undefined) return refusal("question 不能为空。");
         const options_ = args.options ?? [];
         const labels = options_.map((option) => option.label.trim());
         if (labels.length < 2 || labels.length > MAX_OPTIONS) {
@@ -276,6 +340,14 @@ export const createDecisionTools = (options: DecisionToolOptions) => {
         }
         if (labels.some((label) => label.length === 0) || new Set(labels).size !== labels.length) {
           return refusal("options 的 label 不能为空或重复。");
+        }
+        const reserved = reservedLabel(labels);
+        if (reserved !== undefined) return refusal(`label ${reserved} 是保留名，请换一个。`);
+        if (args.allowNone === true && labels.includes("none")) {
+          return refusal("label 里已经有 none，不要再开 allowNone。");
+        }
+        if (!answerFits(labels)) {
+          return refusal("答案会超过工具输出上限，请减少选项或缩短 label。");
         }
         const criteria: Record<string, string> = {};
         for (const option of options_) {
@@ -288,7 +360,7 @@ export const createDecisionTools = (options: DecisionToolOptions) => {
             {
               [QUESTION_ID]: {
                 type: "choice",
-                instructions: args.question,
+                instructions: question,
                 criteria,
               },
             },
@@ -342,7 +414,15 @@ export const createDecisionTools = (options: DecisionToolOptions) => {
         const labels = readLabels(args.labels);
         if (labels === undefined)
           return refusal(`labels 需要 2-${MAX_LABELS} 个不重复的非空标签。`);
+        const reserved = reservedLabel(labels);
+        if (reserved !== undefined) return refusal(`label ${reserved} 是保留名，请换一个。`);
         const mode = args.mode ?? "single";
+        if (args.allowNone === true && mode === "single" && labels.includes("none")) {
+          return refusal("labels 里已经有 none，不要再开 allowNone。");
+        }
+        if (!answerFits(labels)) {
+          return refusal("答案会超过工具输出上限，请减少标签或缩短 label。");
+        }
         try {
           if (mode === "single") {
             const criteria: Record<string, string> = {};
@@ -450,15 +530,20 @@ export const createDecisionTools = (options: DecisionToolOptions) => {
       execute: async (args, _api, context) => {
         const state = readState(args.state);
         if (state === undefined) return refusal("state 需要是非空文本或一个 JSON 结构。");
+        const question = readQuestion(args.question);
+        if (question === undefined) return refusal("question 不能为空。");
         const levels = readLevels(args.levels);
         if (levels === undefined) return refusal(`levels 需要 2-${MAX_LEVELS} 个非空等级。`);
+        if (!answerFits(levels)) {
+          return refusal("答案会超过工具输出上限，请减少等级或缩短描述。");
+        }
         try {
           const reply_ = await ask(
             state,
             {
               [QUESTION_ID]: {
                 type: "score",
-                instructions: args.question,
+                instructions: question,
                 criteria: levels,
               },
             },

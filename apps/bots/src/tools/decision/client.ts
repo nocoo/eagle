@@ -2,7 +2,7 @@
 // wire shape is TypeSafe's own, so a tool call is the documented request and nothing is
 // re-invented here. The client is resolved per call, so a key or provider change lands on the
 // next judgment instead of the next conversation.
-export type DecisionEntry = string | Record<string, unknown> | readonly unknown[];
+export type DecisionEntry = string | null | Record<string, unknown> | readonly unknown[];
 
 export type DecisionQuestion =
   | {

@@ -3032,3 +3032,12 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   `apps/bots-macos` tests pass with strict formatting, and the 工具 page snapshot shows the new
   row. Not verified: a real bot run against the live provider (the acceptance is the owner's dev
   App plus a `tests/eval` pass), the relay paths with real credentials, authentication and D1.
+- The first review round on the tool group found eight defects, all now closed with a test
+  each: two option sets with a comma inside a name compared equal; a `__proto__` label was
+  silently dropped; `allowNone` could overwrite a caller's own `none` label; judge accepted a
+  number as a criterion and dropped a noul's array criteria; a legal but huge label set could
+  arrive as a clipped "successful" answer; a failing usage write discarded a paid answer; a
+  zero-token answer booked nothing at all; and a blank `question` reached the provider. The
+  answer budget is now refused before the request, the booking never takes the answer down,
+  and a zero-token call is booked as one call. `apps/bots` check, both Swift packages, the root
+  check and both decision eval cases were re-run after the fixes.
