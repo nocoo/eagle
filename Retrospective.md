@@ -1,5 +1,22 @@
 # Retrospective
 
+## 2026-11-02 — Local release checks exposed two shutdown boundaries
+
+The first isolated CLI acceptance for 0.16.1 failed while deleting its temporary root
+with `ENOTEMPTY`; the sole remaining file was `catalog.json`. This is consistent with
+late writes, but it does not establish which writer caused the failure. A separate gated
+regression demonstrated that an already queued automatic note write outlived runtime
+close. The close now waits for that queue; after SQLite close is proven, removing the
+wait makes the regression fail. Detached origin and trigger writes and late watch
+callbacks remain separate unproven boundaries.
+
+The first browser gate found the pinned Playwright Chromium missing; installing the
+pinned browser and rerunning produced 191 passes and 11 existing skips. A subsequent
+Bots coverage run had one singleton test fail because its random temporary root hashed
+to port 44187 already owned by the live installed daemon. That is a real test isolation
+collision, not a product assertion failure; the failing log is retained, no limit or
+test was changed, and the complete gate must be rerun before installation.
+
 ## 2026-11-02 — Unbounded test and a misunderstood tool timeout
 
 A new WebSocket history test omitted its required `before` field, so the daemon rejected
