@@ -25,6 +25,13 @@ struct SnapshotRenderer {
 
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
+    if CommandLine.arguments.contains("--herdr-only") {
+      do { try await captureHerdr(in: directory) } catch {
+        print("Herdr snapshot failed: \(error)")
+        exit(1)
+      }
+      return
+    }
     if CommandLine.arguments.contains("--devices-only") {
       do { try await captureDevices(in: directory) } catch {
         print("device snapshot fixture failed: \(error)")
@@ -394,6 +401,78 @@ struct SnapshotRenderer {
     )
 
     print("wrote snapshots to \(directory.path)")
+  }
+
+  @MainActor
+  private static func captureHerdr(in directory: URL) async throws {
+    let snapshot = try await LocalHerdrClient().read()
+    let model = HerdrTeamsViewModel(read: { snapshot })
+    await model.refresh()
+    for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
+      for width in [280, 319, 460] {
+        for (state, expanded) in [("collapsed", false), ("expanded", true), ("members", true)] {
+          model.isExpanded = expanded
+          model.expandedTeamIDs = state == "members" ? Set(snapshot.teams.map(\.id)) : []
+          capture(
+            DeviceInspectorList(
+              entries: [
+                DeviceInspectorEntry(
+                  id: "snapshot-local", name: Host.current().localizedName ?? "Mac",
+                  isLocal: true, online: nil, policy: "策略未知")
+              ],
+              localContent: AnyView(HerdrTeamsView(model: model))
+            )
+            .padding(Theme.Metric.panelInset)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(Theme.Palette.surface).preferredColorScheme(scheme),
+            size: CGSize(width: width, height: state == "members" ? 900 : 720),
+            named: "herdr-\(state)-\(name)-\(width)",
+            in: directory, appearance: scheme == .dark ? .darkAqua : .aqua)
+        }
+      }
+    }
+    let overflow = HerdrTeamsViewModel(read: {
+      HerdrTeamsSnapshot(
+        teams: snapshot.teams
+          + (1...3).map {
+            HerdrTeam(
+              session: "fixture", workspaceID: "example-\($0)", name: "示例团队 \($0)", members: [])
+          }, sessionCount: snapshot.sessionCount)
+    })
+    await overflow.refresh()
+    overflow.isExpanded = true
+    for expanded in [false, true] {
+      overflow.showsAllTeams = expanded
+      capture(
+        HerdrTeamsView(model: overflow).padding(Theme.Metric.panelInset)
+          .frame(maxHeight: .infinity, alignment: .top)
+          .background(Theme.Palette.surface).preferredColorScheme(.light),
+        size: CGSize(width: 280, height: 600), named: "herdr-overflow-fixture-\(expanded)",
+        in: directory)
+    }
+    let empty = HerdrTeamsViewModel(read: { HerdrTeamsSnapshot(teams: [], sessionCount: 1) })
+    await empty.refresh()
+    let missing = HerdrTeamsViewModel(read: { throw HerdrReadError.notInstalled })
+    await missing.refresh()
+    var reads = 0
+    let stale = HerdrTeamsViewModel(read: {
+      reads += 1
+      if reads > 1 { throw HerdrReadError.unavailable }
+      return snapshot
+    })
+    await stale.refresh()
+    await stale.refresh()
+    for (name, state) in [("empty", empty), ("missing", missing), ("stale", stale)] {
+      state.isExpanded = true
+      capture(
+        HerdrTeamsView(model: state).padding(Theme.Metric.panelInset)
+          .frame(maxHeight: .infinity, alignment: .top)
+          .background(Theme.Palette.surface).preferredColorScheme(.light),
+        size: CGSize(width: 280, height: 680), named: "herdr-\(name)", in: directory)
+    }
+    print(
+      "captured \(snapshot.teams.count) local Herdr teams, \(snapshot.teams.flatMap(\.members).count) members in \(directory.path)"
+    )
   }
 
   @MainActor

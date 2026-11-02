@@ -17,6 +17,59 @@ anonymous-directory authentication checks. Current installed App, WSS and physic
 Mac acceptance evidence is recorded in [the Bots plan](bots/PLAN.md#helper-startup-recovery-2026-10-30);
 operational setup is in [DEPLOYMENT.md](DEPLOYMENT.md).
 
+## Local Herdr teams in the macOS inspector
+
+The conversation's 电脑 tab shows a collapsed Herdr row under the local Mac in
+可用电脑. It shows the team count and a small marker when at least one team has a
+`working` member. Expanding it initially shows at most five teams, ordered by
+working-member count, then blocked-member count, with Herdr order breaking ties.
+`查看更多团队` reveals the rest and can collapse back to five. Each team's member
+list starts collapsed and opens independently; explicit expansion survives
+refreshes. The count and marker keep refreshing while collapsed; paired computers
+do not get this row.
+A team is a local Herdr workspace. Workspaces without recognized agents remain
+visible as compact `0 成员` rows; they do not receive a running marker. It lists
+the workspace/session name and each member's name, agent kind and observed
+lifecycle state. Small monochrome team/member icons and shallow indentation
+follow the machine → Herdr → team → member hierarchy. Machine and Herdr headings
+have stronger type than team/member names; member subtitles show model,
+reasoning effort and context-window
+capacity when recorded, for example `codex · gpt-6-astra · max · 258.4K`. Paths
+are not displayed. Missing settings remain unrecorded, never inferred from a
+model name, global CLI defaults or another member. `done` means
+已响应, not that the team's task has been verified complete. Missing or unfamiliar
+states stay 未知; workspace aggregate badges do not override member observations.
+
+Expanded inspector preview:
+
+![Local Herdr teams and member configuration](screenshots/macos-herdr-teams.png)
+
+While this panel is visible, the App reads `herdr session list --json`, then
+`herdr --session <name> api snapshot` for each running local session, waiting
+three seconds after each completed read. Each command has a ten-second timeout;
+refreshes never overlap. Each session's membership and state come from one
+snapshot. It never starts Herdr, reads terminal transcripts, sends agent input,
+or uses the device
+execution queue. There is no remote-machine collection or cloud storage in this
+version. The existing device list and its policies are independent.
+
+Model details are optional local enrichment, independent of lifecycle state.
+For Codex, a matching `agent_session` kind and exact session ID identify the
+session log under `CODEX_HOME/sessions` (default `~/.codex/sessions`); the log's
+session header must agree. Only model, reasoning effort and context-window
+metadata are retained. Unchanged files reuse cached metadata; growing files are
+read incrementally, from the last complete record. Discovery is limited to one
+scan per 30 seconds and 10,000 entries; initial, replacement and large-gap reads
+use at most the last 8 MiB, after validating a session header within 64 KiB.
+Metadata outside these bounds remains unknown until it is recorded again.
+No log activity state machine or additional polling loop is introduced. Missing,
+unsupported or unreadable metadata does not prevent the Herdr roster/status read.
+
+Reads are bounded and cancellable. Missing Herdr, no running session, an empty
+team list and a failed read are distinct states. After a failed refresh, the last
+successful result remains visible with its observation time and unconfirmed
+statuses; the refresh action retries the read. Closing the panel stops polling.
+
 ## Identity and HTTPS
 
 Device identity is an Ed25519 key persisted by the independent App helper in a
