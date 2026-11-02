@@ -360,7 +360,7 @@ test("a large search answer stays valid JSON and says what it dropped", async ()
       await host.write({
         scope: "bot",
         key: `k${String(index).padStart(3, "0")}`,
-        content: "针" + "界".repeat(500),
+        content: `针${"界".repeat(500)}`,
       });
     }
     const answer = await call(host, "memory_search", { scope: "bot", query: "针", limit: 100 });
