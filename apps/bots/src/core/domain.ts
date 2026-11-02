@@ -91,6 +91,10 @@ export type Message = {
   readonly requestId?: string;
   /** User messages only: who admitted this input, when the daemon recorded it. */
   readonly origin?: MessageOrigin;
+  /** A user message the conversation does not show: the person's answer to ask_user. */
+  readonly hidden?: boolean;
+  /** A hidden message only: the ask_user call it answers, so the card can close. */
+  readonly answersTo?: string;
   readonly stopReason?: StopReason;
 };
 

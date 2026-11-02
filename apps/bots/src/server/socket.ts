@@ -51,7 +51,7 @@ export const CLOSE = {
 } as const;
 
 /** Commands that only make sense on a connection that already subscribed. */
-const NEEDS_SUBSCRIPTION = new Set(["send", "abort", "recover", "resync", "history"]);
+const NEEDS_SUBSCRIPTION = new Set(["send", "answer", "abort", "recover", "resync", "history"]);
 
 /** A connection that sends no frame for this long is closed with 4000. */
 export const IDLE_FRAME_MS = 60_000;
@@ -420,7 +420,10 @@ export const attachConnection = (
       });
       return;
     }
-    if (deps.canWrite === false && (command.type === "send" || command.type === "abort")) {
+    if (
+      deps.canWrite === false &&
+      (command.type === "send" || command.type === "answer" || command.type === "abort")
+    ) {
       // The credential may watch this bot but not act on it (PROTOCOL.md, "CLI clients
       // and scopes"): the refusal lands on the open connection, which keeps reading.
       const refusal = serverFailure("auth_scope", "protocol");
@@ -492,6 +495,20 @@ export const attachConnection = (
           requestId: command.requestId,
           text: command.text,
           whenBusy: command.whenBusy,
+          trace,
+        },
+        deps.label,
+      );
+      emit({ type: "submission", trace, record });
+      return;
+    }
+    if (command.type === "answer") {
+      const record = await service.answer(
+        connId,
+        {
+          entryId: command.entryId,
+          ...(command.answers === undefined ? {} : { answers: command.answers }),
+          ...(command.skipped === undefined ? {} : { skipped: command.skipped }),
           trace,
         },
         deps.label,

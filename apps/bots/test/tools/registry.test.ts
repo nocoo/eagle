@@ -74,18 +74,18 @@ test("core supplies list and coding installs the original native extension witho
         .flatMap((extension) => extension.tools ?? [])
         .map((tool) => tool.name)
         .sort(),
-      ["bash", "edit", "list", "note_set", "read", "write"],
+      ["ask_user", "bash", "edit", "list", "note_set", "read", "write"],
     );
     assert.deepEqual(
       snapshot.extension(BOTS_TOOLS_EXTENSION)?.tools?.map((tool) => tool.name),
-      ["list", "note_set"],
+      ["list", "note_set", "ask_user"],
     );
   } finally {
     await rm(daemonRoot, { recursive: true, force: true });
   }
 });
 
-test("core and coding install six tools and a working-directory section", async () => {
+test("core and coding install seven tools and a working-directory section", async () => {
   const daemonRoot = await mkdtemp(join(tmpdir(), "bots-registry-"));
   const workspace = await openWorkspace(join(daemonRoot, "bots", "a", "workspace"));
   const registry = createToolRegistry(workspace);
@@ -95,6 +95,7 @@ test("core and coding install six tools and a working-directory section", async 
       .flatMap((extension) => (extension.tools ?? []).map((tool) => [extension.name, tool.name]))
       .sort(),
     [
+      [BOTS_TOOLS_EXTENSION, "ask_user"],
       [BOTS_TOOLS_EXTENSION, "list"],
       [BOTS_TOOLS_EXTENSION, "note_set"],
       ["coding-tools", "bash"],
@@ -139,7 +140,7 @@ test("note_set belongs to core and its section tells the model when to write it"
         .snapshot()
         .extension(BOTS_TOOLS_EXTENSION)
         ?.tools?.map((tool) => tool.name),
-      ["list", "note_set"],
+      ["list", "note_set", "ask_user"],
     );
     const text = botsToolsSection(registry);
     assert.match(text, /note_set/);
@@ -182,7 +183,7 @@ test("a bot's tool groups select from every registered built-in extension", asyn
     coreOnly.map((extension) => extension.name),
     [BOTS_TOOLS_EXTENSION, "coding-tools"],
   );
-  assert.equal(coreOnly.flatMap((extension) => extension.tools ?? []).length, 6);
+  assert.equal(coreOnly.flatMap((extension) => extension.tools ?? []).length, 7);
   const both = selectToolExtensions(registry, ["herdr"]);
   assert.ok(both.some((extension) => extension.name === HERDR_TOOLS_EXTENSION));
   assert.ok(both.some((extension) => extension.name === "tool-search"));
@@ -266,6 +267,7 @@ test("a group whose tools are not installed contributes nothing, not even its lo
       )
       .sort();
     assert.deepEqual(selected, [
+      "bots-tools:ask_user",
       "bots-tools:list",
       "bots-tools:note_set",
       "coding-tools:bash",

@@ -34,6 +34,7 @@ export type DirectoryErrorReason =
   | "group_not_empty"
   | "invalid_groups"
   | "invalid_note"
+  | "invalid_answer"
   | "limit_exceeded";
 
 export class DirectoryError extends Error {

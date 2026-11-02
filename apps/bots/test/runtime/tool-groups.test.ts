@@ -49,6 +49,7 @@ test("a warm bot can enable groups it did not initially select", async () => {
     const events: RuntimeEvent[] = [];
     await handle.subscribe(trace, (event) => events.push(event));
     assert.deepEqual((await offered(bench, handle, events, "r_groups_1")).sort(), [
+      "ask_user",
       "bash",
       "edit",
       "list",
@@ -81,6 +82,7 @@ test("disabling optional groups removes their tools and loader but retains both 
     assert.ok(handle.configureToolGroups);
     await handle.configureToolGroups([], trace);
     assert.deepEqual((await offered(bench, handle, events, "r_groups_off")).sort(), [
+      "ask_user",
       "bash",
       "edit",
       "list",

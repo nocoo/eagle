@@ -35,6 +35,8 @@ export type EventMapperOptions = {
   readonly windowMessages?: number;
   readonly maxMessageBytes?: number;
   readonly now?: () => Date;
+  /** How one admitted input is marked once it appears: hidden answers to ask_user, today. */
+  readonly marks?: (requestId: string) => { hidden?: boolean; answersTo?: string } | undefined;
 };
 
 const inboxMode = (mode: string): InboxItem["mode"] =>
@@ -77,6 +79,7 @@ export class EventMapper {
   #usage: ConversationSnapshot["usage"];
   #agent: AgentView | undefined;
   readonly #requestByEntry = new Map<string, string>();
+  readonly #marks: EventMapperOptions["marks"];
   readonly #records = new Map<string, Submission>();
 
   constructor(options: EventMapperOptions) {
@@ -84,6 +87,7 @@ export class EventMapper {
     this.#window = options.windowMessages ?? WINDOW_MESSAGES;
     this.#maxMessageBytes = options.maxMessageBytes ?? MAX_MESSAGE_BYTES;
     this.#now = options.now ?? (() => new Date());
+    this.#marks = options.marks;
   }
 
   /** The current view, without publishing anything. */
@@ -474,11 +478,15 @@ export class EventMapper {
     }
     const id = entryMessageId(entry.id);
     const requestId = this.#requestByEntry.get(id);
-    const message = convertMessage(model, {
+    let message = convertMessage(model, {
       id,
       now: this.#now,
       ...(requestId === undefined ? {} : { requestId }),
     });
+    // A hidden input is the person's answer to ask_user: it is delivered like any other
+    // user message — the model reads it — and the conversation never shows it as chat.
+    const marks = requestId === undefined ? undefined : this.#marks?.(requestId);
+    if (message !== undefined && marks !== undefined) message = { ...message, ...marks };
     if (message === undefined) return undefined;
     if (messageBytes(message) > this.#maxMessageBytes) {
       // A tool result is bounded by its own tool, but a hostile or future tool must not

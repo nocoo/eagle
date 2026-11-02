@@ -1,8 +1,11 @@
 // Command routing for the daemon (docs/bots/PLAN.md, rows 17-22): a connection sees one
 // bot for its whole life, a subscription renders the first snapshot before it is live,
 // and a command either reaches the runtime or is refused before admission.
+import { randomUUID } from "node:crypto";
 import { declareEvent } from "../log/events.ts";
 import type { Log } from "../log/log.ts";
+import { type AnswerInput, answerText, questionsOf } from "./ask.ts";
+import { DirectoryError } from "./BotDirectory.ts";
 import type {
   ConversationSnapshot,
   EntryId,
@@ -363,6 +366,39 @@ export class ConversationService implements InvocationPort {
   }
 
   /**
+   * The person answered an ask_user card. The choice becomes one hidden user input, composed
+   * here so the App and the CLI never author what the model reads, and so the card's own
+   * arguments stay the only record of what was asked.
+   */
+  async answer(connectionId: string, input: AnswerInput, label?: string): Promise<Submission> {
+    const botId = this.#connectionBot(connectionId) as string;
+    return this.answerBot(botId, input, label);
+  }
+
+  /** The same, for a caller without a connection: the CLI answers over HTTP. */
+  async answerBot(botId: string, input: AnswerInput, label?: string): Promise<Submission> {
+    const bot = await this.#bot(botId, input.trace ?? input.entryId);
+    const call = await bot.handle?.entryById?.(input.entryId);
+    const questions = call === undefined ? undefined : questionsOf(call);
+    if (questions === undefined) {
+      throw new DirectoryError("invalid_answer", "no such ask_user call");
+    }
+    return this.#admitAndLog(
+      {
+        botId,
+        requestId: `answer_${randomUUID().replaceAll("-", "")}`,
+        text: answerText(questions, input),
+        whenBusy: "followUp",
+        trace: input.trace ?? input.entryId,
+        origin: label === undefined ? { kind: "human" } : { kind: "human", label },
+        hidden: true,
+        answersTo: input.entryId,
+      },
+      undefined,
+    );
+  }
+
+  /**
    * Admit work on behalf of a caller with no connection (docs/bots/TRIGGERS.md §3). The
    * port is idempotent by `(botId, requestId)`, opens a cold bot, and never waits for an
    * answer; queueing, batching and timing stay with the caller.
@@ -443,6 +479,8 @@ export class ConversationService implements InvocationPort {
         text: input.text,
         whenBusy: input.whenBusy ?? "followUp",
         trace: input.trace,
+        ...(input.hidden === undefined ? {} : { hidden: input.hidden }),
+        ...(input.answersTo === undefined ? {} : { answersTo: input.answersTo }),
       });
       this.#log?.emit("info", "core", Events.submitOk, {
         trace: input.trace,

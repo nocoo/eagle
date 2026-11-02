@@ -111,6 +111,7 @@ version, the instance id, the pid and a bot count, never bot content.
 | `POST` | `/v1/providers/:id/test` | — | `{ "result": { "ok", "message", "latencyMs", "results"? } }` |
 | `GET` | `/v1/usage?days=` | — | `{ "usage": UsageReport }` — statistics over the daemon's retained days |
 | `GET` | `/v1/models` | — | `{ "models": [string] }` — the gateway's ids, empty when it cannot be asked |
+| `POST` | `/v1/bots/:botId/answers` | `{ "entryId", "answers"?: [[label]], "skipped"?: true }` | `{ "submission": Submission }` |
 | `GET` | `/v1/settings` | — | `{ "settings": GatewaySettings, "machinePrompt": MachinePrompt \| null, "tools"?: [ToolGroup] }` |
 | `GET` | `/v1/clients` | — | `{ "clients": [Client] }` — requires `admin` |
 | `POST` | `/v1/clients` | `{ "name", "scopes" }` — fields follow `CLI.md` rules | `201 { "client": Client, "token" }` — requires `admin`, the token is answered once |
@@ -208,7 +209,7 @@ revoke it and delete it again (`CLI.md` owns the CLI itself).
   split on the first `.`, looked up by id, compared in constant time, and refused with the
   same `401 auth_failed` as an unknown token when the credential is missing or revoked
   (no oracle).
-- **Scopes are per route.** `read` covers every `GET`; `write` adds `send`/`abort` on a
+- **Scopes are per route.** `read` covers every `GET`; `write` adds `send`/`answer`/`abort` on a
   subscribed bot, `POST /v1/bots`, `PATCH /v1/bots/:id`, `POST /v1/groups`,
   `PATCH /v1/groups/:id` and `PUT /v1/groups/order`; `admin` adds `DELETE /v1/bots/:id`,
   `DELETE /v1/groups/:id`, every `/v1/settings` write, `/v1/settings/test`,
@@ -495,7 +496,9 @@ The `usage` capability is `true`.
   "stopReason": "stop",                  // optional: stop|length|toolUse|aborted|error|deferred
   "createdAt": "2026-10-25T02:11:04.001Z",
   "blocks": [ { "type": "text", "text": "巴黎。" } ],
-  "requestId": "r_0190a1b3"              // user messages only; ties the entry to a send
+  "requestId": "r_0190a1b3",             // user messages only; ties the entry to a send
+  "hidden": true,                        // optional: the person's answer to ask_user
+  "answersTo": "e_12"                    // optional: the ask_user call this hidden input closes
 }
 
 // Messages are never split or clipped. The bound is structural: assistant answers are
@@ -709,6 +712,8 @@ Every command except `hello` and `ping` carries `trace`.
 { "type": "hello",     "protocolVersion": 1, "client": "…" }
 { "type": "subscribe", "botId": "b_…", "trace": "tr_…" }
 { "type": "send",      "requestId": "r_…", "text": "…", "whenBusy": "followUp", "trace": "tr_…" }
+{ "type": "answer",    "entryId": "e_12", "answers": [["main"], ["unit","browser"]], "trace": "tr_…" }
+{ "type": "answer",    "entryId": "e_12", "skipped": true, "trace": "tr_…" }
 { "type": "abort",     "trace": "tr_…" }
 { "type": "recover",   "trace": "tr_…" }
 { "type": "resync",    "trace": "tr_…" }
@@ -727,6 +732,14 @@ Every command except `hello` and `ping` carries `trace`.
   reply is recovered.
 - `whenBusy` defaults to `followUp`. `steer` places after the current tool round
   (phase 2). `reject` yields `error{kind:"invalid_command"}` when busy.
+- `answer` closes an `ask_user` card. `entryId` is the transcript entry carrying the call; the
+  daemon reads the questions out of that entry's arguments, checks every label against them and
+  composes one hidden user input that the bot reads next (`hidden: true`, `answersTo: entryId`).
+  `answers` carries one list of labels per question, in the card's order; a single-choice
+  question takes exactly one, a multiple-choice question one or more. `skipped` is the person
+  ignoring the whole card, which the bot is told. The two forms are exclusive, a payload that
+  does not fit the card is refused with `invalid_command`, and nothing here waits: the tool call
+  it answers already returned.
 - `abort` withdraws the running input and any queued inputs. Their settlements
   arrive as `unanswered{reason:"aborted"}`.
 - `recover` is the phase-1 escape hatch, and what it does depends on the bot's

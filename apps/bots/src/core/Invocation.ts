@@ -20,6 +20,9 @@ export type Invocation = {
   readonly origin: InvocationOrigin;
   readonly whenBusy?: BusyMode;
   readonly trace: string;
+  /** The person's answer to ask_user: a real user input the conversation never shows. */
+  readonly hidden?: boolean;
+  readonly answersTo?: string;
 };
 
 export interface InvocationPort {

@@ -37,6 +37,13 @@ export type ClientCommand =
       readonly whenBusy: "followUp" | "steer" | "reject";
       readonly trace: string;
     }
+  | {
+      readonly type: "answer";
+      readonly entryId: string;
+      readonly answers?: readonly (readonly string[])[];
+      readonly skipped?: boolean;
+      readonly trace: string;
+    }
   | { readonly type: "abort"; readonly trace: string }
   | { readonly type: "recover"; readonly trace: string }
   | { readonly type: "resync"; readonly trace: string }
@@ -315,6 +322,26 @@ export function decodeCommand(raw: Record<string, unknown>): ClientCommand {
         trace: str(ctx, raw.trace, "trace"),
       };
     }
+    case "answer": {
+      // Either the person's choices or one whole-card skip: never both, never neither.
+      const answers =
+        raw.answers === undefined
+          ? undefined
+          : arr(ctx, raw.answers, "answers").map((entry) =>
+              arr(ctx, entry, "answers[]").map((label) => anyStr(ctx, label, "answers[][]")),
+            );
+      const skipped = raw.skipped === undefined ? undefined : bool(ctx, raw.skipped, "skipped");
+      if ((answers === undefined) === (skipped !== true)) {
+        fail(ctx, "answer carries either answers or a skip");
+      }
+      return {
+        type,
+        entryId: str(ctx, raw.entryId, "entryId"),
+        ...(answers === undefined ? {} : { answers }),
+        ...(skipped === undefined ? {} : { skipped }),
+        trace: str(ctx, raw.trace, "trace"),
+      };
+    }
     case "abort":
     case "recover":
     case "resync":
@@ -480,6 +507,13 @@ const decodeMessage = (ctx: Ctx, raw: unknown): Message => {
   if (origin !== undefined && role !== "user") {
     fail(ctx, "origin belongs to user messages only");
   }
+  // Additive: a hidden user message is the person's answer to ask_user, never chat.
+  const hidden = raw.hidden === undefined ? undefined : bool(ctx, raw.hidden, "message.hidden");
+  const answersTo =
+    raw.answersTo === undefined ? undefined : str(ctx, raw.answersTo, "message.answersTo");
+  if ((hidden !== undefined || answersTo !== undefined) && role !== "user") {
+    fail(ctx, "hidden and answersTo belong to user messages only");
+  }
   return {
     id: str(ctx, raw.id, "message.id"),
     role,
@@ -489,6 +523,8 @@ const decodeMessage = (ctx: Ctx, raw: unknown): Message => {
     ...(requestId === undefined ? {} : { requestId }),
     ...(stopReason === undefined ? {} : { stopReason }),
     ...(origin === undefined ? {} : { origin }),
+    ...(hidden === undefined ? {} : { hidden }),
+    ...(answersTo === undefined ? {} : { answersTo }),
   };
 };
 

@@ -369,6 +369,8 @@ class PiRuntimeHandle implements RuntimeHandle {
   /** Sends whose admission is still in flight: the first of them owns the commits it makes. */
   readonly #admitting: string[] = [];
   #runTrace: string | undefined;
+  /** Hidden inputs (the person's answers to ask_user) by request id, until their entry lands. */
+  readonly #answerMarks = new Map<string, { hidden: true; answersTo?: string }>();
   /** The last command's trace, so daemon-originated work while it runs inherits it. */
   #lastTrace: string | undefined;
   /** The submission id of a run whose send is not yet known, when one is waiting. */
@@ -404,6 +406,7 @@ class PiRuntimeHandle implements RuntimeHandle {
       ...(options.options.maxMessageBytes === undefined
         ? {}
         : { maxMessageBytes: options.options.maxMessageBytes }),
+      marks: (requestId) => this.#answerMarks.get(requestId),
     });
   }
 
@@ -464,6 +467,12 @@ class PiRuntimeHandle implements RuntimeHandle {
     // The admission commit can be published before `submit` returns, so the request id
     // knows its trace first; the submission id is filled in once it exists.
     this.#traces.set(input.requestId, input.trace);
+    if (input.hidden === true) {
+      this.#answerMarks.set(input.requestId, {
+        hidden: true,
+        ...(input.answersTo === undefined ? {} : { answersTo: input.answersTo }),
+      });
+    }
     this.#lastTrace = input.trace;
     this.#admitting.push(input.trace);
     log.emit("info", "runtime", Events.submitStart, {

@@ -201,6 +201,9 @@ const title = (body: unknown): string | undefined => {
   return typeof value === "string" ? value.trim() : undefined;
 };
 
+const isStringList = (value: unknown): boolean =>
+  Array.isArray(value) && value.every((item) => typeof item === "string");
+
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
@@ -888,6 +891,34 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         json(response, 200, { trigger });
         return;
       }
+      const answersMatch = /^\/v1\/bots\/([A-Za-z0-9_-]+)\/answers$/.exec(path);
+      if (answersMatch !== null && request.method === "POST") {
+        const botId = answersMatch[1] as string;
+        const body = await readBody(request);
+        const entryId = isObject(body) ? body.entryId : undefined;
+        const skipped = isObject(body) ? body.skipped : undefined;
+        const answers = isObject(body) ? body.answers : undefined;
+        const shaped =
+          typeof entryId === "string" &&
+          (answers === undefined || (Array.isArray(answers) && answers.every(isStringList)));
+        if (!shaped || (answers === undefined && skipped !== true)) {
+          json(response, 400, {
+            error: {
+              kind: "invalid_command",
+              message: "send { entryId, answers: [[label]] } or { entryId, skipped: true }",
+            },
+          });
+          return;
+        }
+        const record = await options.service.answerBot(botId, {
+          entryId,
+          ...(answers === undefined ? {} : { answers: answers as string[][] }),
+          ...(skipped === true ? { skipped: true } : {}),
+          trace: `tr_http_${++sequence}`,
+        });
+        json(response, 200, { submission: record });
+        return;
+      }
       const taskMatch = /^\/v1\/bots\/([A-Za-z0-9_-]+)\/tasks\/(t_\d+)\/(retry|abort)$/.exec(path);
       if (taskMatch !== null && request.method === "POST") {
         const [, botId, taskId, action] = taskMatch as unknown as [string, string, string, string];
@@ -992,6 +1023,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
               ? 404
               : error.reason === "invalid_groups" ||
                   error.reason === "invalid_note" ||
+                  error.reason === "invalid_answer" ||
                   error.reason === "limit_exceeded" ||
                   error.reason === "duplicate_bot"
                 ? 400
@@ -1003,6 +1035,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
               ? "unknown_bot"
               : error.reason === "invalid_groups" ||
                   error.reason === "invalid_note" ||
+                  error.reason === "invalid_answer" ||
                   error.reason === "limit_exceeded" ||
                   error.reason === "duplicate_bot"
                 ? "invalid_command"

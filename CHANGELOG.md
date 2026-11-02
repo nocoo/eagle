@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Bots can ask instead of guessing: the core tool `ask_user` puts one to five single- or
+  multiple-choice questions in front of the person and returns at once. The conversation
+  renders the card from the tool call itself; the choices come back as one hidden user
+  message the daemon composes from the card, so nothing waits on a human and a skipped card
+  tells the bot to continue without an answer.
+
 - Settings → `提示词` is its own tab: the two core prompts (the standing instruction and the
   read-only machine AGENTS.md) leave the 工具 page, which now holds only the tool switches.
   Each page saves its own section and says so.

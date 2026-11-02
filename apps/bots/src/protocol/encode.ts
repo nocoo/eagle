@@ -310,6 +310,14 @@ export const encodeCommand = (command: ClientCommand): Wire => {
         whenBusy: command.whenBusy,
         trace: command.trace,
       };
+    case "answer":
+      return {
+        type: "answer",
+        entryId: command.entryId,
+        ...(command.answers === undefined ? {} : { answers: command.answers }),
+        ...(command.skipped === undefined ? {} : { skipped: command.skipped }),
+        trace: command.trace,
+      };
     case "abort":
     case "recover":
     case "resync":

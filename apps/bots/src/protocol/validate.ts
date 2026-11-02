@@ -47,6 +47,16 @@ export function validateCommand(command: ClientCommand): ClientCommand {
       }
       return command;
     }
+    case "answer": {
+      check(command.entryId, COMMITTED_ENTRY_ID, "entryId");
+      check(command.trace, TRACE_ID, "trace");
+      for (const question of command.answers ?? []) {
+        for (const label of question) {
+          if (label.length === 0) throw new FrameError("invalid_command", "empty choice");
+        }
+      }
+      return command;
+    }
     case "abort":
     case "recover":
     case "resync":

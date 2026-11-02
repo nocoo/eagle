@@ -62,6 +62,9 @@ export type SubmitInput = {
   readonly text: string;
   readonly whenBusy: BusyMode;
   readonly trace: string;
+  /** The person's answer to ask_user: admitted like any input, never shown as chat. */
+  readonly hidden?: boolean;
+  readonly answersTo?: string;
 };
 
 export type RuntimeSubscription = {

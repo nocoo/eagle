@@ -15,6 +15,7 @@ import {
 } from "../core/domain.ts";
 import type { Log } from "../log/log.ts";
 import { AGENTS_TOOLS_EXTENSION, agentsExtension } from "./agents/tools.ts";
+import { createAskTool } from "./ask.ts";
 import { SocketDevicePort } from "./devices/port.ts";
 import {
   DEVICE_EXTENSION,
@@ -222,6 +223,7 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
         };
   const list = createListTool();
   const note = createNoteSetTool(options.note);
+  const ask = createAskTool();
   // The two core prompts are installed first so their sections lead the system prompt:
   // who this bot is comes before what it can do (docs/bots/PRODUCT.md, "Core prompts").
   if (options.persona !== undefined) registry.install(personaExtension(options.persona));
@@ -229,7 +231,7 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
   registry.install(
     defineExtension({
       name: BOTS_TOOLS_EXTENSION,
-      tools: [list, note],
+      tools: [list, note, ask],
       wraps: [
         wrapTool(bash, () =>
           devices === undefined ? bash : observeDeviceTool(guardNativeTool(bash, devices), devices),

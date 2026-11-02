@@ -82,12 +82,21 @@ because extensions can capture Bot-specific services and directories.
 
 | Group | Native extension names | Selection | Initial model visibility |
 | --- | --- | --- | --- |
-| `core` | `bots-tools` | Mandatory | `list`, `note_set` |
+| `core` | `bots-tools` | Mandatory | `list`, `note_set`, `ask_user` |
 | `coding` | `coding-tools` (`CodingTools`) | Mandatory | `read`, `write`, `edit`, `bash` |
 | `agents` | `bots-agents` | Optional | All three child-agent tools when selected |
 | `herdr` | `bots-herdr`, `tool-search` | Optional | `tool_search`; the eight Herdr tools are deferred |
 | `search` | `bots-search`, `tool-search` | Optional, **off by default** | `tool_search` is offered; `web_search` and `web_fetch` are deferred |
 | `trigger` | `bots-trigger`, `tool-search` | Optional, **on by default** | `tool_search` is offered; the five `trigger_*` tools are deferred |
+
+`ask_user` is the person-interface tool: it takes one to five questions, each single or
+multiple choice with two to eight options, and returns at once. The questions are the call's
+own arguments, so the conversation renders the card from the transcript and a restart loses
+nothing. The person's choices arrive as one hidden user message (`hidden: true`,
+`answersTo: <entry id>`) that the daemon composes and that the client cannot author: a
+client reports labels, the daemon checks them against the card and writes the text the bot
+reads. Nothing waits on a human: the tool call is already complete when the card appears, and
+a person may ignore the card, which the bot is told in the same message.
 
 Current defaults select `core`, `coding`, `herdr`, `agents` and `trigger`; `search` stays
 off until a person turns it on. `trigger` is on by default because a Bot that cannot
