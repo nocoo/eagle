@@ -47,6 +47,10 @@ export const encodeMessage = (m: Message): Wire => {
   };
   if (m.requestId !== undefined) wire.requestId = m.requestId;
   if (m.stopReason !== undefined) wire.stopReason = m.stopReason;
+  // A hidden input is the person's answer to ask_user: the client needs the marks to close
+  // the card it drew, and to keep that message out of the transcript.
+  if (m.hidden !== undefined) wire.hidden = m.hidden;
+  if (m.answersTo !== undefined) wire.answersTo = m.answersTo;
   // The wire carries what a client renders. Internal ids stay in the daemon.
   if (m.origin !== undefined) {
     wire.origin = {

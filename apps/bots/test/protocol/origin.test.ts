@@ -81,3 +81,15 @@ test("an unknown origin kind is refused rather than passed through", () => {
     (error: unknown) => error instanceof FrameError,
   );
 });
+
+test("a hidden answer carries its marks on the wire, and nothing else does", () => {
+  const hidden = encodeMessage(message({ hidden: true, answersTo: "e_12" })) as Record<
+    string,
+    unknown
+  >;
+  assert.equal(hidden.hidden, true);
+  assert.equal(hidden.answersTo, "e_12");
+  const plain = encodeMessage(message()) as Record<string, unknown>;
+  assert.equal("hidden" in plain, false, "an ordinary message stays ordinary");
+  assert.equal("answersTo" in plain, false);
+});
