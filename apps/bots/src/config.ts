@@ -12,6 +12,8 @@ export type DaemonConfig = {
   readonly devAgentTokenPath?: string;
   /** Canonical root: the catalog, the token, the logs and every bot directory. */
   readonly root: string;
+  /** The person-editable memory directory: `global.md` plus one file per bot. */
+  readonly memoryDir: string;
   /** Loopback service port. */
   readonly port: number;
   /** Idle bots are closed after this, and reopened on demand. */
@@ -50,6 +52,10 @@ const portNumber = (value: string | undefined, fallback: number): number => {
 
 export const defaultRoot = (): string => join(homedir(), ".local", "share", "eagle-bots");
 
+/** Memory is the person's own knowledge, so it lives beside `providers.json`, not in state. */
+export const defaultMemoryDir = (home: string, configHome: string | undefined): string =>
+  join(configHome?.trim() || join(home, ".config"), "eagle-bots", "memory");
+
 /**
  * The development agent's credential file, named by `BOTS_DEV_AGENT_TOKEN`. An empty
  * variable arms nothing, and without the variable the daemon never accepts one.
@@ -86,10 +92,13 @@ export const readConfig = (input: ConfigInput = {}): DaemonConfig => {
     }
   }
   const devTokenPath = devAgentTokenPath(env.BOTS_DEV_AGENT_TOKEN);
+  const memoryDir =
+    env.BOTS_MEMORY_DIR?.trim() || defaultMemoryDir(input.home ?? homedir(), env.XDG_CONFIG_HOME);
   return {
     ...(env.BOTS_DEVICE_SOCKET === undefined ? {} : { deviceSocket: env.BOTS_DEVICE_SOCKET }),
     ...(devTokenPath === undefined ? {} : { devAgentTokenPath: devTokenPath }),
     root,
+    memoryDir,
     port,
     idleCloseMs: integer(env.BOTS_IDLE_CLOSE_MS, DEFAULT_IDLE_CLOSE_MS),
     quarantineRetryMs: integer(env.BOTS_QUARANTINE_RETRY_MS, DEFAULT_QUARANTINE_RETRY_MS),

@@ -20,6 +20,7 @@ test("defaults, arguments and environment agree", () => {
   assert.equal(defaults.closeDeadlineMs, DEFAULT_CLOSE_DEADLINE_MS);
   assert.equal(defaults.logLevel, "debug");
   assert.deepEqual(defaults.model, { provider: "magpie", modelId: "auto/gpt-6-luna" });
+  assert.equal(defaults.memoryDir, "/home/tester/.config/eagle-bots/memory");
 
   const explicit = readConfig({
     argv: ["--root", "/tmp/root", "--port", "43118"],
@@ -35,6 +36,17 @@ test("defaults, arguments and environment agree", () => {
   assert.equal(explicit.logLevel, "warn");
   assert.equal(explicit.model.modelId, "auto/gpt-6-1-sol");
   assert.equal(explicit.idleCloseMs, 2_500);
+
+  assert.equal(
+    readConfig({ argv: [], env: { XDG_CONFIG_HOME: "/tmp/cfg" }, home: "/home/tester" }).memoryDir,
+    "/tmp/cfg/eagle-bots/memory",
+    "memory follows the configuration root, not the state root",
+  );
+  assert.equal(
+    readConfig({ argv: [], env: { BOTS_MEMORY_DIR: "/tmp/mem" }, home: "/home/tester" }).memoryDir,
+    "/tmp/mem",
+    "an explicit directory wins",
+  );
 
   assert.throws(() => readConfig({ argv: ["--root"], env: {} }), /--root needs a path/);
   assert.throws(() => readConfig({ argv: ["--port"], env: {} }), /--port needs a number/);

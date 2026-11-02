@@ -9,12 +9,30 @@ const catalog = describeToolCatalog(createCatalogRegistry());
 test("every group is described, with the tools it actually contributes", () => {
   assert.deepEqual(
     catalog.map((entry) => entry.group),
-    ["persona", "machine", "core", "coding", "herdr", "agents", "search", "trigger", "peers"],
+    [
+      "persona",
+      "machine",
+      "core",
+      "coding",
+      "memory",
+      "herdr",
+      "agents",
+      "search",
+      "trigger",
+      "peers",
+    ],
   );
   const names = (group: string) =>
     catalog.find((entry) => entry.group === group)?.tools.map((tool) => tool.name) ?? [];
   assert.deepEqual(names("core"), ["list", "note_set", "ask_user"]);
   assert.deepEqual(names("coding"), ["read", "write", "edit", "bash", "pr_register", "pr_list"]);
+  assert.deepEqual(names("memory"), [
+    "memory_list",
+    "memory_search",
+    "memory_read",
+    "memory_write",
+    "memory_delete",
+  ]);
   assert.deepEqual(names("search"), ["web_search", "web_fetch"]);
   assert.deepEqual(names("trigger"), [
     "trigger_create",

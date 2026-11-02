@@ -23,6 +23,48 @@ export class ToolError extends Error {
 
 export const failed = (message: string): ToolOutcome => ({ output: message, isError: true });
 
+/** The two places memory lives. `bot` is this Bot's own file, bound by the host, never named. */
+export type MemoryScope = "global" | "bot";
+
+// The bounds the contract promises (docs/bots/EXTENSIONS-AND-TOOLS.md §6.1). They belong to
+// the port, not to a store: a replacement must refuse the same inputs.
+export const MAX_MEMORY_KEY = 120;
+export const MAX_MEMORY_CONTENT = 32 * 1024;
+export const MAX_MEMORY_QUERY = 2 * 1024;
+export const MAX_MEMORY_EXCERPT = 200;
+export const MAX_MEMORY_LIMIT = 100;
+export const DEFAULT_MEMORY_LIMIT = 20;
+
+/**
+ * What the memory tools may do (docs/bots/EXTENSIONS-AND-TOOLS.md §6.1). The port is the whole
+ * storage contract: paths, markdown and any future index stay behind it, so a person-editable
+ * file store, a database or a remote index are interchangeable implementations.
+ */
+export type MemoryToolHost = {
+  readonly botId: string;
+  /** Records in stable key order; the cursor is the last key the caller received. */
+  list(input: { scope: MemoryScope; cursor?: string; limit: number }): Promise<{
+    readonly items: readonly { key: string; bytes: number }[];
+    readonly nextCursor?: string;
+  }>;
+  /** Relevant records as keys and bounded excerpts, never whole records. */
+  search(input: { scope: MemoryScope; query: string; limit: number }): Promise<{
+    readonly items: readonly { key: string; excerpt: string }[];
+    readonly truncated: boolean;
+  }>;
+  read(input: {
+    scope: MemoryScope;
+    key: string;
+  }): Promise<{ readonly key: string; readonly content: string } | undefined>;
+  /** Creates or replaces the whole record at that key. */
+  write(input: { scope: MemoryScope; key: string; content: string }): Promise<{
+    readonly key: string;
+    readonly bytes: number;
+    readonly created: boolean;
+  }>;
+  remove(input: { scope: MemoryScope; key: string }): Promise<{ readonly deleted: boolean }>;
+};
+
 /** What one Bot may write about itself: the sidebar line the daemon stores in its catalog. */
 export type NoteToolHost = {
   readonly botId: string;

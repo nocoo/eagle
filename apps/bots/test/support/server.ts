@@ -18,6 +18,7 @@ import { PeerExchangeStore } from "../../src/core/PeerExchangeStore.ts";
 import type { RuntimePort } from "../../src/core/RuntimePort.ts";
 import { captureLog, type LogRecord } from "../../src/log/log.ts";
 import { measureEvent } from "../../src/main.ts";
+import { fileMemoryHost } from "../../src/memory/fileHost.ts";
 import { peerApi } from "../../src/peers/api.ts";
 import { peerHostFor } from "../../src/peers/host.ts";
 import { PiDurableRuntime } from "../../src/runtime/pi/PiDurableRuntime.ts";
@@ -64,6 +65,8 @@ export type StackOptions = {
   readonly idleCloseMs?: number;
   /** The development agent's credential file; absent means no development token. */
   readonly devTokenPath?: string;
+  /** Give the real adapter the memory group over `<root>/memory`, as the daemon does. */
+  readonly memory?: boolean;
   readonly script?: FakeScript;
   readonly model?: { provider: string; modelId: string };
   /** Run the real pi-durable adapter over real sqlite; only the model network is faked. */
@@ -143,6 +146,12 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
       ...(options.windowMessages === undefined ? {} : { windowMessages: options.windowMessages }),
       // The host needs the registry and the service, which exist after the adapter does.
       peers: async (spec) => peersHolder.current?.(spec.id),
+      ...(options.memory !== true
+        ? {}
+        : {
+            memory: (spec: { readonly id: string }) =>
+              fileMemoryHost({ dir: join(root, "memory"), botId: spec.id }),
+          }),
       ...(options.note !== true
         ? {}
         : {

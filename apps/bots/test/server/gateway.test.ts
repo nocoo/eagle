@@ -76,7 +76,7 @@ test("dotenv values are the fallback, and a broken file is not configured", asyn
       model: "m",
       apiKey: "k",
       thinkingLevel: "medium",
-      toolGroups: ["persona", "machine", "core", "coding", "herdr", "agents", "trigger"],
+      toolGroups: ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"],
       corePrompt: DEFAULT_CORE_PROMPT,
     },
   );

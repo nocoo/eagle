@@ -25,6 +25,7 @@ import { TriggerStore, triggerJournalPath } from "./core/TriggerStore.ts";
 import { declareEvent } from "./log/events.ts";
 import { Log } from "./log/log.ts";
 import { FileLogSink } from "./log/sink.ts";
+import { fileMemoryHost } from "./memory/fileHost.ts";
 import { peerApi } from "./peers/api.ts";
 import { peerHostFor } from "./peers/host.ts";
 import { encodeServerEvent } from "./protocol/encode.ts";
@@ -372,6 +373,9 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
         return queue === undefined ? undefined : (await queue).cursor();
       }),
     pulls: pulls.runtimeHost,
+    // The two markdown scopes are the person's own documents: the daemon only reads and
+    // rewrites records, and the host binds this bot's file so the model never names one.
+    memory: (spec) => fileMemoryHost({ dir: canonical.memoryDir, botId: spec.id }),
     // The tool owns the line; the catalog owns the truth, and the broadcast is how the
     // sidebar sees it without another read. A settled run writes through the same host.
     note: (spec) =>
