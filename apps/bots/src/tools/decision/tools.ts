@@ -126,43 +126,59 @@ const isEntry = (value: unknown): boolean =>
 const reservedLabel = (labels: readonly string[]): string | undefined =>
   labels.find((label) => RESERVED_NAMES.has(label.trim()));
 
+/** The longest text a JSON number can take, so a probability is never under-counted. */
+const MAX_NUMBER_TEXT = 1.7976931348623157e308;
+/** Room for one line beneath the answer: the resolved model or an unsure note. */
+const LINE_BYTES = 96;
+/** Room for the model line, the summary wording and JSON punctuation. */
+const FIXED_BYTES = 200;
+
+const escapedBytes = (text: string): number => Buffer.byteLength(JSON.stringify(text), "utf8");
+
+/** The key whose escaped form is longest: a choice's winner appears as the choice and as a key. */
+const longestKey = (keys: readonly string[]): string =>
+  keys.reduce((longest, key) => (escapedBytes(key) > escapedBytes(longest) ? key : longest), "");
+
 /**
- * Would the answer fit the text this tool can return? The check serializes a worst-case answer
- * built from the request itself: every option appears as both the choice and a probability key,
- * and a score's legend may repeat a criterion's own JSON. Measuring the real encoding is what
- * catches escaping (`\u0000` costs six bytes) instead of guessing bytes per character.
+ * Would the answer fit the text this tool can return? The bound is measured, not guessed: the
+ * projection serializes a worst-case answer built from the request itself, with the longest
+ * number a JSON probability can produce and the longest escaped option as the winner. `extras`
+ * covers what a tool prints beside the answer, like the label ranking classify reports.
  */
 const answerFits = (
   questions: Readonly<Record<string, DecisionQuestion>>,
-  budget = ANSWER_HEADROOM,
+  options: { readonly extras?: readonly string[]; readonly budget?: number } = {},
 ): boolean => {
   const projected: Record<string, unknown> = {};
   for (const [id, question] of Object.entries(questions)) {
     if (question.type === "choice") {
-      const labels = Object.keys(question.criteria);
+      const keys = Object.keys(question.criteria);
       projected[id] = {
         type: "choice",
-        choice: labels.at(-1) ?? "",
-        probabilities: Object.fromEntries(labels.map((label) => [label, 0.5])),
-        confidence: 1,
+        choice: longestKey(keys),
+        probabilities: Object.fromEntries(keys.map((key) => [key, MAX_NUMBER_TEXT])),
+        confidence: MAX_NUMBER_TEXT,
       };
       continue;
     }
     if (question.type === "score") {
       projected[id] = {
         type: "score",
-        score: question.criteria.length - 1,
+        score: MAX_NUMBER_TEXT,
         legend: question.criteria.map((level) =>
           typeof level === "string" ? level : JSON.stringify(level),
         ),
-        probabilities: question.criteria.map(() => 0.5),
-        confidence: 1,
+        probabilities: question.criteria.map(() => MAX_NUMBER_TEXT),
+        confidence: MAX_NUMBER_TEXT,
       };
       continue;
     }
-    projected[id] = { type: "noul", noul: 0.5 };
+    projected[id] = { type: "noul", noul: MAX_NUMBER_TEXT };
   }
-  return Buffer.byteLength(JSON.stringify(projected), "utf8") <= budget;
+  const measured = Buffer.byteLength(JSON.stringify(projected), "utf8");
+  const extras = (options.extras ?? []).reduce((total, text) => total + escapedBytes(text) + 8, 0);
+  const lines = LINE_BYTES * Object.keys(questions).length;
+  return measured + extras + lines + FIXED_BYTES <= (options.budget ?? ANSWER_HEADROOM);
 };
 
 const readLabels = (value: unknown): string[] | undefined => {
@@ -470,8 +486,8 @@ export const createDecisionTools = (options: DecisionToolOptions) => {
               instructions: `Does the state belong to the category "${label}"?`,
             };
           }
-          if (!answerFits(questions)) {
-            return refusal("答案会超过工具输出上限，请减少标签。");
+          if (!answerFits(questions, { extras: [JSON.stringify(labels), labels.join(", ")] })) {
+            return refusal("答案会超过工具输出上限，请减少标签或缩短 label。");
           }
           const reply_ = await ask(state, questions, context);
           const threshold = args.threshold ?? DEFAULT_CLASSIFY_THRESHOLD;
@@ -615,7 +631,7 @@ export const createDecisionTools = (options: DecisionToolOptions) => {
         if (state === undefined) return refusal("state 需要是非空文本或一个 JSON 结构。");
         const questions = readJudgeQuestions(args.questions);
         if (typeof questions === "string") return refusal(questions);
-        if (!answerFits(questions, 26 * 1024)) {
+        if (!answerFits(questions, { budget: 26 * 1024 })) {
           return refusal("答案会超过工具输出上限，请减少题目、选项或缩短文字。");
         }
         try {

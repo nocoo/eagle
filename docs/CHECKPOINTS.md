@@ -3041,3 +3041,11 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   answer budget is now refused before the request, the booking never takes the answer down,
   and a zero-token call is booked as one call. `apps/bots` check, both Swift packages, the root
   check and both decision eval cases were re-run after the fixes.
+- A second round found the size budget still a lower bound in three ways: classify's printed
+  label ranking was not counted, a probability was projected as `0.5` instead of the longest
+  number a JSON float can take, and the choice winner was always the last option. The bound is
+  now measured from the request with worst-case values (longest escaped option as the winner,
+  longest JSON number per probability, the printed ranking as an extra) plus a per-answer line.
+  Round three's remaining findings are closed by that change; the review budget is spent, so
+  the last measurement was verified by its three new tests and the full gates, not a fourth
+  review round.

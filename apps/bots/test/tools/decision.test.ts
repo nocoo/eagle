@@ -317,6 +317,27 @@ test("the answer must fit the output the tool can return", async () => {
   });
   assert.equal(escaped.result.isError, true, "a badly escaped answer is refused too");
 
+  // Many options each need a long probability, and nine such questions must not fit in one
+  // judge answer either.
+  const wide = await run("judge", {
+    state: "x",
+    questions: Array.from({ length: 9 }, (_, index) => ({
+      id: `q${index}`,
+      type: "choice",
+      instructions: "?",
+      criteria: Object.fromEntries(Array.from({ length: 255 }, (_, option) => [`o${option}`, "?"])),
+    })),
+  });
+  assert.equal(wide.result.isError, true, "every probability is counted at its longest");
+
+  // The winner is not always the last option: the longest escaped label must be the one counted.
+  const winner = await run("decide", {
+    state: "x",
+    question: "?",
+    options: [{ label: "\u0000".repeat(3_000) }, { label: "plain" }],
+  });
+  assert.equal(winner.result.isError, true);
+
   // A nested level is repeated in the legend, so its own JSON is what has to fit.
   const nested = await run("judge", {
     state: "x",
@@ -330,6 +351,14 @@ test("the answer must fit the output the tool can return", async () => {
     ],
   });
   assert.equal(nested.result.isError, true, "a nested legend is measured, not counted as empty");
+
+  // classify prints the labels beside the answer, so its own ranking counts too.
+  const labels = await run("classify", {
+    state: "x",
+    labels: Array.from({ length: 60 }, (_, index) => `标签${index}`.padEnd(80, "网")),
+    mode: "multi",
+  });
+  assert.equal(labels.result.isError, true, "the printed label ranking is part of the answer");
 
   assert.deepEqual(requests, [], "an oversized answer is refused before it is paid for");
 });
