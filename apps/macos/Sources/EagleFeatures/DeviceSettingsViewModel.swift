@@ -149,6 +149,8 @@ private struct DeviceServiceState: Decodable {
       return "请填写服务地址：https 的裸域名，本机调试可用 http://127.0.0.1:端口。"
     case "background_approval_required":
       return "请在系统设置中允许 Eagle 在后台运行，然后重试。"
+    case "invalid_configuration":
+      return "这个版本没有设备服务：设备服务由安装好的 App 提供，源码运行连不上 relay。"
     case "group_conflict": return "两台设备已属于不同设备群。请先退出原群，再配对。"
     case "pairing_unavailable", "pairing_not_found": return "配对码已过期、已作废或不存在。"
     case "pairing_consumed": return "这个配对码已被另一台设备使用。"

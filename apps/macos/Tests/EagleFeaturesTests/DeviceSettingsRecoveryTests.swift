@@ -268,6 +268,17 @@ struct DeviceSettingsRecoveryTests {
     #expect(model.errorCode == error)
   }
 
+  @Test("a build without a device helper says so instead of looking unconnected")
+  func sourceRunExplainsTheMissingHelper() async throws {
+    let (model, control, defaults) = deviceSettingsFixture()
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    control.startError = DeviceHostError.invalidConfiguration
+    await model.startIfNeeded()
+    #expect(model.errorCode == "invalid_configuration")
+    #expect(model.errorMessage?.contains("安装") == true)
+    #expect(model.errorMessage?.contains("源码") == true)
+  }
+
   @Test("self_pairing is a definitive rejection and does not strand a pending request")
   func selfPairing() async throws {
     let (model, control, defaults) = deviceSettingsFixture()
