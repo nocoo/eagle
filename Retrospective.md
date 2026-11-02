@@ -940,3 +940,17 @@ offline identity/SRI checks then matched the root lock, and the normal root chec
 passed. Tarball presence alone is not sufficient for a fresh unlocked prefix.
 See [NPM recovery](docs/NPM-RECOVERY.md); task receipts are under
 `.local/npm-recovery/`, not a new global registry configuration.
+
+## 2026-11-02 — Compact Herdr metadata verification
+
+The first root gate run overlapped the browser suite and hit the existing
+two-second `agent-package` CLI deadline. After the browser run ended, the full
+root gate passed unchanged (265 tests). Both logs are retained under `.local/`;
+no assertion, timeout or hook was weakened. The later production Herdr timeout
+change from three to ten seconds was an explicit user request, independent of
+that package test's unchanged deadline.
+
+Independent read-only review also found that an equal-size, same-inode log rewrite
+was treated as an append after its timestamp changed. A regression test reproduced
+stale model metadata. Reusing the old read offset now requires actual file growth;
+rewrites take the bounded reload path.

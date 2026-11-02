@@ -2578,3 +2578,79 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   started collapsed, expanded to six members, then collapsed again. Existing
   device configuration and history remain in the same profile; the previous App
   was retained by the normal installer. No required implementation hop remains.
+
+## 2026-11-02 16:22 +08 — Compact Herdr member configuration
+
+- The entry Lead retains sole implementation ownership of this small continuation
+  in `eagle-herdr-teams`; the existing Service tasks own other checkouts. The
+  verified Astra Max `eagle-review` is assigned an independent read-only review.
+- Collection: the live default session still has six Codex members across two
+  teams. Exact session IDs resolve to local logs with recorded model/effort and
+  258,400-token context windows. No authentication, device, D1 or cloud change.
+- Behavior: the UI drops paths and adds compact configuration subtitles and
+  monochrome icons. Herdr alone still supplies lifecycle states on the existing
+  five-second loop. Optional metadata has bounded reads, cached file stamps and
+  incremental appends; new-file discovery is at most once per 30 seconds.
+- Evidence: native tests first failed on the old visible path and absent metadata;
+  the first implementation passed. Integration coverage for exact identities,
+  malformed references and preserving Herdr blocked states is running.
+- Next: inspect current rendered widths/themes, finish checks and read-only
+  review, then replace the installed candidate through the existing installer.
+
+## 2026-11-02 16:40 +08 — Herdr follow-up corrections
+
+- The first model-detail candidate was installed and its binary, plist and host
+  configuration matched the staged artifact. User feedback requested shallower
+  indentation, retaining `lunyu-anime`, a three-second refresh interval and a
+  ten-second command timeout; these now supersede the earlier display/filter rules.
+- Live collection: Herdr returns five local workspaces and six recognized agents.
+  `lunyu-anime` exists as `w2` with no recognized agent; filtering empty workspaces
+  caused its omission. Empty workspaces now remain as compact zero-member rows.
+  CLI probes with the App's local binary returned in 34–112 ms; the reported
+  earlier GUI timeout was not reproduced in those probes.
+- Read-only review found an equal-size in-place log rewrite retaining cached
+  metadata. A failing test reproduced it; only actual file growth now reuses the
+  append offset. The metadata cache continues to be independent of lifecycle state.
+- Authentication, D1, remote collection and cloud behavior are unchanged. Final
+  native checks, updated renders and replacement installation are the remaining
+  verification steps; the passed root and browser gates cover unchanged source.
+
+## 2026-11-02 16:58 +08 — Herdr team and member disclosure
+
+- The intermediate candidate is installed and verified against the staged binary,
+  plist and host configuration. Its live UI shows all five workspaces, six members
+  with recorded models, and `lunyu-anime`, without paths or a read-error indicator.
+- The next candidate ranks teams by current working-member count, then blocked
+  count, preserving Herdr order for ties. It initially shows at most five teams
+  and provides a more/less control; each team's members start collapsed and can
+  be expanded independently, with expansion retained through successful refreshes.
+- New interaction tests first failed, then passed with the implementation: 369
+  native tests now pass, including eight-team overflow, sorting, member disclosure
+  and refresh persistence. Final strict formatting, coverage, rendered inspection
+  and installation of these latest disclosure changes remain.
+- This is local Herdr collection and native rendering only. No authentication,
+  D1, cloud or remote-machine changes; the earlier root/browser checks still cover
+  unchanged source.
+
+## 2026-11-02 17:11 +08 — Herdr hierarchy and disclosure installed
+
+- Final hierarchy follows machine → Herdr → team → member, with stronger machine
+  and Herdr headings and small steps between text columns. Narrow member metadata
+  wraps to two lines. Light/dark renders at 280, 319 and 460 points cover folded
+  teams, expanded members and the eight-team more/less fixture.
+- Installed local candidate build `1793610592560` with the normal signed-bundle
+  installer. Its executable, plist and host configuration match the staged hashes;
+  the previous bundle is retained and the existing profile/history are preserved.
+- The actual App starts with Herdr and member lists collapsed. Live accessibility
+  interaction verified five team headers, `lunyu-anime`, independent expansion and
+  collapse of both three-member teams, model subtitles without paths, and expansion
+  surviving manual/periodic refresh. It has no Herdr read-error indicator and is
+  left on 电脑 with teams visible and members collapsed.
+- The live collector still reports five workspaces and six Codex members. Metadata
+  comes from their exact local sessions; statuses still come only from Herdr. There
+  are no authentication, D1, cloud or remote-machine changes.
+- Final native tests pass all 369 cases and strict formatting passes. The logic
+  coverage gate passed at 91.7% after sorting/disclosure; subsequent edits affect
+  typography, padding and text wrapping only. Root check (265 tests) and browser
+  checks (191 passed, 11 existing platform exclusions) passed earlier and cover
+  unchanged sources. No implementation or installation step remains.

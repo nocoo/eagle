@@ -316,8 +316,9 @@ struct SnapshotRenderer {
     await model.refresh()
     for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
       for width in [280, 319, 460] {
-        for (state, expanded) in [("collapsed", false), ("expanded", true)] {
+        for (state, expanded) in [("collapsed", false), ("expanded", true), ("members", true)] {
           model.isExpanded = expanded
+          model.expandedTeamIDs = state == "members" ? Set(snapshot.teams.map(\.id)) : []
           capture(
             DeviceInspectorList(
               entries: [
@@ -330,10 +331,30 @@ struct SnapshotRenderer {
             .padding(Theme.Metric.panelInset)
             .frame(maxHeight: .infinity, alignment: .top)
             .background(Theme.Palette.surface).preferredColorScheme(scheme),
-            size: CGSize(width: width, height: 720), named: "herdr-\(state)-\(name)-\(width)",
+            size: CGSize(width: width, height: state == "members" ? 900 : 720),
+            named: "herdr-\(state)-\(name)-\(width)",
             in: directory, appearance: scheme == .dark ? .darkAqua : .aqua)
         }
       }
+    }
+    let overflow = HerdrTeamsViewModel(read: {
+      HerdrTeamsSnapshot(
+        teams: snapshot.teams
+          + (1...3).map {
+            HerdrTeam(
+              session: "fixture", workspaceID: "example-\($0)", name: "示例团队 \($0)", members: [])
+          }, sessionCount: snapshot.sessionCount)
+    })
+    await overflow.refresh()
+    overflow.isExpanded = true
+    for expanded in [false, true] {
+      overflow.showsAllTeams = expanded
+      capture(
+        HerdrTeamsView(model: overflow).padding(Theme.Metric.panelInset)
+          .frame(maxHeight: .infinity, alignment: .top)
+          .background(Theme.Palette.surface).preferredColorScheme(.light),
+        size: CGSize(width: 280, height: 600), named: "herdr-overflow-fixture-\(expanded)",
+        in: directory)
     }
     let empty = HerdrTeamsViewModel(read: { HerdrTeamsSnapshot(teams: [], sessionCount: 1) })
     await empty.refresh()

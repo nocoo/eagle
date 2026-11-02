@@ -132,7 +132,7 @@ public struct DeviceInspectorList: View {
         .foregroundStyle(isLocal ? Theme.Palette.textSecondary : Theme.Palette.textMuted)
         .frame(width: 16)
       Text(device.name)
-        .font(.system(size: 13, weight: isLocal ? .medium : .regular))
+        .font(isLocal ? Theme.TypeScale.cardTitle.weight(.semibold) : Theme.TypeScale.note)
         .foregroundStyle(Theme.Palette.textPrimary)
         .lineLimit(1)
         .truncationMode(.middle)

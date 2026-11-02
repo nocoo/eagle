@@ -3,6 +3,8 @@ import Foundation
 @MainActor
 public final class HerdrTeamsViewModel: ObservableObject {
   @Published public var isExpanded = false
+  @Published public var expandedTeamIDs: Set<String> = []
+  @Published public var showsAllTeams = false
   @Published public private(set) var snapshot: HerdrTeamsSnapshot?
   @Published public private(set) var error: HerdrReadError?
   @Published public private(set) var updatedAt: Date?
@@ -11,12 +13,24 @@ public final class HerdrTeamsViewModel: ObservableObject {
   private let read: @MainActor () async throws -> HerdrTeamsSnapshot
   private let wait: @MainActor () async throws -> Void
 
+  public var additionalTeamCount: Int { max(0, (snapshot?.teams.count ?? 0) - 5) }
+
+  public var visibleTeams: [HerdrTeam] {
+    let teams = (snapshot?.teams ?? []).enumerated().sorted { lhs, rhs in
+      for status in [HerdrAgentStatus.working, .blocked] {
+        let left = lhs.element.members.filter { $0.status == status }.count
+        let right = rhs.element.members.filter { $0.status == status }.count
+        if left != right { return left > right }
+      }
+      return lhs.offset < rhs.offset
+    }.map(\.element)
+    return showsAllTeams ? teams : Array(teams.prefix(5))
+  }
+
   public init(
-    read: @escaping @MainActor () async throws -> HerdrTeamsSnapshot = {
-      try await LocalHerdrClient().read()
-    },
+    read: @escaping @MainActor () async throws -> HerdrTeamsSnapshot = LocalHerdrClient().read,
     observationWait: @escaping @MainActor () async throws -> Void = {
-      try await Task.sleep(for: .seconds(5))
+      try await Task.sleep(for: .seconds(3))
     }
   ) {
     self.read = read
@@ -31,6 +45,7 @@ public final class HerdrTeamsViewModel: ObservableObject {
       let result = try await read()
       try Task.checkCancellation()
       if snapshot != result { snapshot = result }
+      expandedTeamIDs.formIntersection(result.teams.map(\.id))
       error = nil
       isStale = false
       updatedAt = Date()

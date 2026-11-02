@@ -19,16 +19,34 @@ public struct HerdrTeamMember: Identifiable, Equatable, Sendable {
   public let name: String
   public let kind: String
   public let status: HerdrAgentStatus
-  public let directory: String?
+  public let model: String?
+  public let reasoningEffort: String?
+  public let contextWindow: Int?
 
   public init(
-    id: String, name: String, kind: String, status: HerdrAgentStatus, directory: String? = nil
+    id: String, name: String, kind: String, status: HerdrAgentStatus,
+    model: String? = nil, reasoningEffort: String? = nil, contextWindow: Int? = nil
   ) {
     self.id = id
     self.name = name
     self.kind = kind
     self.status = status
-    self.directory = directory
+    self.model = model
+    self.reasoningEffort = reasoningEffort
+    self.contextWindow = contextWindow
+  }
+
+  public var detail: String {
+    [
+      kind, model ?? "模型未记录", reasoningEffort,
+      contextWindow.map { UsageFormat.tokens($0).uppercased() },
+    ]
+    .compactMap { $0 }.joined(separator: " · ")
+  }
+
+  public var configurationHelp: String {
+    "模型：\(model ?? "未记录")\n推理强度：\(reasoningEffort ?? "未记录")\n上下文窗口："
+      + (contextWindow.map { "\($0.formatted()) tokens" } ?? "未记录")
   }
 }
 
@@ -59,8 +77,14 @@ public struct HerdrTeamsSnapshot: Equatable, Sendable {
 
 public struct LocalHerdrClient: Sendable {
   private let execute: @Sendable ([String]) async throws -> Data
+  private let metadata: CodexSessionMetadataReader?
 
   public init() {
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    let codex =
+      ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
+      ?? home.appendingPathComponent(".codex")
+    self.metadata = CodexSessionMetadataReader(root: codex.appendingPathComponent("sessions"))
     self.execute = { arguments in
       let environment = ProcessInfo.processInfo.environment
       let home = FileManager.default.homeDirectoryForCurrentUser
@@ -73,7 +97,11 @@ public struct LocalHerdrClient: Sendable {
     }
   }
 
-  init(execute: @escaping @Sendable ([String]) async throws -> Data) {
+  init(
+    metadata: CodexSessionMetadataReader? = nil,
+    execute: @escaping @Sendable ([String]) async throws -> Data
+  ) {
+    self.metadata = metadata
     self.execute = execute
   }
 
@@ -102,20 +130,28 @@ public struct LocalHerdrClient: Sendable {
         else { throw HerdrReadError.invalidResponse }
         let agents = Dictionary(grouping: snapshot.agents, by: \.workspaceId)
         for workspace in snapshot.workspaces {
-          let members = (agents[workspace.workspaceId] ?? []).map { agent in
-            HerdrTeamMember(
-              id: agent.paneId,
-              name: Self.nonempty(agent.name) ?? "\(agent.agent) · \(agent.paneId)",
-              kind: agent.agent,
-              status: HerdrAgentStatus(rawValue: agent.agentStatus ?? "") ?? .unknown,
-              directory: Self.nonempty(agent.foregroundCwd) ?? Self.nonempty(agent.cwd))
+          var members: [HerdrTeamMember] = []
+          for agent in agents[workspace.workspaceId] ?? [] {
+            var info = HerdrAgentMetadata()
+            if agent.agent == "codex", agent.agentSession?.agent == agent.agent,
+              agent.agentSession?.kind == "id", let id = agent.agentSession?.value
+            {
+              info = await metadata?.read(sessionID: id) ?? HerdrAgentMetadata()
+            }
+            try Task.checkCancellation()
+            members.append(
+              HerdrTeamMember(
+                id: agent.paneId,
+                name: Self.nonempty(agent.name) ?? "\(agent.agent) · \(agent.paneId)",
+                kind: agent.agent,
+                status: HerdrAgentStatus(rawValue: agent.agentStatus ?? "") ?? .unknown,
+                model: info.model, reasoningEffort: info.reasoningEffort,
+                contextWindow: info.contextWindow))
           }
-          if !members.isEmpty {
-            teams.append(
-              HerdrTeam(
-                session: session.name, workspaceID: workspace.workspaceId,
-                name: Self.nonempty(workspace.label) ?? workspace.workspaceId, members: members))
-          }
+          teams.append(
+            HerdrTeam(
+              session: session.name, workspaceID: workspace.workspaceId,
+              name: Self.nonempty(workspace.label) ?? workspace.workspaceId, members: members))
         }
       }
       return HerdrTeamsSnapshot(teams: teams, sessionCount: sessions.count)
@@ -151,7 +187,7 @@ public struct LocalHerdrClient: Sendable {
 
   static func run(
     executable: URL, arguments: [String], environment: [String: String],
-    timeout: Duration = .seconds(3)
+    timeout: Duration = .seconds(10)
   ) async throws -> Data {
     try Task.checkCancellation()
     let process = Process()
@@ -222,8 +258,21 @@ public struct LocalHerdrClient: Sendable {
       let name: String?
       let agent: String
       let agentStatus: String?
-      let cwd: String?
-      let foregroundCwd: String?
+      let agentSession: AgentSession?
+    }
+    struct AgentSession: Decodable {
+      let agent: String?
+      let kind: String?
+      let value: String?
+
+      enum CodingKeys: String, CodingKey { case agent, kind, value }
+
+      init(from decoder: Decoder) throws {
+        let container = try? decoder.container(keyedBy: CodingKeys.self)
+        agent = try? container?.decode(String.self, forKey: .agent)
+        kind = try? container?.decode(String.self, forKey: .kind)
+        value = try? container?.decode(String.self, forKey: .value)
+      }
     }
   }
 }

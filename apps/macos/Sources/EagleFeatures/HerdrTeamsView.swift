@@ -17,7 +17,9 @@ public struct HerdrTeamsView: View {
         Image(systemName: "person.2")
           .font(.system(size: Theme.Metric.panelSectionGlyph, weight: .semibold))
           .frame(width: Theme.Metric.panelSectionGlyphWidth)
-        Text("Herdr").font(Theme.TypeScale.note)
+        Text("Herdr")
+          .font(Theme.TypeScale.sectionLabel.weight(.semibold))
+          .foregroundStyle(Theme.Palette.textPrimary)
         Spacer(minLength: 0)
         Text(countLabel).font(Theme.TypeScale.pill).monospacedDigit()
         if let error = model.error {
@@ -57,14 +59,32 @@ public struct HerdrTeamsView: View {
 
       if let snapshot = model.snapshot {
         if snapshot.teams.isEmpty {
-          Text(snapshot.sessionCount == 0 ? "Herdr 尚未运行" : "暂无 agent 团队")
+          Text(snapshot.sessionCount == 0 ? "Herdr 尚未运行" : "暂无团队")
             .font(Theme.TypeScale.note)
             .foregroundStyle(Theme.Palette.textSecondary)
             .padding(.vertical, Theme.Metric.panelEmptyVertical)
         } else {
-          ForEach(Array(snapshot.teams.enumerated()), id: \.element.id) { index, team in
+          ForEach(Array(model.visibleTeams.enumerated()), id: \.element.id) { index, team in
             if index > 0 { Divider().overlay(Theme.Palette.line) }
             teamRows(team)
+          }
+          if model.additionalTeamCount > 0 {
+            Button {
+              model.showsAllTeams.toggle()
+            } label: {
+              HStack {
+                Text(model.showsAllTeams ? "收起团队" : "查看更多团队（\(model.additionalTeamCount)）")
+                Spacer(minLength: 0)
+                Image(systemName: model.showsAllTeams ? "chevron.up" : "chevron.down")
+                  .accessibilityHidden(true)
+              }
+              .font(Theme.TypeScale.pill)
+              .foregroundStyle(Theme.Palette.accent)
+              .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+              .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("herdr.more-teams")
           }
         }
       } else if model.error == nil {
@@ -94,48 +114,99 @@ public struct HerdrTeamsView: View {
   }
 
   private func teamRows(_ team: HerdrTeam) -> some View {
-    VStack(alignment: .leading, spacing: 0) {
-      VStack(alignment: .leading, spacing: 4) {
-        Text(team.name)
-          .font(Theme.TypeScale.cardTitle)
-          .foregroundStyle(Theme.Palette.textPrimary)
-          .lineLimit(2)
-          .help(team.name)
-        Text(summary(team))
-          .font(Theme.TypeScale.pill)
-          .foregroundStyle(Theme.Palette.textSecondary)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-      .padding(.vertical, 10)
-      ForEach(team.members) { member in
-        HStack(alignment: .top, spacing: 8) {
-          VStack(alignment: .leading, spacing: 4) {
-            Text(member.name)
-              .font(Theme.TypeScale.note)
-              .foregroundStyle(Theme.Palette.textPrimary)
-              .lineLimit(1)
-              .truncationMode(.middle)
-              .help(member.name)
-            Text(member.kind + (member.directory.map { " · \($0)" } ?? ""))
-              .font(Theme.TypeScale.pill)
-              .foregroundStyle(Theme.Palette.textSecondary)
-              .lineLimit(1)
-              .truncationMode(.middle)
-              .help(member.directory ?? "工作目录未知")
+    let expanded = model.expandedTeamIDs.contains(team.id)
+    return VStack(alignment: .leading, spacing: 0) {
+      if team.members.isEmpty {
+        teamHeader(team, expanded: false)
+          .accessibilityElement(children: .combine)
+          .accessibilityIdentifier("herdr.team.\(team.id)")
+      } else {
+        Button {
+          if expanded {
+            model.expandedTeamIDs.remove(team.id)
+          } else {
+            model.expandedTeamIDs.insert(team.id)
           }
-          Spacer(minLength: 0)
-          Text(model.isStale ? "未确认" : member.status.title)
-            .font(Theme.TypeScale.pill)
-            .foregroundStyle(statusTint(member.status))
-            .fixedSize()
+        } label: {
+          teamHeader(team, expanded: expanded)
         }
-        .padding(.vertical, 8)
-        .padding(.leading, Theme.Metric.panelTaskIndent)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("herdr.member.\(team.id).\(member.id)")
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(team.name)，\(summary(team))")
+        .accessibilityValue(expanded ? "已展开" : "已折叠")
+        .accessibilityIdentifier("herdr.team.\(team.id)")
+        .help(summary(team))
+      }
+      if expanded {
+        ForEach(team.members) { member in
+          HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "terminal")
+              .font(Theme.TypeScale.pill)
+              .frame(width: Theme.Metric.panelSectionGlyphWidth)
+              .foregroundStyle(Theme.Palette.textSecondary)
+              .padding(.top, 2)
+              .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+              HStack(spacing: 8) {
+                Text(member.name)
+                  .font(Theme.TypeScale.note)
+                  .foregroundStyle(Theme.Palette.textPrimary)
+                  .lineLimit(1)
+                  .truncationMode(.middle)
+                  .help(member.name)
+                Spacer(minLength: 0)
+                Text(model.isStale ? "未确认" : member.status.title)
+                  .font(Theme.TypeScale.pill)
+                  .foregroundStyle(statusTint(member.status))
+                  .fixedSize()
+              }
+              Text(member.detail)
+                .font(Theme.TypeScale.pill)
+                .foregroundStyle(Theme.Palette.textSecondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .help(member.configurationHelp)
+            }
+          }
+          .padding(.vertical, 8)
+          .padding(.leading, Theme.Metric.panelTaskIndent / 2)
+          .accessibilityElement(children: .combine)
+          .accessibilityIdentifier("herdr.member.\(team.id).\(member.id)")
+        }
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private func teamHeader(_ team: HerdrTeam, expanded: Bool) -> some View {
+    HStack(spacing: 8) {
+      Image(systemName: "person.2")
+        .frame(width: Theme.Metric.panelSectionGlyphWidth)
+        .foregroundStyle(Theme.Palette.textSecondary)
+        .accessibilityHidden(true)
+      Text(team.name).lineLimit(2).help(team.name)
+      Spacer(minLength: 0)
+      if !model.isStale && team.members.contains(where: { $0.status == .working }) {
+        Circle().fill(Theme.Palette.info).frame(width: 6, height: 6)
+          .accessibilityLabel("运行中")
+      }
+      Text("\(team.members.count) 成员")
+        .font(Theme.TypeScale.pill)
+        .foregroundStyle(Theme.Palette.textSecondary)
+        .fixedSize()
+      if !team.members.isEmpty {
+        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+          .font(.system(size: 9, weight: .semibold))
+          .frame(width: 10)
+          .foregroundStyle(Theme.Palette.textSecondary)
+          .accessibilityHidden(true)
+      } else {
+        Color.clear.frame(width: 10, height: 10).accessibilityHidden(true)
+      }
+    }
+    .font(Theme.TypeScale.note)
+    .foregroundStyle(Theme.Palette.textPrimary)
+    .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+    .contentShape(Rectangle())
   }
 
   private func summary(_ team: HerdrTeam) -> String {
@@ -180,7 +251,8 @@ private struct HerdrDisclosureStyle: DisclosureGroupStyle {
       .accessibilityValue(configuration.isExpanded ? "已展开" : "已折叠")
       .accessibilityIdentifier("herdr.disclosure")
       if configuration.isExpanded {
-        configuration.content.padding(.leading, Theme.Metric.panelTaskIndent)
+        configuration.content
+          .padding(.leading, Theme.Metric.panelTaskIndent + Theme.Metric.panelSectionRowGap)
       }
     }
   }

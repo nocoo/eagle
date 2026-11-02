@@ -16,17 +16,17 @@ struct LocalHerdrClientTests {
     }
     let snapshot = try await client.read()
     #expect(snapshot.sessionCount == 2)
-    try #require(snapshot.teams.count == 2)
-    #expect(Set(snapshot.teams.map(\.id)).count == 2)
-    #expect(snapshot.teams.map(\.session) == ["default", "focus"])
+    try #require(snapshot.teams.count == 4)
+    #expect(Set(snapshot.teams.map(\.id)).count == 4)
+    #expect(snapshot.teams.map(\.session) == ["default", "default", "focus", "focus"])
+    #expect(snapshot.teams[1].name == "Shells")
+    #expect(snapshot.teams[1].members.isEmpty)
     let team = snapshot.teams[0]
     #expect(team.name == "Eagle")
     #expect(team.members.map(\.name) == ["service", "codex · w1:p2", "review"])
     #expect(team.members.map(\.status) == [.working, .unknown, .done])
     #expect(team.members[0].kind == "codex")
-    #expect(team.members[0].directory == "/work/current")
-    #expect(team.members[1].directory == "/work/base")
-    #expect(team.members[2].directory == nil)
+    #expect(team.members.allSatisfy { $0.model == nil })
     #expect(
       await commands.values == [
         ["session", "list", "--json"],
@@ -48,6 +48,52 @@ struct LocalHerdrClientTests {
           .utf8)
     }
     #expect(try await running.read() == HerdrTeamsSnapshot(teams: [], sessionCount: 1))
+  }
+
+  @Test("optional model metadata never changes the Herdr lifecycle state")
+  func metadataPreservesStatus() async throws {
+    let fixture = try MetadataLogFixture()
+    defer { fixture.remove() }
+    try fixture.write(
+      fixture.header + fixture.turn + fixture.window
+        + #"{"type":"event_msg","payload":{"type":"task_complete"}}"# + "\n")
+    let client = LocalHerdrClient(metadata: CodexSessionMetadataReader(root: fixture.root)) {
+      arguments in
+      Data(
+        (arguments == ["session", "list", "--json"]
+          ? herdrSessionFixture
+          : herdrSnapshotFixture.replacingOccurrences(of: "working", with: "blocked")).utf8)
+    }
+    let member = try #require(try await client.read().teams.first?.members.first)
+    #expect(member.status == .blocked)
+    #expect(member.detail == "codex · gpt-6-astra · max · 257.4K")
+    #expect(member.configurationHelp.contains("推理强度：max"))
+    #expect(member.configurationHelp.contains("tokens"))
+  }
+
+  @Test(
+    "unsupported or malformed session references keep the roster usable without guessed settings",
+    arguments: [
+      "false", #"{"agent":"claude","kind":"id","value":"11111111-1111-4111-8111-111111111111"}"#,
+      #"{"agent":"codex","kind":"path","value":"/unexpected/log"}"#,
+      #"{"agent":"codex","kind":"id","value":"../../outside"}"#,
+    ])
+  func unsupportedMetadata(reference: String) async throws {
+    let fixture = try MetadataLogFixture()
+    defer { fixture.remove() }
+    try fixture.write(fixture.header + fixture.turn + fixture.window)
+    let original = #"{"agent":"codex","kind":"id","value":"11111111-1111-4111-8111-111111111111"}"#
+    let client = LocalHerdrClient(metadata: CodexSessionMetadataReader(root: fixture.root)) {
+      arguments in
+      Data(
+        (arguments == ["session", "list", "--json"]
+          ? herdrSessionFixture
+          : herdrSnapshotFixture.replacingOccurrences(of: original, with: reference)).utf8)
+    }
+    let member = try #require(try await client.read().teams.first?.members.first)
+    #expect(member.status == .working)
+    #expect(member.model == nil)
+    #expect(member.detail == "codex · 模型未记录")
   }
 
   @Test(
@@ -156,6 +202,7 @@ let herdrSnapshotFixture = """
     ],
     "agents":[
       {"workspace_id":"w1","pane_id":"w1:p1","tab_id":"w1:t1","name":"service",
+       "agent_session":{"agent":"codex","kind":"id","value":"11111111-1111-4111-8111-111111111111"},
        "agent":"codex","agent_status":"working","cwd":"/work/base","foreground_cwd":"/work/current"},
       {"workspace_id":"w1","pane_id":"w1:p2","tab_id":"w1:t2","agent":"codex",
        "agent_status":"future-state","cwd":"/work/base"},
