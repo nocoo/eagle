@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## macOS v0.17.0 — 2026-11-03
+
+- Add an optional, default-on memory group: Bots can list, search, read, write and delete
+  shared or Bot-specific records in person-editable Markdown. The settings page exposes
+  the group, and existing configurations gain it once without overriding later choices.
+- Show local Herdr workspaces and members beneath the current Mac in the computer
+  inspector, with independently expandable teams, lifecycle observations and recorded
+  Codex model details. Failed reads keep the last observation marked stale.
 - Bots can ask instead of guessing: the core tool `ask_user` puts one to five single- or
   multiple-choice questions in front of the person and returns at once. The conversation
   draws them as a card — every option is a whole-row target, the chosen rows carry a filled
