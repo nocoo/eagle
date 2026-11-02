@@ -9,12 +9,13 @@ import Testing
 struct HerdrTeamsLayoutTests {
   @Test(
     "Herdr belongs to the local Mac and expands even when the device service is unavailable",
-    arguments: [true, false])
-  func localTeamsWithoutDeviceService(unavailable: Bool) async throws {
+    arguments: ["unavailable", "ready", "disabled"])
+  func localTeamsWithoutDeviceService(mode: String) async throws {
     let (devices, control, defaults) = deviceSettingsFixture()
     defer { defaults.removePersistentDomain(forName: control.domain) }
     control.directory = managedDeviceDirectory()
-    if unavailable { control.startError = NSError(domain: "fixture", code: 1) }
+    if mode == "unavailable" { control.startError = NSError(domain: "fixture", code: 1) }
+    if mode == "disabled" { await devices.setEnabled(false) }
     let metadata = try MetadataLogFixture()
     defer { metadata.remove() }
     try metadata.write(metadata.header + metadata.turn + metadata.window)
@@ -52,8 +53,13 @@ struct HerdrTeamsLayoutTests {
     }
     try await Task.sleep(for: .milliseconds(100))
     host.layoutSubtreeIfNeeded()
-    #expect(devices.localReady == !unavailable)
+    #expect(devices.localReady == (mode == "ready"))
     let collapsed = entries(host).compactMap(label)
+    if mode != "ready" {
+      let message = mode == "disabled" ? "设备服务已停用" : "还没有读到设备目录"
+      #expect(collapsed.contains { $0.contains(message) })
+      #expect(!collapsed.contains { $0.contains("1 台 · 0 在线") })
+    }
     #expect(!collapsed.contains { $0.contains("service") })
     #expect(collapsed.contains { $0.contains("4 个团队") })
     #expect(collapsed.contains { $0.contains("2 个团队运行中") })

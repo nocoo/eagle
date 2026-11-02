@@ -23,6 +23,7 @@ public struct DeviceInspectorList: View {
   private let entries: [DeviceInspectorEntry]
   private let enabled: Bool
   private let stale: Bool
+  private let directoryAvailable: Bool
   private let localContent: AnyView?
   private let onManage: () -> Void
 
@@ -30,12 +31,14 @@ public struct DeviceInspectorList: View {
     entries: [DeviceInspectorEntry],
     enabled: Bool = true,
     stale: Bool = false,
+    directoryAvailable: Bool = true,
     localContent: AnyView? = nil,
     onManage: @escaping () -> Void = {}
   ) {
     self.entries = entries
     self.enabled = enabled
     self.stale = stale
+    self.directoryAvailable = directoryAvailable
     self.localContent = localContent
     self.onManage = onManage
   }
@@ -45,6 +48,7 @@ public struct DeviceInspectorList: View {
   public var body: some View {
     VStack(alignment: .leading, spacing: Theme.Metric.panelSectionBodyGap) {
       header
+      if !directoryAvailable && !entries.isEmpty { empty }
       if entries.isEmpty {
         empty
       } else {
@@ -97,7 +101,7 @@ public struct DeviceInspectorList: View {
   }
 
   private var countLabel: String {
-    guard !entries.isEmpty else { return "未连接" }
+    guard directoryAvailable, !entries.isEmpty else { return "未连接" }
     return "\(entries.count) 台 · \(online) 在线"
   }
 

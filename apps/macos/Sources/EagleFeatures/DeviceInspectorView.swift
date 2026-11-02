@@ -22,6 +22,7 @@ public struct DeviceInspectorView: View {
       entries: entries,
       enabled: model.enabled,
       stale: model.directoryIsStale,
+      directoryAvailable: model.directory != nil,
       localContent: AnyView(HerdrTeamsView(model: herdr)),
       onManage: onManage
     )

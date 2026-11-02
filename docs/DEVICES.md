@@ -26,7 +26,8 @@ working-member count, then blocked-member count, with Herdr order breaking ties.
 `查看更多团队` reveals the rest and can collapse back to five. Each team's member
 list starts collapsed and opens independently; explicit expansion survives
 refreshes. The count and marker keep refreshing while collapsed; paired computers
-do not get this row.
+do not get this row. If the device directory has not been read, its unavailable
+or disabled message remains visible separately from the local Herdr row.
 A team is a local Herdr workspace. Workspaces without recognized agents remain
 visible as compact `0 成员` rows; they do not receive a running marker. It lists
 the workspace/session name and each member's name, agent kind and observed
