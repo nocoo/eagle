@@ -73,8 +73,8 @@ test("a record is one heading section and the preamble survives a rewrite", () =
   const parsed = parseMemory(text);
   assert.equal(
     parsed.preamble,
-    "# Memory\n\n说明：这是给我自己看的。\n",
-    "the preamble is kept byte for byte, up to the first heading",
+    "# Memory\n\n说明：这是给我自己看的。\n\n",
+    "the preamble is the whole slice before the first heading, blank line included",
   );
   assert.deepEqual([...parsed.records.keys()], ["deploy", "oncall"]);
   assert.equal(parsed.records.get("oncall"), "周三甲。\n周四乙。");
@@ -118,7 +118,7 @@ test("an indented title and CRLF are read without losing the preamble", async ()
       "utf8",
     );
     const parsed = parseMemory(await readFile(botMemoryFile(dir, "b_self"), "utf8"));
-    assert.equal(parsed.preamble, "    # Memory\n\n  保留缩进。\n");
+    assert.equal(parsed.preamble, "    # Memory\n\n  保留缩进。\n\n");
     assert.equal(
       await host.read({ scope: "bot", key: "k" }).then((one) => one?.content),
       "one\ntwo",
@@ -150,6 +150,23 @@ test("a hand edit and another bot's file are read, not assumed", async () => {
     assert.equal((await host.read({ scope: "global", key: "手写" }))?.content, "脚本写的。");
   } finally {
     await done();
+  }
+});
+
+test("a directory that cannot be written fails loudly and leaves no scratch file", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bots-memory-readonly-"));
+  try {
+    const dir = join(root, "memory");
+    const { mkdir } = await import("node:fs/promises");
+    const { chmod, readdir } = await import("node:fs/promises");
+    await mkdir(dir, { recursive: true, mode: 0o500 });
+    await chmod(dir, 0o500);
+    const host = fileMemoryHost({ dir, botId: "b_self" });
+    await assert.rejects(host.write({ scope: "bot", key: "k", content: "x" }), /EACCES|EPERM/);
+    assert.deepEqual(await readdir(dir), [], "nothing was written and nothing was adopted");
+    await chmod(dir, 0o700);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 
@@ -242,11 +259,14 @@ test("a replayed write converges on its own content, not on the newer one", asyn
     const replayed = await host.write({ scope: "bot", key: "k", content: "old" });
     assert.deepEqual(replayed, { key: "k", bytes: 3, created: false });
     assert.equal((await host.read({ scope: "bot", key: "k" }))?.content, "old");
+    assert.equal((await host.remove({ scope: "bot", key: "k" })).deleted, true);
+    await host.write({ scope: "bot", key: "k", content: "recreated" });
     assert.equal(
       (await host.remove({ scope: "bot", key: "k" })).deleted,
       true,
-      "a delete replay removes whatever is there",
+      "a replayed delete removes whatever is there now",
     );
+    assert.equal(await host.read({ scope: "bot", key: "k" }), undefined);
   } finally {
     await done();
   }
@@ -334,6 +354,32 @@ test("excerpts stay inside their budget and survive Unicode case folding", async
     assert.ok(folded, "the match is found");
     assert.match(folded.excerpt, /needle/);
     assert.ok(folded.excerpt.length <= 200);
+
+    // The query itself folds: a token that lowercases to two code points must still point at
+    // the character that matched, not at the start of the body.
+    await host.write({
+      scope: "bot",
+      key: "folded-query",
+      content: `${"x".repeat(300)}İ${"x".repeat(300)}`,
+    });
+    const where = (await host.search({ scope: "bot", query: "İ", limit: 20 })).items.find(
+      (item) => item.key === "folded-query",
+    );
+    assert.ok(where, "the folded query matches");
+    assert.match(where.excerpt, /İ/, "the window is around the match");
+    assert.equal(where.excerpt.startsWith("…"), true);
+
+    await host.write({
+      scope: "bot",
+      key: "emoji",
+      content: `${"😀".repeat(300)}x${"😀".repeat(300)}`,
+    });
+    const emoji = (await host.search({ scope: "bot", query: "x", limit: 20 })).items.find(
+      (item) => item.key === "emoji",
+    );
+    assert.ok(emoji, "the emoji body matched");
+    assert.equal(emoji.excerpt.isWellFormed(), true, "no half surrogate pair");
+    assert.match(emoji.excerpt, /x/);
   } finally {
     await done();
   }
@@ -365,10 +411,46 @@ test("a large search answer stays valid JSON and says what it dropped", async ()
     }
     const answer = await call(host, "memory_search", { scope: "bot", query: "针", limit: 100 });
     assert.equal(answer.isError, undefined, answer.output);
-    assert.ok(Buffer.byteLength(answer.output, "utf8") < 50 * 1024, "under the tool-result cap");
+    assert.ok(
+      Buffer.byteLength(answer.output, "utf8") <= 48 * 1024,
+      "under the budget the tool promises, not merely under the Harness cap",
+    );
     const parsed = JSON.parse(answer.output) as { items: unknown[]; truncated: boolean };
     assert.equal(parsed.truncated, true);
     assert.ok(parsed.items.length > 0 && parsed.items.length < 100);
+  } finally {
+    await done();
+  }
+});
+
+test("a long-key listing stays under budget and still pages to the end", async () => {
+  const { host, done } = await bench();
+  try {
+    const key = "长".repeat(MAX_MEMORY_KEY - 3);
+    for (let index = 0; index < 100; index += 1) {
+      await host.write({
+        scope: "bot",
+        key: `${String(index).padStart(3, "0")}${key}`,
+        content: "x",
+      });
+    }
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let round = 0; round < 5; round += 1) {
+      const answer = await call(host, "memory_list", {
+        scope: "bot",
+        limit: 100,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      assert.equal(answer.isError, undefined, answer.output);
+      assert.ok(Buffer.byteLength(answer.output, "utf8") <= 48 * 1024, "under the promise");
+      const page = JSON.parse(answer.output) as { items: { key: string }[]; nextCursor?: string };
+      seen.push(...page.items.map((item) => item.key));
+      if (page.nextCursor === undefined) break;
+      cursor = page.nextCursor;
+    }
+    assert.equal(seen.length, 100, "every record is reachable");
+    assert.equal(new Set(seen).size, 100);
   } finally {
     await done();
   }
@@ -545,6 +627,16 @@ test("the tools answer in JSON, except a read, which is the record itself", asyn
 
     const explicit = await call(host, "memory_list", { scope: "global", limit: 5 });
     assert.deepEqual(JSON.parse(explicit.output).items.length, 1, "an explicit limit is honoured");
+    await host.write({ scope: "global", key: "oncall", content: "x" });
+    await host.write({ scope: "global", key: "zulu", content: "x" });
+    const one = JSON.parse((await call(host, "memory_list", { scope: "global", limit: 1 })).output);
+    assert.deepEqual(
+      one.items.map((item: { key: string }) => item.key),
+      ["deploy"],
+    );
+    assert.equal(one.nextCursor, "deploy", "a capped page says where to continue");
+    await host.remove({ scope: "global", key: "oncall" });
+    await host.remove({ scope: "global", key: "zulu" });
 
     const listed = await call(host, "memory_list", { scope: "global" });
     assert.deepEqual(JSON.parse(listed.output), { items: [{ key: "deploy", bytes }] });
@@ -579,6 +671,15 @@ test("a hand-written record too large to return whole is refused, not cut", asyn
     const answer = await call(host, "memory_read", { scope: "bot", key: "huge" });
     assert.equal(answer.isError, true);
     assert.match(answer.output, /read the file directly/);
+
+    await writeFile(
+      botMemoryFile(dir, "b_self"),
+      `## tall\n${"x\n".repeat(MAX_MEMORY_LINES + 1)}`,
+      "utf8",
+    );
+    const tall = await call(host, "memory_read", { scope: "bot", key: "tall" });
+    assert.equal(tall.isError, true);
+    assert.match(tall.output, /read the file directly/);
   } finally {
     await done();
   }

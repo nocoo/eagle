@@ -368,12 +368,15 @@ Search is case-insensitive. A key may start with `#`; `## #tag` is the record `#
 - A body keeps its own formatting, headings included: a body line that would read as a record
 separator is written with one leading backslash (`## 步骤` becomes `\## 步骤`), and every
 backslash run in front of `##` is preserved by the same rule. Reading strips that one
-backslash, so any body round-trips exactly.
+backslash, so a body round-trips exactly once line endings are LF and trailing whitespace is
+trimmed as above.
 - Line endings are stored as LF; a CRLF file is read normally and written back as LF. The
 daemon trims trailing whitespace and one separating blank line before the next heading, and
 writes records back in key order.
-- Everything before the first heading is kept byte for byte, including indentation — a file
-that starts with `    # Memory` still does after a write.
+- Everything before the first heading is kept byte for byte after LF normalisation, including
+indentation and the blank line that separates it from the heading — a file that starts with
+`    # Memory` still does after a write, and a file with no heading is edited in place only
+when a record is added.
 - A repeated heading is last-one-wins on read; a write collapses the duplicates into one
 section. Content is never silently merged.
 - A missing or empty file is an empty scope, not an error.
@@ -401,9 +404,10 @@ truncated; the line cap is what lets a read return the whole record under the Ha
 `query` at most 2 KiB, list/search default 20 and maximum 100. Every refusal is a
 model-visible `isError` result with the limit in it; no tool throws.
 
-A result is kept under 48 KiB by dropping trailing items and reporting `truncated`, not by
-letting the Harness cut text: its 50 KiB cap would leave the JSON unparseable. `memory_list`
-pages from the last record the caller actually received, so a cut page loses nothing.
+A result is kept under 48 KiB, measured on the JSON it would really carry, not by letting the
+Harness cut text: its 50 KiB cap would leave the JSON unparseable. `memory_search` drops
+trailing matches and reports `truncated`; `memory_list` has no such flag, it pages with the
+last key it actually returned as `nextCursor`, so a cut page loses nothing.
 
 `memory_write` replaces, so extending a note costs a `memory_read` first; the group's prompt
 section says so. It is replay-safe by value — the record is a function of the arguments — the
@@ -416,11 +420,12 @@ concurrent writes to one key end at the last committed one.
 
 Whitespace tokens, case-insensitive; a record matches when every token occurs in its key or
 body. The score is `keyOccurrences × 3 + bodyOccurrences`, summed over the tokens, ties broken by
-key order — so one key hit outranks up to three body hits, not any number of them. `excerpt` is
-one window of at most 200 characters, ellipses included, whitespace collapsed; it starts 60
+key order: one key hit beats one or two body hits, ties with three, and loses to four. `excerpt`
+is one window of at most 200 characters, ellipses included, whitespace collapsed; it starts 60
 characters before the first body match, or at the start of the body when the match is only in
-the key. The window is located on the original text, not on a lowercased copy, so Unicode case
-folding cannot shift it.
+the key. Matching and locating share one fold table that maps every lowercased code unit back
+to its character in the original, so Unicode case folding cannot shift the window, and a
+window never ends inside a surrogate pair.
 
 The stable guarantee is "matches are relevant to the query and each excerpt is a bounded window
 around a match"; the scoring function may improve — BM25, embeddings, a remote index — without

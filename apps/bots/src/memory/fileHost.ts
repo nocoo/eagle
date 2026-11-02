@@ -1,7 +1,7 @@
 // Memory v1 (docs/bots/EXTENSIONS-AND-TOOLS.md §6.1): two markdown files a person reads,
 // edits and scripts, and the only module that knows that format. The tools see the port in
 // tools/types.ts, so a later store replaces this file without changing a signature.
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   MAX_MEMORY_CONTENT,
@@ -49,7 +49,9 @@ const normalizeNewlines = (text: string): string => text.replace(/\r\n?/gu, "\n"
 /** A record is one `## key` section and its body; a repeated key is last-one-wins. */
 export const parseMemory = (text: string): ParsedMemory => {
   const records = new Map<string, string>();
-  const preamble: string[] = [];
+  const source = normalizeNewlines(text);
+  let preambleEnd = -1;
+  let offset = 0;
   let key: string | undefined;
   let body: string[] = [];
   const flush = (): void => {
@@ -59,17 +61,19 @@ export const parseMemory = (text: string): ParsedMemory => {
     key = undefined;
     body = [];
   };
-  for (const line of normalizeNewlines(text).split("\n")) {
+  for (const line of source.split("\n")) {
     if (isHeading(line)) {
       flush();
+      if (preambleEnd === -1) preambleEnd = offset;
       key = line.slice(2).trim();
-      continue;
+    } else if (key !== undefined) {
+      body.push(line);
     }
-    if (key === undefined) preamble.push(line);
-    else body.push(line);
+    offset += line.length + 1;
   }
   flush();
-  return { preamble: preamble.join("\n"), records };
+  // The preamble is the whole slice before the first heading, boundary newline included.
+  return { preamble: preambleEnd === -1 ? source : source.slice(0, preambleEnd), records };
 };
 
 export const renderMemory = (preamble: string, records: ReadonlyMap<string, string>): string => {
@@ -78,9 +82,9 @@ export const renderMemory = (preamble: string, records: ReadonlyMap<string, stri
     return `## ${key}\n${body}`;
   });
   const body = sections.join("\n\n");
-  if (preamble.length === 0) return body.length === 0 ? "" : `${body}\n`;
-  const head = preamble.endsWith("\n") ? preamble : `${preamble}\n`;
-  return body.length === 0 ? head : `${head}\n${body}\n`;
+  const head = preamble.length === 0 || preamble.endsWith("\n") ? preamble : `${preamble}\n`;
+  if (body.length === 0) return head;
+  return head.length === 0 ? `${body}\n` : `${head}${body}\n`;
 };
 
 const missing = (error: unknown): boolean =>
@@ -101,16 +105,21 @@ const store = async (file: string, parsed: ParsedMemory): Promise<void> => {
   await mkdir(dirname(file), { recursive: true, mode: 0o700 });
   scratchFiles += 1;
   const scratch = `${file}.tmp-${process.pid}-${scratchFiles}`;
+  // Exclusive creation comes first: only a file this call created is ever removed, and a
+  // cleanup failure never replaces the error that caused it.
+  const handle = await open(scratch, "wx", 0o600);
   try {
-    // `wx` refuses a file that already exists, so a stale scratch is never adopted.
-    await writeFile(scratch, renderMemory(parsed.preamble, parsed.records), {
-      encoding: "utf8",
-      mode: 0o600,
-      flag: "wx",
-    });
+    await handle.writeFile(renderMemory(parsed.preamble, parsed.records), "utf8");
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await rm(scratch, { force: true }).catch(() => undefined);
+    throw error;
+  }
+  await handle.close();
+  try {
     await rename(scratch, file);
   } catch (error) {
-    await rm(scratch, { force: true });
+    await rm(scratch, { force: true }).catch(() => undefined);
     throw error;
   }
 };
@@ -162,6 +171,24 @@ const words = (query: string): readonly string[] =>
     .split(/\s+/u)
     .filter((word) => word.length > 0);
 
+/**
+ * Lowercased text plus, for every folded code unit, where its character starts in the
+ * original. Case folding can change length (`İ` folds to two units), so matching and
+ * positioning must share this one mapping.
+ */
+const fold = (text: string): { text: string; starts: number[] } => {
+  const starts: number[] = [];
+  let folded = "";
+  let index = 0;
+  for (const character of text) {
+    const lower = character.toLowerCase();
+    for (let unit = 0; unit < lower.length; unit += 1) starts.push(index);
+    folded += lower;
+    index += character.length;
+  }
+  return { text: folded, starts };
+};
+
 const occurrences = (text: string, token: string): number => {
   let count = 0;
   let index = text.indexOf(token);
@@ -172,31 +199,50 @@ const occurrences = (text: string, token: string): number => {
   return count;
 };
 
-const escaped = (token: string): string => token.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-
-/** The first body position of any token, found on the original text so indices stay comparable. */
-const firstMatch = (body: string, tokens: readonly string[]): number => {
+/** The earliest original position of any token, read through the same folding. */
+const firstMatch = (
+  folded: { text: string; starts: readonly number[] },
+  tokens: readonly string[],
+): number => {
   let first = -1;
   for (const token of tokens) {
-    const index = body.search(new RegExp(escaped(token), "iu"));
-    if (index !== -1 && (first === -1 || index < first)) first = index;
+    const index = folded.text.indexOf(token);
+    if (index === -1) continue;
+    const original = folded.starts[index] ?? 0;
+    if (first === -1 || original < first) first = original;
   }
   return first;
 };
 
+/** Whole characters only: a window never ends inside an emoji or another surrogate pair. */
+const windowAt = (body: string, start: number, budget: number): { text: string; end: number } => {
+  let text = "";
+  let index = start;
+  while (index < body.length) {
+    const width = (body.codePointAt(index) ?? 0) > 0xffff ? 2 : 1;
+    if (text.length + width > budget) break;
+    text += body.slice(index, index + width);
+    index += width;
+  }
+  return { text, end: index };
+};
+
 /** A window of at most `MAX_MEMORY_EXCERPT` characters, ellipses included. */
-const excerptOf = (body: string, tokens: readonly string[]): string => {
-  const found = firstMatch(body, tokens);
+const excerptOf = (
+  body: string,
+  folded: { text: string; starts: readonly number[] },
+  tokens: readonly string[],
+): string => {
+  const found = firstMatch(folded, tokens);
   const start = found === -1 ? 0 : Math.max(0, found - EXCERPT_LEAD);
   const left = start > 0;
   const budget = MAX_MEMORY_EXCERPT - (left ? 1 : 0);
-  const right = start + budget < body.length;
-  const room = right ? budget - 1 : budget;
-  const window = body
-    .slice(start, start + room)
-    .replace(/\s+/gu, " ")
-    .trim();
-  return `${left ? "…" : ""}${window}${right ? "…" : ""}`;
+  const wide = windowAt(body, start, budget);
+  const right = wide.end < body.length;
+  // Reserve the closing ellipsis by measuring again one character shorter.
+  const { text, end } = right ? windowAt(body, start, budget - 1) : wide;
+  const window = text.replace(/\s+/gu, " ").trim();
+  return `${left ? "…" : ""}${window}${end < body.length ? "…" : ""}`;
 };
 
 /**
@@ -232,13 +278,13 @@ export const fileMemoryHost = (options: {
     const parsed = await load(fileFor(input.scope));
     const matches: { key: string; score: number; excerpt: string }[] = [];
     for (const [key, body] of parsed.records) {
-      const lowerKey = key.toLowerCase();
-      const lowerBody = body.toLowerCase();
+      const foldedKey = fold(key).text;
+      const foldedBody = fold(body);
       let score = 0;
       let matched = true;
       for (const token of tokens) {
-        const inKey = occurrences(lowerKey, token);
-        const inBody = occurrences(lowerBody, token);
+        const inKey = occurrences(foldedKey, token);
+        const inBody = occurrences(foldedBody.text, token);
         if (inKey + inBody === 0) {
           matched = false;
           break;
@@ -246,7 +292,7 @@ export const fileMemoryHost = (options: {
         score += inKey * 3 + inBody;
       }
       if (!matched) continue;
-      matches.push({ key, score, excerpt: excerptOf(body, tokens) });
+      matches.push({ key, score, excerpt: excerptOf(body, foldedBody, tokens) });
     }
     matches.sort((left, right) => right.score - left.score || (left.key < right.key ? -1 : 1));
     const items = matches.slice(0, input.limit).map(({ key, excerpt }) => ({ key, excerpt }));
