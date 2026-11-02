@@ -471,8 +471,9 @@ store can answer them honestly. Likewise `memory_write` may later take an option
 
 Every read re-reads the file, because a script is a writer too. Every mutation is a
 read-modify-write under a per-file queue, then an exclusively created scratch file renamed over
-the target in the same directory (mode 0600, leftover scratch removed on failure), so two tools
-in one run cannot lose each other's records. The directory is created 0700; an existing
+the target in the same directory (mode 0600; a failure removes the scratch best-effort, and a
+cleanup that fails is swallowed so the original error survives), so two tools in one run cannot
+lose each other's records. The directory is created 0700; an existing
 directory keeps whatever mode its owner set. An external script can still interleave: last
 committed write wins, and the daemon never merges. Rename gives visibility atomicity, not
 power-loss durability: nothing here fsyncs.

@@ -82,8 +82,8 @@ export const renderMemory = (preamble: string, records: ReadonlyMap<string, stri
     return `## ${key}\n${body}`;
   });
   const body = sections.join("\n\n");
+  if (body.length === 0) return preamble;
   const head = preamble.length === 0 || preamble.endsWith("\n") ? preamble : `${preamble}\n`;
-  if (body.length === 0) return head;
   return head.length === 0 ? `${body}\n` : `${head}${body}\n`;
 };
 
@@ -110,15 +110,10 @@ const store = async (file: string, parsed: ParsedMemory): Promise<void> => {
   const handle = await open(scratch, "wx", 0o600);
   try {
     await handle.writeFile(renderMemory(parsed.preamble, parsed.records), "utf8");
-  } catch (error) {
-    await handle.close().catch(() => undefined);
-    await rm(scratch, { force: true }).catch(() => undefined);
-    throw error;
-  }
-  await handle.close();
-  try {
+    await handle.close();
     await rename(scratch, file);
   } catch (error) {
+    await handle.close().catch(() => undefined);
     await rm(scratch, { force: true }).catch(() => undefined);
     throw error;
   }
@@ -166,9 +161,8 @@ const checkContent = (content: string): string => {
 };
 
 const words = (query: string): readonly string[] =>
-  query
-    .toLowerCase()
-    .split(/\s+/u)
+  fold(query)
+    .text.split(/\s+/u)
     .filter((word) => word.length > 0);
 
 /**
@@ -214,7 +208,9 @@ const firstMatch = (
   return first;
 };
 
-/** Whole characters only: a window never ends inside an emoji or another surrogate pair. */
+const isLowSurrogate = (unit: number): boolean => unit >= 0xdc00 && unit <= 0xdfff;
+
+/** Whole characters only: a window never starts or ends inside an emoji or other pair. */
 const windowAt = (body: string, start: number, budget: number): { text: string; end: number } => {
   let text = "";
   let index = start;
@@ -234,7 +230,9 @@ const excerptOf = (
   tokens: readonly string[],
 ): string => {
   const found = firstMatch(folded, tokens);
-  const start = found === -1 ? 0 : Math.max(0, found - EXCERPT_LEAD);
+  const raw = found === -1 ? 0 : Math.max(0, found - EXCERPT_LEAD);
+  // A lead-in can land between the halves of a surrogate pair; start at the character.
+  const start = raw > 0 && isLowSurrogate(body.charCodeAt(raw)) ? raw - 1 : raw;
   const left = start > 0;
   const budget = MAX_MEMORY_EXCERPT - (left ? 1 : 0);
   const wide = windowAt(body, start, budget);

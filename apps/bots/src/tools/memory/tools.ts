@@ -120,10 +120,20 @@ export const createMemoryTools = (host: MemoryToolHost): readonly ToolRegistrati
           limit: limitOf(args.limit),
           ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
         });
-        const kept = bounded(page.items, (items) => ({
-          items,
-          nextCursor: "x".repeat(MAX_MEMORY_KEY),
-        }));
+        // Measure each candidate page with the cursor it would really carry: an escaped or
+        // long key costs far more than a placeholder, and the promise is about the real JSON.
+        let kept: typeof page.items = [];
+        for (const item of page.items) {
+          const candidate = [...kept, item];
+          const cursor =
+            candidate.length < page.items.length ? candidate.at(-1)?.key : page.nextCursor;
+          const envelope = {
+            items: candidate,
+            ...(cursor === undefined ? {} : { nextCursor: cursor }),
+          };
+          if (Buffer.byteLength(JSON.stringify(envelope), "utf8") > MAX_RESULT_BYTES) break;
+          kept = candidate;
+        }
         // A budget-cut page still pages from the last record the caller actually received.
         const nextCursor = kept.length < page.items.length ? kept.at(-1)?.key : page.nextCursor;
         return result(

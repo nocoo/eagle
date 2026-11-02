@@ -191,6 +191,11 @@ test("a repeated heading is last-one-wins and rendering keeps one section per ke
   assert.equal(rendered.match(/## deploy/g)?.length, 1);
 });
 
+test("a file with no record and no trailing newline is not rewritten", () => {
+  const text = "Note without newline";
+  assert.equal(renderMemory(parseMemory(text).preamble, new Map()), text);
+});
+
 test("an empty or missing file is an empty scope, not an error", async () => {
   const { dir, host, done } = await bench();
   try {
@@ -371,6 +376,18 @@ test("excerpts stay inside their budget and survive Unicode case folding", async
 
     await host.write({
       scope: "bot",
+      key: "emoji-lead",
+      content: `${"ab".repeat(31)}😀x${"😀".repeat(300)}`,
+    });
+    const leading = (await host.search({ scope: "bot", query: "x", limit: 20 })).items.find(
+      (item) => item.key === "emoji-lead",
+    );
+    assert.ok(leading, "the record with a lead-in match is found");
+    assert.equal(leading.excerpt.isWellFormed(), true, "the window start is a whole character");
+    assert.match(leading.excerpt, /😀x/);
+
+    await host.write({
+      scope: "bot",
       key: "emoji",
       content: `${"😀".repeat(300)}x${"😀".repeat(300)}`,
     });
@@ -380,6 +397,22 @@ test("excerpts stay inside their budget and survive Unicode case folding", async
     assert.ok(emoji, "the emoji body matched");
     assert.equal(emoji.excerpt.isWellFormed(), true, "no half surrogate pair");
     assert.match(emoji.excerpt, /x/);
+  } finally {
+    await done();
+  }
+});
+
+test("a query folds exactly like the body, final sigma included", async () => {
+  const { host, done } = await bench();
+  try {
+    await host.write({ scope: "bot", key: "greek", content: "ΟΔΟΣ ΑΣ" });
+    const found = (await host.search({ scope: "bot", query: "ΑΣ", limit: 20 })).items;
+    assert.deepEqual(
+      found.map((item) => item.key),
+      ["greek"],
+      "a whole-string lowercase would turn ΑΣ into ας and miss the body",
+    );
+    assert.match(found[0]?.excerpt ?? "", /ΑΣ/);
   } finally {
     await done();
   }
@@ -418,6 +451,46 @@ test("a large search answer stays valid JSON and says what it dropped", async ()
     const parsed = JSON.parse(answer.output) as { items: unknown[]; truncated: boolean };
     assert.equal(parsed.truncated, true);
     assert.ok(parsed.items.length > 0 && parsed.items.length < 100);
+  } finally {
+    await done();
+  }
+});
+
+test("an escape-heavy listing pages under budget instead of overrunning it", async () => {
+  const { host, done } = await bench();
+  try {
+    // Each control character costs six JSON bytes, so 120 of them cannot fit a 48 KiB page
+    // many times over; the page must be cut, never emitted over budget.
+    const filler = "\u0001".repeat(MAX_MEMORY_KEY - 3);
+    for (let index = 0; index < 100; index += 1) {
+      await host.write({
+        scope: "bot",
+        key: `${String(index).padStart(3, "0")}${filler}`,
+        content: "x",
+      });
+    }
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    for (let round = 0; round < 100; round += 1) {
+      const answer = await call(host, "memory_list", {
+        scope: "bot",
+        limit: 100,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      assert.equal(answer.isError, undefined, answer.output);
+      assert.ok(
+        Buffer.byteLength(answer.output, "utf8") <= 48 * 1024,
+        `page ${pages + 1} is ${Buffer.byteLength(answer.output, "utf8")} bytes`,
+      );
+      const page = JSON.parse(answer.output) as { items: { key: string }[]; nextCursor?: string };
+      seen.push(...page.items.map((item) => item.key));
+      pages += 1;
+      if (page.nextCursor === undefined) break;
+      cursor = page.nextCursor;
+    }
+    assert.ok(pages > 1, "the budget really cut the listing");
+    assert.equal(new Set(seen).size, 100, "every record is reachable");
   } finally {
     await done();
   }
