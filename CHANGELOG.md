@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### macOS v0.16.1 — local release build
+
+- Enforce CLI response deadlines, keep quiet sockets alive, resolve the bundled version
+  through PATH, and preserve failed-submission details in JSON.
+- Close the log sink permanently and protect in-flight opens, requests and commands
+  during daemon shutdown. Detached origin and trigger writes still lack a shutdown barrier.
+
 ## macOS v0.16.0 — 2026-11-01
 
 - Ship the `eagle` command line client: Settings → CLI installs it into `~/.local/bin`,
