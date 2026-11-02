@@ -125,8 +125,8 @@ struct BotsDaemonSupervisorTests {
       // Select only our fixture path; an existing daemon's lock is never changed.
       for(let n=0;n<32;n++){
         const candidate=join(input.parent,'data-'+n);mkdirSync(candidate);
-        try{const lock=await listen(lockPort(realpathSync(candidate)));await new Promise(r=>lock.close(r));root=candidate;break;}
-        catch(error){rmSync(candidate);if(error.code!=='EADDRINUSE')throw error;}
+        try{if(n===0)throw Object.assign(new Error('fixture collision'),{code:'EADDRINUSE'});const lock=await listen(lockPort(realpathSync(candidate)));await new Promise(r=>lock.close(r));root=candidate;break;}
+        catch(error){rmSync(candidate,{recursive:true});if(error.code!=='EADDRINUSE')throw error;}
       }
       if(!root)throw new Error('fixture lock ports unavailable');
       const server=await listen(0);

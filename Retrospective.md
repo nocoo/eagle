@@ -1095,4 +1095,5 @@ absence alone could not prove the binding was empty.
 
 The first coverage run also found a separate collision cleanup bug in the bundled
 Bots supervisor fixture: `rmSync` was called on a directory without recursive
-mode. The release must keep that failure visible until the fixture is corrected.
+mode. Injecting the collision reproduced the failure; the fixture now removes
+only its own temporary directory recursively, and the full coverage run passes.
