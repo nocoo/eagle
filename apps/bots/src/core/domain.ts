@@ -446,6 +446,18 @@ export const DEFAULT_TOOL_GROUPS: readonly ToolGroup[] = [
 export const isToolGroup = (value: unknown): value is ToolGroup =>
   typeof value === "string" && (TOOL_GROUP_NAMES as readonly string[]).includes(value);
 
+/** One tool as a settings page reads it: what it is called and what it is for. */
+export type ToolDescription = {
+  readonly name: string;
+  readonly description: string;
+};
+
+/** What one group gives a bot today, reported by the daemon that installs it. */
+export type ToolGroupCatalog = {
+  readonly group: ToolGroup;
+  readonly tools: readonly ToolDescription[];
+};
+
 /** A stored selection, normalized: mandatory groups always present, order stable. */
 export const resolveToolGroups = (names: readonly string[] | undefined): readonly ToolGroup[] => {
   const chosen = new Set<ToolGroup>(MANDATORY_TOOL_GROUPS);

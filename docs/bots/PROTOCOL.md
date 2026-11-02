@@ -111,14 +111,14 @@ version, the instance id, the pid and a bot count, never bot content.
 | `POST` | `/v1/providers/:id/test` | — | `{ "result": { "ok", "message", "latencyMs", "results"? } }` |
 | `GET` | `/v1/usage?days=` | — | `{ "usage": UsageReport }` — statistics over the daemon's retained days |
 | `GET` | `/v1/models` | — | `{ "models": [string] }` — the gateway's ids, empty when it cannot be asked |
-| `GET` | `/v1/settings` | — | `{ "settings": GatewaySettings, "machinePrompt": MachinePrompt \| null }` |
+| `GET` | `/v1/settings` | — | `{ "settings": GatewaySettings, "machinePrompt": MachinePrompt \| null, "tools"?: [ToolGroup] }` |
 | `GET` | `/v1/clients` | — | `{ "clients": [Client] }` — requires `admin` |
 | `POST` | `/v1/clients` | `{ "name", "scopes" }` — fields follow `CLI.md` rules | `201 { "client": Client, "token" }` — requires `admin`, the token is answered once |
 | `GET` | `/v1/clients/me` | — | `{ "client": Client \| null }` — `null` for the App's own token |
 | `POST` | `/v1/clients/:id/rotate` | — | `{ "client": Client, "token" }` — requires `admin` |
 | `POST` | `/v1/clients/:id/revoke` | — | `{ "client": Client }` — requires `admin`, idempotent |
 | `DELETE` | `/v1/clients/:id` | — | `204`, or `409 client_active` while the client is not revoked |
-| `PUT` | `/v1/settings` | `{ "baseUrl", "model", "apiKey"?, "provider"?, "thinkingLevel"?, "toolGroups"?, "corePrompt"? }` | `{ "settings": GatewaySettings, "machinePrompt": MachinePrompt \| null }` |
+| `PUT` | `/v1/settings` | `{ "baseUrl", "model", "apiKey"?, "provider"?, "thinkingLevel"?, "toolGroups"?, "corePrompt"? }` | `{ "settings": GatewaySettings, "machinePrompt": MachinePrompt \| null, "tools"?: [ToolGroup] }` |
 | `POST` | `/v1/settings/test` | `{ "baseUrl"?, "model"?, "apiKey"?, "provider"? }` | `{ "result": GatewayProbe }` |
 
 ```json
@@ -127,6 +127,10 @@ version, the instance id, the pid and a bot count, never bot content.
   "model": "auto/gpt-6-luna", "hasApiKey": true, "thinkingLevel": "medium",
   "toolGroups": ["persona", "machine", "core", "coding", "herdr", "agents", "trigger"],
   "corePrompt": "你是一个务实、友好的 agent：先说结论，再给依据。" }
+
+// ToolGroup: what one group gives a bot today, described by the daemon that installs it.
+{ "group": "coding",
+  "tools": [{ "name": "bash", "description": "Execute a bash command in the current working directory." }] }
 
 // MachinePrompt: the machine's own instructions, read-only, with the file a person edits.
 { "path": "/Users/me/workspace/workflow/agents/AGENTS.md", "text": "# system0 machine setup…" }
@@ -166,6 +170,13 @@ Gateway rules:
   `~/.codex/AGENTS.md` and `~/.claude/CLAUDE.md`, resolved through its symlink and cut at
   40 000 characters. `machinePrompt` reports that file and its text, or `null` when none
   exists; neither field is a per-bot setting.
+- **The tool catalogue is reported, never authored by a client.** Both settings responses
+  carry `tools` when the daemon can describe its own tool surface: one entry per group with
+  the tools it would give a bot right now, each `{ "name", "description" }` in the daemon's
+  own words. `tool_search`, the loader that defers a group's tools, belongs to no group and
+  is never listed. A group with nothing to show is still listed, with an empty `tools`. The
+  field is additive: a client that does not read it loses nothing, and a daemon that cannot
+  describe its surface omits it. Nothing in it can be written back.
 - **Testing is separate.** `POST /v1/settings/test` probes `GET {baseUrl}/models` with the
   key; a `401` is reported as a refused key, a timeout as an unreachable gateway. It does
   not save and does not spend a generation.

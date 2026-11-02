@@ -70,6 +70,7 @@ import {
   readMachinePrompt,
 } from "./tools/machine/tools.ts";
 import { createNoteHost } from "./tools/note.ts";
+import { createCatalogRegistry, describeToolCatalog } from "./tools/registry.ts";
 import type { SearchClient } from "./tools/search/client.ts";
 import { createDeepSeekSearch } from "./tools/search/deepseek.ts";
 import { createTavilySearch } from "./tools/search/tavily.ts";
@@ -663,6 +664,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
       });
     },
   };
+  const catalogDescriptions = describeToolCatalog(createCatalogRegistry());
   const daemon = await startServer({
     ...(canonical.deviceSocket === undefined ? {} : { deviceSocket: canonical.deviceSocket }),
     token,
@@ -673,6 +675,8 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     service,
     settings,
     machinePrompt,
+    // Built once: the tool surface is fixed at start, and describing it never runs a tool.
+    toolCatalog: () => catalogDescriptions,
     triggers: triggerApi,
     peers: peerApi({
       store: peerStore,

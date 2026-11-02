@@ -16,6 +16,7 @@ import {
   isThinkingLevel,
   MAX_BOT_NOTE_CHARS,
   normalizeBotNote,
+  type ToolGroupCatalog,
 } from "../core/domain.ts";
 import { declareEvent } from "../log/events.ts";
 import type { Log } from "../log/log.ts";
@@ -72,6 +73,8 @@ export type ServerOptions = {
   readonly settings?: GatewayApi;
   /** The machine's own instructions, read from disk for the App's read-only preview. */
   readonly machinePrompt?: () => { readonly path: string; readonly text: string } | undefined;
+  /** What each tool group contributes, so the App can show it before a person decides. */
+  readonly toolCatalog?: () => readonly ToolGroupCatalog[];
   /** A bot's triggers: read-only detail for the app, and the person's one switch. */
   readonly triggers?: TriggerApi;
   /** The read side of bot-to-bot exchanges; absent in a build without a peer store. */
@@ -622,6 +625,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
             hasApiKey: false,
           },
           machinePrompt: options.machinePrompt?.() ?? null,
+          ...(options.toolCatalog === undefined ? {} : { tools: options.toolCatalog() }),
         });
         return;
       }
@@ -648,6 +652,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         json(response, 200, {
           settings: saved.settings,
           machinePrompt: options.machinePrompt?.() ?? null,
+          ...(options.toolCatalog === undefined ? {} : { tools: options.toolCatalog() }),
         });
         return;
       }

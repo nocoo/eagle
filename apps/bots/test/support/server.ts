@@ -8,7 +8,11 @@ import { WebSocket } from "ws";
 import { BotDirectory, nodeDirectoryFs } from "../../src/core/BotDirectory.ts";
 import { BotRegistry, type RegistryOptions } from "../../src/core/BotRegistry.ts";
 import { ConversationService } from "../../src/core/ConversationService.ts";
-import { resolveToolGroups, type TriggerSummary } from "../../src/core/domain.ts";
+import {
+  resolveToolGroups,
+  type ToolGroupCatalog,
+  type TriggerSummary,
+} from "../../src/core/domain.ts";
 import { OriginStore, originPath } from "../../src/core/OriginStore.ts";
 import { PeerExchangeStore } from "../../src/core/PeerExchangeStore.ts";
 import type { RuntimePort } from "../../src/core/RuntimePort.ts";
@@ -90,6 +94,8 @@ export type StackOptions = {
   readonly closeDeadlineMs?: number;
   /** Gateway settings routes; a test supplies a fake service. */
   readonly settings?: GatewayApi;
+  /** The tool catalogue the settings route publishes; absent means an older daemon. */
+  readonly toolCatalog?: () => readonly ToolGroupCatalog[];
   /** The machine instructions a test pretends to have found, for the read-only preview. */
   readonly machinePrompt?: () => { readonly path: string; readonly text: string } | undefined;
   /** Wire the catalog-backed sidebar line, as `main.ts` does, so a run can refresh it. */
@@ -279,6 +285,7 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
     service,
     ...(options.settings === undefined ? {} : { settings: options.settings }),
     ...(options.machinePrompt === undefined ? {} : { machinePrompt: options.machinePrompt }),
+    ...(options.toolCatalog === undefined ? {} : { toolCatalog: options.toolCatalog }),
     version: "0.0.0-test",
     instance: "i_test",
     capabilities: {

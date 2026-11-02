@@ -165,3 +165,51 @@ test("the core prompt is saved with the gateway, and the machine prompt is read-
     await stack.close();
   }
 });
+
+test("the settings read carries the tool catalogue, and says nothing when it has none", async () => {
+  const settings: GatewayApi = {
+    public: () => ({
+      configured: true,
+      provider: "magpie",
+      baseUrl: "http://gw/v1",
+      model: "m1",
+      hasApiKey: true,
+      thinkingLevel: "medium",
+      toolGroups: ["core", "coding"],
+      corePrompt: "",
+    }),
+    save: async () => ({ settings: settings.public() }),
+    test: async () => ({ ok: true, message: "ok", latencyMs: 1 }),
+  };
+  const withCatalog = await startStack({
+    settings,
+    toolCatalog: () => [
+      { group: "core", tools: [{ name: "list", description: "List a directory." }] },
+    ],
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${withCatalog.port}/v1/settings`, {
+      headers: { authorization: `Bearer ${withCatalog.token}` },
+    });
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as {
+      tools?: readonly { group: string; tools: readonly { name: string }[] }[];
+    };
+    assert.deepEqual(body.tools, [
+      { group: "core", tools: [{ name: "list", description: "List a directory." }] },
+    ]);
+  } finally {
+    await withCatalog.close();
+  }
+
+  const without = await startStack({ settings });
+  try {
+    const response = await fetch(`http://127.0.0.1:${without.port}/v1/settings`, {
+      headers: { authorization: `Bearer ${without.token}` },
+    });
+    const body = (await response.json()) as { tools?: unknown };
+    assert.equal(body.tools, undefined, "an older daemon publishes no catalogue");
+  } finally {
+    await without.close();
+  }
+});

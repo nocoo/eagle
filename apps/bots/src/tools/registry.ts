@@ -7,7 +7,12 @@ import {
 } from "@earendil-works/pi-durable";
 import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-search";
 import { CodingTools, createBashTool } from "@earendil-works/pi-durable/tools";
-import { noteLine, resolveToolGroups, type ToolGroup } from "../core/domain.ts";
+import {
+  noteLine,
+  resolveToolGroups,
+  type ToolGroup,
+  type ToolGroupCatalog,
+} from "../core/domain.ts";
 import type { Log } from "../log/log.ts";
 import { AGENTS_TOOLS_EXTENSION, agentsExtension } from "./agents/tools.ts";
 import { SocketDevicePort } from "./devices/port.ts";
@@ -17,6 +22,7 @@ import {
   guardNativeTool,
   observeDeviceTool,
 } from "./devices/tools.ts";
+import { createHerdrClient } from "./herdr/client.ts";
 import {
   createHerdrTools,
   HERDR_TOOLS_EXTENSION,
@@ -29,13 +35,20 @@ import { createNoteSetTool } from "./note.ts";
 import { PEERS_TOOLS_EXTENSION, peersExtension } from "./peers/tools.ts";
 import { PERSONA_EXTENSION, personaExtension } from "./persona/tools.ts";
 import { PULLS_TOOLS_EXTENSION, pullsExtension } from "./pulls/tools.ts";
+import type { SearchClient } from "./search/client.ts";
 import { SEARCH_TOOLS_EXTENSION, searchExtension } from "./search/tools.ts";
 import {
   type createTriggerTools,
   TRIGGER_TOOLS_EXTENSION,
   triggerExtension,
 } from "./trigger/tools.ts";
-import type { BotWorkspace, NoteToolHost } from "./types.ts";
+import type {
+  BotWorkspace,
+  NoteToolHost,
+  PeerToolHost,
+  PullToolHost,
+  TriggerToolHost,
+} from "./types.ts";
 
 export const BOTS_TOOLS_EXTENSION = "bots-tools";
 const toolSearch = createToolSearchExtension();
@@ -73,6 +86,91 @@ export const selectToolExtensions = (registry: RegistryReader, groups: readonly 
     .installed()
     .filter((extension) => names.has(extension.name));
 };
+
+// Describing the tool surface never runs a tool. These hosts exist so the extensions can be
+// built without a bot, a store or a provider key, and every call refuses rather than pretending.
+const refuse = (): never => {
+  throw new Error("the tool catalogue never executes a tool");
+};
+
+const catalogNote: NoteToolHost = {
+  botId: "catalog",
+  set: refuse,
+  current: refuse,
+};
+
+const catalogTrigger: TriggerToolHost = {
+  botId: "catalog",
+  create: refuse,
+  list: refuse,
+  update: refuse,
+  enable: refuse,
+  remove: refuse,
+  endpoint: refuse,
+};
+
+const catalogPeers: PeerToolHost = {
+  botId: "catalog",
+  maxMessage: 0,
+  list: refuse,
+  send: refuse,
+  read: refuse,
+  receipts: refuse,
+};
+
+const catalogPulls: PullToolHost = {
+  botId: "catalog",
+  register: refuse,
+  list: refuse,
+};
+
+const catalogSearch: SearchClient = {
+  search: refuse,
+  fetchPage: refuse,
+};
+
+/**
+ * What each group would give a bot right now, in the daemon's own words. The loader that
+ * defers a group's tools (`tool_search`) belongs to no group: it is how a person's choice is
+ * delivered, not one of the tools that choice is about.
+ */
+export const describeToolCatalog = (registry: RegistryReader): readonly ToolGroupCatalog[] => {
+  const described = new Map(
+    registry
+      .snapshot()
+      .installed()
+      .map((extension) => [
+        extension.name,
+        (extension.tools ?? []).map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+        })),
+      ]),
+  );
+  return (Object.keys(GROUP_EXTENSIONS) as ToolGroup[]).map((group) => ({
+    group,
+    tools: GROUP_EXTENSIONS[group]
+      .filter((name) => name !== toolSearch.name)
+      .flatMap((name) => described.get(name) ?? []),
+  }));
+};
+
+/** The registry the catalogue describes: every group built, none of it bound to a bot. */
+export const createCatalogRegistry = (): RegistryReader =>
+  createToolRegistry(
+    { root: "/" },
+    {
+      persona: () => "",
+      machine: () => undefined,
+      devices: { socketPath: "/nonexistent-catalogue.sock", botId: "catalog" },
+      herdr: { client: createHerdrClient(), stateDir: "/", botId: "catalog" },
+      search: { client: catalogSearch, botId: "catalog" },
+      trigger: catalogTrigger,
+      peers: catalogPeers,
+      pulls: catalogPulls,
+      note: catalogNote,
+    },
+  );
 
 const bash = createBashTool({
   prepare(execution) {
