@@ -19,7 +19,7 @@ struct SettingsTests {
     #expect(SettingsSection.prompts.rawValue == "提示词")
     #expect(
       SettingsSection.allCases.map(\.rawValue)
-        == ["通用", "模型", "工具", "提示词", "服务", "设备", "CLI", "用量与账单", "关于"])
+        == ["通用", "模型", "工具", "提示词", "服务", "设备", "CLI", "用量", "关于"])
   }
 }
 

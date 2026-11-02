@@ -19,7 +19,7 @@ public final class SettingsViewModel: ObservableObject {
   @Published public var providerBusy = false
   @Published public var providerProbe: [String: ProviderProbe] = [:]
   @Published public var providerMessage: String?
-  /// The daemon's usage statistics; nil until the 用量与账单 tab is opened.
+  /// The daemon's usage statistics; nil until the 用量 tab is opened.
   @Published public var usageReport: UsageReport?
   @Published public var usageBusy = false
   @Published public var launchAtLogin = true
@@ -324,7 +324,7 @@ public final class SettingsViewModel: ObservableObject {
     }
   }
 
-  /// The 用量与账单 sources card: models spend tokens, search spends calls.
+  /// The 用量 sources card: models spend tokens, search spends calls.
   public var usageSourceRows: [(id: String, title: String, value: String)] {
     guard let report = usageReport, let sources = report.sources else { return [] }
     return sources.map { source in

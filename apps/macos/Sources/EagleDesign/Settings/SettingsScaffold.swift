@@ -9,7 +9,7 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
   case providers = "服务"
   case machines = "设备"
   case cli = "CLI"
-  case usage = "用量与账单"
+  case usage = "用量"
   case about = "关于"
 
   public var id: String { rawValue }

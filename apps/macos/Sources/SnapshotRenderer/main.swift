@@ -265,7 +265,7 @@ struct SnapshotRenderer {
       in: directory
     )
 
-    // The 服务 and 用量与账单 pages read the daemon, so the snapshot answers for it: a stub
+    // The 服务 and 用量 pages read the daemon, so the snapshot answers for it: a stub
     // session keeps the review images static and offline.
     let settings = snapshotBotsSettings()
     for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
