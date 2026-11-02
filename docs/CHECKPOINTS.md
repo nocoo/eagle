@@ -3005,3 +3005,16 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   the page's real load path and no fixture token leaves the process.
 - Not verified: the App's own page against a live daemon (the owner's dev App run is next),
   Raven and Falcon with real credentials, authentication and D1 (unchanged by this work).
+
+## 2026-11-03 06:40 +08 — Decision providers, live through the App's daemon
+
+- The owner's daemon was restarted from the new build (the previous one predated the
+  catalogue, so its page could not decode the new rows). Against it, through the same
+  `PUT`/`POST` the settings page uses: `typesafe` saved with the owner's test key and
+  probed ok — `jev-1.14.0`, 495 ms; `jev-relay` probed ok with no key at all —
+  `jev-1.14.0`, 628 ms; `falcon` and `raven` refused in 0 ms because no key is stored,
+  which is the designed path and never reaches the network.
+- Still unverified: Falcon with a real source key, Raven (not running on 7024), the
+  Falcon relay with a real token, authentication and D1. The App's rendering of these
+  rows is covered by the rendered-tree suite and the owner's dev App, not by a live
+  screenshot.
