@@ -1,5 +1,24 @@
 # 用户视角检查点
 
+## 2026-11-02 17:13 +08 — macOS release asset published
+
+- The owner authorized the full release and requested push before publication. `main`
+  was pushed through the normal hooks; exact source revision `33250ba` passed both
+  GitHub Check jobs and the automatic deployment. Public `/api/live` reports that
+  revision and still says macOS 0.16.0 while the new asset is being established.
+- GitHub Release `macos-v0.16.1` is published with `Eagle-0.16.1-macos.zip`.
+  The uploaded asset was downloaded again and matches the locally verified signed
+  bundle byte-for-byte, SHA-256 `917b418f67a3d92a0d7b6c4487732315b84fad064aaf6aa038d88ee8bf5db4c9`.
+  The locally installed 0.16.1 passed the limited live CLI/Bots regression recorded below.
+- The first Linux CI run failed an existing lost-response test; its same-revision rerun
+  passed. The fixture was then made deterministic without widening its limits, reviewed,
+  pushed and passed on Linux and macOS. The original failure and possible race are in
+  Retrospective.md; the CI log did not prove that specific interleaving occurred.
+- No new Herdr collection, authenticated website journey or D1 write was performed.
+  Public health was read only. The next hop is to push the now-verified 0.16.1 published
+  version claim, wait for that exact revision's Check and Deploy, and verify `/api/live`.
+  Detached origin/trigger writes and late watch callbacks still lack a proven full drain.
+
 ## 2026-11-02 14:59 +08 — installed 0.16.1 limited regression
 
 - The owner's new test credential authenticated as a read/write/admin client. Its value
