@@ -14,10 +14,17 @@ import { startDaemon } from "../src/main.ts";
 import { PiDurableRuntime } from "../src/runtime/pi/PiDurableRuntime.ts";
 import { DEFAULT_CORE_PROMPT, readGateway, writeGateway } from "../src/server/gateway.ts";
 import { acquireLock, LockError } from "../src/server/singleton.ts";
+import {
+  daemonRoot,
+  lockPortOf,
+  rootWithLockPort,
+  spawnDaemon,
+  startDaemonProcess,
+} from "./support/daemon.ts";
 import { waitFor } from "./support/pi.ts";
 
 test("saved gateway credentials authorize model requests on every daemon boot", async () => {
-  const root = await mkdtemp(join(tmpdir(), "bots-saved-gateway-"));
+  const root = await daemonRoot("bots-saved-gateway-");
   const key = "test-saved-gateway-key";
   let authorized = 0;
   const server = createServer((request, response) => {
@@ -102,8 +109,70 @@ test("saved gateway credentials authorize model requests on every daemon boot", 
   }
 });
 
+test("a root that shares a lock port with a live daemon is refused, and says which port", async () => {
+  // The lock port is derived from the root, so two roots can hash to the same port
+  // (ARCHITECTURE.md, "Singleton lock"). The refusal is a fact about the machine, so it
+  // has to be reported: the process exits non-zero and names the port it derived.
+  const owner = await daemonRoot("bots-lock-owner-");
+  const daemon = spawnDaemon({ root: owner });
+  try {
+    await daemon.waitForStart();
+    const port = await lockPortOf(owner);
+    const rival = await rootWithLockPort(port);
+    const refused = spawnDaemon({ root: rival });
+    try {
+      const exit = await refused.exited();
+      assert.notEqual(exit.code, 0, "the shared port refuses the second root");
+      assert.match(refused.stderr(), /lock port \d+ is shared/, "and names the port");
+      assert.equal(refused.stdout(), "", "a refused daemon prints no start line");
+      // The harness reports the whole story, so a refusal is never an unexplained exit.
+      await assert.rejects(
+        () => refused.waitForStart(),
+        (error: unknown) =>
+          error instanceof Error &&
+          error.message.includes("exit code: 1") &&
+          error.message.includes("lock port") &&
+          error.message.includes("is shared"),
+      );
+    } finally {
+      await refused.stop();
+      await rm(rival, { recursive: true, force: true });
+    }
+  } finally {
+    await daemon.stop();
+    await rm(owner, { recursive: true, force: true });
+  }
+});
+
+test("a daemon that loses its lock port starts on another root", async () => {
+  // The harness owns the root it hands the daemon, so a root that lost its port to
+  // another root is retried: the daemon named the port, and a different root is the
+  // documented remedy (ARCHITECTURE.md, "Singleton lock").
+  const owner = await daemonRoot("bots-retry-owner-");
+  const spare = await daemonRoot("bots-retry-spare-");
+  const daemon = spawnDaemon({ root: owner });
+  try {
+    await daemon.waitForStart();
+    const port = await lockPortOf(owner);
+    const colliding = await rootWithLockPort(port);
+    const started = await startDaemonProcess({ roots: [colliding, spare] });
+    try {
+      assert.notEqual(started.root, colliding, "the refused root was left behind");
+      assert.ok(started.port > 0, "the daemon answers on the other root");
+    } finally {
+      await started.daemon.stop();
+      await rm(started.root, { recursive: true, force: true });
+    }
+    await rm(colliding, { recursive: true, force: true });
+  } finally {
+    await daemon.stop();
+    await rm(owner, { recursive: true, force: true });
+    await rm(spare, { recursive: true, force: true });
+  }
+});
+
 test("the daemon starts from configuration and closes without leaving work behind", async () => {
-  const root = await mkdtemp(join(tmpdir(), "bots-main-"));
+  const root = await daemonRoot("bots-main-");
   try {
     const config = readConfig({ argv: ["--root", root, "--port", "0"], env: {} });
     const daemon = await startDaemon(config);
@@ -160,7 +229,7 @@ test("the daemon starts from configuration and closes without leaving work behin
 });
 
 test("shutdown retains the root lock until an in-flight open is closed", async (context) => {
-  const root = await mkdtemp(join(tmpdir(), "bots-opening-lock-"));
+  const root = await daemonRoot("bots-opening-lock-");
   let release = () => {};
   let markStarted = () => {};
   const gate = new Promise<void>((resolve) => {
@@ -216,7 +285,7 @@ test("shutdown retains the root lock until an in-flight open is closed", async (
 });
 
 test("shutdown retains the root lock until an accepted catalog write finishes", async (context) => {
-  const root = await mkdtemp(join(tmpdir(), "bots-route-lock-"));
+  const root = await daemonRoot("bots-route-lock-");
   let release = () => {};
   let markStarted = () => {};
   const gate = new Promise<void>((resolve) => {
@@ -272,7 +341,7 @@ test("shutdown retains the root lock until an accepted catalog write finishes", 
 });
 
 test("a timed-out handle keeps its root locked until process exit", async () => {
-  const root = await mkdtemp(join(tmpdir(), "bots-timeout-lock-"));
+  const root = await daemonRoot("bots-timeout-lock-");
   const script = `
     import assert from 'node:assert/strict';
     import { startDaemon } from ${JSON.stringify(import.meta.resolve("../src/main.ts"))};
@@ -301,7 +370,7 @@ test("a timed-out handle keeps its root locked until process exit", async () => 
 
 test("the daemon process reports shutdown success and timeout distinctly", async () => {
   for (const timeout of [false, true]) {
-    const root = await mkdtemp(join(tmpdir(), "bots-signal-exit-"));
+    const root = await daemonRoot("bots-signal-exit-");
     const script = `
       import { readFile } from 'node:fs/promises';
       import { join } from 'node:path';
@@ -348,7 +417,7 @@ test("the daemon process reports shutdown success and timeout distinctly", async
 });
 
 test("the development bearer is redacted from the log it authenticates with", async () => {
-  const root = await mkdtemp(join(tmpdir(), "bots-devtoken-redact-"));
+  const root = await daemonRoot("bots-devtoken-redact-");
   const dir = await mkdtemp(join(tmpdir(), "bots-devtoken-redact-file-"));
   const path = join(dir, "token");
   const token = "dev-agent-token-0123456789-abcdefghijklmnop";
@@ -400,7 +469,7 @@ test("the development bearer is redacted from the log it authenticates with", as
 });
 
 test("the daemon arms the development agent token it was told about", async () => {
-  const root = await mkdtemp(join(tmpdir(), "bots-devtoken-"));
+  const root = await daemonRoot("bots-devtoken-");
   const dir = await mkdtemp(join(tmpdir(), "bots-devtoken-file-"));
   const path = join(dir, "token");
   const token = "dev-agent-token-0123456789-abcdefghijklmnop";
@@ -457,7 +526,7 @@ test("the daemon arms the development agent token it was told about", async () =
 });
 
 test("health identifies the configured shared device port even while that service is offline", async () => {
-  const root = await mkdtemp(join(tmpdir(), "bots-device-health-"));
+  const root = await daemonRoot("bots-device-health-");
   const socket = join(root, "offline.sock");
   const daemon = await startDaemon(
     readConfig({ argv: ["--root", root, "--port", "0"], env: { BOTS_DEVICE_SOCKET: socket } }),
@@ -477,7 +546,7 @@ test("health identifies the configured shared device port even while that servic
 });
 
 test("settings store the thinking level, refuse an unknown one and apply it to bots", async () => {
-  const root = await mkdtemp(join(tmpdir(), "bots-levels-"));
+  const root = await daemonRoot("bots-levels-");
   try {
     const config = readConfig({ argv: ["--root", root, "--port", "0"], env: {} });
     const daemon = await startDaemon(config);
@@ -535,7 +604,7 @@ test("settings store the thinking level, refuse an unknown one and apply it to b
 });
 
 test("settings store tool groups, reject unknown names and keep core and coding mandatory", async () => {
-  const root = await mkdtemp(join(tmpdir(), "bots-groups-"));
+  const root = await daemonRoot("bots-groups-");
   try {
     const config = readConfig({ argv: ["--root", root, "--port", "0"], env: {} });
     const daemon = await startDaemon(config);
@@ -604,7 +673,7 @@ test("compaction thresholds follow the declared window and can be turned off", a
 });
 
 test("the usage endpoint reports an empty window before anything runs", async () => {
-  const root = await mkdtemp(join(tmpdir(), "bots-usage-http-"));
+  const root = await daemonRoot("bots-usage-http-");
   try {
     const daemon = await startDaemon(
       readConfig({ argv: ["--root", root, "--port", "0"], env: {} }),
@@ -631,7 +700,7 @@ test("the usage endpoint reports an empty window before anything runs", async ()
 });
 
 test("provider keys are saved behind the bearer and never returned", async () => {
-  const root = await mkdtemp(join(tmpdir(), "bots-providers-http-"));
+  const root = await daemonRoot("bots-providers-http-");
   const configHome = await mkdtemp(join(tmpdir(), "bots-providers-home-"));
   const previous = process.env.XDG_CONFIG_HOME;
   process.env.XDG_CONFIG_HOME = configHome;
@@ -714,7 +783,7 @@ test("provider keys are saved behind the bearer and never returned", async () =>
 // The two core prompts cross the composition root: the file is read from the machine, and the
 // standing instruction is stored and reported back (docs/bots/PRODUCT.md, "Core prompts").
 test("the daemon reads the machine prompt and saves the core prompt", async () => {
-  const root = await mkdtemp(join(tmpdir(), "bots-core-prompt-"));
+  const root = await daemonRoot("bots-core-prompt-");
   const machineFile = join(root, "machine-AGENTS.md");
   await writeFile(machineFile, "# 机器规则\n\n始终先跑测试。");
   const previous = process.env.BOTS_MACHINE_AGENTS;

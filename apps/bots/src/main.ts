@@ -153,8 +153,9 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
   // same directory a second lock port (ARCHITECTURE.md, "Singleton lock").
   await mkdir(config.root, { recursive: true, mode: 0o700 }).catch(() => undefined);
   const root = await realpath(config.root).catch((error: unknown) => {
-    process.stderr.write(`bots: cannot resolve the root ${config.root}: ${String(error)}\n`);
-    process.exit(1);
+    // The composition root reports the failure; the process entry decides to exit
+    // (scripts/serve.ts). A host that embeds the daemon keeps running.
+    throw new Error(`cannot resolve the root ${config.root}: ${String(error)}`);
   });
   const canonical: DaemonConfig = { ...config, root };
   const token = await loadToken(root);
@@ -190,10 +191,10 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
         origin: true,
         detail: { reason: "startup" },
       });
-      await sink.close();
-      process.stderr.write(`bots: ${error.message}\n`);
-      process.exit(1);
     }
+    // The refusal is a fact about the root, so it is thrown rather than exited: an
+    // embedded host learns why, and the process entry turns it into a non-zero exit.
+    await sink.close();
     throw error;
   }
   log.emit("info", "core", StartupEvents.singletonOk, { trace: startup });

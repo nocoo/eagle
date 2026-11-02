@@ -2,15 +2,14 @@
 // the withheld entry's id after the commit, and nothing above the transport cap is ever
 // presented as the answer (docs/bots/PROTOCOL.md, "Message").
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { WebSocket } from "ws";
 import type { Message } from "../../src/core/domain.ts";
 import { OVERSIZED_NOTICE } from "../../src/runtime/pi/limits.ts";
-import { startProvider } from "../crash/support/provider.ts";
+import { type Provider, startProvider } from "../crash/support/provider.ts";
+import { startDaemonProcess } from "../support/daemon.ts";
 import { text } from "../support/pi.ts";
 import { frameQueue, hello, send, startStack } from "../support/server.ts";
 
@@ -284,44 +283,26 @@ test("a client that joins inside the withdrawal window sees no partial", async (
 test("the real adapter leaves a joining client the withdrawn state, not a partial", async () => {
   // A real daemon over a provider that streams one chunk and then never returns: the
   // chunk exceeds the message cap, so the attempt is withdrawn and the run stays open.
-  const root = await mkdtemp(join(tmpdir(), "bots-window-"));
-  // One chunk over the 96 KiB projection cap: the attempt is withdrawn immediately.
-  const provider = await startProvider(join(root, "blocked"), { text: "长".repeat(40 * 1024) });
-  const child = spawn(
-    process.execPath,
-    [
-      "--experimental-strip-types",
-      join(process.cwd(), "scripts/serve.ts"),
-      "--root",
-      root,
-      "--port",
-      "0",
-    ],
-    {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        BOTS_BASE_URL: provider.baseUrl,
-        BOTS_API_KEY: "test-key-0123456789",
-        BOTS_MODEL: "auto/stub",
-        BOTS_MODEL_PROVIDER: "stub",
-      },
+  let provider: Provider | undefined;
+  // The daemon takes a lock port derived from its root, so the root is one whose port is
+  // free: a root that lost the port to another daemon is refused, not started.
+  const started = await startDaemonProcess({
+    prefix: "bots-window-",
+    prepare: async (root) => {
+      // One chunk over the 96 KiB projection cap: the attempt is withdrawn immediately.
+      provider = await startProvider(join(root, "blocked"), { text: "长".repeat(40 * 1024) });
+      return {
+        env: {
+          BOTS_BASE_URL: provider.baseUrl,
+          BOTS_API_KEY: "test-key-0123456789",
+          BOTS_MODEL: "auto/stub",
+          BOTS_MODEL_PROVIDER: "stub",
+        },
+      };
     },
-  );
-  let output = "";
-  child.stdout?.setEncoding("utf8");
-  child.stdout?.on("data", (chunk: string) => {
-    output += chunk;
   });
+  const { port, token } = started;
   try {
-    for (let index = 0; index < 600 && !output.includes('"daemon.start"'); index += 1) {
-      if (child.exitCode !== null) throw new Error(`the daemon exited: ${output}`);
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    const line = output.split("\n").find((entry) => entry.includes('"daemon.start"'));
-    assert.ok(line !== undefined);
-    const port = (JSON.parse(line) as { port: number }).port;
-    const token = (await readFile(join(root, "token"), "utf8")).trim();
     const connect = () =>
       new WebSocket(`ws://127.0.0.1:${port}/v1/socket`, {
         headers: { authorization: `Bearer ${token}` },
@@ -354,7 +335,7 @@ test("the real adapter leaves a joining client the withdrawn state, not a partia
       const value = frame.value as { running?: boolean; streaming?: unknown } | undefined;
       if (frame.type === "snapshot" && value?.running === true && value.streaming === null) break;
     }
-    await provider.blocked;
+    await provider?.blocked;
     const late = connect();
     const joined = frameQueue(late);
     await send(late, hello);
@@ -382,8 +363,8 @@ test("the real adapter leaves a joining client the withdrawn state, not a partia
     late.close();
     first.close();
   } finally {
-    child.kill("SIGKILL");
-    await provider.close();
-    await rm(root, { recursive: true, force: true });
+    await started.daemon.stop();
+    await provider?.close();
+    await rm(started.root, { recursive: true, force: true });
   }
 });

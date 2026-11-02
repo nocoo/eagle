@@ -2,62 +2,31 @@
 // barrier is a fact about the provider — one streamed chunk, then it never returns — so no
 // answer can land between the barrier and the kill (docs/bots/TESTING.md, "Crash test").
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { access, rm } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { WebSocket } from "ws";
 import type { Message } from "../../src/core/domain.ts";
+import { type DaemonProcess, daemonRoot, spawnDaemon } from "../support/daemon.ts";
 import { frameQueue, hello, send } from "../support/server.ts";
 import { startProvider } from "./support/provider.ts";
 
 type Daemon = {
   readonly port: number;
   readonly token: string;
-  readonly child: ReturnType<typeof spawn>;
+  readonly child: DaemonProcess;
   kill(): Promise<void>;
 };
 
 const startDaemon = async (root: string, env: Record<string, string>): Promise<Daemon> => {
-  const child = spawn(
-    process.execPath,
-    [
-      "--experimental-strip-types",
-      join(process.cwd(), "scripts/serve.ts"),
-      "--root",
-      root,
-      "--port",
-      "0",
-    ],
-    { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...env } },
-  );
-  let output = "";
-  child.stdout?.setEncoding("utf8");
-  child.stdout?.on("data", (chunk: string) => {
-    output += chunk;
-  });
-  let error = "";
-  child.stderr?.setEncoding("utf8");
-  child.stderr?.on("data", (chunk: string) => {
-    error += chunk;
-  });
-  for (let index = 0; index < 600 && !output.includes('"daemon.start"'); index += 1) {
-    if (child.exitCode !== null) throw new Error(`the daemon exited early: ${output}${error}`);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  const line = output.split("\n").find((entry) => entry.includes('"daemon.start"'));
-  assert.ok(line !== undefined, `the daemon started: ${output}${error}`);
-  const parsed = JSON.parse(line) as { port: number };
-  const token = (await readFile(join(root, "token"), "utf8")).trim();
+  const child = spawnDaemon({ root, env });
+  const start = await child.waitForStart();
   return {
-    port: parsed.port,
-    token,
+    port: start.port,
+    token: start.token,
     child,
     kill: async () => {
-      child.kill("SIGKILL");
-      // A child that already exited fires no `exit` event, and waiting for one would hang.
-      if (child.exitCode === null) await new Promise((resolve) => child.once("exit", resolve));
+      await child.stop();
     },
   };
 };
@@ -83,7 +52,7 @@ const api = async <T>(daemon: Daemon, path: string, method: string, body?: unkno
 test("killing the daemon right after admission loses no message and duplicates none", async () => {
   // No streamed chunk: the kill lands after the input is admitted and before any
   // assistant provisional exists, so recovery must not require an aborted entry.
-  const root = await mkdtemp(join(tmpdir(), "bots-sigkill-early-"));
+  const root = await daemonRoot("bots-sigkill-early-");
   const sentinel = join(root, "blocked");
   const provider = await startProvider(sentinel, { chunk: false });
   const env = {
@@ -160,7 +129,7 @@ test("killing the daemon right after admission loses no message and duplicates n
 });
 
 test("killing the daemon mid-answer loses no message and duplicates none", async () => {
-  const root = await mkdtemp(join(tmpdir(), "bots-sigkill-"));
+  const root = await daemonRoot("bots-sigkill-");
   const sentinel = join(root, "blocked");
   const provider = await startProvider(sentinel);
   const env = {

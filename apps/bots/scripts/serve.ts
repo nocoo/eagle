@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { readConfig } from "../src/config.ts";
 import { startDaemon } from "../src/main.ts";
 
-const handle = await startDaemon(readConfig());
+// A refused start (another owner, or a root that shares a lock port) is reported and
+// exits non-zero; the composition root only throws, so an embedded host stays alive.
+const handle = await startDaemon(readConfig()).catch((error: unknown) => {
+  process.stderr.write(`bots: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+});
 process.stdout.write(
   `${JSON.stringify({
     event: "daemon.start",

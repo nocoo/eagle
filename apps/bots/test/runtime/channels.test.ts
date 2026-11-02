@@ -2,13 +2,13 @@
 // record and one event, a lost watch must hand the subscriber a fresh baseline, and
 // progress must be attributed to the send that caused it.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { ClassifiedFailure } from "../../src/core/domain.ts";
 import type { RuntimeEvent } from "../../src/core/RuntimePort.ts";
+import { spawnScript } from "../support/daemon.ts";
 import {
   armedFailureStorage,
   createBench,
@@ -295,24 +295,12 @@ test("a killed run is pending in the next snapshot, and leaves it once settled",
   try {
     const dir = join(bench.dir, "b_runtime");
     await mkdir(dir, { recursive: true });
-    const child = spawn(
-      process.execPath,
-      [
-        "--experimental-strip-types",
-        join(process.cwd(), "test/runtime/support/interrupt-child.ts"),
-        dir,
-        "r_interrupt_1",
-      ],
-      { stdio: ["ignore", "pipe", "pipe"] },
-    );
-    let output = "";
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      output += chunk;
+    const child = spawnScript({
+      script: "test/runtime/support/interrupt-child.ts",
+      args: [dir, "r_interrupt_1"],
     });
-    await waitFor(() => output.includes("streaming"), "the child to stream", 20_000);
-    child.kill("SIGKILL");
-    await new Promise((resolve) => child.once("exit", resolve));
+    await child.waitForMarker("streaming", 20_000);
+    await child.stop();
 
     bench.faux.setResponses([text("恢复之后的答案。")]);
     const handle = await bench.runtime.open(bench.spec());

@@ -1,12 +1,12 @@
 // Ladder rows 33-35: the failure channels, and recovery after a real SIGKILL.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { ClassifiedFailure } from "../../src/core/domain.ts";
 import type { RuntimeEvent } from "../../src/core/RuntimePort.ts";
+import { spawnScript } from "../support/daemon.ts";
 import {
   armedFailureStorage,
   createBench,
@@ -22,25 +22,13 @@ const of = <T extends RuntimeEvent["type"]>(events: readonly RuntimeEvent[], typ
 /** Starts the child, waits until its input is admitted, then kills it outright. */
 const killMidAnswer = async (dir: string): Promise<void> => {
   await mkdir(dir, { recursive: true });
-  const child = spawn(
-    process.execPath,
-    [
-      "--experimental-strip-types",
-      join(process.cwd(), "test/runtime/support/interrupt-child.ts"),
-      dir,
-      "r_interrupt_1",
-    ],
-    { stdio: ["ignore", "pipe", "pipe"] },
-  );
-  let output = "";
-  child.stdout.setEncoding("utf8");
-  child.stdout.on("data", (chunk: string) => {
-    output += chunk;
+  const child = spawnScript({
+    script: "test/runtime/support/interrupt-child.ts",
+    args: [dir, "r_interrupt_1"],
   });
-  await waitFor(() => output.includes("ready"), "the child to admit its input", 10_000);
-  await waitFor(() => output.includes("streaming"), "the child to stream a partial", 20_000);
-  child.kill("SIGKILL");
-  await new Promise((resolve) => child.once("exit", resolve));
+  await child.waitForMarker("ready", 10_000);
+  await child.waitForMarker("streaming", 20_000);
+  await child.stop();
 };
 
 test("a parked task surfaces as task_parked from onReport, once", async () => {

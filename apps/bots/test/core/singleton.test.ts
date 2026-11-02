@@ -1,15 +1,16 @@
 // Ladder row 48: the root is owned by a kernel listener, so a second daemon on the same
 // root is refused and a killed one releases the port.
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import { acquireLock, fnv1a, LockError, lockPort } from "../../src/server/singleton.ts";
+import { daemonRoot, freeLockPort, rootWithLockPort } from "../support/daemon.ts";
 
 test("a live daemon rejects a second instance on the same root", async () => {
-  const root = await mkdtemp(join(tmpdir(), "bots-lock-"));
+  // The root decides the port, so the root is one whose port nobody holds: a port another
+  // daemon took would refuse this owner for a reason that is not under test.
+  const root = await daemonRoot("bots-lock-");
   try {
     const owner = await acquireLock({ root, pid: 4711 });
     assert.equal(owner.port, lockPort(root));
@@ -35,54 +36,31 @@ test("the lock port is derived from the root alone", () => {
 });
 
 test("two roots that hash to one lock port fail as a collision", async () => {
-  // Find a pair by brute force: the port space is 1000 wide, so a pair exists quickly.
-  const buckets = new Map<number, string>();
-  let pair: [string, string] | undefined;
-  for (let index = 0; index < 5_000 && pair === undefined; index += 1) {
-    const candidate = `/tmp/bots-collision-${index}`;
-    const port = lockPort(candidate);
-    const known = buckets.get(port);
-    if (known !== undefined) pair = [known, candidate];
-    else buckets.set(port, candidate);
-  }
-  assert.ok(pair !== undefined, "two roots share a lock port");
-  const root = await mkdtemp(join(tmpdir(), "bots-lock-"));
-  try {
-    const owner = await acquireLock({ root: pair[0], pid: 1 });
-    await assert.rejects(
-      () => acquireLock({ root: pair[1], pid: 2 }),
-      (error: unknown) =>
-        error instanceof LockError &&
-        error.reason === "collision" &&
-        /different root/.test(error.message),
-      "the message names both roots and offers no override",
-    );
-    await owner.close();
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  // Two roots on one port: the port is free, so the first root owns it and the second
+  // is refused for the reason under test.
+  const port = await freeLockPort();
+  const first = await rootWithLockPort(port, "bots-collision-a-", { create: false });
+  const second = await rootWithLockPort(port, "bots-collision-b-", { create: false });
+  const owner = await acquireLock({ root: first, pid: 1 });
+  await assert.rejects(
+    () => acquireLock({ root: second, pid: 2 }),
+    (error: unknown) =>
+      error instanceof LockError &&
+      error.reason === "collision" &&
+      /different root/.test(error.message),
+    "the message names both roots and offers no override",
+  );
+  await owner.close();
 });
 
 test("two different roots that hash to one lock port are refused with both names", async () => {
   // The port is derived from the root alone, so a collision is a real possibility.
-  const ports = new Map<number, string>();
-  let first: string | undefined;
-  let second: string | undefined;
-  for (let index = 0; index < 5_000; index += 1) {
-    const root = `/tmp/bots-collision-${index}`;
-    const port = lockPort(root);
-    const known = ports.get(port);
-    if (known !== undefined) {
-      first = known;
-      second = root;
-      break;
-    }
-    ports.set(port, root);
-  }
-  assert.ok(first !== undefined && second !== undefined, "a collision was found to test");
+  const port = await freeLockPort();
+  const first = await rootWithLockPort(port, "bots-collision-c-", { create: false });
+  const second = await rootWithLockPort(port, "bots-collision-d-", { create: false });
   const owner = await acquireLock({ root: first });
   try {
-    const refused = await acquireLock({ root: second as string }).then(
+    const refused = await acquireLock({ root: second }).then(
       () => undefined,
       (error: unknown) => error,
     );
