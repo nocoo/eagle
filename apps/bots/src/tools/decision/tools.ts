@@ -32,8 +32,7 @@ export const DEFAULT_CLASSIFY_THRESHOLD = 0.7;
 const QUESTION_ID = "next_step";
 /** A name the criteria map would not hold as an own key, or would shadow. */
 const RESERVED_NAMES = new Set(["__proto__", "constructor", "prototype"]);
-/** A conservative bound on the bytes an answer costs in the tool result: 4 bytes per character
- *  plus punctuation, so an answer the harness would clip is refused before it is paid for. */
+/** How much of a tool's output an answer may occupy, leaving room for the model line and notes. */
 const ANSWER_HEADROOM = 12 * 1024;
 
 export type DecisionToolOptions = {
@@ -128,13 +127,42 @@ const reservedLabel = (labels: readonly string[]): string | undefined =>
   labels.find((label) => RESERVED_NAMES.has(label.trim()));
 
 /**
- * Would the answer fit the text this tool can return? A label costs its own characters twice
- * (key and probability) plus punctuation, so a legal but huge request is refused here instead
- * of arriving as a clipped JSON line the model cannot parse.
+ * Would the answer fit the text this tool can return? The check serializes a worst-case answer
+ * built from the request itself: every option appears as both the choice and a probability key,
+ * and a score's legend may repeat a criterion's own JSON. Measuring the real encoding is what
+ * catches escaping (`\u0000` costs six bytes) instead of guessing bytes per character.
  */
-const answerFits = (labels: readonly string[]): boolean => {
-  const characters = labels.reduce((total, label) => total + label.length + 24, 0);
-  return characters * 4 <= ANSWER_HEADROOM;
+const answerFits = (
+  questions: Readonly<Record<string, DecisionQuestion>>,
+  budget = ANSWER_HEADROOM,
+): boolean => {
+  const projected: Record<string, unknown> = {};
+  for (const [id, question] of Object.entries(questions)) {
+    if (question.type === "choice") {
+      const labels = Object.keys(question.criteria);
+      projected[id] = {
+        type: "choice",
+        choice: labels.at(-1) ?? "",
+        probabilities: Object.fromEntries(labels.map((label) => [label, 0.5])),
+        confidence: 1,
+      };
+      continue;
+    }
+    if (question.type === "score") {
+      projected[id] = {
+        type: "score",
+        score: question.criteria.length - 1,
+        legend: question.criteria.map((level) =>
+          typeof level === "string" ? level : JSON.stringify(level),
+        ),
+        probabilities: question.criteria.map(() => 0.5),
+        confidence: 1,
+      };
+      continue;
+    }
+    projected[id] = { type: "noul", noul: 0.5 };
+  }
+  return Buffer.byteLength(JSON.stringify(projected), "utf8") <= budget;
 };
 
 const readLabels = (value: unknown): string[] | undefined => {
@@ -179,7 +207,6 @@ const readJudgeQuestions = (
     return `questions 需要 1-${MAX_JUDGE_QUESTIONS} 道题。`;
   }
   const questions: [string, DecisionQuestion][] = [];
-  const budget: string[] = [];
   const seen = new Set<string>();
   for (const entry of value as readonly QuestionInput[]) {
     const id = typeof entry?.id === "string" ? entry.id.trim() : "";
@@ -208,7 +235,6 @@ const readJudgeQuestions = (
       if (!Object.values(criteria).every(isEntry)) {
         return `题 ${id} 的选项描述只能是文本、JSON 或 null。`;
       }
-      for (const label of labels) budget.push(label);
       questions.push([
         id,
         {
@@ -227,7 +253,6 @@ const readJudgeQuestions = (
       if (!criteria.every(isEntry)) {
         return `题 ${id} 的等级描述只能是文本、JSON 或 null。`;
       }
-      for (const level of criteria) budget.push(typeof level === "string" ? level : "");
       questions.push([
         id,
         {
@@ -260,9 +285,6 @@ const readJudgeQuestions = (
           : { criteria: criteria as { true?: DecisionEntry; false?: DecisionEntry } }),
       },
     ]);
-  }
-  if (!answerFits(budget)) {
-    return "答案会超过工具输出上限，请减少题目、选项或缩短文字。";
   }
   return Object.fromEntries(questions);
 };
@@ -346,26 +368,23 @@ export const createDecisionTools = (options: DecisionToolOptions) => {
         if (args.allowNone === true && labels.includes("none")) {
           return refusal("label 里已经有 none，不要再开 allowNone。");
         }
-        if (!answerFits(labels)) {
-          return refusal("答案会超过工具输出上限，请减少选项或缩短 label。");
-        }
         const criteria: Record<string, string> = {};
         for (const option of options_) {
           criteria[option.label.trim()] = option.description?.trim() ?? option.label.trim();
         }
         if (args.allowNone === true) criteria.none = "The state does not fit any of the options.";
+        const questions = {
+          [QUESTION_ID]: {
+            type: "choice" as const,
+            instructions: question,
+            criteria,
+          },
+        };
+        if (!answerFits(questions)) {
+          return refusal("答案会超过工具输出上限，请减少选项或缩短 label。");
+        }
         try {
-          const reply_ = await ask(
-            state,
-            {
-              [QUESTION_ID]: {
-                type: "choice",
-                instructions: question,
-                criteria,
-              },
-            },
-            context,
-          );
+          const reply_ = await ask(state, questions, context);
           const answer = reply_.answers[QUESTION_ID] as DecisionAnswer;
           return reply(
             compose([answerJSON(answer), reply_.model, unsureNote(answer)]),
@@ -420,9 +439,6 @@ export const createDecisionTools = (options: DecisionToolOptions) => {
         if (args.allowNone === true && mode === "single" && labels.includes("none")) {
           return refusal("labels 里已经有 none，不要再开 allowNone。");
         }
-        if (!answerFits(labels)) {
-          return refusal("答案会超过工具输出上限，请减少标签或缩短 label。");
-        }
         try {
           if (mode === "single") {
             const criteria: Record<string, string> = {};
@@ -430,17 +446,17 @@ export const createDecisionTools = (options: DecisionToolOptions) => {
             if (args.allowNone === true) {
               criteria.none = "The state does not fit any of the labels.";
             }
-            const reply_ = await ask(
-              state,
-              {
-                [QUESTION_ID]: {
-                  type: "choice",
-                  instructions: "Which label fits the state?",
-                  criteria,
-                },
+            const questions = {
+              [QUESTION_ID]: {
+                type: "choice" as const,
+                instructions: "Which label fits the state?",
+                criteria,
               },
-              context,
-            );
+            };
+            if (!answerFits(questions)) {
+              return refusal("答案会超过工具输出上限，请减少标签或缩短 label。");
+            }
+            const reply_ = await ask(state, questions, context);
             const answer = reply_.answers[QUESTION_ID] as DecisionAnswer;
             return reply(
               compose([answerJSON(answer), reply_.model, unsureNote(answer)]),
@@ -453,6 +469,9 @@ export const createDecisionTools = (options: DecisionToolOptions) => {
               type: "noul",
               instructions: `Does the state belong to the category "${label}"?`,
             };
+          }
+          if (!answerFits(questions)) {
+            return refusal("答案会超过工具输出上限，请减少标签。");
           }
           const reply_ = await ask(state, questions, context);
           const threshold = args.threshold ?? DEFAULT_CLASSIFY_THRESHOLD;
@@ -534,21 +553,18 @@ export const createDecisionTools = (options: DecisionToolOptions) => {
         if (question === undefined) return refusal("question 不能为空。");
         const levels = readLevels(args.levels);
         if (levels === undefined) return refusal(`levels 需要 2-${MAX_LEVELS} 个非空等级。`);
-        if (!answerFits(levels)) {
+        const questions = {
+          [QUESTION_ID]: {
+            type: "score" as const,
+            instructions: question,
+            criteria: levels,
+          },
+        };
+        if (!answerFits(questions)) {
           return refusal("答案会超过工具输出上限，请减少等级或缩短描述。");
         }
         try {
-          const reply_ = await ask(
-            state,
-            {
-              [QUESTION_ID]: {
-                type: "score",
-                instructions: question,
-                criteria: levels,
-              },
-            },
-            context,
-          );
+          const reply_ = await ask(state, questions, context);
           const answer = reply_.answers[QUESTION_ID] as DecisionAnswer;
           return reply(
             compose([answerJSON(answer), reply_.model, unsureNote(answer)]),
@@ -599,6 +615,9 @@ export const createDecisionTools = (options: DecisionToolOptions) => {
         if (state === undefined) return refusal("state 需要是非空文本或一个 JSON 结构。");
         const questions = readJudgeQuestions(args.questions);
         if (typeof questions === "string") return refusal(questions);
+        if (!answerFits(questions, 26 * 1024)) {
+          return refusal("答案会超过工具输出上限，请减少题目、选项或缩短文字。");
+        }
         try {
           const reply_ = await ask(state, questions, context);
           const notes = Object.values(reply_.answers)

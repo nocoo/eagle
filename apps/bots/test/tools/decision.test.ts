@@ -297,16 +297,40 @@ test("bad arguments are refused before anything is sent", async () => {
 
 test("the answer must fit the output the tool can return", async () => {
   const { requests, run } = fixture(() => choiceAnswer({ test: 1, merge: 0 }, "test"));
-  const options = Array.from({ length: 200 }, (_, index) => ({
+  const manyLabels = Array.from({ length: 200 }, (_, index) => ({
     label: `选项${index}`.padEnd(64, "网"),
   }));
-  const { result, text } = await run("decide", {
+  const many = await run("decide", {
     state: "x",
     question: "?",
-    options: options.map((option) => ({ label: option.label })),
+    options: manyLabels.map((option) => ({ label: option.label })),
   });
-  assert.equal(result.isError, true);
-  assert.match(text, /输出|选项/);
+  assert.equal(many.result.isError, true);
+  assert.match(many.text, /输出/);
+
+  // Escaping costs more than one character per character: a control character becomes \uXXXX
+  // and a choice's winner appears twice.
+  const escaped = await run("decide", {
+    state: "x",
+    question: "?",
+    options: [{ label: "\u0000".repeat(3_000) }, { label: "plain" }],
+  });
+  assert.equal(escaped.result.isError, true, "a badly escaped answer is refused too");
+
+  // A nested level is repeated in the legend, so its own JSON is what has to fit.
+  const nested = await run("judge", {
+    state: "x",
+    questions: [
+      {
+        id: "q",
+        type: "score",
+        instructions: "?",
+        criteria: [{ text: "网".repeat(6_000) }, { text: "网".repeat(6_000) }],
+      },
+    ],
+  });
+  assert.equal(nested.result.isError, true, "a nested legend is measured, not counted as empty");
+
   assert.deepEqual(requests, [], "an oversized answer is refused before it is paid for");
 });
 
