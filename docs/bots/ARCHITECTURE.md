@@ -450,9 +450,10 @@ Rules:
    closed. An unconfirmed close or failed opening retains the lock until process
    exit; timeout is never reported as a successful shutdown. Process exit releases
    the socket lock and the OS closes the files. HTTP routes, upgrades and WebSocket
-   commands already accepted are awaited before registry shutdown. Detached origin and
-   trigger writes are not yet drained, so a `closed` result does not yet prove that an
-   embedded caller can safely reuse the root.
+   commands already accepted are awaited before registry shutdown. A runtime close also
+   waits for its queued settled-note writes. Detached origin and trigger writes are not
+   yet drained, so a `closed` result does not yet prove that an embedded caller can safely
+   reuse the root.
 7. Delete order is part of the contract: mark the bot deleting (no new lease, no
    new open), drain the leases already granted with the close deadline, then take
    the lifecycle window, close, and move. The window cannot be taken first,

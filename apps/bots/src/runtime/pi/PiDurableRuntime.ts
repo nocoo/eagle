@@ -827,7 +827,9 @@ class PiRuntimeHandle implements RuntimeHandle {
   async close(trace: string, deadlineMs: number): Promise<"closed" | "timeout"> {
     const log = this.#options.log;
     log.emit("info", "runtime", Events.closeStart, { trace, botId: this.#spec.id });
-    this.#closing ??= this.#harness.close(BACKGROUND_CONTEXT);
+    this.#closing ??= this.#harness.close(BACKGROUND_CONTEXT).then(async () => {
+      await this.#noteQueue;
+    });
     const closing = this.#closing;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<"timeout">((resolve) => {

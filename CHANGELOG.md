@@ -6,8 +6,9 @@
 
 - Enforce CLI response deadlines, keep quiet sockets alive, resolve the bundled version
   through PATH, and preserve failed-submission details in JSON.
-- Close the log sink permanently and protect in-flight opens, requests and commands
-  during daemon shutdown. Detached origin and trigger writes still lack a shutdown barrier.
+- Close the log sink permanently and protect in-flight opens, requests, commands and
+  queued settled-note writes during daemon shutdown. Detached origin and trigger writes
+  still lack a shutdown barrier.
 
 ## macOS v0.16.0 — 2026-11-01
 

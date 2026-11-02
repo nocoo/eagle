@@ -2,6 +2,7 @@
 // value the bot gave note_set during that run, else the first sentence of its answer.
 import assert from "node:assert/strict";
 import test from "node:test";
+import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { ClassifiedFailure, type Failure } from "../../src/core/domain.ts";
 import type { RuntimeBotSpec, RuntimeHandle } from "../../src/core/RuntimePort.ts";
 import {
@@ -59,6 +60,80 @@ const noteBench = async (options: { readonly fail?: boolean } = {}): Promise<Not
     cleanup: () => bench.cleanup(),
   };
 };
+
+test("close keeps the handle owned while the settled note is being written", async () => {
+  let release = () => {};
+  let markStarted = () => {};
+  let markStorageClosed = () => {};
+  const storageClosed = new Promise<void>((resolve) => {
+    markStorageClosed = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const bench = await createBench({
+    storage: async (path) => {
+      const storage = await openNodeSqliteStorage(path);
+      return new Proxy(storage, {
+        get(target, property, receiver) {
+          if (property === "close") {
+            return async (...args: Parameters<typeof target.close>) => {
+              await target.close(...args);
+              markStorageClosed();
+            };
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      });
+    },
+    note: (spec) => ({
+      botId: spec.id,
+      set: async (value) => {
+        markStarted();
+        await gate;
+        return value.length === 0 ? {} : { note: value };
+      },
+      current: () => ({}),
+    }),
+  });
+  const handle = await bench.runtime.open(bench.spec());
+  try {
+    await handle.subscribe(trace, () => undefined);
+    bench.faux.setResponses([text("Completed.")] as never);
+    await handle.submit({
+      requestId: "r_note_shutdown",
+      text: "test",
+      whenBusy: "followUp",
+      trace,
+    });
+    await Promise.race([
+      started,
+      new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => reject(new Error("note write did not start")), 2_000);
+        timer.unref();
+      }),
+    ]);
+    const closing = handle.close(trace, 1_000);
+    await Promise.race([
+      storageClosed,
+      new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => reject(new Error("storage did not close")), 1_000);
+        timer.unref();
+      }),
+    ]);
+    assert.equal(await handle.close(trace, 40), "timeout");
+    release();
+    await closing;
+    assert.equal(await handle.close(trace, 1_000), "closed");
+  } finally {
+    release();
+    await handle.close(trace, 1_000).catch(() => undefined);
+    await bench.cleanup();
+  }
+});
 
 test("a run that never called note_set writes its answer's first sentence", async () => {
   const notes = await noteBench();
