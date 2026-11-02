@@ -2,32 +2,14 @@
 // "Providers"). A model listing cannot prove a decision provider: a relay answers it from its own
 // cache, and the relays disagree on model names, keys and addresses. A single tiny choice question
 // proves the address, the credential, the model name and the answer shape at once.
-import { normalizeBaseUrl } from "./gateway.ts";
-import type { ProviderProbe } from "./providers.ts";
+import { ADDRESS_REFUSED, decisionRoot, type ProviderProbe } from "./providers.ts";
+
+export { decisionRoot };
 
 /** Falcon's own deadline is 30 s; this leaves room for it to answer rather than race it. */
 export const DECISION_TEST_TIMEOUT_MS = 20_000;
 
 const SYSTEMONE_PATH = "/v1/systemone";
-
-/** Why an address was refused; one wording for the form and the probe. */
-export const ADDRESS_REFUSED = "地址需要 http 或 https 的 API 根，不能带凭据、查询或片段";
-
-/**
- * The API root of a System One endpoint. A person may paste the address they use for the model
- * gateway (`…/v1`) or the full endpoint; both collapse to the root, and the result is idempotent
- * because the path is appended again rather than kept. Credentials, a query or a fragment are
- * refused: the settings page echoes this address back, and `/v1/systemone` cannot be appended to
- * one that already carries them.
- */
-export const decisionRoot = (value: string): string | undefined => {
-  const normalized = normalizeBaseUrl(value);
-  if (normalized === undefined) return undefined;
-  const url = new URL(normalized);
-  if (url.username.length > 0 || url.password.length > 0) return undefined;
-  if (url.search.length > 0 || url.hash.length > 0) return undefined;
-  return normalized.replace(/\/v1\/systemone$/, "").replace(/\/v1$/, "");
-};
 
 export type DecisionTarget = {
   readonly baseUrl: string;
@@ -68,19 +50,17 @@ const readAnswer = (
   // Own keys only: a prototype name such as `toString` is not one of the criteria.
   if (typeof choice !== "string" || !Object.hasOwn(CRITERIA, choice)) return undefined;
   if (answer.confidence !== undefined && !isProbability(answer.confidence)) return undefined;
-  let probability: number | undefined;
-  if (answer.probabilities !== undefined) {
-    if (!isObject(answer.probabilities)) return undefined;
-    const keys = Object.keys(answer.probabilities).sort();
-    if (keys.join(",") !== Object.keys(CRITERIA).sort().join(",")) return undefined;
-    const values = Object.values(answer.probabilities);
-    if (!values.every(isProbability)) return undefined;
-    // A distribution, not a set of scores: Falcon accepts the same 0.02 rounding tolerance.
-    const total = values.reduce<number>((sum, value) => sum + (value as number), 0);
-    if (Math.abs(total - 1) > 0.02) return undefined;
-    const winner = answer.probabilities[choice];
-    probability = typeof winner === "number" ? winner : undefined;
-  }
+  // A choice answer is a distribution over the criteria; without one nothing is proven.
+  if (!isObject(answer.probabilities)) return undefined;
+  const keys = Object.keys(answer.probabilities).sort();
+  if (keys.join(",") !== Object.keys(CRITERIA).sort().join(",")) return undefined;
+  const values = Object.values(answer.probabilities);
+  if (!values.every(isProbability)) return undefined;
+  // A distribution, not a set of scores: Falcon accepts the same 0.02 rounding tolerance.
+  const total = values.reduce<number>((sum, value) => sum + (value as number), 0);
+  if (Math.abs(total - 1) > 0.02) return undefined;
+  const winner = answer.probabilities[choice];
+  const probability = typeof winner === "number" ? winner : undefined;
   const model = body.model;
   return {
     ...(typeof model === "string" && model.length > 0 ? { resolvedModel: model } : {}),

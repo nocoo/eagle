@@ -2989,5 +2989,17 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   ignores the client key; it answers `/v1/models` from a cache that omits that model, which
   is why the probe is a real decision instead of a listing. Falcon's local port answered
   401 without a source key; Raven was not running.
+- Two review rounds ran in a reviewing pane. The first found a credential-bearing address
+  that the page would echo, a `?`/`#` address that broke the appended path, a prototype-name
+  choice and a non-normalized distribution accepted as an answer, a fabricated
+  `resolvedModel`, no way to clear an optional relay key, a page-level read error attributed
+  to one card, and no test for the keyless relay in the UI. All are closed by `2129bce` and
+  the follow-up: the address rule moved beside the store so a stored value is re-checked
+  before publication, an answer must carry a distribution over the criteria, the row's
+  buttons come from tested predicates, and a failed read stays on the page. Rendered-tree
+  tests cover what the row shows; button *enablement* is asserted through those predicates
+  because this App has no XCTest target and SwiftUI does not publish an accessible enabled
+  state through this hosting path. Adding the `?`/`#` and distribution cases re-ran every
+  gate above, all green.
 - Not verified: the App's own page against a live daemon (the owner's dev App run is next),
   Raven and Falcon with real credentials, authentication and D1 (unchanged by this work).

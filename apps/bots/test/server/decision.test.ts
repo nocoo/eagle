@@ -59,6 +59,8 @@ test("an address typed with /v1 or /v1/systemone is the same root", async () => 
   assert.equal(decisionRoot("https://api.typesafe.ai"), "https://api.typesafe.ai");
   assert.equal(decisionRoot("relay.test"), undefined, "a root is an absolute http(s) URL");
   assert.equal(decisionRoot("ftp://relay.test"), undefined);
+  assert.equal(decisionRoot("http://relay.test/v1?"), undefined);
+  assert.equal(decisionRoot("http://relay.test/v1#"), undefined);
   const urls: string[] = [];
   await probeDecision(
     { baseUrl: "http://relay.test/v1", model: "jev-latest", apiKey: "" },
@@ -148,13 +150,21 @@ test("an answer that names no model reports none instead of the request alias", 
     { baseUrl: "http://relay.test", model: "jev-latest", apiKey: "k" },
     {
       fetch: async () =>
-        Response.json({ answers: { next_step: { choice: "merge", type: "choice" } } }),
+        Response.json({
+          answers: {
+            next_step: {
+              type: "choice",
+              choice: "merge",
+              probabilities: { test: 0.4, merge: 0.6 },
+            },
+          },
+        }),
     },
   );
   assert.equal(probe.ok, true);
   assert.equal(probe.resolvedModel, undefined, "an unnamed model is not evidence");
   assert.equal(probe.model, "jev-latest");
-  assert.equal(probe.message, "连接成功 · merge");
+  assert.equal(probe.message, "连接成功 · merge 0.60");
 });
 
 test("a stored address that is not a URL fails without a request", async () => {
@@ -180,6 +190,8 @@ test("an address carrying credentials, a query or a fragment is refused", async 
     "http://user:secret-key@relay.test/v1",
     "http://relay.test/v1?region=local",
     "http://relay.test/v1#frag",
+    "http://relay.test/v1?",
+    "http://relay.test/v1#",
   ]) {
     assert.equal(decisionRoot(baseUrl), undefined, baseUrl);
     let asked = false;
@@ -223,6 +235,8 @@ test("an answer that is not a distribution over the criteria is not usable", asy
         },
       },
     }),
+    // A choice answer without a distribution proves nothing about the model's answer.
+    Response.json({ model: "jev", answers: { next_step: { type: "choice", choice: "test" } } }),
   ]) {
     const probe = await probeDecision(
       { baseUrl: "http://relay.test", model: "jev-latest", apiKey: "k" },

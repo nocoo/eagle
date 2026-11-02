@@ -685,15 +685,20 @@ public struct SettingsView: View {
         SettingsActionButton("保存", prominent: hasDraft) {
           Task { await model.saveProvider(provider.id) }
         }
-        .disabled(model.providerBusy || !hasDraft)
+        .disabled(model.providerBusy || !model.canSaveProvider(provider))
         .fixedSize()
         SettingsActionButton("测试") {
           Task { await model.testProvider(provider.id) }
         }
-        .disabled(
-          model.providerBusy || hasDraft || (provider.keyRequired && !provider.hasApiKey)
-        )
+        .disabled(model.providerBusy || !model.canTestProvider(provider))
         .fixedSize()
+        if !provider.keyRequired && provider.hasApiKey {
+          SettingsActionButton("清除 Key") {
+            Task { await model.clearProviderKey(provider.id) }
+          }
+          .disabled(model.providerBusy)
+          .fixedSize()
+        }
       }
       if provider.isDecision {
         Text("\(provider.baseUrl) · \(provider.model)")

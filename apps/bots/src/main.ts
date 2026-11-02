@@ -34,7 +34,7 @@ import { createDaemonModels } from "./runtime/pi/models.ts";
 import { PiDurableRuntime, type PiSettings } from "./runtime/pi/PiDurableRuntime.ts";
 import { loadToken } from "./server/auth.ts";
 import { ClientStore } from "./server/clients.ts";
-import { ADDRESS_REFUSED, decisionRoot, probeDecision } from "./server/decision.ts";
+import { probeDecision } from "./server/decision.ts";
 import { armDevToken } from "./server/devToken.ts";
 import {
   DEFAULT_CORE_PROMPT,
@@ -52,6 +52,8 @@ import {
 } from "./server/gateway.ts";
 import { type Daemon, startServer, type TriggerIngress } from "./server/http.ts";
 import {
+  ADDRESS_REFUSED,
+  decisionRoot,
   PROVIDERS,
   type ProviderApi,
   type ProviderConfig,

@@ -5,6 +5,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { normalizeBaseUrl } from "./gateway.ts";
 
 /**
  * The two things a provider is for. A person selects one of each independently: the search
@@ -142,6 +143,26 @@ export type ProviderInput = {
   readonly model?: string;
 };
 
+/** Why an address was refused; one wording for the form, the store and the probe. */
+export const ADDRESS_REFUSED = "地址需要 http 或 https 的 API 根，不能带凭据、查询或片段";
+
+/**
+ * The API root of a System One endpoint. A person may paste the address they use for the model
+ * gateway (`…/v1`) or the full endpoint; both collapse to the root, and the result is idempotent
+ * because the path is appended again rather than kept. Credentials, a query and a fragment are
+ * refused: this address is echoed back by the settings page, and `/v1/systemone` cannot be
+ * appended to one that already carries them.
+ */
+export const decisionRoot = (value: string): string | undefined => {
+  const typed = value.trim();
+  if (typed.includes("?") || typed.includes("#")) return undefined;
+  const normalized = normalizeBaseUrl(typed);
+  if (normalized === undefined) return undefined;
+  const url = new URL(normalized);
+  if (url.username.length > 0 || url.password.length > 0) return undefined;
+  return normalized.replace(/\/v1\/systemone$/, "").replace(/\/v1$/, "");
+};
+
 /** The file lives in the user's own config, not beside this machine's daemon state. */
 export const providersPath = (): string =>
   join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "eagle-bots", "providers.json");
@@ -164,12 +185,14 @@ export const readProviders = async (
     const out: Record<string, ProviderConfig> = {};
     for (const [id, value] of Object.entries(raw.providers)) {
       if (!isObject(value) || typeof value.apiKey !== "string") continue;
+      // A stored address is re-checked here: this shape is published, so an address edited by
+      // hand cannot carry a credential or an unusable suffix into the settings page.
       const baseUrl = optionalString(value.baseUrl);
       const model = optionalString(value.model);
       out[id] = {
         apiKey: value.apiKey,
         enabled: value.enabled === true,
-        ...(baseUrl === undefined ? {} : { baseUrl }),
+        ...(baseUrl === undefined || decisionRoot(baseUrl) !== baseUrl ? {} : { baseUrl }),
         ...(model === undefined ? {} : { model }),
       };
     }

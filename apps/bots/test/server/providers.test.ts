@@ -185,3 +185,30 @@ test("an override survives the round trip; a cleared one is not stored", async (
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// The published shape echoes the address, so a stored one is re-checked: a file edited by hand
+// cannot put a credential on the settings page.
+test("a stored address that is not an API root is not published", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bots-providers-address-"));
+  const path = join(root, "providers.json");
+  try {
+    await writeProviders(
+      {
+        "jev-relay": {
+          apiKey: "",
+          enabled: true,
+          baseUrl: "http://user:review-only-marker@relay.test/v1",
+        },
+      },
+      path,
+    );
+    const shown = publicProviders(await readProviders(path)).find(
+      (provider) => provider.id === "jev-relay",
+    );
+    assert.equal(shown?.baseUrl, "http://127.0.0.1:3425", "the catalogue root stands in");
+    assert.equal(JSON.stringify(shown).includes("review-only-marker"), false);
+    assert.equal(shown?.enabled, true, "the provider itself is still usable");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
