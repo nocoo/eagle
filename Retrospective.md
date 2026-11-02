@@ -1,5 +1,21 @@
 # Retrospective
 
+## 2026-11-02 — A pane's "all green" predated the change I asked for next
+
+A coding pane reported `apps/macos` green (221 + 48 + 60 + 29) after adding the memory row.
+In the next prompt I asked the same pane for a different change: the `BotsTransport` fallback
+group list gained `memory`. That fallback feeds `GatewaySettings`, so the App's own
+`SettingsTests` expectation without `memory` went red. The pane then ran only
+`apps/bots-macos` tests, and I accepted both reports without running the suites myself, so
+the red test sat in HEAD until an unrelated run of `swift test` found it.
+
+Two habits keep this from repeating. A pane's verification is evidence for the tree it ran
+on, not for the commit I make later: rerun the gate after the last change of the session,
+not after the last change of a prompt. And a cross-package change needs the *consumer's*
+tests, not only its own package's: the fallback list lives in `BotsTransport`, but the
+assertion that broke was in `EagleFeaturesTests`. The fix is one expectation, but the cost of
+finding it late was a red `main`.
+
 ## 2026-11-02 — Lost response was not proof of admission
 
 The first 0.16.1 Linux CI run failed the device service's lost-response case: it queried
