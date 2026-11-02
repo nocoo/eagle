@@ -1,5 +1,22 @@
 # 用户视角检查点
 
+## 2026-11-03 06:45 +08 — macOS 0.17.0 release candidate
+
+- Source version is 0.17.0; the GitHub asset has not been uploaded and the
+  published macOS claim remains 0.16.1. The ad-hoc candidate archive was built
+  and its extracted signature and CLI version verified. The dev App running in
+  the pane predates this candidate; manual rendering and new live Herdr
+  collection have not been verified. Authentication and D1 were not exercised.
+- Root pre-push checks, 825 Bots checks, the full Bots eval and native coverage
+  (91.8%) passed locally. The repeated pairing-input CI failure was reproduced
+  with an accessibility wrapper, corrected and checked against a temporary
+  input-clearing regression; a separate lock-port collision fixture was fixed.
+- GitHub CI for `0dc8667` passed the root job and the pairing-input test, but
+  the device service switch test failed after its asynchronous second press.
+  Deployment was skipped. Next: diagnose that failure without weakening the
+  test, rerun exact-revision CI, rebuild and verify the release asset before
+  publication; the previous published app remains unchanged.
+
 ## 2026-11-02 21:05 +08 — memory proven through the CLI, and two gates closed
 
 - User-facing: with the dev daemon serving the App, two scratch bots drove the memory tools
