@@ -1,5 +1,26 @@
 # 用户视角检查点
 
+## 2026-11-02 18:40 +08 — ask_user, proven through the CLI
+
+- The bot can now ask instead of guessing. `ask_user` (core group) takes one to five
+  single- or multiple-choice questions and returns at once; the card is the call's own
+  arguments, so the transcript renders it and a restart loses nothing. The answer arrives as
+  one hidden user input the daemon composes and marks (`hidden: true`, `answersTo: e_N`);
+  a client reports labels and never authors what the model reads. A skipped card tells the
+  bot to continue without an answer. Nothing waits on a human.
+- Real acceptance on the running dev daemon (magpie `group/eagle`): a new bot
+  `ask_user 验收` was asked to use the tool. `chat send --wait` printed
+  `[question e_11] (单选) 哥，要不要继续这个验收？: 继续 | 停止` and the answering form;
+  `chat answer --entry e_11 --choose 继续` admitted `answer_397e1d042845470b8e26835bb4bca9d4`
+  (`status: placed`), the transcript shows the hidden entry, and the bot continued with
+  "哥，已选择继续。接下来继续验收流程。". Nothing was retried and no answer was invented by the CLI.
+- Verified locally: Bots `npm run check` (coverage 94.87 / 88.06 / 90.20), macOS Swift tests
+  217 + 48 + 60 + 29, strict `swift format` lint. No Herdr collection, website
+  authentication, D1 or public deployment was involved.
+- Next broken hop: the App does not draw the card yet — the conversation surface still needs
+  the question row, the per-question selection state and the submit/skip actions; the CLI is
+  the only client that can answer today.
+
 ## 2026-11-02 19:10 +08 — the tool surface is readable in Settings
 
 - User-facing: every row on the 工具 page opens to the tools that group gives a bot right now,
