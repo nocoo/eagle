@@ -93,6 +93,9 @@ public struct Composer: View {
     .padding(.horizontal, Theme.Metric.composerInnerInset)
     .padding(.vertical, Theme.Metric.composerVerticalInset)
     .frame(minHeight: Theme.Metric.composerHeight)
+    // The transcript above is the flexible child. Without this the composer gives up its own
+    // height when the column is short, and a squeezed pill leaves the caret off centre.
+    .fixedSize(horizontal: false, vertical: true)
     .background(
       RoundedRectangle(cornerRadius: Theme.Metric.composerHeight / 2, style: .continuous)
         .fill(Theme.Palette.card)
