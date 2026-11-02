@@ -568,7 +568,14 @@ final class StubConversation: ConversationPort {
     let requestId: String
   }
 
+  struct Answered {
+    let entryId: String
+    let chosen: [String]
+    let skipped: Bool
+  }
+
   var sent: [Sent] = []
+  var answered: [Answered] = []
   var aborted = 0
   var lastBotId: String?
   /// Every `open`, so a reconnect is observable.
@@ -602,6 +609,17 @@ final class StubConversation: ConversationPort {
     botId: String
   ) async throws {
     sent.append(Sent(text: text, requestId: context.requestId ?? ""))
+    lastBotId = botId
+  }
+
+  func answer(
+    entryId: String,
+    chosen: [String],
+    skipped: Bool,
+    context: CommandContext,
+    botId: String
+  ) async throws {
+    answered.append(Answered(entryId: entryId, chosen: chosen, skipped: skipped))
     lastBotId = botId
   }
 

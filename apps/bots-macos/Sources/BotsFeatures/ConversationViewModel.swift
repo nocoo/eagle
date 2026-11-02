@@ -134,6 +134,21 @@ public final class ConversationViewModel: ObservableObject {
     send(text: entry.text, requestId: entry.requestId, botId: entry.botId, optimistic: true)
   }
 
+  /// Answers an ask_user card. The daemon composes the hidden message, so this sends labels
+  /// and nothing else; the card closes when that hidden message comes back.
+  public func answer(entryId: String, chosen: [String], skipped: Bool) {
+    guard connection == .ready, let botId = selectedBotId else { return }
+    let context = CommandContext.command("answer")
+    Task { [weak self] in
+      do {
+        try await self?.conversation.answer(
+          entryId: entryId, chosen: chosen, skipped: skipped, context: context, botId: botId)
+      } catch {
+        self?.errorBanner = Self.describe(error)
+      }
+    }
+  }
+
   public func abort() {
     guard let botId = selectedBotId else { return }
     let context = CommandContext.command("abort")

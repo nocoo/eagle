@@ -159,6 +159,25 @@ public enum Wire {
     )
   }
 
+  /// The daemon reads the questions out of the entry named here and composes the hidden
+  /// message the bot reads next, so a client never writes what the model receives.
+  public static func answer(
+    entryId: String,
+    chosen: [String],
+    skipped: Bool,
+    trace: String
+  ) throws -> Data {
+    try JSONEncoder().encode(
+      Answer(
+        type: "answer",
+        entryId: entryId,
+        chosen: skipped ? nil : chosen,
+        skipped: skipped ? true : nil,
+        trace: trace
+      )
+    )
+  }
+
   public static func abort(trace: String) throws -> Data {
     try JSONEncoder().encode(TracedCommand(type: "abort", trace: trace))
   }
@@ -242,11 +261,11 @@ public enum Wire {
   }
 
   struct UsageFrame: Decodable {
-  let rev: Int
-  let usage: Usage
-}
+    let rev: Int
+    let usage: Usage
+  }
 
-struct TasksFrame: Decodable {
+  struct TasksFrame: Decodable {
     let rev: Int
     let tasks: [TaskSummary]
   }
@@ -299,6 +318,14 @@ struct TasksFrame: Decodable {
     let requestId: String
     let text: String
     let whenBusy: String
+    let trace: String
+  }
+
+  struct Answer: Encodable {
+    let type: String
+    let entryId: String
+    let chosen: [String]?
+    let skipped: Bool?
     let trace: String
   }
 

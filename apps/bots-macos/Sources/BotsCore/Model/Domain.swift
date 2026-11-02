@@ -186,6 +186,10 @@ public struct Message: Codable, Sendable, Equatable, Identifiable {
   public var stopReason: StopReason?
   /// User messages only: who caused them, when the daemon recorded it.
   public var origin: MessageOrigin?
+  /// A user message the conversation never shows: the person's answer to an ask_user card.
+  public var hidden: Bool?
+  /// A hidden message only: the ask_user entry it answers, so the card closes.
+  public var answersTo: String?
 
   public init(
     id: String,
@@ -195,7 +199,9 @@ public struct Message: Codable, Sendable, Equatable, Identifiable {
     blocks: [ContentBlock],
     requestId: String? = nil,
     stopReason: StopReason? = nil,
-    origin: MessageOrigin? = nil
+    origin: MessageOrigin? = nil,
+    hidden: Bool? = nil,
+    answersTo: String? = nil
   ) {
     self.id = id
     self.role = role
@@ -205,6 +211,8 @@ public struct Message: Codable, Sendable, Equatable, Identifiable {
     self.requestId = requestId
     self.stopReason = stopReason
     self.origin = origin
+    self.hidden = hidden
+    self.answersTo = answersTo
   }
 
   public var text: String { blocks.map(\.displayText).joined() }

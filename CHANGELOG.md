@@ -4,6 +4,9 @@
 
 - Bots can ask instead of guessing: the core tool `ask_user` puts one to five single- or
   multiple-choice questions in front of the person and returns at once. The conversation
+  draws them as a card — every option is a whole-row target, the chosen rows carry a filled
+  check, submit stays disabled until every question has a choice, and 忽略 skips the whole
+  card; the card becomes read-only once the hidden answer arrives. The conversation
   renders the card from the tool call itself; the choices come back as one hidden user
   message the daemon composes from the card, so nothing waits on a human and a skipped card
   tells the bot to continue without an answer.

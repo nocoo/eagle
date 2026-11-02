@@ -140,6 +140,11 @@ public final class ConversationSocket: NSObject {
     enqueue(try Wire.send(requestId: requestId, text: text, whenBusy: whenBusy, trace: trace))
   }
 
+  public func answer(entryId: String, chosen: [String], skipped: Bool, trace: String) throws {
+    enqueue(
+      try Wire.answer(entryId: entryId, chosen: chosen, skipped: skipped, trace: trace))
+  }
+
   public func abort(trace: String) throws {
     enqueue(try Wire.abort(trace: trace))
   }
@@ -522,6 +527,17 @@ public final class BotsConnection: ConversationPort {
       whenBusy: whenBusy,
       trace: context.trace
     )
+  }
+
+  public func answer(
+    entryId: String,
+    chosen: [String],
+    skipped: Bool,
+    context: CommandContext,
+    botId: String
+  ) async throws {
+    let socket = try require(botId)
+    try socket.answer(entryId: entryId, chosen: chosen, skipped: skipped, trace: context.trace)
   }
 
   public func abort(context: CommandContext, botId: String) async throws {

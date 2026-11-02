@@ -133,6 +133,14 @@ public protocol ConversationPort: AnyObject {
     context: CommandContext,
     botId: String
   ) async throws
+  /// Answers an ask_user card: the daemon turns the labels into the hidden message.
+  func answer(
+    entryId: String,
+    chosen: [String],
+    skipped: Bool,
+    context: CommandContext,
+    botId: String
+  ) async throws
   func abort(context: CommandContext, botId: String) async throws
   func recover(context: CommandContext, botId: String) async throws
   func resync(context: CommandContext, botId: String) async throws

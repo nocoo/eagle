@@ -577,3 +577,25 @@ final class DomainCoverageMoreTests: XCTestCase {
       TriggerSummary(id: "t_bbbbbbbbbb", kind: .webhook, name: "y", enabled: true).warning)
   }
 }
+
+final class HiddenAnswerDecodingTests: XCTestCase {
+  func testAHiddenAnswerNamesTheCardItCloses() throws {
+    let json = #"""
+      {"id":"e_16","role":"user","state":"complete","createdAt":"2026-11-02T10:01:00.000Z",
+       "blocks":[{"type":"text","text":"The person answered …"}],
+       "hidden":true,"answersTo":"e_11"}
+      """#
+    let message = try JSONDecoder().decode(Message.self, from: Data(json.utf8))
+    XCTAssertEqual(message.hidden, true)
+    XCTAssertEqual(message.answersTo, "e_11")
+  }
+
+  func testAnOrdinaryMessageIsNotHidden() throws {
+    let json = #"""
+      {"id":"e_1","role":"user","state":"complete","createdAt":"x","blocks":[]}
+      """#
+    let message = try JSONDecoder().decode(Message.self, from: Data(json.utf8))
+    XCTAssertNil(message.hidden)
+    XCTAssertNil(message.answersTo)
+  }
+}

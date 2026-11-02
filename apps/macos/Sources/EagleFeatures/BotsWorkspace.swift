@@ -550,6 +550,18 @@ final class BotsWorkspaceViewModel: ObservableObject {
     publish()
   }
 
+  /// The person answered an ask_user card. The card's own labels travel; the daemon writes
+  /// the hidden message the bot reads, so the App never authors model input.
+  func answer(entryId: String, chosen: [String]) {
+    app?.conversation.answer(entryId: entryId, chosen: chosen, skipped: false)
+    publish()
+  }
+
+  func skipQuestion(entryId: String) {
+    app?.conversation.answer(entryId: entryId, chosen: [], skipped: true)
+    publish()
+  }
+
   func abort() {
     guard participantStatus.canStop else { return }
     app?.conversation.abort()
@@ -778,6 +790,11 @@ struct BotsPresenter {
       pendingTools.removeAll()
     }
     let peerCalls = peerCallIds(state.messages)
+    // An ask_user call is closed by the hidden answer that names it, whichever page holds it.
+    let answeredCalls = Set(
+      state.messages.compactMap { message in
+        message.hidden == true ? message.answersTo : nil
+      })
     /// Every exchange this bot is in becomes one row, placed where it started: the sender's side
     /// shows it too, so both chats carry the same entry.
     var pending =
@@ -820,7 +837,8 @@ struct BotsPresenter {
         consumed: consumed,
         running: state.running,
         current: index > (lastUserIndex ?? -1),
-        skipCalls: peerCalls
+        skipCalls: peerCalls,
+        answeredCalls: answeredCalls
       ) {
         if case .tool(_, let tool) = row {
           pendingTools.append(tool)
@@ -937,6 +955,34 @@ struct BotsPresenter {
     return (paired, consumed)
   }
 
+  /// The card an ask_user call asked for, read from its own arguments: the same shape the
+  /// daemon read to validate an answer, so the two never disagree about what was offered.
+  static func askCard(id: String, args: [String: JSONValue], answered: Bool) -> AskCard? {
+    guard case .array(let rawQuestions)? = args["questions"] else { return nil }
+    var questions: [AskCardQuestion] = []
+    for (index, raw) in rawQuestions.enumerated() {
+      guard case .object(let question) = raw,
+        case .string(let prompt)? = question["prompt"],
+        case .array(let rawOptions)? = question["options"]
+      else { return nil }
+      var multiple = false
+      if case .string("multi")? = question["kind"] { multiple = true }
+      let options: [AskCardQuestion.Option] = rawOptions.compactMap { rawOption in
+        guard case .object(let option) = rawOption,
+          case .string(let label)? = option["label"]
+        else { return nil }
+        var detail: String?
+        if case .string(let text)? = option["detail"] { detail = text }
+        return AskCardQuestion.Option(label: label, detail: detail)
+      }
+      guard options.count >= 2 else { return nil }
+      questions.append(
+        AskCardQuestion(id: index, prompt: prompt, multiple: multiple, options: options))
+    }
+    guard !questions.isEmpty else { return nil }
+    return AskCard(id: id, questions: questions, answered: answered)
+  }
+
   /// Every call id that belongs to a peer tool, so the call row and its result both stay out of
   /// the transcript: the exchange row speaks for them.
   private func peerCallIds(_ messages: [Message]) -> Set<String> {
@@ -957,10 +1003,13 @@ struct BotsPresenter {
     consumed: Set<String>,
     running: Bool,
     current: Bool,
-    skipCalls: Set<String> = []
+    skipCalls: Set<String> = [],
+    answeredCalls: Set<String> = []
   ) -> [TranscriptEntry] {
     switch message.role {
     case .user:
+      // The person's answer to an ask_user card closes the card; it is not a chat turn.
+      if message.hidden == true { return [] }
       // A message whose cause was not a person typing says so above its text.
       return [.user(id: message.id, text: message.text, origin: message.origin?.chip)]
     case .tool:
@@ -1010,6 +1059,15 @@ struct BotsPresenter {
           continue
         case .toolCall(let callId, let name, let args):
           if skipCalls.contains(callId) { continue }
+          if name == "ask_user",
+            let card = Self.askCard(
+              id: message.id, args: args, answered: answeredCalls.contains(message.id))
+          {
+            hasTool = true
+            flush()
+            rows.append(.question(id: "ask-\(message.id)", card: card))
+            continue
+          }
           hasTool = true
           flush()
           let result = paired[ToolCallKey(messageId: message.id, block: blockIndex)]

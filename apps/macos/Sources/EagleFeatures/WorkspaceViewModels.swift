@@ -118,6 +118,33 @@ public enum MockWorkspace {
       ]
     ),
     .note(id: "n1", text: "已发送给 8 个智能体", tintIndices: [1, 2, 3]),
+    .question(
+      id: "ask-e_demo",
+      card: AskCard(
+        id: "e_demo",
+        questions: [
+          AskCardQuestion(
+            id: 0,
+            prompt: "下一批先修哪几个仓库？",
+            multiple: true,
+            options: [
+              AskCardQuestion.Option(label: "next-ai", detail: "CVE 5 个，只差一个可修的"),
+              AskCardQuestion.Option(label: "sleepy", detail: "CVE 2 个"),
+              AskCardQuestion.Option(label: "giraffe", detail: "距上次修复 8 天"),
+            ]
+          ),
+          AskCardQuestion(
+            id: 1,
+            prompt: "合并前要不要再跑一次完整回归？",
+            multiple: false,
+            options: [
+              AskCardQuestion.Option(label: "跑", detail: "每个 PR 多约 4 分钟"),
+              AskCardQuestion.Option(label: "不跑", detail: "只看 CI"),
+            ]
+          ),
+        ]
+      )
+    ),
     .assistant(
       id: "a2",
       blocks: [

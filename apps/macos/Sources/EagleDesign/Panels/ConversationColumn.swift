@@ -14,13 +14,16 @@ public enum TranscriptEntry: Identifiable, Hashable, Sendable {
   /// One round trip between this bot and one counterpart, folded into a single line.
   case peerExchange(id: String, exchange: PeerExchange)
   case tool(id: String, row: ToolRow)
+  /// An `ask_user` call: a control the person answers, not chat history.
+  case question(id: String, card: AskCard)
   /// Several calls from one turn, collapsed into a single line with a detail sheet.
   case toolRun(id: String, rows: [ToolRow])
 
   public var id: String {
     switch self {
     case .assistant(let id, _, _), .streamingAssistant(let id, _), .user(let id, _, _),
-      .note(let id, _, _), .peerExchange(let id, _), .tool(let id, _), .toolRun(let id, _):
+      .note(let id, _, _), .peerExchange(let id, _), .tool(let id, _), .toolRun(let id, _),
+      .question(let id, _):
       return id
     }
   }
@@ -56,6 +59,9 @@ public struct ConversationColumn: View {
   private let onToggleInspector: () -> Void
   /// Opens a peer exchange by id; nil leaves the rows inert for surfaces that never show one.
   private let onOpenPeerExchange: ((String) -> Void)?
+  /// Answers an ask_user card: (entry id, chosen labels).
+  private let onAnswerCard: ((String, [String]) -> Void)?
+  private let onSkipCard: ((String) -> Void)?
   private let showsSidebar: Bool
   private let showsInspector: Bool
   private let participantStatus: ParticipantStatus?
@@ -89,7 +95,9 @@ public struct ConversationColumn: View {
     onDismissError: @escaping () -> Void = {},
     onShowSidebar: @escaping () -> Void = {},
     onToggleInspector: @escaping () -> Void = {},
-    onOpenPeerExchange: ((String) -> Void)? = nil
+    onOpenPeerExchange: ((String) -> Void)? = nil,
+    onAnswerCard: ((String, [String]) -> Void)? = nil,
+    onSkipCard: ((String) -> Void)? = nil
   ) {
     self.title = title
     self.tintIndex = tintIndex
@@ -111,6 +119,8 @@ public struct ConversationColumn: View {
     self.onShowSidebar = onShowSidebar
     self.onToggleInspector = onToggleInspector
     self.onOpenPeerExchange = onOpenPeerExchange
+    self.onAnswerCard = onAnswerCard
+    self.onSkipCard = onSkipCard
   }
 
   public var body: some View {
@@ -284,6 +294,13 @@ public struct ConversationColumn: View {
     case .peerExchange(_, let exchange):
       PeerExchangeRow(exchange: exchange) { onOpenPeerExchange?(exchange.id) }
         .transition(.opacity)
+    case .question(_, let card):
+      AskCardRow(
+        card: card,
+        onSubmit: { id, chosen in onAnswerCard?(id, chosen) },
+        onSkip: { id in onSkipCard?(id) }
+      )
+      .transition(.opacity)
     case .tool(_, let row):
       ToolCallRow(row)
         .transition(.opacity.combined(with: .move(edge: .bottom)))

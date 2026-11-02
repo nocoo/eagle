@@ -77,6 +77,26 @@ final class ConversationTests: XCTestCase {
     XCTAssertEqual(fake.busyModes, [.followUp, .steer])
   }
 
+  func testAnsweringACardSendsTheChosenLabelsAndNeverTheText() async throws {
+    let (model, fake, _) = makeModel()
+    ready(model)
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await Task.sleep(for: .milliseconds(30))
+
+    model.answer(entryId: "e_11", chosen: ["继续"], skipped: false)
+    try await Task.sleep(for: .milliseconds(40))
+    model.answer(entryId: "e_12", chosen: [], skipped: true)
+    try await Task.sleep(for: .milliseconds(40))
+
+    XCTAssertEqual(fake.answered.count, 2)
+    XCTAssertEqual(fake.answered.first?.entryId, "e_11")
+    XCTAssertEqual(fake.answered.first?.chosen, ["继续"])
+    XCTAssertEqual(fake.answered.first?.skipped, false)
+    XCTAssertEqual(fake.answered.last?.skipped, true)
+    XCTAssertTrue(fake.sent.isEmpty, "an answer is not a send: the daemon writes the message")
+  }
+
   func testSnapshotReadinessResetsAcrossReconnectSelectionAndDisconnect() async throws {
     let (model, fake, _) = makeModel()
     ready(model)
@@ -262,6 +282,7 @@ final class FakeConversation: ConversationPort {
   var lastBotId: String?
   var recovered = 0
   var failRecover = false
+  var answered: [(entryId: String, chosen: [String], skipped: Bool)] = []
   var aborted = 0
   var historyRequests: [String] = []
   private var continuation: AsyncStream<ConversationEvent>.Continuation?
@@ -286,6 +307,17 @@ final class FakeConversation: ConversationPort {
   ) async throws {
     sent.append(Sent(text: text, requestId: context.requestId ?? ""))
     busyModes.append(whenBusy)
+    lastBotId = botId
+  }
+
+  func answer(
+    entryId: String,
+    chosen: [String],
+    skipped: Bool,
+    context: CommandContext,
+    botId: String
+  ) async throws {
+    answered.append((entryId: entryId, chosen: chosen, skipped: skipped))
     lastBotId = botId
   }
 
