@@ -1,5 +1,19 @@
 # 用户视角检查点
 
+## 2026-11-02 08:58 +08 — CLI acceptance repair
+
+- The installed 0.16.0 App and its Bots daemon still run with the existing catalog and
+  the preserved space-station conversations. The supplied test credential worked during
+  acceptance; the existing default credential was refused, with its cause unverified.
+- The CLI timeout and missing heartbeat fixes passed isolated daemon acceptance; the
+  logging shutdown fix passed the Bots check. The CLI version fix passed Swift tests,
+  including a clean scratch build, and is awaiting review and commit.
+- No new Herdr collection, website authentication, D1, browser rendering, or public
+  deployment has been verified. This work concerns the local macOS/Bots surface.
+- Next: preserve failed submission details, complete remaining reviews and checks, build
+  a local release-profile bundle, safely replace the installed App, and run bounded
+  installed-product regression without deleting the user's Bot records.
+
 ## 2026-11-01 18:10 +08 — agent 自建 dev token 与 CLI 验收套件
 
 - 可观察：本机 `~/.config/eagle-dev/token`（0600，agent 自己生成）被 source-run 的
