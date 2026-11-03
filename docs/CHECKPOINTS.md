@@ -1,5 +1,18 @@
 # 用户视角检查点
 
+## 2026-11-04 07:37 +08 — macOS 0.18.0 DMG candidate
+
+- Source version 0.18.0 and DMG download instructions are committed; the live
+  published App remains 0.17.0 until an asset is attached. Root check passed
+  265 tests, browser tests passed 191 (11 existing platform exclusions), and
+  the normal pre-push Swift suites passed. Bots check passed 995 tests, the
+  isolated CLI eval passed 24 cases, and local device integration passed 7.
+- Native coverage passed at 91.4% for the App and 90.6% for the Bots client;
+  both strict format gates passed. No new Herdr collection, production Access
+  authentication, D1 access or manual App rendering has been performed.
+- Next: build and verify the ad-hoc DMG from the final candidate, wait for its
+  exact GitHub checks, publish the asset, then advertise the verified version.
+
 ## 2026-11-04 06:28 +08 — Final Dev restart and CLI acceptance
 
 - Eagle Dev was rebuilt and restarted in the foreground on the final code tree. App PID
