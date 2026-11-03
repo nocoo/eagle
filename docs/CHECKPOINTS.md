@@ -1,5 +1,21 @@
 # 用户视角检查点
 
+## 2026-11-04 06:28 +08 — Final Dev restart and CLI acceptance
+
+- Eagle Dev was rebuilt and restarted in the foreground on the final code tree. App PID
+  `31357` owns daemon PID `32146`, whose working directory is this worktree's `apps/bots`;
+  its device-policy binding matches the pre-existing local socket. CLI health and the
+  development credential's `whoami` succeeded. The owner was away; the UI was not inspected.
+- Three independent full eval rounds passed 24 cases each; round three was repeated after the
+  Swift coverage repair and again passed all 24. Bots check passed 995 tests, device-process
+  integration passed 7, and Swift coverage passed at 91.4% for the App and 90.6% for Bots.
+  Eval used isolated temporary roots and synthetic values, not the owner's password store.
+- No live Herdr collection, production Access authentication or production D1 was exercised.
+  Local device integration used isolated fixtures. Root `check` and browser gates remain
+  unverified: the root dependency link pointed to another checkout and was removed; the
+  approved registry did not provide the required package. The Swift build still reports
+  pre-existing async-lock and actor-isolation warnings; no release or push was performed.
+
 ## 2026-11-04 06:20 +08 — Three eval rounds and Swift coverage repair
 
 - Three separate complete CLI/eval runs each passed 24 cases. The new password flow uses
