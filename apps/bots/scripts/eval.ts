@@ -12,6 +12,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { WebSocket } from "ws";
 import { readConfig } from "../src/config.ts";
 import { type DaemonHandle, startDaemon } from "../src/main.ts";
+import { assertOutputExcludes } from "./eval-assertions.ts";
 import { createEvalRouter } from "./eval-routing.ts";
 
 type ScriptedReply =
@@ -135,6 +136,7 @@ type Step =
       /** Dotted paths to arrays and the exact length each must have. */
       readonly jsonLengths?: Readonly<Record<string, number>>;
       readonly stderrContains?: string;
+      readonly stderrExcludes?: string;
       /** Subset match against the last JSON line on stdout. */
       readonly json?: unknown;
       /** Exactly one terminal submission for the user input in the JSON stream. */
@@ -923,6 +925,18 @@ const runCase = async (
           const stdout = result.stdout;
           const stderr = result.stderr;
           const command = `${step.bin ?? "dev"} ${args.join(" ")}`;
+          assertOutputExcludes(
+            stdout,
+            step.stdoutExcludes === undefined ? undefined : fill(step.stdoutExcludes),
+            command,
+            "stdout",
+          );
+          assertOutputExcludes(
+            stderr,
+            step.stderrExcludes === undefined ? undefined : fill(step.stderrExcludes),
+            command,
+            "stderr",
+          );
           if (step.expectTimeout === true) {
             if (!result.timedOut) {
               failure(`${command} finished instead of running past its budget`);
@@ -936,9 +950,6 @@ const runCase = async (
             failure(
               `${command} printed no ${JSON.stringify(step.stdoutContains)}: ${stdout}${stderr === "" ? "" : ` / stderr ${stderr}`}`,
             );
-          }
-          if (step.stdoutExcludes !== undefined && stdout.includes(fill(step.stdoutExcludes))) {
-            failure(`${command} printed ${JSON.stringify(step.stdoutExcludes)}: ${stdout}`);
           }
           if (step.stderrContains !== undefined && !stderr.includes(fill(step.stderrContains))) {
             failure(`${command} said no ${JSON.stringify(step.stderrContains)}: ${stderr}`);

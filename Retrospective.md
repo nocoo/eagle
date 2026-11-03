@@ -1,5 +1,14 @@
 # Retrospective
 
+## 2026-11-04 — Eval safeguards needed their own negative control
+
+I initially added a stderr exclusion before demonstrating a failure. I removed that change,
+made a CLI case forbid text that the command actually writes, and observed the old runner
+incorrectly pass it. The repaired runner rejects the negative control without printing the
+forbidden value, and a deterministic assertion now guards both output streams. I also let a
+new eval JSON reach pre-commit before checking its root Biome format; format new fixtures in
+their owning package before committing.
+
 ## 2026-11-04 — The macOS gate started without its device-service build
 
 I ran the macOS package tests in a fresh worktree before building the Agent's device-service
