@@ -390,11 +390,14 @@ struct CommandsTests {
     #expect(development.contains("~/.config/eagle-dev/token"))
     #expect(development.contains("0600"))
     #expect(development.contains("EAGLE_TOKEN"))
+    #expect(development.contains("npm --prefix apps/bots run eval"))
+    #expect(development.contains(".agents/skills/eagle-cli-eval/SKILL.md"))
 
     let release = Skill.document(binaryName: "eagle", clientName: nil)
     #expect(release.contains("eagle-dev") == false)
     #expect(release.contains("development token") == false)
     #expect(release.contains("~/.config/eagle-dev") == false)
+    #expect(release.contains("npm --prefix apps/bots run eval") == false)
   }
 
   private func developmentHome(_ token: String, mode: Int = 0o600) throws -> URL {

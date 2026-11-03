@@ -81,6 +81,13 @@ public enum Skill {
     The file holds one bearer of at least 32 characters, and its mode must be `0600`; any
     other mode is refused with exit 3 and the path in the message. `EAGLE_TOKEN` wins over
     the file, and the file wins over `~/.config/eagle/\(binaryName).json`.
+
+    ## CLI acceptance
+
+    From the repository root, `npm --prefix apps/bots run eval` builds this CLI and runs every
+    scripted case against isolated temporary daemons. `npm --prefix apps/bots run eval:cli`
+    runs the CLI cases only. Fix failures and rerun the complete suite; do not use real secrets.
+    The reusable three-round workflow is `.agents/skills/eagle-cli-eval/SKILL.md`.
     """
   }
 }
