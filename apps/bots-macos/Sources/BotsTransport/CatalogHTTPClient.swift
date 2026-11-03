@@ -102,7 +102,7 @@ public struct GatewayProbe: Decodable, Sendable, Equatable {
 
 /// The catalog over HTTP (docs/bots/PROTOCOL.md, "HTTP endpoints"). Every call carries the
 /// bearer token; a 401 is an authentication failure, never a retry.
-public final class CatalogHTTPClient: CatalogPort, Sendable {
+public final class CatalogHTTPClient: CatalogPort, SecretPort, Sendable {
   private let baseURL: URL
   private let token: String
   private let session: URLSession
@@ -356,6 +356,73 @@ public final class CatalogHTTPClient: CatalogPort, Sendable {
     AsyncStream { continuation in
       continuation.finish()
     }
+  }
+
+  // MARK: - Secrets
+
+  /// Every record's metadata. A store that cannot be read is a refusal, not an empty list, so
+  /// the caller never shows "no passwords" when it means "cannot read them".
+  public func secrets() async throws -> [Secret] {
+    struct Payload: Decodable { let secrets: [Secret] }
+    return try await request(path: "/v1/secrets", method: "GET", body: nil, as: Payload.self)
+      .secrets
+  }
+
+  /// One value, read on request: the daemon records the read and answers the value alone.
+  public func revealSecret(key: String, scope: SecretScope) async throws -> String {
+    struct Payload: Decodable {
+      struct Body: Decodable {
+        let key: String
+        let scope: String
+        let value: String
+      }
+      let secret: Body
+    }
+    let payload = try await request(
+      path: "/v1/secrets/reveal",
+      method: "POST",
+      body: ["key": key, "scope": scope.rawValue],
+      as: Payload.self
+    )
+    return payload.secret.value
+  }
+
+  /// Removes one record. The daemon answers 204, or 404 for a record that is already gone.
+  public func deleteSecret(key: String, scope: SecretScope) async throws {
+    _ = try await raw(path: "/v1/secrets/\(scope.rawValue)/\(key)", method: "DELETE", body: nil)
+  }
+
+  /// Answers a secret card. The value travels once: the response carries the submission and
+  /// nothing else. `ttlMinutes` is the person's last word, so it is always in the body — the
+  /// number they chose, or null for a record that never expires.
+  public func answerSecret(
+    botId: String,
+    entryId: String,
+    key: String,
+    value: String,
+    scope: SecretScope,
+    ttlMinutes: SecretTTL,
+    skipped: Bool
+  ) async throws {
+    struct Payload: Decodable { let submission: Submission }
+    var body: [String: Any] = [
+      "entryId": entryId,
+      "key": key,
+      "value": value,
+      "scope": scope.rawValue,
+    ]
+    switch ttlMinutes {
+    case .inherit:
+      break
+    case .permanent:
+      body["ttlMinutes"] = NSNull()
+    case .minutes(let minutes):
+      body["ttlMinutes"] = minutes
+    }
+    if skipped { body["skipped"] = true }
+    _ = try await request(
+      path: "/v1/bots/\(botId)/secrets", method: "POST", body: body, as: Payload.self
+    )
   }
 
   private struct ErrorPayload: Decodable {

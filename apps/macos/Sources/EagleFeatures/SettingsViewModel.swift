@@ -1,3 +1,4 @@
+import AppKit
 import BotsCore
 import BotsTransport
 import Combine
@@ -31,6 +32,17 @@ public final class SettingsViewModel: ObservableObject {
   /// The daemon's usage statistics; nil until the 用量 tab is opened.
   @Published public var usageReport: UsageReport?
   @Published public var usageBusy = false
+  /// The daemon's password records. The value is never in this state: only the metadata.
+  @Published public var secrets: [Secret] = []
+  /// A refused read belongs to the page: it says so instead of showing "no passwords".
+  @Published public var secretLoadError: String?
+  /// What the last action on a record said.
+  @Published public var secretMessage: String?
+  @Published public var secretBusy = false
+  /// The values a person asked to see; a second click hides them again.
+  @Published public var revealedSecrets: [String: String] = [:]
+  /// The bot names behind a record's creator.
+  @Published public var secretBotTitles: [String: String] = [:]
   @Published public var launchAtLogin = true
   @Published public var showUnfocusedSpaces = true
   @Published public var updateState: UpdateState = .idle
@@ -252,6 +264,128 @@ public final class SettingsViewModel: ObservableObject {
   private func client() throws -> CatalogHTTPClient {
     let token = try TokenStore(root: botsSettings.rootURL).read()
     return CatalogHTTPClient(baseURL: botsSettings.baseURL, token: token, session: urlSession)
+  }
+
+  // MARK: - Secrets
+
+  /// Reads the daemon's password records. A store that cannot be read is a refusal, so the
+  /// page reports it instead of showing an empty list that reads as "there are none".
+  public func loadSecrets() async {
+    guard !secretBusy else { return }
+    secretBusy = true
+    defer { secretBusy = false }
+    secretLoadError = nil
+    do {
+      secrets = try await client().secrets()
+      await loadSecretBotTitles()
+    } catch {
+      secrets = []
+      secretLoadError = (error as? ClientError)?.message ?? error.localizedDescription
+    }
+  }
+
+  /// The records every Bot on this machine reads.
+  public var sharedSecrets: [Secret] { secrets.filter { $0.scope == .shared } }
+
+  /// The records one Bot reads.
+  public var botSecrets: [Secret] { secrets.filter { $0.scope == .bot } }
+
+  /// Reveals one value, or hides it again: a value is only ever read when a person asks.
+  public func revealSecret(_ secret: Secret) async {
+    guard !secretBusy else { return }
+    if revealedSecrets[secret.id] != nil {
+      revealedSecrets.removeValue(forKey: secret.id)
+      return
+    }
+    secretBusy = true
+    defer { secretBusy = false }
+    do {
+      revealedSecrets[secret.id] = try await client().revealSecret(
+        key: secret.key, scope: secret.scope)
+      secretMessage = nil
+    } catch {
+      secretMessage = (error as? ClientError)?.message ?? error.localizedDescription
+    }
+  }
+
+  /// Copies one value to the clipboard. The click is the only thing that writes it there.
+  public func copySecret(_ secret: Secret) async {
+    guard !secretBusy else { return }
+    secretBusy = true
+    defer { secretBusy = false }
+    do {
+      let value = try await client().revealSecret(key: secret.key, scope: secret.scope)
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(value, forType: .string)
+      secretMessage = "已复制 \(secret.key)"
+    } catch {
+      secretMessage = (error as? ClientError)?.message ?? error.localizedDescription
+    }
+  }
+
+  /// Removes one record; the daemon answers 204 and the row goes with it.
+  public func deleteSecret(_ secret: Secret) async {
+    guard !secretBusy else { return }
+    secretBusy = true
+    defer { secretBusy = false }
+    do {
+      try await client().deleteSecret(key: secret.key, scope: secret.scope)
+      revealedSecrets.removeValue(forKey: secret.id)
+      secrets.removeAll { $0.id == secret.id }
+      secretMessage = "已删除 \(secret.key)"
+    } catch {
+      secretMessage = (error as? ClientError)?.message ?? error.localizedDescription
+    }
+  }
+
+  /// The bot that answered the card, by name when the catalog knows it.
+  public func secretOwner(_ secret: Secret) -> String {
+    guard let botId = secret.botId else { return "未知 Bot" }
+    return secretBotTitles[botId] ?? botId
+  }
+
+  /// When the record was made.
+  public func secretCreated(_ secret: Secret) -> String {
+    guard let date = Self.secretDate(secret.createdAt) else { return secret.createdAt }
+    return Self.secretMoment(date)
+  }
+
+  /// How long the record lives: a permanent one says so, the others count down.
+  public func secretValidity(_ secret: Secret) -> String {
+    guard let expiresAt = secret.expiresAt, let date = Self.secretDate(expiresAt) else {
+      return "永久"
+    }
+    let minutes = Int(ceil(date.timeIntervalSinceNow / 60))
+    guard minutes > 0 else { return "已过期" }
+    if minutes < 60 { return "剩余 \(minutes) 分钟" }
+    return "剩余 \(Int(ceil(Double(minutes) / 60))) 小时"
+  }
+
+  /// When the record was read last, and by whom.
+  public func secretLastUsed(_ secret: Secret) -> String {
+    guard let at = secret.lastUsedAt, let date = Self.secretDate(at) else { return "最近使用：无" }
+    let who = secret.lastUsedBy == "person" ? "人" : "Bot"
+    return "最近使用：\(Self.secretMoment(date))（\(who)）"
+  }
+
+  /// The bots behind the records, so a row names a bot instead of an id.
+  private func loadSecretBotTitles() async {
+    guard let catalog = try? await client().load() else { return }
+    secretBotTitles = Dictionary(
+      catalog.bots.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+  }
+
+  private static func secretDate(_ iso: String) -> Date? {
+    let parser = ISO8601DateFormatter()
+    parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return parser.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+  }
+
+  private static func secretMoment(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd HH:mm"
+    return formatter.string(from: date)
   }
 
   // MARK: - Providers

@@ -1035,3 +1035,112 @@ public struct TriggerSummary: Codable, Sendable, Equatable, Identifiable, Hashab
     return nil
   }
 }
+
+/// Where a secret record lives: this Bot's own record, or one every Bot on this machine
+/// reads (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5, "Two scopes").
+public enum SecretScope: String, Codable, Sendable, Equatable, Hashable {
+  case bot
+  case shared
+}
+
+/// The expiry a secret answer carries. The Bot's suggestion and the person's last word are
+/// two different things, so the body says which one it carries.
+public enum SecretTTL: Sendable, Equatable {
+  /// The body carries no `ttlMinutes`: the daemon keeps the card's own rule.
+  case inherit
+  /// The body carries `ttlMinutes: null`: the record never expires.
+  case permanent
+  /// The body carries `ttlMinutes: n`.
+  case minutes(Int)
+}
+
+/// One secret's metadata, as the daemon lists it. The value is never part of it
+/// (docs/bots/PROTOCOL.md, "Secrets").
+public struct Secret: Decodable, Sendable, Equatable, Identifiable, Hashable {
+  public var key: String
+  public var scope: SecretScope
+  /// The Bot that answered the card; the model never names it.
+  public var botId: String?
+  /// What the value is for, in the Bot's own words.
+  public var purpose: String?
+  public var createdAt: String
+  public var updatedAt: String
+  /// Absent means the record never expires.
+  public var expiresAt: String?
+  /// When the record was read last, and who read it (`bot` or `person`).
+  public var lastUsedAt: String?
+  public var lastUsedBy: String?
+
+  /// One record is one key in one scope; the same key in two scopes is two records.
+  public var id: String { "\(scope.rawValue):\(key)" }
+
+  public init(
+    key: String,
+    scope: SecretScope,
+    botId: String? = nil,
+    purpose: String? = nil,
+    createdAt: String,
+    updatedAt: String,
+    expiresAt: String? = nil,
+    lastUsedAt: String? = nil,
+    lastUsedBy: String? = nil
+  ) {
+    self.key = key
+    self.scope = scope
+    self.botId = botId
+    self.purpose = purpose
+    self.createdAt = createdAt
+    self.updatedAt = updatedAt
+    self.expiresAt = expiresAt
+    self.lastUsedAt = lastUsedAt
+    self.lastUsedBy = lastUsedBy
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case key, scope, botId, purpose, createdAt, updatedAt, expiresAt, lastUsedAt, lastUsedBy
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    key = try container.decode(String.self, forKey: .key)
+    scope = try container.decode(SecretScope.self, forKey: .scope)
+    botId = try container.decodeIfPresent(String.self, forKey: .botId)
+    purpose = try container.decodeIfPresent(String.self, forKey: .purpose)
+    createdAt = try container.decode(String.self, forKey: .createdAt)
+    // A record that was never written again keeps the moment it was created.
+    updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt) ?? createdAt
+    expiresAt = try container.decodeIfPresent(String.self, forKey: .expiresAt)
+    lastUsedAt = try container.decodeIfPresent(String.self, forKey: .lastUsedAt)
+    lastUsedBy = try container.decodeIfPresent(String.self, forKey: .lastUsedBy)
+  }
+}
+
+/// What a person typed on a secret card. The value lives here for the length of one request
+/// and nowhere else: no store, no file and no log keeps it.
+public struct SecretAnswer: Sendable, Equatable {
+  /// The transcript entry that carries the `secret_request` call.
+  public var entryId: String
+  /// The record's name, exactly as the card showed it.
+  public var key: String
+  public var value: String
+  public var scope: SecretScope
+  public var ttlMinutes: SecretTTL
+  /// True when the person declined to answer: nothing is stored.
+  public var skipped: Bool
+
+  public init(
+    entryId: String,
+    key: String,
+    value: String,
+    scope: SecretScope,
+    ttlMinutes: SecretTTL,
+    skipped: Bool = false
+  ) {
+    self.entryId = entryId
+    self.key = key
+    self.value = value
+    self.scope = scope
+    self.ttlMinutes = ttlMinutes
+    self.skipped = skipped
+  }
+}

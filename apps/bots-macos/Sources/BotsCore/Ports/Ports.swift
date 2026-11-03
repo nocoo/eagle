@@ -270,3 +270,24 @@ public protocol TriggerPort: AnyObject, Sendable {
   /// Switching is the only mutation a person may perform.
   func setEnabled(botId: String, triggerId: String, enabled: Bool) async throws -> TriggerDetail
 }
+
+/// The daemon's secrets (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5). The card answer is the only
+/// write, and a value is only ever read back when a person asks for it.
+public protocol SecretPort: AnyObject {
+  /// Every record's metadata; the value is never part of it.
+  func secrets() async throws -> [Secret]
+  /// One value, read on request. The daemon records the read as the person's.
+  func revealSecret(key: String, scope: SecretScope) async throws -> String
+  /// Removes one record. Deleting an absent record is a success.
+  func deleteSecret(key: String, scope: SecretScope) async throws
+  /// Answers a secret card: the value travels once and is never read back.
+  func answerSecret(
+    botId: String,
+    entryId: String,
+    key: String,
+    value: String,
+    scope: SecretScope,
+    ttlMinutes: SecretTTL,
+    skipped: Bool
+  ) async throws
+}

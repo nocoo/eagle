@@ -21,6 +21,8 @@ public struct SettingsView: View {
   @State private var expandedToolGroups: Set<String> = []
   /// Which decision provider shows its address and model fields.
   @State private var expandedProviderDetails: Set<String> = []
+  /// The record a person is about to delete; nil while no confirmation is up.
+  @State private var removingSecret: Secret?
 
   public init(
     model: SettingsViewModel = SettingsViewModel(),
@@ -55,6 +57,8 @@ public struct SettingsView: View {
         prompts
       case .providers:
         providersPage
+      case .passwords:
+        passwords
       case .machines:
         DeviceSettingsView(model: devices)
       case .cli:
@@ -592,6 +596,131 @@ public struct SettingsView: View {
           .padding(.top, 12)
       }
     }
+  }
+
+  /// The 密码 page: the records the daemon stores, and the three things a person may do with
+  /// one of them. A value is read only when a person asks for it.
+  private var passwords: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      if let error = model.secretLoadError {
+        SettingsSectionNote(error, destructive: true)
+          .padding(.horizontal, 4)
+      }
+      secretSection(
+        title: "本机共享",
+        detail: "每个 Bot 都能读到这些密码",
+        empty: "还没有共享密码",
+        secrets: model.sharedSecrets,
+        showsRefresh: true
+      )
+      secretSection(
+        title: "各 Bot 专属",
+        detail: "只有创建它的那个 Bot 能读到",
+        empty: "还没有 Bot 专属密码",
+        secrets: model.botSecrets,
+        showsRefresh: false
+      )
+      if let message = model.secretMessage {
+        SettingsSectionNote(message)
+          .padding(.horizontal, 4)
+      }
+    }
+    .task { await model.loadSecrets() }
+    .alert(
+      "删除这个密码？",
+      isPresented: Binding(
+        get: { removingSecret != nil }, set: { if !$0 { removingSecret = nil } }
+      )
+    ) {
+      Button("取消", role: .cancel) { removingSecret = nil }
+      Button("删除", role: .destructive) {
+        guard let secret = removingSecret else { return }
+        removingSecret = nil
+        Task { await model.deleteSecret(secret) }
+      }
+    } message: {
+      Text("删除后，\(removingSecret?.key ?? "这个密码") 不再能被任何 Bot 读到。")
+    }
+  }
+
+  /// One group of records: the shared ones, or the ones each Bot owns.
+  private func secretSection(
+    title: String,
+    detail: String,
+    empty: String,
+    secrets: [Secret],
+    showsRefresh: Bool
+  ) -> some View {
+    sectionCard(title, detail: detail) {
+      HStack(spacing: 10) {
+        if model.secretBusy { SpinnerArc(size: 12) }
+        if showsRefresh {
+          SettingsActionButton("刷新") {
+            Task { await model.loadSecrets() }
+          }
+          .disabled(model.secretBusy)
+        }
+      }
+    } body: {
+      if model.secretLoadError == nil && secrets.isEmpty {
+        SettingsSectionNote(empty)
+          .padding(.top, 14)
+      } else {
+        ForEach(Array(secrets.enumerated()), id: \.element.id) { index, secret in
+          if index > 0 { Divider().overlay(Theme.Palette.line) }
+          secretRow(secret)
+        }
+      }
+    }
+  }
+
+  /// One record: what it is, who made it and the three actions a person may take.
+  private func secretRow(_ secret: Secret) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .firstTextBaseline, spacing: 10) {
+        Text(secret.key)
+          .font(Theme.TypeScale.mono)
+          .foregroundStyle(Theme.Palette.textPrimary)
+        Spacer(minLength: 0)
+        SettingsActionButton("复制") {
+          Task { await model.copySecret(secret) }
+        }
+        .disabled(model.secretBusy)
+        .fixedSize()
+        SettingsActionButton(model.revealedSecrets[secret.id] == nil ? "显示" : "隐藏") {
+          Task { await model.revealSecret(secret) }
+        }
+        .disabled(model.secretBusy)
+        .fixedSize()
+        SettingsActionButton("删除") { removingSecret = secret }
+          .disabled(model.secretBusy)
+          .fixedSize()
+      }
+      if let purpose = secret.purpose, !purpose.isEmpty {
+        Text(purpose)
+          .font(.system(size: 12.5))
+          .foregroundStyle(Theme.Palette.textPrimary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Text(
+        [
+          "创建者 \(model.secretOwner(secret))",
+          model.secretCreated(secret),
+          model.secretValidity(secret),
+          model.secretLastUsed(secret),
+        ].joined(separator: " · ")
+      )
+      .font(Theme.TypeScale.note)
+      .foregroundStyle(Theme.Palette.textSecondary)
+      .fixedSize(horizontal: false, vertical: true)
+      if let value = model.revealedSecrets[secret.id] {
+        Text(value)
+          .font(Theme.TypeScale.mono)
+          .foregroundStyle(Theme.Palette.textPrimary)
+          .textSelection(.enabled)
+      }
+    }
+    .padding(.vertical, 16)
   }
 
   private func providerMenu(

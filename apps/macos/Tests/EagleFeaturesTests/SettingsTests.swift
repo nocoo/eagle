@@ -33,7 +33,14 @@ struct SettingsTests {
     #expect(SettingsSection.prompts.rawValue == "提示词")
     #expect(
       SettingsSection.allCases.map(\.rawValue)
-        == ["通用", "模型", "工具", "提示词", "服务", "设备", "CLI", "用量", "关于"])
+        == ["通用", "模型", "工具", "提示词", "服务", "密码", "设备", "CLI", "用量", "关于"])
+  }
+
+  @Test("the passwords own a tab of their own, right after 服务")
+  func passwordsSection() {
+    #expect(SettingsSection.passwords.rawValue == "密码")
+    let cases = SettingsSection.allCases.map(\.rawValue)
+    #expect(cases.firstIndex(of: "密码") == cases.firstIndex(of: "服务").map { $0 + 1 })
   }
 }
 
