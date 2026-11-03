@@ -117,6 +117,9 @@ public struct SecretCardRow: View {
   private let card: SecretCard
   private let onAnswer: (SecretCardAnswer) async -> Result<Void, SecretCardFailure>
 
+  /// The daemon refuses a shorter value, because its log cannot scrub one it cannot recognise.
+  static let minimumValueLength = 4
+
   @State private var value = ""
   @State private var revealed = false
   /// The scope the Bot proposed; the person may widen it to every bot on this machine.
@@ -377,7 +380,7 @@ public struct SecretCardRow: View {
       .accessibilityLabel("取消这次提问")
 
       if !canSave && !working {
-        Text("填入密码后可保存")
+        Text("至少 \(Self.minimumValueLength) 个字符才能保存")
           .font(.system(size: 12.5))
           .foregroundStyle(Theme.Palette.textMuted)
       }
@@ -387,7 +390,7 @@ public struct SecretCardRow: View {
     .padding(.vertical, 12)
   }
 
-  private var canSave: Bool { !value.isEmpty && !working }
+  private var canSave: Bool { value.count >= Self.minimumValueLength && !working }
 
   /// Read-only once the person answered or has just submitted.
   private var locked: Bool { card.answered || submitted }

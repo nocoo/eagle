@@ -2,7 +2,7 @@
 // scopes, lazy expiry and a startup sweep. This is the only module that knows the
 // container's shape; the tools see a narrow port and the model never holds a value.
 import { randomBytes } from "node:crypto";
-import { type FileHandle, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
+import { type FileHandle, link, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type SecretMeta,
@@ -53,6 +53,13 @@ type SecretRecord = {
  * per bot. Nothing else may be used to find, reveal or delete a record, in the store or over
  * the wire.
  */
+/** One card this machine has already answered: the receipt, never a value. */
+type SecretAnswer = {
+  readonly botId: string;
+  readonly entry: string;
+  readonly at: string;
+};
+
 export type SecretIdentity = {
   readonly key: string;
   readonly scope: SecretScope;
@@ -111,12 +118,15 @@ const parseDocument = (text: string): SecretRecord[] => {
   if (typeof raw !== "object" || raw === null) {
     throw new SecretsStorageError("the secrets document is not an object");
   }
-  const document = raw as { version?: unknown; records?: unknown };
+  const document = raw as { version?: unknown; records?: unknown; answers?: unknown };
   if (document.version !== 1) {
     throw new SecretsStorageError("the secrets document has an unknown version");
   }
   if (!Array.isArray(document.records)) {
     throw new SecretsStorageError("the secrets document holds no records");
+  }
+  if (document.answers !== undefined && !Array.isArray(document.answers)) {
+    throw new SecretsStorageError("the secrets document holds unusable answer receipts");
   }
   return document.records.map((entry) => {
     if (typeof entry !== "object" || entry === null) {
@@ -161,6 +171,20 @@ const parseDocument = (text: string): SecretRecord[] => {
   });
 };
 
+/** The receipts a container holds; an older document simply has none. */
+const parseAnswers = (text: string): SecretAnswer[] => {
+  const raw = JSON.parse(text) as { answers?: unknown };
+  if (!Array.isArray(raw.answers)) return [];
+  const answers: SecretAnswer[] = [];
+  for (const entry of raw.answers) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    if (!isString(record.botId) || !isString(record.entry) || !isTimestamp(record.at)) continue;
+    answers.push({ botId: record.botId, entry: record.entry, at: record.at });
+  }
+  return answers;
+};
+
 /** The name a value reaches a command by, in the environment the Bash tool builds. */
 export const secretEnvName = (key: string): string =>
   `EAGLE_SECRET_${key.toUpperCase().replaceAll(/[^A-Z0-9]/gu, "_")}`;
@@ -177,6 +201,8 @@ export class SecretsStore {
   readonly #now: () => Date;
   readonly #onValues: ((values: readonly string[]) => void) | undefined;
   #records: SecretRecord[] = [];
+  /** Cards answered on this machine, so a restart cannot spend one twice. */
+  #answers: SecretAnswer[] = [];
   /** One mutation at a time inside this process. */
   #queue: Promise<unknown> = Promise.resolve();
   /** The trace of the operation in flight, so a failure is attributable to the call. */
@@ -212,7 +238,26 @@ export class SecretsStore {
    */
   async environment(botId: string): Promise<Record<string, string>> {
     try {
-      return await this.#exclusive(async () => this.#environmentFor(botId));
+      return await this.#exclusive(async (trace) => {
+        const env = this.#environmentFor(botId);
+        const at = this.#now().toISOString();
+        // Handing a value to a command is a use of the record, and the ledger says so; the
+        // settings page's "last used" would otherwise only know about explicit reads.
+        for (const record of this.#visible(this.#records, botId, undefined)) {
+          if (env[secretEnvName(record.key)] === undefined) continue;
+          await this.#append({
+            ts: at,
+            op: "read",
+            scope: record.scope,
+            key: record.key,
+            botId,
+            by: "bot",
+            trace,
+            ok: true,
+          });
+        }
+        return env;
+      });
     } catch {
       return {};
     }
@@ -220,38 +265,36 @@ export class SecretsStore {
 
   /** The same, over the document this store already holds. */
   #environmentFor(botId: string): Record<string, string> {
+    // The export resolves exactly like a read: the Bot's own record shadows a shared one, so
+    // the two scopes are never a "collision". Two different keys that normalise to one name
+    // are, and both are left out rather than guessed.
+    const visible = this.#visible(this.#records, botId, undefined);
     const counts = new Map<string, number>();
-    for (const record of this.#records) {
-      if (record.scope === "bot" && record.botId !== botId) continue;
-      if (this.#expired(record)) continue;
+    for (const record of visible) {
       const name = secretEnvName(record.key);
       counts.set(name, (counts.get(name) ?? 0) + 1);
     }
+    const newest = [...visible].sort((left, right) => (left.updatedAt < right.updatedAt ? 1 : -1));
     const env: Record<string, string> = {};
     let bytes = 0;
-    for (const record of this.#records) {
-      if (record.scope === "bot" && record.botId !== botId) continue;
-      if (this.#expired(record)) continue;
+    for (const record of newest) {
       const name = secretEnvName(record.key);
       if (counts.get(name) !== 1) continue;
-      bytes += name.length + record.value.length;
-      // One environment has to fit in the kernel's own limit; the newest records win.
-      if (bytes > MAX_SECRET_ENV_BYTES) break;
+      const cost = Buffer.byteLength(name, "utf8") + Buffer.byteLength(record.value, "utf8");
+      // One environment has to fit in the kernel's limit; the newest records are kept and the
+      // rest are reported, never silently promised by secret_read.
+      if (bytes + cost > MAX_SECRET_ENV_BYTES) continue;
+      bytes += cost;
       env[name] = record.value;
     }
     return env;
   }
 
-  /** The environment name a record reaches this Bot's commands by, or a name clash. */
+  /** The variable a record really reaches this Bot's commands by; undefined when it does not. */
   envNameFor(botId: string, key: string): string | undefined {
+    const env = this.#environmentFor(botId);
     const name = secretEnvName(key);
-    const clashing = this.#records.filter(
-      (record) =>
-        !this.#expired(record) &&
-        (record.scope === "shared" || record.botId === botId) &&
-        secretEnvName(record.key) === name,
-    );
-    return clashing.length > 1 ? undefined : name;
+    return env[name] === undefined ? undefined : name;
   }
 
   /** The records this Bot may see: its own first, then the shared ones. */
@@ -487,14 +530,52 @@ export class SecretsStore {
     );
   }
 
+  /**
+   * Claims one card for one Bot: the receipt is durable, so a retry after a restart, a lost
+   * response or an unknown admission cannot store the value or start the run a second time.
+   * A `false` answer means the card was already spent.
+   */
+  async claimAnswer(input: {
+    readonly botId: string;
+    readonly entry: string;
+    readonly trace?: string;
+  }): Promise<boolean> {
+    return this.#exclusive(async () => {
+      if (this.#answers.some((a) => a.botId === input.botId && a.entry === input.entry)) {
+        return false;
+      }
+      // The newest 500 answers are enough to cover any card a client can still answer.
+      this.#answers = [
+        ...this.#answers.slice(-499),
+        { botId: input.botId, entry: input.entry, at: this.#now().toISOString() },
+      ];
+      await this.#write(this.#records);
+      return true;
+    }, input.trace);
+  }
+
+  /** Gives one claimed card back: nothing was stored and no run was admitted. */
+  async releaseAnswer(input: { readonly botId: string; readonly entry: string }): Promise<void> {
+    await this.#exclusive(async () => {
+      this.#answers = this.#answers.filter(
+        (a) => !(a.botId === input.botId && a.entry === input.entry),
+      );
+      await this.#write(this.#records);
+    });
+  }
+
   /** The tools' host for one Bot: the model never names a bot id. */
   hostFor(botId: string): SecretsToolHost {
+    let enabled = true;
     return {
       botId,
+      setEnabled: (value: boolean) => {
+        enabled = value;
+      },
       list: (input) => this.list({ botId, ...input }),
       read: (input) => this.read({ botId, ...input }),
       remove: (input) => this.remove({ botId, ...input }),
-      environment: () => this.environment(botId),
+      environment: () => (enabled ? this.environment(botId) : Promise.resolve({})),
       envNameFor: (key) => this.envNameFor(botId, key),
     };
   }
@@ -533,6 +614,7 @@ export class SecretsStore {
     }
     try {
       this.#records = parseDocument(text);
+      this.#answers = parseAnswers(text);
     } catch (error) {
       this.#emitFail(undefined, this.#trace);
       throw error;
@@ -593,9 +675,18 @@ export class SecretsStore {
     const token = randomBytes(9).toString("hex");
     for (;;) {
       try {
-        const handle = await open(path, "wx", 0o600);
-        await handle.writeFile(JSON.stringify({ pid: process.pid, token }));
-        await handle.close();
+        // The owner is written first and the name published by `link`: a reader can never see
+        // a lock without a complete owner, and only one publisher can win.
+        scratches += 1;
+        const scratch = `${path}.tmp-${process.pid}-${scratches}`;
+        try {
+          const handle = await open(scratch, "wx", 0o600);
+          await handle.writeFile(JSON.stringify({ pid: process.pid, token }));
+          await handle.close();
+          await link(scratch, path);
+        } finally {
+          await rm(scratch, { force: true }).catch(() => undefined);
+        }
         return async () => {
           const held = await this.#lockOwner(path);
           if (held?.token === token) await rm(path, { force: true }).catch(() => undefined);
@@ -647,7 +738,7 @@ export class SecretsStore {
   /** Rewrites the whole document: a private scratch file, then a rename over the target. */
   async #write(records: readonly SecretRecord[]): Promise<void> {
     const key = await loadOrCreateSecretKey(this.#keyPath);
-    const container = seal(key, JSON.stringify({ version: 1, records }));
+    const container = seal(key, JSON.stringify({ version: 1, records, answers: this.#answers }));
     await mkdir(this.#dir, { recursive: true, mode: 0o700 });
     scratches += 1;
     const scratch = `${this.#file}.tmp-${process.pid}-${scratches}`;

@@ -699,8 +699,12 @@ it in a list.
 The plaintext is one JSON document, rewritten whole on every mutation and replaced atomically
 (exclusive 0600 scratch file, then `rename`):
 
+The document also carries the receipts of the cards this machine has already answered, so a
+restart, a lost response or an unknown admission cannot spend one twice:
+
 ```json
-{ "version": 1, "records": [
+{ "version": 1, "answers": [ { "botId": "b_0190a1b0", "entry": "secret:e_12", "at": "…" } ],
+  "records": [
   { "key": "github-pat", "scope": "shared", "botId": "b_0190a1b0",
     "createdAt": "2026-11-03T01:10:00.000Z", "updatedAt": "2026-11-03T01:10:00.000Z",
     "purpose": "发布 Eagle 用", "expiresAt": "2026-11-03T02:10:00.000Z",
@@ -714,6 +718,10 @@ taken from the model.
 - A missing file is an empty store. A body that fails to decrypt, an unknown magic or version,
 or JSON that does not match the shape is a **refusal**: the file is never rewritten and never
 deleted, because a store that cannot be read is not a store that should be recreated.
+- `answers` keeps the newest 500 receipts and holds no value. A card is claimed before its value
+  is written and released again when nothing was stored and nothing was admitted, and its
+  submission id is derived from the card, so a repeated admission is answered from the
+  submission record instead of starting a second run.
 - The same key in the same scope is one record: a later write replaces it whole and keeps
 `createdAt`.
 
@@ -790,9 +798,13 @@ The export is read fresh under the store's lock before every command, so a rotat
 or a container that turned unreadable reaches the next command rather than the next restart;
 a store that cannot be read exports nothing and records the failure, because a broken password
 store must not break coding. Switching the `secrets` group off switches the export off too: the
-group's tools and the values a command sees are one decision. The export is bounded to 64 KiB
-of names and values, and a value that an environment cannot carry — anything holding a NUL — is
-refused when it is stored rather than failing the spawn that would echo it.
+group's tools and the values a command sees are one decision. The export is bounded to 64 KiB of names and
+values counted in UTF-8 bytes, keeping the newest records and dropping the rest; `secret_read`
+answers a variable only when that variable is really in the export, so it never promises one the
+daemon chose not to hand over. A value that an environment cannot carry — anything holding a
+NUL — is refused when it is stored rather than failing the spawn that would echo it. Handing a
+value to a command is a use of the record and appends one `read` row per exported record, so the
+settings page's "last used" is not blind to the way a password is actually used.
 
 That keeps the value out of the model's context, the transcript, every snapshot and every
 client with conversation read. It does not stop a Bot that deliberately prints the variable —
@@ -817,7 +829,8 @@ the newest 2000 kept, and it never holds a value:
  "botId":"b_0190a1b0","by":"bot","trace":"tr_0190a1b2","ok":true}
 ```
 
-`op` is `write`, `read`, `delete`, `reveal` or `expire`; `by` is `bot` or `person` — a reveal
+`op` is `write`, `read`, `delete`, `reveal` or `expire`; a value handed to a command is a `read`;
+`by` is `bot` or `person` — a reveal
 from the settings page is the person reading a value and is recorded like any other read. The
 settings page shows each row's last use from this file. The diagnostic log gets the declared
 `core.secret.*` events instead ([OBSERVABILITY.md](OBSERVABILITY.md)), which carry the scope and

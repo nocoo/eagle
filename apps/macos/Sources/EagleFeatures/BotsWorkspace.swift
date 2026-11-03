@@ -1151,16 +1151,19 @@ struct BotsPresenter {
             let token =
               secretCall == 0
               ? "secret:\(message.id)" : "secret:\(message.id)#\(secretCall)"
+            // The index counts every secret call, not only the ones that render: the daemon
+            // counts all of them, and a call it would refuse still holds its place.
+            let index = secretCall
+            secretCall += 1
             if let card = Self.secretCard(
               id: message.id,
-              callIndex: secretCall,
+              callIndex: index,
               args: args,
               answered: answeredCalls.contains(token),
               skipped: skippedCalls.contains(token)
             ) {
               hasTool = true
               flush()
-              secretCall += 1
               rows.append(.secret(id: "secret-\(token)", card: card))
               continue
             }

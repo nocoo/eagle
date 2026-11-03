@@ -106,7 +106,11 @@ test("the card answer stores the value and never echoes it", async (t) => {
   );
   const stack = await startStack({
     runtime,
-    secrets: { save: (input) => secrets.save(input) },
+    secrets: {
+      save: (input) => secrets.save(input),
+      claimAnswer: (input) => secrets.claimAnswer(input),
+      releaseAnswer: (input) => secrets.releaseAnswer(input),
+    },
     secretsApi: {
       list: () => secrets.listAll(),
       reveal: (input) => secrets.reveal(input),
@@ -153,7 +157,11 @@ test("an answer whose key is not the card's is refused", async (t) => {
   const runtime = new CardRuntime(card({ key: "github-pat", purpose: "发布用" }));
   const stack = await startStack({
     runtime,
-    secrets: { save: (input) => secrets.save(input) },
+    secrets: {
+      save: (input) => secrets.save(input),
+      claimAnswer: (input) => secrets.claimAnswer(input),
+      releaseAnswer: (input) => secrets.releaseAnswer(input),
+    },
     secretsApi: {
       list: () => secrets.listAll(),
       reveal: (input) => secrets.reveal(input),
@@ -334,7 +342,11 @@ test("a card is answered once: a retry is refused, not stored again", async (t) 
   const runtime = new CardRuntime(card({ key: "github-pat", purpose: "发布用", ttlMinutes: 60 }));
   const stack = await startStack({
     runtime,
-    secrets: { save: (input) => secrets.save(input) },
+    secrets: {
+      save: (input) => secrets.save(input),
+      claimAnswer: (input) => secrets.claimAnswer(input),
+      releaseAnswer: (input) => secrets.releaseAnswer(input),
+    },
     secretsApi: {
       list: () => secrets.listAll(),
       reveal: (input) => secrets.reveal(input),
@@ -399,7 +411,11 @@ test("two cards in one answer are two questions", async (t) => {
   const runtime = new CardRuntime(two);
   const stack = await startStack({
     runtime,
-    secrets: { save: (input) => secrets.save(input) },
+    secrets: {
+      save: (input) => secrets.save(input),
+      claimAnswer: (input) => secrets.claimAnswer(input),
+      releaseAnswer: (input) => secrets.releaseAnswer(input),
+    },
     secretsApi: {
       list: () => secrets.listAll(),
       reveal: (input) => secrets.reveal(input),
@@ -472,7 +488,11 @@ test("an ask_user answer for the same entry does not spend a secret card", async
   const runtime = new CardRuntime(mixed);
   const stack = await startStack({
     runtime,
-    secrets: { save: (input) => secrets.save(input) },
+    secrets: {
+      save: (input) => secrets.save(input),
+      claimAnswer: (input) => secrets.claimAnswer(input),
+      releaseAnswer: (input) => secrets.releaseAnswer(input),
+    },
     secretsApi: {
       list: () => secrets.listAll(),
       reveal: (input) => secrets.reveal(input),
@@ -510,7 +530,11 @@ test("two clients answering one card at once store one value and admit one run",
   const runtime = new CardRuntime(card({ key: "github-pat", purpose: "发布用" }));
   const stack = await startStack({
     runtime,
-    secrets: { save: (input) => secrets.save(input) },
+    secrets: {
+      save: (input) => secrets.save(input),
+      claimAnswer: (input) => secrets.claimAnswer(input),
+      releaseAnswer: (input) => secrets.releaseAnswer(input),
+    },
     secretsApi: {
       list: () => secrets.listAll(),
       reveal: (input) => secrets.reveal(input),

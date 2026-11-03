@@ -2022,6 +2022,8 @@ test("the secret answer stores the value and admits a hidden message without it"
       saved.push(input);
       return { scope: input.scope, createdAt: "t", updatedAt: "t" };
     },
+    claimAnswer: async () => true,
+    releaseAnswer: async () => undefined,
   });
   const record = await service.answerSecret("b_1", {
     entryId: "e_card_1",
@@ -2060,6 +2062,8 @@ test("a card answer that breaks a rule is refused and stores nothing", async () 
       saved.push(input);
       return { scope: input.scope, createdAt: "t", updatedAt: "t" };
     },
+    claimAnswer: async () => true,
+    releaseAnswer: async () => undefined,
   });
   const cases: readonly (Partial<SecretAnswerInput> & { readonly key: string })[] = [
     { key: "other", value: "v" },
@@ -2094,6 +2098,8 @@ test("a skipped card stores nothing and says the person did not answer", async (
       saved.push(input);
       return { scope: input.scope, createdAt: "t", updatedAt: "t" };
     },
+    claimAnswer: async () => true,
+    releaseAnswer: async () => undefined,
   });
   await service.answerSecret("b_1", {
     entryId: "e_card_1",

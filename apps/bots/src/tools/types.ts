@@ -106,8 +106,13 @@ export type SecretsToolHost = {
   }): Promise<{ readonly key: string; readonly scope: SecretScope; readonly deleted: boolean }>;
   /** Every value this Bot may hand to a command, keyed by its environment variable. */
   environment(): Promise<Record<string, string>>;
-  /** The environment variable one record reaches a command by; undefined on a name clash. */
+  /** The variable a record really reaches a command by, or undefined when it reaches none. */
   envNameFor(key: string): string | undefined;
+  /**
+   * Whether the group is on for this Bot right now. A person who switches 密码 off turns off
+   * the values a command sees as well, without reopening the Bot.
+   */
+  setEnabled?(enabled: boolean): void;
 };
 
 /** What one Bot may write about itself: the sidebar line the daemon stores in its catalog. */

@@ -215,6 +215,9 @@ export class PiDurableRuntime implements RuntimePort {
       const pulls = await this.#options.pulls?.(spec);
       const memory = this.#options.memory?.(spec);
       const secrets = this.#options.secrets?.(spec);
+      // The group's two halves move together: the tools follow the extension selection, the
+      // environment follows this flag, and a live switch updates both.
+      secrets?.setEnabled?.(groups.includes("secrets"));
       const note = this.#options.note?.(spec);
       const runNote = createRunNote();
       // The tool owns what the Bot wrote; this run keeps the last value so its settlement
@@ -264,11 +267,7 @@ export class PiDurableRuntime implements RuntimePort {
         ...(peers === undefined ? {} : { peers }),
         ...(pulls === undefined ? {} : { pulls }),
         ...(memory === undefined ? {} : { memory }),
-        // The environment export is the group's second half: a person who switched 密码 off
-        // switched off the values reaching a command too, not only the four tools.
-        ...(secrets === undefined || !resolveToolGroups(groups).includes("secrets")
-          ? {}
-          : { secrets }),
+        ...(secrets === undefined ? {} : { secrets }),
         ...(noteTools === undefined ? {} : { note: noteTools }),
         ...(this.#options.now === undefined ? {} : { now: this.#options.now }),
       });
@@ -313,6 +312,7 @@ export class PiDurableRuntime implements RuntimePort {
         registry,
         runNote,
         ...(note === undefined ? {} : { note }),
+        ...(secrets === undefined ? {} : { secrets }),
       });
       handle.attachTaskGraph(await harness.taskGraph(BACKGROUND_CONTEXT));
       harness.closed.then((end) => handle?.sessionEnd(end));
@@ -366,11 +366,15 @@ type HandleOptions = {
   readonly note?: NoteToolHost;
   /** What the run in flight gave note_set, so its settlement writes that and nothing else. */
   readonly runNote: RunNote;
+  /** The secrets host this bot was opened with, so a live switch reaches its environment. */
+  readonly secrets?: SecretsToolHost;
 };
 
 class PiRuntimeHandle implements RuntimeHandle {
   readonly #registry: Registry;
   #toolGroups: readonly string[];
+  /** The secrets host this Bot was opened with, so a live switch reaches the environment. */
+  readonly #secretsHost: SecretsToolHost | undefined;
 
   readonly #spec: RuntimeBotSpec;
   readonly #harness: Harness;
@@ -423,6 +427,7 @@ class PiRuntimeHandle implements RuntimeHandle {
     this.#registry = options.registry;
     this.#note = options.note;
     this.#runNote = options.runNote;
+    this.#secretsHost = options.secrets;
     this.#toolGroups = resolveToolGroups(options.spec.toolGroups);
     this.#mapper = new EventMapper({
       botId: options.spec.id,
@@ -828,6 +833,7 @@ class PiRuntimeHandle implements RuntimeHandle {
       const extensions = selectToolExtensions(this.#registry, this.#toolGroups);
       const root = await this.#harness.root(BACKGROUND_CONTEXT);
       await root.configure({ extensions }, BACKGROUND_CONTEXT);
+      this.#secretsHost?.setEnabled?.(this.#toolGroups.includes("secrets"));
       this.#options.log.emit("info", "runtime", Events.toolsRefreshOk, {
         trace,
         botId: this.#spec.id,

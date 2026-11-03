@@ -197,6 +197,17 @@ export type SecretsPort = {
     readonly updatedAt: string;
     readonly expiresAt?: string;
   }>;
+  /** Claims one card durably; `false` means it was already spent. */
+  readonly claimAnswer: (input: {
+    readonly botId: string;
+    readonly entry: string;
+    readonly trace?: string;
+  }) => Promise<boolean>;
+  /** Hands a claimed card back, because nothing was stored and nothing was admitted. */
+  readonly releaseAnswer: (input: {
+    readonly botId: string;
+    readonly entry: string;
+  }) => Promise<void>;
 };
 
 /** The secrets store could not be read or written; the route answers 503 (PROTOCOL.md). */

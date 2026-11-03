@@ -48,7 +48,6 @@ const DETAIL_TYPES = {
 } as const;
 
 /** A credential has a shape; a stored password only has a length somebody chose. */
-const CREDENTIAL_MIN_CHARS = 8;
 const SECRET_MIN_CHARS = 4;
 
 const scrub = (text: string, values: readonly (string | undefined)[], minimum: number): string => {
@@ -257,14 +256,9 @@ export class Log {
       level,
       layer,
       evt,
-      // A trace is a bounded identifier, never content: a short password that happens to sit
-      // inside one must not rewrite the only key joining a log record to the ledger, while a
-      // credential-shaped value that reached the field is still scrubbed.
-      trace: scrub(
-        scrub(fields.trace, [process.env.BOTS_API_KEY, process.env.AGENT_SIGNING_KEY], 8),
-        this.#secrets(),
-        CREDENTIAL_MIN_CHARS,
-      ),
+      // A trace carries every scrubbing rule a record does. A password that happens to look
+      // like a trace rewrites that one identifier, which is the price of never logging it.
+      trace: redact(fields.trace, this.#secrets()),
       ...(fields.botId === undefined ? {} : { botId: redact(fields.botId, this.#secrets()) }),
       ...(fields.connId === undefined ? {} : { connId: redact(fields.connId, this.#secrets()) }),
       ...(fields.reqId === undefined ? {} : { reqId: redact(fields.reqId, this.#secrets()) }),

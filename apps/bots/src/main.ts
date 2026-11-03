@@ -235,6 +235,16 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
       }
       return secretsStore.save(input);
     },
+    claimAnswer: async (input) => {
+      if (secretsStore === undefined) {
+        throw new SecretsStorageError("the secrets store could not be read");
+      }
+      return secretsStore.claimAnswer(input);
+    },
+    releaseAnswer: async (input) => {
+      if (secretsStore === undefined) return;
+      await secretsStore.releaseAnswer(input);
+    },
   };
   /** The tools' host for one Bot; a broken store refuses instead of losing the group. */
   const secretsHost = (botId: string): SecretsToolHost => {

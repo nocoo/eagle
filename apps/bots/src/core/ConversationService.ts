@@ -1,7 +1,7 @@
 // Command routing for the daemon (docs/bots/PLAN.md, rows 17-22): a connection sees one
 // bot for its whole life, a subscription renders the first snapshot before it is live,
 // and a command either reaches the runtime or is refused before admission.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { declareEvent } from "../log/events.ts";
 import type { Log } from "../log/log.ts";
 import { type AnswerInput, answerText, questionsOf } from "./ask.ts";
@@ -23,6 +23,7 @@ import {
   ClassifiedFailure,
   MAX_SECRET_TTL_MINUTES,
   MAX_SECRET_VALUE_BYTES,
+  MIN_SECRET_VALUE_CHARS,
   SecretsStorageError,
 } from "./domain.ts";
 import { EventHub, type HubSubscriber, type HubSubscription } from "./EventHub.ts";
@@ -206,8 +207,6 @@ export class ConversationService implements InvocationPort {
   readonly #triggersOf: ConversationServiceOptions["triggersOf"];
   readonly #pullsOf: ConversationServiceOptions["pullsOf"];
   readonly #secrets: SecretsPort | undefined;
-  /** Cards this daemon has already answered, so a retry cannot store a value twice. */
-  readonly #answeredCards = new Set<string>();
   /** One answer at a time per card: the duplicate check must not have a window. */
   readonly #answerChains = new Map<string, Promise<unknown>>();
   /** Resolved views by bot id, so `observe` can answer synchronously without opening. */
@@ -447,9 +446,7 @@ export class ConversationService implements InvocationPort {
     const answersTo = secretAnswersTo(input.entryId, index);
     const answered = `${botId}\u0000${answersTo}`;
     const chain = this.#answerChains.get(answered) ?? Promise.resolve();
-    const run = chain.then(() =>
-      this.#answerSecretOnce(botId, bot, card, input, answersTo, answered, label),
-    );
+    const run = chain.then(() => this.#answerSecretOnce(botId, bot, card, input, answersTo, label));
     this.#answerChains.set(
       answered,
       run.then(
@@ -467,20 +464,17 @@ export class ConversationService implements InvocationPort {
     card: ReturnType<typeof secretCardOf>,
     input: SecretAnswerInput,
     answersTo: string,
-    answered: string,
     label?: string,
   ): Promise<Submission> {
-    if (card === undefined)
+    if (card === undefined) {
       throw new DirectoryError("invalid_answer", "no such secret_request call");
-    if (
-      this.#answeredCards.has(answered) ||
-      bot.snapshot.messages.some((message) => message.answersTo === answersTo)
-    ) {
-      throw new DirectoryError("invalid_answer", "this secret card was already answered");
     }
     // A client cannot rename a record: the key is the card's key.
     if (input.key !== card.key) {
       throw new DirectoryError("invalid_answer", "the key does not match the secret card");
+    }
+    if (bot.snapshot.messages.some((message) => message.answersTo === answersTo)) {
+      throw new DirectoryError("invalid_answer", "this secret card was already answered");
     }
     const scope = input.scope ?? card.scope;
     if (scope !== "bot" && scope !== "shared") {
@@ -504,8 +498,11 @@ export class ConversationService implements InvocationPort {
       );
     }
     if (input.skipped !== true) {
-      if (typeof input.value !== "string" || input.value.length === 0) {
-        throw new DirectoryError("invalid_answer", "a secret value is required");
+      if (typeof input.value !== "string" || input.value.length < MIN_SECRET_VALUE_CHARS) {
+        throw new DirectoryError(
+          "invalid_answer",
+          `a secret value is at least ${MIN_SECRET_VALUE_CHARS} characters, so the log can scrub it`,
+        );
       }
       if (Buffer.byteLength(input.value, "utf8") > MAX_SECRET_VALUE_BYTES) {
         throw new DirectoryError(
@@ -514,35 +511,49 @@ export class ConversationService implements InvocationPort {
         );
       }
     }
-    let text: string;
-    if (input.skipped === true) {
-      text = secretAnswerText(card, { entryId: input.entryId, skipped: true });
-    } else {
-      const store = this.#secrets;
-      if (store === undefined) {
-        throw new SecretsStorageError("the daemon has no secrets store");
-      }
-      await store.save({
-        botId,
-        key: card.key,
-        value: input.value,
-        scope,
-        ...(card.purpose.length === 0 ? {} : { purpose: card.purpose }),
-        ...(ttl === undefined ? {} : { ttlMinutes: ttl }),
-        ...(input.trace === undefined ? {} : { trace: input.trace }),
-      });
-      text = secretAnswerText(card, {
-        entryId: input.entryId,
-        scope,
-        ...(ttl === undefined ? {} : { ttlMinutes: ttl }),
-      });
+    const store = this.#secrets;
+    if (store === undefined) {
+      throw new SecretsStorageError("the daemon has no secrets store");
     }
-    this.#answeredCards.add(answered);
+    // The receipt outlives this process: a retry after a restart, a lost response or an
+    // unknown admission cannot store the value or start a run a second time.
+    const claimed = await store.claimAnswer({
+      botId,
+      entry: answersTo,
+      ...(input.trace === undefined ? {} : { trace: input.trace }),
+    });
+    if (!claimed) {
+      throw new DirectoryError("invalid_answer", "this secret card was already answered");
+    }
+    let text: string;
     try {
+      if (input.skipped === true) {
+        text = secretAnswerText(card, { entryId: input.entryId, skipped: true });
+      } else {
+        await store.save({
+          botId,
+          key: card.key,
+          value: input.value,
+          scope,
+          ...(card.purpose.length === 0 ? {} : { purpose: card.purpose }),
+          ...(ttl === undefined ? {} : { ttlMinutes: ttl }),
+          ...(input.trace === undefined ? {} : { trace: input.trace }),
+        });
+        text = secretAnswerText(card, {
+          entryId: input.entryId,
+          scope,
+          ...(ttl === undefined ? {} : { ttlMinutes: ttl }),
+        });
+      }
       return await this.#admitAndLog(
         {
           botId,
-          requestId: `answer_${randomUUID().replaceAll("-", "")}`,
+          // One card, one submission id: a repeated admission answers from the record
+          // instead of starting the run again.
+          requestId: `secret_${createHash("sha256")
+            .update(`${botId}\u0000${answersTo}`)
+            .digest("hex")
+            .slice(0, 24)}`,
           text,
           whenBusy: "followUp",
           trace: input.trace ?? input.entryId,
@@ -553,9 +564,9 @@ export class ConversationService implements InvocationPort {
         undefined,
       );
     } catch (error) {
-      // Nothing reached the bot, so the person may still answer: a card is only spent when
-      // the answer was admitted.
-      this.#answeredCards.delete(answered);
+      // Nothing reached the bot, so the person may answer again: the card is only spent by an
+      // answer that was admitted.
+      await store.releaseAnswer({ botId, entry: answersTo }).catch(() => undefined);
       throw error;
     }
   }

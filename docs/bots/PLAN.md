@@ -893,7 +893,7 @@ The extension/tool track has its own proposed sequence in
    AES-256-GCM container with a separate key file, two scopes (`bot`, `shared`), lazy expiry
    with a startup sweep, a person-editable audit ledger and `core.secret.*` behaviour events.
    Eager, on by default, storage behind `SecretsToolHost`. `npm run check` in `apps/bots` is
-   green at 964 tests with 95.55% lines / 88.56% branches / 90.64% functions; the root check
+   green at 966 tests with 95.54% lines / 88.57% branches / 90.53% functions; the root check
    passes with the official Node 26 build, `apps/macos` (419) and `apps/bots-macos` (148)
    pass with strict formatting. The App has the card and the `密码` settings page. A first
    read-only review round found eighteen defects and all of them are closed: the value used to
@@ -904,7 +904,12 @@ The extension/tool track has its own proposed sequence in
    closed the edges that follow from the first: answers are serialised per card and namespaced
    under `secret:`, the environment export reads fresh under the lock and follows the group
    switch, the lock is owned by pid and token instead of by age, and a NUL in a value is refused
-   before it can fail — and echo itself out of — a spawn. Not yet
+   before it can fail — and echo itself out of — a spawn. A third round verified those: the
+   remaining edges are closed too — a card's receipt is durable inside the container (so a
+   restart cannot spend it twice) with a stable submission id, the lock is published complete
+   instead of created empty, the export reports every value it really hands out (and audits it),
+   the environment follows a live group switch, and a card's index counts every secret call
+   rather than only the ones that render. Not yet
    verified: a card answered against a live daemon from the rendered App, and the Time
    Machine/keychain threat boundaries the section reports as out of scope.
 

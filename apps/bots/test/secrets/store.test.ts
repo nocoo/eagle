@@ -693,9 +693,14 @@ test("two names that normalise to one variable are dropped, not guessed", async 
     await store.save({ botId: "b_1", key: "a-b", value: "two-value", scope: "bot" });
     assert.deepEqual(await store.environment("b_1"), {});
     assert.equal(store.envNameFor("b_1", "a.b"), undefined);
-    // Another bot's clash is not this bot's problem.
+    // Another bot's record is not in this bot's environment at all.
     await store.save({ botId: "b_2", key: "c-d", value: "other-value", scope: "bot" });
-    assert.equal(store.envNameFor("b_1", "c.d"), "EAGLE_SECRET_C_D");
+    assert.equal(store.envNameFor("b_1", "c.d"), undefined);
+    await store.save({ botId: "b_1", key: "c-e", value: "own-value", scope: "bot" });
+    assert.equal(store.envNameFor("b_1", "c.e"), "EAGLE_SECRET_C_E");
+    // A shared twin of the bot's own record is shadowed, not a clash.
+    await store.save({ botId: "b_2", key: "c-e", value: "shared-value", scope: "shared" });
+    assert.equal((await store.environment("b_1")).EAGLE_SECRET_C_E, "own-value");
   } finally {
     await done();
   }
@@ -821,6 +826,39 @@ test("a lock whose daemon is gone is cleared", async () => {
     // A pid that cannot be running: the lock is a leftover, not a writer.
     await write(join(options.dir, "secrets.lock"), JSON.stringify({ pid: 999_999, token: "gone" }));
     assert.deepEqual(await store.listAll(), []);
+  } finally {
+    await done();
+  }
+});
+
+test("a card's receipt survives a restart, so one card is spent once", async () => {
+  const { options, done } = await bench();
+  try {
+    const first = await SecretsStore.open(options);
+    assert.equal(await first.claimAnswer({ botId: "b_1", entry: "secret:e_1" }), true);
+    // A second daemon over the same directory is what a restart looks like here.
+    const second = await SecretsStore.open(options);
+    assert.equal(await second.claimAnswer({ botId: "b_1", entry: "secret:e_1" }), false);
+    // Another bot's card with the same entry is its own.
+    assert.equal(await second.claimAnswer({ botId: "b_2", entry: "secret:e_1" }), true);
+    await second.releaseAnswer({ botId: "b_2", entry: "secret:e_1" });
+    assert.equal(await first.claimAnswer({ botId: "b_2", entry: "secret:e_1" }), true);
+  } finally {
+    await done();
+  }
+});
+
+test("the group switch reaches the environment without reopening the bot", async () => {
+  const { options, done } = await bench();
+  try {
+    const store = await SecretsStore.open(options);
+    await store.save({ botId: "b_1", key: "k", value: "value", scope: "bot" });
+    const host = store.hostFor("b_1");
+    assert.deepEqual(await host.environment(), { EAGLE_SECRET_K: "value" });
+    host.setEnabled?.(false);
+    assert.deepEqual(await host.environment(), {});
+    host.setEnabled?.(true);
+    assert.deepEqual(await host.environment(), { EAGLE_SECRET_K: "value" });
   } finally {
     await done();
   }
