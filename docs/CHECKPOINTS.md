@@ -1,5 +1,19 @@
 # 用户视角检查点
 
+## 2026-11-04 06:20 +08 — Three eval rounds and Swift coverage repair
+
+- Three separate complete CLI/eval runs each passed 24 cases. The new password flow uses
+  synthetic stdin, checks read-only refusal and replay, and excludes the fixture from CLI
+  output and history. Each run used a separate temporary home and daemon, not existing Bots.
+- Bots check passed 995 tests; device-process integration passed 7 tests against local
+  fixtures. App Swift coverage passed at 91.4%. Bots Swift coverage first failed at 87.0%;
+  card-port and catalog transport tests raised it to 90.6% without changing the threshold.
+- Eagle Dev still runs from this worktree but predates the latest Swift source changes;
+  restart and verify the final build next. The owner was not watching, so rendered UI was
+  not visually inspected. No live Herdr collection, production authentication or production
+  D1 was exercised. Root release gates remain unverified because this worktree's root
+  dependencies resolve through another checkout and the approved mirror lacked a package.
+
 ## 2026-11-04 05:54 +08 — CLI acceptance expanded after merge
 
 - This branch merged the fetched `origin/main` at `049d042`, including the later reflection,
