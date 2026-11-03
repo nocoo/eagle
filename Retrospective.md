@@ -1,5 +1,20 @@
 # Retrospective
 
+## 2026-11-03 — Reflection was absent from device acceptance
+
+The reflection change passed its own Bots checks and scripted eval but broke the
+independent device-process acceptance. That fixture queued exactly two model
+responses per tool round. The new note-only reflection request exhausted that
+queue and retried a 500 until the original submission exceeded its unchanged
+settlement deadline. The current tree reproduced the CI failure; the same test
+against the preceding Bots source passed.
+
+The fixture now binds each provider session to its tool loadout, serves reflection
+from a separate no-op lane, and asserts nine reflection requests alongside the
+original eighteen root requests. Device execution, recovery and deadlines remain
+unchanged. A new model invocation path must be exercised through the independent
+process gate, not only the feature's own scripted model.
+
 ## 2026-11-03 — Rebase integration test setup
 
 The new reflection/secrets integration test passed at runtime but first failed

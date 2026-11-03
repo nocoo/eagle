@@ -289,6 +289,8 @@ async function modelFixture(key: string) {
   const steps: ModelStep[] = [];
   const failures: string[] = [];
   let requests = 0;
+  let reflectionRequests = 0;
+  const sessions = new Map<string, "root" | "reflection">();
   const server = createServer(async (request, response) => {
     try {
       assert.equal(
@@ -299,11 +301,29 @@ async function modelFixture(key: string) {
       assert.equal(request.url, "/v1/responses");
       let body = "";
       for await (const chunk of request) body += chunk;
-      const input = JSON.parse(body) as { tools: { name: string }[] };
-      const step = steps.shift();
-      assert(step, "unexpected model request");
-      requests++;
-      const id = `resp_${requests}`;
+      const input = JSON.parse(body) as {
+        tools: { name: string }[];
+        prompt_cache_key: string;
+      };
+      assert.equal(typeof input.prompt_cache_key, "string");
+      assert(
+        input.prompt_cache_key.length > 0,
+        "model session identity is required",
+      );
+      const kind =
+        sessions.get(input.prompt_cache_key) ??
+        (input.tools.length === 1 && input.tools[0]?.name === "note_set"
+          ? "reflection"
+          : "root");
+      sessions.set(input.prompt_cache_key, kind);
+      const step =
+        kind === "reflection"
+          ? { text: "No status update needed." }
+          : steps.shift();
+      assert(step, "unexpected root model request");
+      if (kind === "reflection") reflectionRequests++;
+      else requests++;
+      const id = `resp_${requests + reflectionRequests}`;
       const event = (type: string, fields: object) =>
         `event: ${type}\ndata: ${JSON.stringify({ type, ...fields })}\n\n`;
       const item =
@@ -391,6 +411,11 @@ async function modelFixture(key: string) {
     verify() {
       assert.deepEqual(failures, []);
       assert.equal(steps.length, 0);
+      assert.equal(
+        reflectionRequests,
+        9,
+        "each completed tool round reflects exactly once",
+      );
       return requests;
     },
   };
