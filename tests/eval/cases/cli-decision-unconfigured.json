@@ -1,5 +1,5 @@
 {
-  "id": "decision-unconfigured",
+  "id": "cli-decision-unconfigured",
   "title": "没有选决策服务商时，决策工具给出可读的拒绝，运行继续",
   "kind": "decision",
   "notes": "Like search-unconfigured: a deferred provider-backed tool must fail as a result the model can read when nothing is selected, and the run must still settle.",
@@ -28,8 +28,18 @@
   },
   "steps": [
     {
-      "kind": "chat",
-      "text": "判断一下这个客户是不是已经确认要买了"
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval cli-decision-unconfigured",
+        "--text",
+        "判断一下这个客户是不是已经确认要买了",
+        "--wait",
+        "--json"
+      ],
+      "stdoutContains": "决策不可用",
+      "oneTerminal": true
     }
   ],
   "expect": {

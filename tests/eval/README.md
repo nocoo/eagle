@@ -173,6 +173,9 @@ root conversation does not change that root's request classification.
   while it is still in flight; the transcript must never carry that answer.
 - `cli-isolation` — a real CLI turn and Bash tool prove the tool's home is the case home,
   not the runner's inherited home.
+- `cli-memory` — two CLI turns write and read a Bot-scoped memory.
+- `cli-decision-decide` and `cli-decision-unconfigured` — CLI turns exercise a scripted
+  System One decision and an unconfigured-provider refusal, respectively.
 - `cli-auth` — the development token works, an unsafe or replaced file is refused, a
   release binary ignores the file, and a read-only credential cannot write.
 - `complex-*` — three different end-to-end shapes (a coding loop, a triggered triage
