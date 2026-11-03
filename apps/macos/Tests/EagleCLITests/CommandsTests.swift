@@ -170,7 +170,8 @@ struct CommandsTests {
     #expect(
       StubTransport.calls.contains { $0.method == "POST" && $0.path == "/v1/bots/b_1/answers" })
     StubTransport.answers["/v1/bots/b_1/answers"] = (
-      200, #"{"submission":{"id":"s_1","requestId":"answer_1","status":"queued"}}"#
+      200,
+      #"{"submission":{"id":"s_1","requestId":"answer_1","status":"placed","entryId":"e_20"}}"#
     )
     let accepted = await run([
       "chat", "answer", "helper", "--entry", "e_12", "--choose", "Yes", "--json",
@@ -182,6 +183,7 @@ struct CommandsTests {
     }
     #expect(printed.last?["submissionId"] as? String == "s_1")
     #expect(printed.last?["type"] as? String == "submission")
+    #expect(printed.last?["entryId"] as? String == "e_20", "a placed answer keeps its entry")
   }
 
   @Test("question-indexed answers support repeated labels")

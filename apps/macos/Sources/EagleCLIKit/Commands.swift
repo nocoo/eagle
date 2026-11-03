@@ -566,7 +566,7 @@ public struct Commands: Sendable {
       // The CLI's own JSON shape is the wire submission, not the HTTP domain object: a caller
       // reading `submissionId` keeps working.
       var frame: JSONObject = ["type": "submission"]
-      for key in ["requestId", "status", "answerEntryId", "reason", "detail"] {
+      for key in ["requestId", "entryId", "status", "answerEntryId", "reason", "detail"] {
         if let value = record[key] { frame[key] = value }
       }
       frame["submissionId"] = record["id"]
