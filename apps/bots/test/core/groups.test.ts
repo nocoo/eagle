@@ -18,12 +18,15 @@ test("core and coding cannot be turned off and unknown names are dropped", () =>
     "core",
     "coding",
     "memory",
+    "secrets",
     "herdr",
     "agents",
     "trigger",
   ]);
   // Memory is a default because remembering is a habit, and it is still just a group.
   assert.deepEqual(resolveToolGroups(["memory"]), ["core", "coding", "memory"]);
+  // Secrets are a default because the card is the only way a password reaches a bot.
+  assert.deepEqual(resolveToolGroups(["secrets"]), ["core", "coding", "secrets"]);
   assert.deepEqual(resolveToolGroups(["core", "coding"]), ["core", "coding"]);
   // The two core prompts are optional like any other group, and they lead when chosen.
   assert.deepEqual(resolveToolGroups(["persona", "machine"]), [

@@ -53,6 +53,7 @@ import type {
   NoteToolHost,
   PeerToolHost,
   PullToolHost,
+  SecretsToolHost,
   TriggerToolHost,
 } from "../../tools/types.ts";
 import type { UsageMeter } from "../../tools/usage.ts";
@@ -169,6 +170,8 @@ export type PiRuntimeOptions = {
   readonly peers?: (spec: RuntimeBotSpec) => Promise<PeerToolHost | undefined>;
   /** The memory tools' host for a bot: its own file plus the machine-wide one. */
   readonly memory?: (spec: RuntimeBotSpec) => MemoryToolHost | undefined;
+  /** The secret tools' host for a bot: its own records plus the shared ones. */
+  readonly secrets?: (spec: RuntimeBotSpec) => SecretsToolHost | undefined;
   /** The pull-request tools' host for a bot, bound to that bot's own reports. */
   readonly pulls?: (spec: RuntimeBotSpec) => Promise<PullToolHost | undefined>;
   /** The bot's own sidebar note, written into the catalog this daemon owns. */
@@ -211,6 +214,7 @@ export class PiDurableRuntime implements RuntimePort {
       const peers = await this.#options.peers?.(spec);
       const pulls = await this.#options.pulls?.(spec);
       const memory = this.#options.memory?.(spec);
+      const secrets = this.#options.secrets?.(spec);
       const note = this.#options.note?.(spec);
       const runNote = createRunNote();
       // The tool owns what the Bot wrote; this run keeps the last value so its settlement
@@ -260,6 +264,7 @@ export class PiDurableRuntime implements RuntimePort {
         ...(peers === undefined ? {} : { peers }),
         ...(pulls === undefined ? {} : { pulls }),
         ...(memory === undefined ? {} : { memory }),
+        ...(secrets === undefined ? {} : { secrets }),
         ...(noteTools === undefined ? {} : { note: noteTools }),
         ...(this.#options.now === undefined ? {} : { now: this.#options.now }),
       });

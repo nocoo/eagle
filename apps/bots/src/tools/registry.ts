@@ -45,6 +45,7 @@ import { PERSONA_EXTENSION, personaExtension } from "./persona/tools.ts";
 import { PULLS_TOOLS_EXTENSION, pullsExtension } from "./pulls/tools.ts";
 import type { SearchClient } from "./search/client.ts";
 import { SEARCH_TOOLS_EXTENSION, searchExtension } from "./search/tools.ts";
+import { SECRETS_TOOLS_EXTENSION, secretsExtension } from "./secrets/tools.ts";
 import {
   type createTriggerTools,
   TRIGGER_TOOLS_EXTENSION,
@@ -56,6 +57,7 @@ import type {
   NoteToolHost,
   PeerToolHost,
   PullToolHost,
+  SecretsToolHost,
   TriggerToolHost,
 } from "./types.ts";
 
@@ -67,6 +69,7 @@ const GROUP_EXTENSIONS: Record<ToolGroup, readonly string[]> = {
   core: [BOTS_TOOLS_EXTENSION],
   coding: [CodingTools.name, PULLS_TOOLS_EXTENSION],
   memory: [MEMORY_TOOLS_EXTENSION],
+  secrets: [SECRETS_TOOLS_EXTENSION],
   herdr: [HERDR_TOOLS_EXTENSION, toolSearch.name],
   agents: [AGENTS_TOOLS_EXTENSION],
   search: [SEARCH_TOOLS_EXTENSION, toolSearch.name],
@@ -151,6 +154,13 @@ const catalogMemory: MemoryToolHost = {
   remove: refuse,
 };
 
+const catalogSecrets: SecretsToolHost = {
+  botId: "catalog",
+  list: refuse,
+  read: refuse,
+  remove: refuse,
+};
+
 /**
  * What each group would give a bot right now, in the daemon's own words. The loader that
  * defers a group's tools (`tool_search`) belongs to no group: it is how a person's choice is
@@ -193,6 +203,7 @@ export const createCatalogRegistry = (): RegistryReader =>
       memory: catalogMemory,
       pulls: catalogPulls,
       note: catalogNote,
+      secrets: catalogSecrets,
     },
   );
 
@@ -231,6 +242,8 @@ export type ToolRegistryOptions = {
   readonly peers?: Parameters<typeof peersExtension>[0];
   /** Memory tools act on this bot's two scopes; absent in a build without a memory directory. */
   readonly memory?: MemoryToolHost;
+  /** Secret tools read this bot's own records and the shared ones; absent without a store. */
+  readonly secrets?: SecretsToolHost;
   /** Pull-request reports belong to the coding group; absent without a store to keep them. */
   readonly pulls?: Parameters<typeof pullsExtension>[0];
   /** The bot's own sidebar note; absent only in a build with no catalog around it. */
@@ -300,6 +313,7 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
   if (options.peers !== undefined) registry.install(peersExtension(options.peers));
   if (options.pulls !== undefined) registry.install(pullsExtension(options.pulls));
   if (options.memory !== undefined) registry.install(memoryExtension(options.memory));
+  if (options.secrets !== undefined) registry.install(secretsExtension(options.secrets));
   // Deferred tools need their loader; without one the model would never see them.
   if (
     herdr !== undefined ||

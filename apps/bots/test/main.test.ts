@@ -880,3 +880,62 @@ test("the daemon reads the machine prompt and saves the core prompt", async () =
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("the daemon mounts the secret routes and keeps the store out of the way", async () => {
+  const root = await daemonRoot("bots-main-secrets-");
+  const home = await mkdtemp(join(tmpdir(), "bots-main-secrets-home-"));
+  try {
+    const config = readConfig({
+      argv: ["--root", root, "--port", "0"],
+      env: {
+        BOTS_SECRETS_DIR: join(home, "config"),
+        BOTS_SECRETS_KEY: join(home, "state", "secrets.key"),
+      },
+    });
+    const daemon = await startDaemon(config);
+    try {
+      const authorized = async (path: string, init: RequestInit = {}) =>
+        fetch(`http://127.0.0.1:${daemon.port}${path}`, {
+          ...init,
+          headers: {
+            authorization: `Bearer ${daemon.token}`,
+            "content-type": "application/json",
+            ...(init.headers ?? {}),
+          },
+        });
+      const listed = await authorized("/v1/secrets");
+      assert.equal(listed.status, 200);
+      assert.deepEqual(((await listed.json()) as { secrets: unknown[] }).secrets, []);
+
+      const revealed = await authorized("/v1/secrets/reveal", {
+        method: "POST",
+        body: JSON.stringify({ key: "absent", scope: "bot" }),
+      });
+      assert.equal(revealed.status, 404, "an unknown record is not a secret");
+
+      const removed = await authorized("/v1/secrets/bot/absent", { method: "DELETE" });
+      assert.equal(removed.status, 404);
+
+      // The settings page is the only place a value comes back, and it needs the admin scope.
+      const issued = (await (
+        await authorized("/v1/clients", {
+          method: "POST",
+          body: JSON.stringify({ name: "reader", scopes: ["read"] }),
+        })
+      ).json()) as { token: string };
+      const refused = await authorized("/v1/secrets/reveal", {
+        method: "POST",
+        body: JSON.stringify({ key: "absent", scope: "bot" }),
+        headers: { authorization: `Bearer ${issued.token}` },
+      });
+      assert.equal(refused.status, 403);
+    } finally {
+      assert.equal(await daemon.close(), "closed");
+    }
+    // Nothing was stored, so the store wrote nothing: the key file is created on demand.
+    await assert.rejects(readFile(join(home, "state", "secrets.key"), "utf8"), /ENOENT/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  }
+});

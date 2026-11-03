@@ -14,11 +14,17 @@ import type {
   Failure,
   Message,
   PullSummary,
+  SecretsPort,
   Submission,
   TriggerSummary,
   Usage,
 } from "./domain.ts";
-import { ClassifiedFailure } from "./domain.ts";
+import {
+  ClassifiedFailure,
+  MAX_SECRET_TTL_MINUTES,
+  MAX_SECRET_VALUE_BYTES,
+  SecretsStorageError,
+} from "./domain.ts";
 import { EventHub, type HubSubscriber, type HubSubscription } from "./EventHub.ts";
 import { newFailure } from "./failures.ts";
 import {
@@ -29,6 +35,7 @@ import {
 } from "./Invocation.ts";
 import type { OriginStore } from "./OriginStore.ts";
 import type { RuntimeEvent, RuntimeHandle, RuntimeHistory, SubmitInput } from "./RuntimePort.ts";
+import { type SecretAnswerInput, secretAnswerText, secretCardOf } from "./secretCard.ts";
 import { reduceView, type SubmissionRanks, seedRanks, trimWindow } from "./view.ts";
 
 /** The closed origin set of the invocation port; `unknown` is a reconstruction only. */
@@ -118,6 +125,11 @@ export type ConversationServiceOptions = {
   readonly origins?: {
     readonly store: (botId: string) => Promise<OriginStore | undefined>;
   };
+  /**
+   * The secrets store (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5). Absent means the daemon
+   * has no secret storage, and a card answer is a refusal rather than a lost password.
+   */
+  readonly secrets?: SecretsPort;
 };
 
 /** Only `not_admitted` lets a client drop its outbox entry (docs/bots/PROTOCOL.md). */
@@ -187,6 +199,7 @@ export class ConversationService implements InvocationPort {
   readonly #origins: ConversationServiceOptions["origins"];
   readonly #triggersOf: ConversationServiceOptions["triggersOf"];
   readonly #pullsOf: ConversationServiceOptions["pullsOf"];
+  readonly #secrets: SecretsPort | undefined;
   /** Resolved views by bot id, so `observe` can answer synchronously without opening. */
   readonly #current = new Map<string, Bot>();
   /** Invocation observers, keyed by bot id and bound to the value, not to one Bot object. */
@@ -223,6 +236,7 @@ export class ConversationService implements InvocationPort {
     this.#origins = options.origins;
     this.#triggersOf = options.triggersOf;
     this.#pullsOf = options.pullsOf;
+    this.#secrets = options.secrets;
     this.#hubOptions = {
       measure: options.measure,
       ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
@@ -388,6 +402,92 @@ export class ConversationService implements InvocationPort {
         botId,
         requestId: `answer_${randomUUID().replaceAll("-", "")}`,
         text: answerText(questions, input),
+        whenBusy: "followUp",
+        trace: input.trace ?? input.entryId,
+        origin: label === undefined ? { kind: "human" } : { kind: "human", label },
+        hidden: true,
+        answersTo: input.entryId,
+      },
+      undefined,
+    );
+  }
+
+  /**
+   * The person answered a secret card. The value goes into the store, never into the
+   * transcript: the bot is told that the record exists, and reads the value itself when it
+   * needs it. The card's own arguments are the only record of what was asked.
+   */
+  async answerSecret(botId: string, input: SecretAnswerInput, label?: string): Promise<Submission> {
+    const bot = await this.#bot(botId, input.trace ?? input.entryId);
+    const call = await bot.handle?.entryById?.(input.entryId);
+    const card = call === undefined ? undefined : secretCardOf(call);
+    if (card === undefined) {
+      throw new DirectoryError("invalid_answer", "no such secret_request call");
+    }
+    // A client cannot rename a record: the key is the card's key.
+    if (input.key !== card.key) {
+      throw new DirectoryError("invalid_answer", "the key does not match the secret card");
+    }
+    const scope = input.scope ?? card.scope;
+    if (scope !== "bot" && scope !== "shared") {
+      throw new DirectoryError(
+        "invalid_answer",
+        `scope must be "bot" or "shared"; it was "${input.scope}"`,
+      );
+    }
+    // The person has the last word on the lifetime: absent keeps the card's suggestion,
+    // null makes the record permanent.
+    const ttl =
+      input.ttlMinutes === undefined
+        ? card.ttlMinutes
+        : input.ttlMinutes === null
+          ? undefined
+          : input.ttlMinutes;
+    if (ttl !== undefined && (!Number.isInteger(ttl) || ttl < 1 || ttl > MAX_SECRET_TTL_MINUTES)) {
+      throw new DirectoryError(
+        "invalid_answer",
+        `ttlMinutes is 1-${MAX_SECRET_TTL_MINUTES}, or null for a permanent record`,
+      );
+    }
+    if (input.skipped !== true) {
+      if (typeof input.value !== "string" || input.value.length === 0) {
+        throw new DirectoryError("invalid_answer", "a secret value is required");
+      }
+      if (Buffer.byteLength(input.value, "utf8") > MAX_SECRET_VALUE_BYTES) {
+        throw new DirectoryError(
+          "invalid_answer",
+          `a secret value is at most ${MAX_SECRET_VALUE_BYTES} bytes`,
+        );
+      }
+    }
+    let text: string;
+    if (input.skipped === true) {
+      text = secretAnswerText(card, { entryId: input.entryId, skipped: true });
+    } else {
+      const store = this.#secrets;
+      if (store === undefined) {
+        throw new SecretsStorageError("the daemon has no secrets store");
+      }
+      await store.save({
+        botId,
+        key: card.key,
+        value: input.value,
+        scope,
+        ...(card.purpose.length === 0 ? {} : { purpose: card.purpose }),
+        ...(ttl === undefined ? {} : { ttlMinutes: ttl }),
+        ...(input.trace === undefined ? {} : { trace: input.trace }),
+      });
+      text = secretAnswerText(card, {
+        entryId: input.entryId,
+        scope,
+        ...(ttl === undefined ? {} : { ttlMinutes: ttl }),
+      });
+    }
+    return this.#admitAndLog(
+      {
+        botId,
+        requestId: `answer_${randomUUID().replaceAll("-", "")}`,
+        text,
         whenBusy: "followUp",
         trace: input.trace ?? input.entryId,
         origin: label === undefined ? { kind: "human" } : { kind: "human", label },

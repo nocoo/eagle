@@ -15,6 +15,8 @@ import {
   isThinkingLevel,
   isToolGroup,
   resolveToolGroups,
+  type SecretsPort,
+  SecretsStorageError,
 } from "./core/domain.ts";
 import { newFailure } from "./core/failures.ts";
 import { OriginStore, originPath } from "./core/OriginStore.ts";
@@ -32,6 +34,7 @@ import { encodeServerEvent } from "./protocol/encode.ts";
 import { composePulls, pullPublisher } from "./pulls/host.ts";
 import { createDaemonModels } from "./runtime/pi/models.ts";
 import { PiDurableRuntime, type PiSettings } from "./runtime/pi/PiDurableRuntime.ts";
+import { SecretsStore } from "./secrets/store.ts";
 import { loadToken } from "./server/auth.ts";
 import { ClientStore } from "./server/clients.ts";
 import { armDevToken } from "./server/devToken.ts";
@@ -49,7 +52,7 @@ import {
   testGateway,
   writeGateway,
 } from "./server/gateway.ts";
-import { type Daemon, startServer, type TriggerIngress } from "./server/http.ts";
+import { type Daemon, type SecretsApi, startServer, type TriggerIngress } from "./server/http.ts";
 import {
   PROVIDERS,
   type ProviderApi,
@@ -79,6 +82,7 @@ import { createCatalogRegistry, describeToolCatalog } from "./tools/registry.ts"
 import type { SearchClient } from "./tools/search/client.ts";
 import { createDeepSeekSearch } from "./tools/search/deepseek.ts";
 import { createTavilySearch } from "./tools/search/tavily.ts";
+import type { SecretsToolHost } from "./tools/types.ts";
 import { triggerHost } from "./triggers/host.ts";
 import { createIngress } from "./triggers/ingress.ts";
 import { TriggerProducers } from "./triggers/producers.ts";
@@ -172,6 +176,8 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
   const triggerTokens = new Set<string>();
   // A development bearer is a credential like any other: it must never reach a log line.
   const devTokens = new Set<string>();
+  // Every stored secret value joins the redaction list while the daemon runs.
+  const secretValues = new Set<string>();
   const sink = new FileLogSink({ root, minimum: canonical.logLevel });
   const log = new Log(sink.sink, undefined, {
     secrets: () => [
@@ -180,6 +186,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
       ...providers.secrets(),
       ...triggerTokens,
       ...devTokens,
+      ...secretValues,
     ],
   });
   const startup = "tr_boot_1";
@@ -202,6 +209,64 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     throw error;
   }
   log.emit("info", "core", StartupEvents.singletonOk, { trace: startup });
+  // The secrets store (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5): a container that cannot be
+  // read is a refusal, not a reset, and it must not keep the daemon from starting. The
+  // store records its own failure; here it only decides what the rest of the daemon can do.
+  const secretsStore = await SecretsStore.open({
+    dir: canonical.secretsDir,
+    keyPath: canonical.secretsKeyPath,
+    log,
+    trace: startup,
+    onValues: (values) => {
+      secretValues.clear();
+      for (const value of values) secretValues.add(value);
+    },
+  }).catch(() => undefined);
+  if (secretsStore !== undefined) {
+    for (const value of secretsStore.values()) secretValues.add(value);
+    // A daemon that was off for three hours still expires what it should.
+    await secretsStore.sweep().catch(() => undefined);
+  }
+  /** The store behind the card answer; without one a card answer is a refusal. */
+  const secretsPort: SecretsPort = {
+    save: async (input) => {
+      if (secretsStore === undefined) {
+        throw new SecretsStorageError("the secrets store could not be read");
+      }
+      return secretsStore.save(input);
+    },
+  };
+  /** The tools' host for one Bot; a broken store refuses instead of losing the group. */
+  const secretsHost = (botId: string): SecretsToolHost => {
+    if (secretsStore === undefined) {
+      const refuse = (): never => {
+        throw new SecretsStorageError("the secrets store could not be read");
+      };
+      return { botId, list: refuse, read: refuse, remove: refuse };
+    }
+    return secretsStore.hostFor(botId);
+  };
+  /** The settings page's surface: metadata, and the one route that answers a value. */
+  const secretsApi: SecretsApi = {
+    list: async () => {
+      if (secretsStore === undefined) {
+        throw new SecretsStorageError("the secrets store could not be read");
+      }
+      return secretsStore.listAll();
+    },
+    reveal: async (input) => {
+      if (secretsStore === undefined) {
+        throw new SecretsStorageError("the secrets store could not be read");
+      }
+      return secretsStore.reveal(input);
+    },
+    remove: async (input) => {
+      if (secretsStore === undefined) {
+        throw new SecretsStorageError("the secrets store could not be read");
+      }
+      return secretsStore.removeAsPerson(input);
+    },
+  };
   // The development agent's credential is armed here: the file is read once to say
   // whether it is usable, and again on every authentication, so a rewritten file takes
   // effect at once. Without the environment variable there is no reader at all, and no
@@ -382,6 +447,9 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     // The two markdown scopes are the person's own documents: the daemon only reads and
     // rewrites records, and the host binds this bot's file so the model never names one.
     memory: (spec) => fileMemoryHost({ dir: canonical.memoryDir, botId: spec.id }),
+    // The secrets: the host binds this bot, so the model never names a bot id and never
+    // holds a value.
+    secrets: (spec) => secretsHost(spec.id),
     // The tool owns the line; the catalog owns the truth, and the broadcast is how the
     // sidebar sees it without another read. A settled run writes through the same host.
     note: (spec) =>
@@ -449,6 +517,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     },
     triggersOf: { list: summarize },
     pullsOf: { list: pulls.list },
+    secrets: secretsPort,
     // Every admission is labelled, so an unlabelled message means "unknown", never
     // "human" (TRIGGERS.md §6.2). One file per bot, under its own directory.
     origins: {
@@ -688,6 +757,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     // Built once: the tool surface is fixed at start, and describing it never runs a tool.
     toolCatalog: () => catalogDescriptions,
     triggers: triggerApi,
+    secrets: secretsApi,
     peers: peerApi({
       store: peerStore,
       bots: () => registry.summaries(),

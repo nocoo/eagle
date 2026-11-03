@@ -2,16 +2,24 @@
 // requestId while its reply stays connection-scoped.
 import assert from "node:assert/strict";
 import test from "node:test";
+import { DirectoryError } from "../../src/core/BotDirectory.ts";
 import {
   CommandError,
   ConversationService,
   RESERVATION_TTL_MS,
 } from "../../src/core/ConversationService.ts";
-import type { ConversationSnapshot, Message, Submission } from "../../src/core/domain.ts";
-import { ClassifiedFailure } from "../../src/core/domain.ts";
+import type {
+  ConversationSnapshot,
+  Message,
+  SecretSave,
+  SecretsPort,
+  Submission,
+} from "../../src/core/domain.ts";
+import { ClassifiedFailure, SecretsStorageError } from "../../src/core/domain.ts";
 import type { HubEvent } from "../../src/core/EventHub.ts";
 import { SubscriberTooSlow } from "../../src/core/EventHub.ts";
 import type { RuntimeEvent, RuntimeHandle, SubmitInput } from "../../src/core/RuntimePort.ts";
+import type { SecretAnswerInput } from "../../src/core/secretCard.ts";
 import { encodeServerEvent } from "../../src/protocol/encode.ts";
 import { FakeRuntime } from "../../src/testing/FakeRuntime.ts";
 
@@ -1954,5 +1962,160 @@ test("a usage event is reported to the host's statistics hook", async () => {
   assert.ok(
     received.some((event) => event.type === "usage"),
     "the client still sees the totals",
+  );
+});
+
+/** A runtime whose transcript holds one secret card, and that remembers what it was told. */
+const cardRuntime = (card: Message | undefined) => {
+  const submitted: SubmitInput[] = [];
+  const handle: RuntimeHandle = {
+    refreshTools: async () => {},
+    subscribe: async (_trace, _sink) => ({
+      snapshot: {
+        botId: "b_1",
+        messages: [],
+        streaming: null,
+        pending: [],
+        inbox: [],
+        running: false,
+      },
+      detach: () => undefined,
+    }),
+    submission: async () => undefined,
+    submit: async (input) => {
+      submitted.push(input);
+      return { id: "s_1", requestId: input.requestId, status: "queued" };
+    },
+    entryById: async (entryId) => (card === undefined || card.id !== entryId ? undefined : card),
+    history: async () => ({ messages: [], hasMore: false }),
+    abort: async () => {},
+    recover: async () => {},
+    busy: async () => ({ run: false, tasks: false }),
+    close: async () => "closed",
+  };
+  return { handle, submitted };
+};
+
+const secretCard = (args: Record<string, unknown>): Message => ({
+  id: "e_card_1",
+  role: "assistant",
+  state: "complete",
+  createdAt: "2026-11-03T01:10:00.000Z",
+  blocks: [{ type: "toolCall", callId: "c_1", name: "secret_request", args }],
+});
+
+const secretService = (
+  runtime: ReturnType<typeof cardRuntime>,
+  secrets?: SecretsPort,
+): ConversationService =>
+  new ConversationService({
+    open: async () => runtime.handle,
+    measure: utf8,
+    ...(secrets === undefined ? {} : { secrets }),
+  });
+
+test("the secret answer stores the value and admits a hidden message without it", async () => {
+  const runtime = cardRuntime(secretCard({ key: "github-pat", purpose: "发布用", ttlMinutes: 60 }));
+  const saved: SecretSave[] = [];
+  const service = secretService(runtime, {
+    save: async (input) => {
+      saved.push(input);
+      return { scope: input.scope, createdAt: "t", updatedAt: "t" };
+    },
+  });
+  const record = await service.answerSecret("b_1", {
+    entryId: "e_card_1",
+    key: "github-pat",
+    value: "ghp_example",
+  });
+  assert.equal(record.status, "queued");
+  assert.deepEqual(saved, [
+    {
+      botId: "b_1",
+      key: "github-pat",
+      value: "ghp_example",
+      scope: "bot",
+      purpose: "发布用",
+      ttlMinutes: 60,
+    },
+  ]);
+  const hidden = runtime.submitted.at(-1);
+  assert.ok(hidden);
+  assert.equal(hidden.hidden, true);
+  assert.equal(hidden.answersTo, "e_card_1");
+  assert.equal(
+    hidden.text.includes("ghp_example"),
+    false,
+    "the value never reaches the transcript",
+  );
+  assert.match(hidden.text, /github-pat/);
+  assert.match(hidden.text, /expires in 1 hour/);
+});
+
+test("a card answer that breaks a rule is refused and stores nothing", async () => {
+  const runtime = cardRuntime(secretCard({ key: "github-pat", purpose: "发布用" }));
+  const saved: SecretSave[] = [];
+  const service = secretService(runtime, {
+    save: async (input) => {
+      saved.push(input);
+      return { scope: input.scope, createdAt: "t", updatedAt: "t" };
+    },
+  });
+  const cases: readonly (Partial<SecretAnswerInput> & { readonly key: string })[] = [
+    { key: "other", value: "v" },
+    { key: "github-pat", value: "" },
+    { key: "github-pat", value: "x".repeat(8193) },
+    { key: "github-pat", value: "v", ttlMinutes: 1441 },
+    { key: "github-pat", value: "v", scope: "all" as never },
+  ];
+  for (const input of cases) {
+    await assert.rejects(
+      service.answerSecret("b_1", {
+        entryId: "e_card_1",
+        value: "",
+        ...input,
+      }),
+      (error: unknown) => error instanceof DirectoryError,
+      JSON.stringify(input),
+    );
+  }
+  await assert.rejects(
+    service.answerSecret("b_1", { entryId: "e_unknown", key: "github-pat", value: "v" }),
+    (error: unknown) => error instanceof DirectoryError,
+  );
+  assert.deepEqual(saved, [], "nothing was stored");
+});
+
+test("a skipped card stores nothing and says the person did not answer", async () => {
+  const runtime = cardRuntime(secretCard({ key: "github-pat", purpose: "发布用" }));
+  const saved: SecretSave[] = [];
+  const service = secretService(runtime, {
+    save: async (input) => {
+      saved.push(input);
+      return { scope: input.scope, createdAt: "t", updatedAt: "t" };
+    },
+  });
+  await service.answerSecret("b_1", {
+    entryId: "e_card_1",
+    key: "github-pat",
+    value: "",
+    skipped: true,
+  });
+  assert.deepEqual(saved, []);
+  const hidden = runtime.submitted.at(-1);
+  assert.ok(hidden);
+  assert.match(hidden.text, /skipped/);
+});
+
+test("a daemon without a secrets store refuses a card answer", async () => {
+  const runtime = cardRuntime(secretCard({ key: "github-pat", purpose: "发布用" }));
+  const service = secretService(runtime);
+  await assert.rejects(
+    service.answerSecret("b_1", {
+      entryId: "e_card_1",
+      key: "github-pat",
+      value: "ghp_example",
+    }),
+    (error: unknown) => error instanceof SecretsStorageError,
   );
 });

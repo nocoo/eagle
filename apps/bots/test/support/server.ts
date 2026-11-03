@@ -8,6 +8,7 @@ import { WebSocket } from "ws";
 import { BotDirectory, nodeDirectoryFs } from "../../src/core/BotDirectory.ts";
 import { BotRegistry, type RegistryOptions } from "../../src/core/BotRegistry.ts";
 import { ConversationService } from "../../src/core/ConversationService.ts";
+import type { SecretsPort } from "../../src/core/domain.ts";
 import {
   resolveToolGroups,
   type ToolGroupCatalog,
@@ -25,7 +26,7 @@ import { PiDurableRuntime } from "../../src/runtime/pi/PiDurableRuntime.ts";
 import { ClientStore } from "../../src/server/clients.ts";
 import { armDevToken } from "../../src/server/devToken.ts";
 import type { GatewayApi } from "../../src/server/gateway.ts";
-import type { TriggerApi, TriggerIngress } from "../../src/server/http.ts";
+import type { SecretsApi, TriggerApi, TriggerIngress } from "../../src/server/http.ts";
 import { startServer } from "../../src/server/http.ts";
 import { FakeRuntime, type FakeScript } from "../../src/testing/FakeRuntime.ts";
 import { createNoteHost } from "../../src/tools/note.ts";
@@ -83,6 +84,10 @@ export type StackOptions = {
   readonly maxMessageBytes?: number;
   /** A trigger surface for the HTTP contract; absent means the daemon has no triggers. */
   readonly triggers?: TriggerApi;
+  /** The secrets store behind the card answer; absent means the daemon cannot store one. */
+  readonly secrets?: SecretsPort;
+  /** The secrets store's settings surface; absent means the daemon has no secret storage. */
+  readonly secretsApi?: SecretsApi;
   /** The inbound delivery route; absent means a webhook trigger has no endpoint. */
   readonly ingress?: TriggerIngress;
   /** The baseline trigger list a bot's view opens with. */
@@ -242,6 +247,7 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
       release: (botId) => registry.release(botId),
     },
     origins: { store: async (botId) => OriginStore.open(originPath(directory.botDir(botId))) },
+    ...(options.secrets === undefined ? {} : { secrets: options.secrets }),
     onRunning: (botId, running) => {
       if (registry.markRunning(botId, running)) broadcast?.();
     },
@@ -307,6 +313,7 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
       triggers: true,
     },
     ...(options.triggers === undefined ? {} : { triggers: options.triggers }),
+    ...(options.secretsApi === undefined ? {} : { secrets: options.secretsApi }),
     peers: peersApi,
     ...(options.ingress === undefined ? {} : { ingress: options.ingress }),
     port: 0,

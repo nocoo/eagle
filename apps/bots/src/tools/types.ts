@@ -1,4 +1,15 @@
-import type { SubmissionStatus } from "../core/domain.ts";
+import type { SecretMeta, SecretScope, SubmissionStatus } from "../core/domain.ts";
+
+export type { SecretMeta, SecretScope } from "../core/domain.ts";
+export {
+  DEFAULT_SECRET_LIST_LIMIT,
+  MAX_SECRET_LIST_LIMIT,
+  MAX_SECRET_PURPOSE_CHARS,
+  MAX_SECRET_TTL_MINUTES,
+  MAX_SECRET_VALUE_BYTES,
+  MIN_SECRET_TTL_MINUTES,
+  SECRET_KEY_PATTERN,
+} from "../core/domain.ts";
 
 // The shape every bot tool speaks (docs/bots/RUNTIME.md, "Tools"): a handler receives the
 // workspace and validated arguments and returns what the model should see. Failures are
@@ -65,6 +76,31 @@ export type MemoryToolHost = {
     readonly created: boolean;
   }>;
   remove(input: { scope: MemoryScope; key: string }): Promise<{ readonly deleted: boolean }>;
+};
+
+/**
+ * What the secret tools may do (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5). The port is the
+ * whole storage contract: the container, the key file and the ledger stay behind it.
+ */
+export type SecretsToolHost = {
+  readonly botId: string;
+  /** The records this Bot may see; every row names its own scope. */
+  list(input: {
+    readonly scope?: SecretScope;
+    readonly limit: number;
+  }): Promise<{ readonly items: readonly SecretMeta[]; readonly truncated: boolean }>;
+  /** The value, or undefined when the record is missing or expired. */
+  read(input: {
+    readonly key: string;
+    readonly scope?: SecretScope;
+  }): Promise<
+    { readonly key: string; readonly scope: SecretScope; readonly value: string } | undefined
+  >;
+  /** Removes one record; an absent record is success with `deleted: false`. */
+  remove(input: {
+    readonly key: string;
+    readonly scope?: SecretScope;
+  }): Promise<{ readonly key: string; readonly scope: SecretScope; readonly deleted: boolean }>;
 };
 
 /** What one Bot may write about itself: the sidebar line the daemon stores in its catalog. */

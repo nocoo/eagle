@@ -16,6 +16,9 @@ import {
   isThinkingLevel,
   MAX_BOT_NOTE_CHARS,
   normalizeBotNote,
+  type SecretMeta,
+  type SecretScope,
+  SecretsStorageError,
   type ToolGroupCatalog,
 } from "../core/domain.ts";
 import { declareEvent } from "../log/events.ts";
@@ -79,6 +82,8 @@ export type ServerOptions = {
   readonly triggers?: TriggerApi;
   /** The read side of bot-to-bot exchanges; absent in a build without a peer store. */
   readonly peers?: PeerApi;
+  /** The secrets store's settings surface; absent in a build without secret storage. */
+  readonly secrets?: SecretsApi;
   /** The inbound side: one webhook delivery, authenticated by its own trigger token. */
   readonly ingress?: TriggerIngress;
   readonly pid?: number;
@@ -336,6 +341,27 @@ const extras = (
   return result;
 };
 
+/**
+ * The secrets store's settings surface (docs/bots/PROTOCOL.md, "Secrets"). The list is
+ * metadata only, and the reveal is the one route that answers a value.
+ */
+export type SecretsApi = {
+  /** Every record, without a value. */
+  readonly list: () => Promise<readonly SecretMeta[]>;
+  /** The value of one record; undefined when it is missing or expired. */
+  readonly reveal: (input: {
+    readonly key: string;
+    readonly scope: SecretScope;
+  }) => Promise<
+    { readonly key: string; readonly scope: SecretScope; readonly value: string } | undefined
+  >;
+  /** Removes one record; false when there was nothing to remove. */
+  readonly remove: (input: {
+    readonly key: string;
+    readonly scope: SecretScope;
+  }) => Promise<boolean>;
+};
+
 /** The app's only trigger surface: read detail, and switch one on or off. */
 /** What the app reads about an exchange between bots (docs/bots/TRIGGERS.md §10). */
 export type PeerApi = {
@@ -406,6 +432,8 @@ const requiredScope = (path: string, method: string): ClientScope => {
   if (path === "/v1/settings" || path === "/v1/settings/test") return "admin";
   // A provider probe spends a stored key, so it sits with the provider writes.
   if (path.startsWith("/v1/providers")) return "admin";
+  // Reading a value back is the settings page's one privileged act.
+  if (path === "/v1/secrets/reveal") return "admin";
   if (method === "DELETE") return "admin";
   return "write";
 };
@@ -934,6 +962,99 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         json(response, 200, { submission: record });
         return;
       }
+      const secretAnswerMatch = /^\/v1\/bots\/([A-Za-z0-9_-]+)\/secrets$/.exec(path);
+      if (secretAnswerMatch !== null && request.method === "POST") {
+        const botId = secretAnswerMatch[1] as string;
+        const body = await readBody(request);
+        const entryId = isObject(body) ? body.entryId : undefined;
+        const key = isObject(body) ? body.key : undefined;
+        const value = isObject(body) ? body.value : undefined;
+        const scope = isObject(body) ? body.scope : undefined;
+        const ttl = isObject(body) ? body.ttlMinutes : undefined;
+        const skipped = isObject(body) ? body.skipped : undefined;
+        const shaped =
+          typeof entryId === "string" &&
+          typeof key === "string" &&
+          (value === undefined || typeof value === "string") &&
+          (scope === undefined || scope === "bot" || scope === "shared") &&
+          (ttl === undefined ||
+            ttl === null ||
+            (typeof ttl === "number" && Number.isInteger(ttl))) &&
+          (skipped === undefined || skipped === true);
+        if (!shaped || (value === undefined && skipped !== true)) {
+          json(response, 400, {
+            error: {
+              kind: "invalid_command",
+              message:
+                "send { entryId, key, value } and optionally { scope, ttlMinutes } or { skipped: true }",
+            },
+          });
+          return;
+        }
+        const record = await options.service.answerSecret(botId, {
+          entryId: entryId as string,
+          key: key as string,
+          value: (value as string | undefined) ?? "",
+          ...(scope === undefined ? {} : { scope: scope as SecretScope }),
+          ...(ttl === undefined ? {} : { ttlMinutes: ttl as number | null }),
+          ...(skipped === true ? { skipped: true } : {}),
+          trace: `tr_http_${++sequence}`,
+        });
+        json(response, 200, { submission: record });
+        return;
+      }
+      if (path === "/v1/secrets" && request.method === "GET") {
+        if (options.secrets === undefined) {
+          json(response, 503, {
+            error: { kind: "storage_failed", message: "the secrets store is not available" },
+          });
+          return;
+        }
+        json(response, 200, { secrets: await options.secrets.list() });
+        return;
+      }
+      if (path === "/v1/secrets/reveal" && request.method === "POST") {
+        if (options.secrets === undefined) {
+          json(response, 503, {
+            error: { kind: "storage_failed", message: "the secrets store is not available" },
+          });
+          return;
+        }
+        const body = await readBody(request);
+        const key = isObject(body) ? body.key : undefined;
+        const scope = isObject(body) ? body.scope : undefined;
+        if (typeof key !== "string" || (scope !== "bot" && scope !== "shared")) {
+          json(response, 400, {
+            error: { kind: "invalid_command", message: "send { key, scope }" },
+          });
+          return;
+        }
+        const secret = await options.secrets.reveal({ key, scope: scope as SecretScope });
+        if (secret === undefined) {
+          json(response, 404, { error: { kind: "unknown_bot", message: "no such secret" } });
+          return;
+        }
+        json(response, 200, { secret });
+        return;
+      }
+      const secretMatch = /^\/v1\/secrets\/(bot|shared)\/([A-Za-z0-9._-]{1,64})$/.exec(path);
+      if (secretMatch !== null && request.method === "DELETE") {
+        if (options.secrets === undefined) {
+          json(response, 503, {
+            error: { kind: "storage_failed", message: "the secrets store is not available" },
+          });
+          return;
+        }
+        const scope = secretMatch[1] as SecretScope;
+        const key = secretMatch[2] as string;
+        const deleted = await options.secrets.remove({ key, scope });
+        if (!deleted) {
+          json(response, 404, { error: { kind: "unknown_bot", message: "no such secret" } });
+          return;
+        }
+        response.writeHead(204).end();
+        return;
+      }
       const taskMatch = /^\/v1\/bots\/([A-Za-z0-9_-]+)\/tasks\/(t_\d+)\/(retry|abort)$/.exec(path);
       if (taskMatch !== null && request.method === "POST") {
         const [, botId, taskId, action] = taskMatch as unknown as [string, string, string, string];
@@ -1016,6 +1137,14 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
       }
       json(response, 404, { error: { kind: "unknown_bot", message: "no such endpoint" } });
     } catch (error) {
+      if (error instanceof SecretsStorageError) {
+        // A store that cannot be read is a refusal, not an empty list: the client must
+        // never show "no passwords" when it means "cannot read them".
+        json(response, 503, {
+          error: { kind: "storage_failed", message: "the secrets store could not be read" },
+        });
+        return;
+      }
       if (error instanceof ClientError) {
         // An unknown id is a 404 like any other; a live credential is refused with its own
         // kind so the App can offer "revoke first" instead of a generic refusal.

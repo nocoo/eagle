@@ -15,6 +15,7 @@ test("every group is described, with the tools it actually contributes", () => {
       "core",
       "coding",
       "memory",
+      "secrets",
       "herdr",
       "agents",
       "search",
@@ -33,6 +34,12 @@ test("every group is described, with the tools it actually contributes", () => {
     "memory_read",
     "memory_write",
     "memory_delete",
+  ]);
+  assert.deepEqual(names("secrets"), [
+    "secret_request",
+    "secret_list",
+    "secret_read",
+    "secret_delete",
   ]);
   assert.deepEqual(names("search"), ["web_search", "web_fetch"]);
   assert.deepEqual(names("decision"), ["decide", "classify", "assess", "rate", "judge"]);

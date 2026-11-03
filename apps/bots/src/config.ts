@@ -14,6 +14,10 @@ export type DaemonConfig = {
   readonly root: string;
   /** The person-editable memory directory: `global.md` plus one file per bot. */
   readonly memoryDir: string;
+  /** Where the encrypted secrets and their audit ledger live. */
+  readonly secretsDir: string;
+  /** The key file that opens them; a missing key beside a ciphertext is a refusal. */
+  readonly secretsKeyPath: string;
   /** Loopback service port. */
   readonly port: number;
   /** Idle bots are closed after this, and reopened on demand. */
@@ -56,6 +60,26 @@ export const defaultRoot = (): string => join(homedir(), ".local", "share", "eag
 export const defaultMemoryDir = (home: string, configHome: string | undefined): string =>
   join(configHome?.trim() || join(home, ".config"), "eagle-bots", "memory");
 
+/** The secrets follow the configuration root, beside the memory and the provider keys. */
+export const defaultSecretsDir = (home: string, configHome: string | undefined): string =>
+  join(configHome?.trim() || join(home, ".config"), "eagle-bots");
+
+/**
+ * The key file (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5): macOS keeps it in the app's
+ * application support directory, every other platform in the state directory.
+ */
+export const defaultSecretsKeyPath = (
+  home: string,
+  stateHome: string | undefined,
+  platform: NodeJS.Platform = process.platform,
+): string => {
+  if (platform === "darwin") {
+    return join(home, "Library", "Application Support", "ai.hexly.bots", "secrets.key");
+  }
+  const root = stateHome?.trim() || join(home, ".local", "state");
+  return join(root, "eagle-bots", "secrets.key");
+};
+
 /**
  * The development agent's credential file, named by `BOTS_DEV_AGENT_TOKEN`. An empty
  * variable arms nothing, and without the variable the daemon never accepts one.
@@ -69,6 +93,8 @@ export type ConfigInput = {
   readonly argv?: readonly string[];
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly home?: string;
+  /** The platform the defaults are computed for; the running one when absent. */
+  readonly platform?: NodeJS.Platform;
 };
 
 /** Reads `--root`, `--port` and the documented environment variables. */
@@ -92,13 +118,19 @@ export const readConfig = (input: ConfigInput = {}): DaemonConfig => {
     }
   }
   const devTokenPath = devAgentTokenPath(env.BOTS_DEV_AGENT_TOKEN);
-  const memoryDir =
-    env.BOTS_MEMORY_DIR?.trim() || defaultMemoryDir(input.home ?? homedir(), env.XDG_CONFIG_HOME);
+  const home = input.home ?? homedir();
+  const memoryDir = env.BOTS_MEMORY_DIR?.trim() || defaultMemoryDir(home, env.XDG_CONFIG_HOME);
+  const secretsDir = env.BOTS_SECRETS_DIR?.trim() || defaultSecretsDir(home, env.XDG_CONFIG_HOME);
+  const secretsKeyPath =
+    env.BOTS_SECRETS_KEY?.trim() ||
+    defaultSecretsKeyPath(home, env.XDG_STATE_HOME, input.platform ?? process.platform);
   return {
     ...(env.BOTS_DEVICE_SOCKET === undefined ? {} : { deviceSocket: env.BOTS_DEVICE_SOCKET }),
     ...(devTokenPath === undefined ? {} : { devAgentTokenPath: devTokenPath }),
     root,
     memoryDir,
+    secretsDir,
+    secretsKeyPath,
     port,
     idleCloseMs: integer(env.BOTS_IDLE_CLOSE_MS, DEFAULT_IDLE_CLOSE_MS),
     quarantineRetryMs: integer(env.BOTS_QUARANTINE_RETRY_MS, DEFAULT_QUARANTINE_RETRY_MS),

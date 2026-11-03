@@ -44,6 +44,7 @@ const DETAIL_TYPES = {
   queued: "boolean",
   propagated: "boolean",
   path: "string",
+  scope: "string",
 } as const;
 
 const redact = (value: string, secrets: readonly string[] = []): string => {
@@ -117,6 +118,13 @@ const DETAIL_SCHEMA: Readonly<Record<string, readonly string[]>> = {
   "pi.report": ["kind", "reason"],
   "transport.devtoken.ok": ["path"],
   "transport.devtoken.unsafe": ["path", "reason"],
+  // A secret event names the scope and nothing else: never a key, never a value.
+  "core.secret.write.ok": ["scope"],
+  "core.secret.read.ok": ["scope"],
+  "core.secret.delete.ok": ["scope"],
+  "core.secret.reveal.ok": ["scope"],
+  "core.secret.expire.ok": ["scope"],
+  "core.secret.fail": ["scope"],
 };
 const FRAMEWORK_DETAIL = new Set(["propagated"]);
 const COUNT_KEYS = new Set(["count", "bytes", "len"]);
