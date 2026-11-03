@@ -320,3 +320,115 @@ test("a store that cannot be read is a 503, not an empty list", async () => {
     await stack.close();
   }
 });
+
+test("a card is answered once: a retry is refused, not stored again", async (t) => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = await mkdtemp(join(tmpdir(), "bots-secret-http-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const secrets = await SecretsStore.open({
+    dir: join(root, "config"),
+    keyPath: join(root, "state", "secrets.key"),
+  });
+  const runtime = new CardRuntime(card({ key: "github-pat", purpose: "发布用", ttlMinutes: 60 }));
+  const stack = await startStack({
+    runtime,
+    secrets: { save: (input) => secrets.save(input) },
+    secretsApi: {
+      list: () => secrets.listAll(),
+      reveal: (input) => secrets.reveal(input),
+      remove: (input) => secrets.removeAsPerson(input),
+    },
+  });
+  try {
+    const botId = await stack.createBot("发布助手");
+    const first = await call(stack, `/v1/bots/${botId}/secrets`, {
+      method: "POST",
+      body: { entryId: "e_card_1", key: "github-pat", value: "ghp_example", scope: "bot" },
+    });
+    assert.equal(first.status, 200);
+    const second = await call(stack, `/v1/bots/${botId}/secrets`, {
+      method: "POST",
+      body: {
+        entryId: "e_card_1",
+        key: "github-pat",
+        value: "ghp_second",
+        scope: "bot",
+        ttlMinutes: 1440,
+      },
+    });
+    assert.equal(second.status, 400, "the same card cannot be answered twice");
+    assert.equal(
+      (await secrets.read({ botId, key: "github-pat" }))?.value,
+      "ghp_example",
+      "the first answer stands: the retry never overwrote it or extended it",
+    );
+  } finally {
+    await stack.close();
+  }
+});
+
+test("two cards in one answer are two questions", async (t) => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = await mkdtemp(join(tmpdir(), "bots-secret-http-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const secrets = await SecretsStore.open({
+    dir: join(root, "config"),
+    keyPath: join(root, "state", "secrets.key"),
+  });
+  const two: Message = {
+    ...card({ key: "github-pat", purpose: "发布用" }),
+    blocks: [
+      {
+        type: "toolCall",
+        callId: "c_1",
+        name: "secret_request",
+        args: { key: "github-pat", purpose: "发布用" },
+      },
+      {
+        type: "toolCall",
+        callId: "c_2",
+        name: "secret_request",
+        args: { key: "npm-token", purpose: "发布 npm 用" },
+      },
+    ],
+  };
+  const runtime = new CardRuntime(two);
+  const stack = await startStack({
+    runtime,
+    secrets: { save: (input) => secrets.save(input) },
+    secretsApi: {
+      list: () => secrets.listAll(),
+      reveal: (input) => secrets.reveal(input),
+      remove: (input) => secrets.removeAsPerson(input),
+    },
+  });
+  try {
+    const botId = await stack.createBot("发布助手");
+    const first = await call(stack, `/v1/bots/${botId}/secrets`, {
+      method: "POST",
+      body: { entryId: "e_card_1", key: "github-pat", value: "ghp_example", callIndex: 0 },
+    });
+    assert.equal(first.status, 200);
+    const second = await call(stack, `/v1/bots/${botId}/secrets`, {
+      method: "POST",
+      body: { entryId: "e_card_1", key: "npm-token", value: "npm_example", callIndex: 1 },
+    });
+    assert.equal(second.status, 200, "the second card is answerable");
+    const hidden = runtime.submitted.at(-1);
+    assert.ok(hidden);
+    assert.equal(hidden.answersTo, "e_card_1#1", "the second card is named apart from the first");
+    assert.equal((await secrets.read({ botId, key: "npm-token" }))?.value, "npm_example");
+
+    const wrongIndex = await call(stack, `/v1/bots/${botId}/secrets`, {
+      method: "POST",
+      body: { entryId: "e_card_1", key: "github-pat", value: "ghp_again", callIndex: 5 },
+    });
+    assert.equal(wrongIndex.status, 400, "a card index that does not exist is refused");
+  } finally {
+    await stack.close();
+  }
+});

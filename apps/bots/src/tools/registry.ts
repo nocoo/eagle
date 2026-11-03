@@ -159,6 +159,8 @@ const catalogSecrets: SecretsToolHost = {
   list: refuse,
   read: refuse,
   remove: refuse,
+  environment: refuse,
+  envNameFor: refuse,
 };
 
 /**
@@ -207,18 +209,21 @@ export const createCatalogRegistry = (): RegistryReader =>
     },
   );
 
-const bash = createBashTool({
-  prepare(execution) {
-    execution.inheritEnv = false;
-    execution.env = {};
-    for (const name of ["PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "SHELL"]) {
-      const value = process.env[name];
-      if (value !== undefined) execution.env[name] = value;
-    }
-    execution.env.TERM = "dumb";
-    execution.env.PWD = execution.cwd;
-  },
-});
+/** The environment every bot command starts from: an allowlist, and nothing else. */
+const baseEnvironment = (execution: {
+  inheritEnv: boolean;
+  env: Record<string, string>;
+  cwd: string;
+}): void => {
+  execution.inheritEnv = false;
+  execution.env = {};
+  for (const name of ["PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "SHELL"]) {
+    const value = process.env[name];
+    if (value !== undefined) execution.env[name] = value;
+  }
+  execution.env.TERM = "dumb";
+  execution.env.PWD = execution.cwd;
+};
 
 export type ToolRegistryOptions = {
   /** The person's standing instruction, read on every request so an edit lands immediately. */
@@ -266,6 +271,17 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
   const list = createListTool();
   const note = createNoteSetTool(options.note);
   const ask = createAskTool();
+  /**
+   * The secrets this bot may use reach a command as environment variables and nothing else:
+   * a tool result is persisted into the transcript, so a value must never be one.
+   */
+  const bash = createBashTool({
+    prepare(execution) {
+      baseEnvironment(execution);
+      const secrets = options.secrets?.environment() ?? {};
+      for (const [name, value] of Object.entries(secrets)) execution.env[name] = value;
+    },
+  });
   // The two core prompts are installed first so their sections lead the system prompt:
   // who this bot is comes before what it can do (docs/bots/PRODUCT.md, "Core prompts").
   if (options.persona !== undefined) registry.install(personaExtension(options.persona));

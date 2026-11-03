@@ -192,13 +192,18 @@ test("the list names every record and never a value", async () => {
   }
 });
 
-test("a read answers the value as plain text, and a missing one refuses", async () => {
+test("a read describes the record and never prints the value", async () => {
   const { host, store, done } = await bench();
   try {
     await store.save({ botId: "b_1", key: "github-pat", value: "ghp_example", scope: "bot" });
     const read = await call(host, "secret_read", { key: "github-pat" });
     assert.equal(read.isError, undefined, read.output);
-    assert.equal(read.output, "ghp_example", "the value is usable verbatim");
+    const described = JSON.parse(read.output) as Record<string, unknown>;
+    assert.equal(described.key, "github-pat");
+    assert.equal(described.scope, "bot");
+    assert.equal(described.environment, "EAGLE_SECRET_GITHUB_PAT");
+    // A tool result is persisted into the transcript, so the value must not be in it.
+    assert.equal(read.output.includes("ghp_example"), false);
 
     const missing = await call(host, "secret_read", { key: "absent" });
     assert.equal(missing.isError, true);
@@ -233,7 +238,7 @@ test("a delete answers what it removed, and an absent record is success", async 
   const { host, store, done } = await bench();
   try {
     await store.save({ botId: "b_1", key: "github-pat", value: "ghp_example", scope: "bot" });
-    const removed = await call(host, "secret_delete", { key: "github-pat" });
+    const removed = await call(host, "secret_delete", { key: "github-pat", scope: "bot" });
     assert.equal(removed.isError, undefined, removed.output);
     assert.deepEqual(JSON.parse(removed.output), {
       key: "github-pat",
@@ -241,7 +246,7 @@ test("a delete answers what it removed, and an absent record is success", async 
       deleted: true,
     });
 
-    const again = await call(host, "secret_delete", { key: "github-pat" });
+    const again = await call(host, "secret_delete", { key: "github-pat", scope: "bot" });
     assert.equal(again.isError, undefined, again.output);
     assert.deepEqual(JSON.parse(again.output), {
       key: "github-pat",
@@ -271,6 +276,27 @@ test("the section says the card is the way, and never the chat", async () => {
     assert.match(text, /card/i);
     assert.match(text, /never .*(chat|conversation)/i);
     assert.equal(secretsExtension(host).name, SECRETS_TOOLS_EXTENSION);
+  } finally {
+    await done();
+  }
+});
+
+test("a delete must name the scope, so a retry cannot fall through to another record", async () => {
+  const { host, store, done } = await bench();
+  try {
+    await store.save({ botId: "b_1", key: "k", value: "own-value", scope: "bot" });
+    await store.save({ botId: "b_1", key: "k", value: "shared-value", scope: "shared" });
+    const unnamed = await call(host, "secret_delete", { key: "k" });
+    assert.equal(unnamed.isError, true, "the scope is not a guess");
+    assert.match(unnamed.output, /scope/);
+    assert.equal((await store.read({ botId: "b_1", key: "k", scope: "bot" }))?.value, "own-value");
+
+    const removed = await call(host, "secret_delete", { key: "k", scope: "bot" });
+    assert.equal(removed.isError, undefined, removed.output);
+    assert.equal(
+      (await store.read({ botId: "b_1", key: "k", scope: "shared" }))?.value,
+      "shared-value",
+    );
   } finally {
     await done();
   }

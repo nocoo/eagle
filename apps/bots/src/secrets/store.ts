@@ -1,7 +1,7 @@
 // The secrets store (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5): one encrypted document, two
 // scopes, lazy expiry and a startup sweep. This is the only module that knows the
 // container's shape; the tools see a narrow port and the model never holds a value.
-import { type FileHandle, mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { type FileHandle, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type SecretMeta,
@@ -17,6 +17,7 @@ import {
   MAX_SECRET_TTL_MINUTES,
   MAX_SECRET_VALUE_BYTES,
   MIN_SECRET_TTL_MINUTES,
+  MIN_SECRET_VALUE_CHARS,
   SECRET_KEY_PATTERN,
   type SecretsToolHost,
 } from "../tools/types.ts";
@@ -45,6 +46,20 @@ type SecretRecord = {
   readonly value: string;
 };
 
+/**
+ * One record's identity: a shared record is one per key, a bot's own record is one per key
+ * per bot. Nothing else may be used to find, reveal or delete a record, in the store or over
+ * the wire.
+ */
+export type SecretIdentity = {
+  readonly key: string;
+  readonly scope: SecretScope;
+  /** Required for `bot` scope; the person's page names it, and it is never taken from a model. */
+  readonly botId?: string;
+  /** The caller's own trace, so the ledger and the log name one command. */
+  readonly trace?: string;
+};
+
 export type SecretsStoreOptions = {
   /** The directory the ciphertext and the ledger live in. */
   readonly dir: string;
@@ -59,11 +74,19 @@ export type SecretsStoreOptions = {
 
 const CONTAINER_FILE = "secrets.v1.enc";
 const AUDIT_FILE = "secrets.audit.jsonl";
+const LOCK_FILE = "secrets.lock";
+/** Two daemons on different roots share one config directory; this guards the document. */
+const LOCK_WAIT_MS = 2_000;
+const LOCK_STALE_MS = 10_000;
 
 const missing = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
 
 const isString = (value: unknown): value is string => typeof value === "string";
+
+/** A timestamp the container must hold: anything unparsable is a refusal, never "no expiry". */
+const isTimestamp = (value: unknown): value is string =>
+  isString(value) && Number.isFinite(Date.parse(value));
 
 /** The document the container holds; anything else is a refusal, never a rewrite. */
 const parseDocument = (text: string): SecretRecord[] => {
@@ -88,22 +111,25 @@ const parseDocument = (text: string): SecretRecord[] => {
       throw new SecretsStorageError("a secrets record is not an object");
     }
     const record = entry as Record<string, unknown>;
-    if (!isString(record.key) || record.key.length === 0 || record.key.length > 64) {
+    if (!isString(record.key) || !SECRET_KEY_PATTERN.test(record.key)) {
       throw new SecretsStorageError("a secrets record has no usable key");
     }
     if (record.scope !== "bot" && record.scope !== "shared") {
       throw new SecretsStorageError("a secrets record has an unknown scope");
     }
-    if (!isString(record.botId) || !isString(record.value)) {
-      throw new SecretsStorageError("a secrets record is missing its owner or its value");
+    if (!isString(record.botId) || record.botId.length === 0) {
+      throw new SecretsStorageError("a secrets record has no owner");
     }
-    if (!isString(record.createdAt) || !isString(record.updatedAt)) {
-      throw new SecretsStorageError("a secrets record has no timestamps");
+    if (!isString(record.value) || record.value.length === 0) {
+      throw new SecretsStorageError("a secrets record holds no value");
+    }
+    if (!isTimestamp(record.createdAt) || !isTimestamp(record.updatedAt)) {
+      throw new SecretsStorageError("a secrets record has unusable timestamps");
     }
     if (record.purpose !== undefined && !isString(record.purpose)) {
       throw new SecretsStorageError("a secrets record has an unusable purpose");
     }
-    if (record.expiresAt !== undefined && !isString(record.expiresAt)) {
+    if (record.expiresAt !== undefined && !isTimestamp(record.expiresAt)) {
       throw new SecretsStorageError("a secrets record has an unusable expiry");
     }
     return {
@@ -119,6 +145,10 @@ const parseDocument = (text: string): SecretRecord[] => {
   });
 };
 
+/** The name a value reaches a command by, in the environment the Bash tool builds. */
+export const secretEnvName = (key: string): string =>
+  `EAGLE_SECRET_${key.toUpperCase().replaceAll(/[^A-Z0-9]/gu, "_")}`;
+
 let scratches = 0;
 
 export class SecretsStore {
@@ -131,7 +161,7 @@ export class SecretsStore {
   readonly #now: () => Date;
   readonly #onValues: ((values: readonly string[]) => void) | undefined;
   #records: SecretRecord[] = [];
-  /** One mutation at a time, so two calls cannot lose each other's records. */
+  /** One mutation at a time inside this process. */
   #queue: Promise<unknown> = Promise.resolve();
 
   constructor(options: SecretsStoreOptions) {
@@ -148,7 +178,7 @@ export class SecretsStore {
   /** Opens the store. A container that cannot be read is a refusal, not a reset. */
   static async open(options: SecretsStoreOptions): Promise<SecretsStore> {
     const store = new SecretsStore(options);
-    await store.load();
+    await store.reload();
     return store;
   }
 
@@ -157,33 +187,64 @@ export class SecretsStore {
     return this.#records.map((record) => record.value);
   }
 
+  /**
+   * The values this Bot may hand to a command, as environment variables. It reads the last
+   * loaded document, so the Bash tool's synchronous prepare can answer; a name collision
+   * after normalisation is dropped rather than guessed.
+   */
+  environment(botId: string): Record<string, string> {
+    const counts = new Map<string, number>();
+    for (const record of this.#records) {
+      if (record.scope === "bot" && record.botId !== botId) continue;
+      if (this.#expired(record)) continue;
+      const name = secretEnvName(record.key);
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    const env: Record<string, string> = {};
+    for (const record of this.#records) {
+      if (record.scope === "bot" && record.botId !== botId) continue;
+      if (this.#expired(record)) continue;
+      const name = secretEnvName(record.key);
+      if (counts.get(name) !== 1) continue;
+      env[name] = record.value;
+    }
+    return env;
+  }
+
+  /** The environment name a record reaches a command by, or undefined when it collides. */
+  envNameFor(key: string): string | undefined {
+    const name = secretEnvName(key);
+    const clashing = this.#records.filter(
+      (record) => !this.#expired(record) && secretEnvName(record.key) === name,
+    );
+    return clashing.length > 1 ? undefined : name;
+  }
+
   /** The records this Bot may see: its own first, then the shared ones. */
   async list(input: {
     readonly botId: string;
     readonly scope?: SecretScope;
     readonly limit: number;
+    readonly trace?: string;
   }): Promise<{ readonly items: readonly SecretMeta[]; readonly truncated: boolean }> {
-    return this.#serial(async () => {
-      await this.load();
-      const live = await this.#dropExpired(input.scope);
-      const uses = await this.#audit.uses();
-      const visible = this.#visible(live, input.botId, input.scope);
+    return this.#exclusive(async () => {
+      const live = this.#records;
+      const uses = await this.#uses();
+      const visible = this.#visible(live, input.botId, input.scope ?? undefined);
       const kept = visible.slice(0, input.limit);
       return {
         items: kept.map((record) => this.#meta(record, uses)),
         truncated: visible.length > kept.length,
       };
-    });
+    }, input.trace);
   }
 
   /** Every record on this machine, as the settings page reads it. */
-  async listAll(): Promise<readonly SecretMeta[]> {
-    return this.#serial(async () => {
-      await this.load();
-      const live = await this.#dropExpired(undefined);
-      const uses = await this.#audit.uses();
-      return live.map((record) => this.#meta(record, uses));
-    });
+  async listAll(input: { readonly trace?: string } = {}): Promise<readonly SecretMeta[]> {
+    return this.#exclusive(async () => {
+      const uses = await this.#uses();
+      return this.#records.map((record) => this.#meta(record, uses));
+    }, input.trace);
   }
 
   /** The value of one record; a missing or expired record answers nothing. */
@@ -191,43 +252,39 @@ export class SecretsStore {
     readonly botId: string;
     readonly key: string;
     readonly scope?: SecretScope;
+    readonly trace?: string;
   }): Promise<
     { readonly key: string; readonly scope: SecretScope; readonly value: string } | undefined
   > {
-    return this.#serial(async () => {
-      await this.load();
+    return this.#exclusive(async (trace) => {
       const key = input.key.trim();
-      const found = this.#resolve(this.#records, key, input.scope, input.botId);
+      const found = this.#resolve(key, input.scope, input.botId);
       if (found === undefined) {
-        await this.#audit.append({
+        await this.#append({
           ts: this.#now().toISOString(),
           op: "read",
           scope: input.scope ?? "bot",
           key,
           botId: input.botId,
           by: "bot",
-          trace: this.#trace,
+          trace,
           ok: false,
         });
         return undefined;
       }
-      if (this.#expired(found)) {
-        await this.#expire(found);
-        return undefined;
-      }
-      await this.#audit.append({
+      await this.#append({
         ts: this.#now().toISOString(),
         op: "read",
         scope: found.scope,
         key: found.key,
         botId: input.botId,
         by: "bot",
-        trace: this.#trace,
+        trace,
         ok: true,
       });
-      this.#emitOk(Events.readOk, found.scope, input.botId);
+      this.#emitOk(Events.readOk, found.scope, input.botId, trace);
       return { key: found.key, scope: found.scope, value: found.value };
-    });
+    }, input.trace);
   }
 
   /** Stores what a person typed into a card. This is the only way a value arrives. */
@@ -241,11 +298,10 @@ export class SecretsStore {
     const value = this.#checkValue(input.value);
     const ttl = input.ttlMinutes === undefined ? undefined : this.#checkTtl(input.ttlMinutes);
     const purpose = input.purpose === undefined ? undefined : this.#checkPurpose(input.purpose);
-    return this.#serial(async () => {
-      await this.load();
+    return this.#exclusive(async (trace) => {
       const now = this.#now();
       const at = now.toISOString();
-      const existing = this.#find(this.#records, key, input.scope, input.botId);
+      const existing = this.#find(key, input.scope, input.botId);
       const record: SecretRecord = {
         key,
         scope: input.scope,
@@ -258,151 +314,143 @@ export class SecretsStore {
           : { expiresAt: new Date(now.getTime() + ttl * 60_000).toISOString() }),
         value,
       };
-      await this.#write(this.#replace(this.#records, record));
-      await this.#audit.append({
+      await this.#write(this.#replace(record));
+      await this.#append({
         ts: at,
         op: "write",
         scope: input.scope,
         key,
         botId: input.botId,
         by: "person",
-        ...(input.trace === undefined ? {} : { trace: input.trace }),
+        trace,
         ok: true,
       });
-      this.#emitOk(Events.writeOk, input.scope, input.botId);
+      this.#emitOk(Events.writeOk, input.scope, input.botId, trace);
       return {
         scope: input.scope,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
         ...(record.expiresAt === undefined ? {} : { expiresAt: record.expiresAt }),
       };
-    });
+    }, input.trace);
   }
 
-  /** Removes one record for a Bot: its own, or a shared record it created. */
+  /** Removes one record a Bot owns: its own, or a shared one it created itself. */
   async remove(input: {
     readonly botId: string;
     readonly key: string;
-    readonly scope?: SecretScope;
+    readonly scope: SecretScope;
+    readonly trace?: string;
   }): Promise<{ readonly key: string; readonly scope: SecretScope; readonly deleted: boolean }> {
-    return this.#serial(async () => {
-      await this.load();
+    return this.#exclusive(async (trace) => {
       const key = input.key.trim();
-      const found = this.#resolve(this.#records, key, input.scope, input.botId);
-      if (found === undefined) {
-        return { key, scope: input.scope ?? "bot", deleted: false };
-      }
+      const found = this.#find(key, input.scope, input.botId);
+      if (found === undefined) return { key, scope: input.scope, deleted: false };
       if (found.botId !== input.botId) {
         throw new SecretsStorageError("another bot created this shared record");
       }
-      await this.#write(this.#without(this.#records, found));
-      await this.#audit.append({
+      await this.#write(this.#without(found));
+      await this.#append({
         ts: this.#now().toISOString(),
         op: "delete",
         scope: found.scope,
         key: found.key,
         botId: input.botId,
         by: "bot",
-        trace: this.#trace,
+        trace,
         ok: true,
       });
-      this.#emitOk(Events.deleteOk, found.scope, input.botId);
+      this.#emitOk(Events.deleteOk, found.scope, input.botId, trace);
       return { key: found.key, scope: found.scope, deleted: true };
-    });
+    }, input.trace);
   }
 
   /** The person reads a value from the settings page; it is recorded like any read. */
-  async reveal(input: {
-    readonly key: string;
-    readonly scope: SecretScope;
-  }): Promise<
-    { readonly key: string; readonly scope: SecretScope; readonly value: string } | undefined
+  async reveal(identity: SecretIdentity): Promise<
+    | {
+        readonly key: string;
+        readonly scope: SecretScope;
+        readonly botId: string;
+        readonly value: string;
+      }
+    | undefined
   > {
-    return this.#serial(async () => {
-      await this.load();
-      const key = input.key.trim();
-      const found = this.#find(this.#records, key, input.scope);
+    return this.#exclusive(async (trace) => {
+      const found = this.#findOwned(identity);
       if (found === undefined) {
-        await this.#audit.append({
+        await this.#append({
           ts: this.#now().toISOString(),
           op: "reveal",
-          scope: input.scope,
-          key,
-          botId: "",
+          scope: identity.scope,
+          key: identity.key.trim(),
+          botId: identity.botId ?? "",
           by: "person",
-          trace: this.#trace,
+          trace,
           ok: false,
         });
         return undefined;
       }
-      if (this.#expired(found)) {
-        await this.#expire(found);
-        return undefined;
-      }
-      await this.#audit.append({
+      await this.#append({
         ts: this.#now().toISOString(),
         op: "reveal",
         scope: found.scope,
         key: found.key,
         botId: found.botId,
         by: "person",
-        trace: this.#trace,
+        trace,
         ok: true,
       });
-      this.#emitOk(Events.revealOk, found.scope, found.botId);
-      return { key: found.key, scope: found.scope, value: found.value };
-    });
+      this.#emitOk(Events.revealOk, found.scope, found.botId, trace);
+      return { key: found.key, scope: found.scope, botId: found.botId, value: found.value };
+    }, identity.trace);
   }
 
   /** The person deletes a record; only they may delete another Bot's shared record. */
-  async removeAsPerson(input: {
-    readonly key: string;
-    readonly scope: SecretScope;
-  }): Promise<boolean> {
-    return this.#serial(async () => {
-      await this.load();
-      const key = input.key.trim();
-      const found = this.#find(this.#records, key, input.scope);
+  async removeAsPerson(identity: SecretIdentity): Promise<boolean> {
+    return this.#exclusive(async (trace) => {
+      const found = this.#findOwned(identity);
       if (found === undefined) return false;
-      await this.#write(this.#without(this.#records, found));
-      await this.#audit.append({
+      await this.#write(this.#without(found));
+      await this.#append({
         ts: this.#now().toISOString(),
         op: "delete",
         scope: found.scope,
         key: found.key,
         botId: found.botId,
         by: "person",
-        trace: this.#trace,
+        trace,
         ok: true,
       });
-      this.#emitOk(Events.deleteOk, found.scope, found.botId);
+      this.#emitOk(Events.deleteOk, found.scope, found.botId, trace);
       return true;
-    });
+    }, identity.trace);
   }
 
   /** The startup sweep: a record that expired while the daemon was off is gone. */
-  async sweep(): Promise<number> {
-    return this.#serial(async () => {
-      await this.load();
-      const expired = this.#records.filter((record) => this.#expired(record));
-      if (expired.length === 0) return 0;
-      const kept = this.#records.filter((record) => !this.#expired(record));
-      await this.#write(kept);
-      for (const record of expired) {
-        await this.#audit.append({
-          ts: this.#now().toISOString(),
-          op: "expire",
-          scope: record.scope,
-          key: record.key,
-          botId: record.botId,
-          by: "bot",
-          trace: this.#trace,
-          ok: true,
-        });
-        this.#emitOk(Events.expireOk, record.scope, record.botId);
-      }
-      return expired.length;
-    });
+  async sweep(input: { readonly trace?: string } = {}): Promise<number> {
+    return this.#exclusive(
+      async (trace) => {
+        const expired = this.#records.filter((record) => this.#expired(record));
+        if (expired.length === 0) return 0;
+        await this.#write(this.#records.filter((record) => !this.#expired(record)));
+        for (const record of expired) {
+          await this.#append({
+            ts: this.#now().toISOString(),
+            op: "expire",
+            scope: record.scope,
+            key: record.key,
+            botId: record.botId,
+            by: "bot",
+            trace,
+            ok: true,
+          });
+          this.#emitOk(Events.expireOk, record.scope, record.botId, trace);
+        }
+        return expired.length;
+      },
+      input.trace,
+      false,
+    );
   }
 
   /** The tools' host for one Bot: the model never names a bot id. */
@@ -412,6 +460,8 @@ export class SecretsStore {
       list: (input) => this.list({ botId, ...input }),
       read: (input) => this.read({ botId, ...input }),
       remove: (input) => this.remove({ botId, ...input }),
+      environment: () => this.environment(botId),
+      envNameFor: (key) => this.envNameFor(key),
     };
   }
 
@@ -425,14 +475,14 @@ export class SecretsStore {
         this.#records = [];
         return;
       }
-      this.#emitFail(undefined);
+      this.#emitFail(undefined, this.#trace);
       throw new SecretsStorageError("the secrets container could not be read", { cause: error });
     }
     let key: Uint8Array;
     try {
       key = await readSecretKey(this.#keyPath);
     } catch (error) {
-      this.#emitFail(undefined);
+      this.#emitFail(undefined, this.#trace);
       throw new SecretsStorageError(
         "the secrets key file is missing or unreadable, so the stored values cannot be read",
         { cause: error },
@@ -442,22 +492,93 @@ export class SecretsStore {
     try {
       text = openContainer(key, raw);
     } catch (error) {
-      this.#emitFail(undefined);
+      this.#emitFail(undefined, this.#trace);
       throw new SecretsStorageError("the secrets container could not be decrypted", {
         cause: error,
       });
     }
-    this.#records = parseDocument(text);
+    try {
+      this.#records = parseDocument(text);
+    } catch (error) {
+      this.#emitFail(undefined, this.#trace);
+      throw error;
+    }
+    this.#onValues?.(this.values());
   }
 
-  /** One mutation at a time: a read-modify-write under a queue, then an atomic replace. */
-  #serial<T>(run: () => Promise<T>): Promise<T> {
-    const next = this.#queue.then(run, run);
+  /** The same read, keeping the loaded document when it fails: a refusal changes nothing. */
+  async reload(): Promise<void> {
+    await this.load();
+  }
+
+  /**
+   * One operation at a time: this process's queue, then the file lock two daemons sharing a
+   * config directory need, a fresh read, and the caller's work.
+   */
+  async #exclusive<T>(
+    run: (trace: string) => Promise<T>,
+    trace?: string,
+    dropExpired = true,
+  ): Promise<T> {
+    const own = trace ?? this.#trace;
+    const next = this.#queue.then(async () => {
+      const release = await this.#lock();
+      try {
+        await this.load();
+        if (dropExpired) await this.#dropExpired(own);
+        return await run(own);
+      } finally {
+        await release();
+      }
+    });
     this.#queue = next.then(
       () => undefined,
       () => undefined,
     );
     return next;
+  }
+
+  /** An exclusive lock file; a stale one from a daemon that died is cleared, not waited on. */
+  async #lock(): Promise<() => Promise<void>> {
+    const path = join(this.#dir, LOCK_FILE);
+    await mkdir(this.#dir, { recursive: true, mode: 0o700 });
+    // `mkdir`'s mode is a request, not a proof: a directory another account can write is a
+    // directory that account can swap the ciphertext in.
+    const directory = await stat(this.#dir).catch(() => undefined);
+    if (directory !== undefined && (directory.mode & 0o022) !== 0) {
+      this.#emitFail(undefined, this.#trace);
+      throw new SecretsStorageError(
+        "the secrets directory is writable by another account; chmod 700 it",
+      );
+    }
+    const deadline = Date.now() + LOCK_WAIT_MS;
+    for (;;) {
+      try {
+        const handle = await open(path, "wx", 0o600);
+        await handle.writeFile(`${process.pid}\n`);
+        await handle.close();
+        return async () => {
+          await rm(path, { force: true }).catch(() => undefined);
+        };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+          this.#emitFail(undefined, this.#trace);
+          throw new SecretsStorageError("the secrets store could not be locked", { cause: error });
+        }
+      }
+      const age = await stat(path).then(
+        (stats) => Date.now() - stats.mtimeMs,
+        () => 0,
+      );
+      if (age > LOCK_STALE_MS) {
+        await rm(path, { force: true }).catch(() => undefined);
+        continue;
+      }
+      if (Date.now() > deadline) {
+        throw new SecretsStorageError("another daemon is writing the secrets store");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
   }
 
   /** Rewrites the whole document: a private scratch file, then a rename over the target. */
@@ -471,7 +592,7 @@ export class SecretsStore {
     try {
       handle = await open(scratch, "wx", 0o600);
     } catch (error) {
-      this.#emitFail(undefined);
+      this.#emitFail(undefined, this.#trace);
       throw new SecretsStorageError("the secrets container could not be written", { cause: error });
     }
     try {
@@ -481,38 +602,61 @@ export class SecretsStore {
     } catch (error) {
       await handle.close().catch(() => undefined);
       await rm(scratch, { force: true }).catch(() => undefined);
-      this.#emitFail(undefined);
+      this.#emitFail(undefined, this.#trace);
       throw new SecretsStorageError("the secrets container could not be written", { cause: error });
     }
     this.#records = [...records];
     this.#onValues?.(this.values());
   }
 
-  /** The record a call resolves: this Bot's own first, then the shared one. */
-  #resolve(
-    records: readonly SecretRecord[],
-    key: string,
-    scope: SecretScope | undefined,
-    botId: string,
-  ): SecretRecord | undefined {
-    if (scope !== undefined) return this.#find(records, key, scope, botId);
-    const own = this.#find(records, key, "bot", botId);
-    if (own !== undefined) return own;
-    return this.#find(records, key, "shared");
+  /**
+   * The ledger is written after the document, so a failed append cannot undo a save: it is
+   * reported as a failure of the ledger, never as a failure of the password.
+   */
+  async #append(entry: Parameters<SecretAudit["append"]>[0]): Promise<void> {
+    try {
+      await this.#audit.append(entry);
+    } catch {
+      this.#emitFail(entry.scope, entry.trace ?? this.#trace);
+    }
   }
 
-  /** One record by its identity: a shared key, or a Bot's own key. */
-  #find(
-    records: readonly SecretRecord[],
-    key: string,
-    scope: SecretScope,
-    botId?: string,
-  ): SecretRecord | undefined {
-    return records.find((record) => {
+  async #uses(): Promise<ReadonlyMap<string, { at: string; by: SecretAuditBy }>> {
+    try {
+      return await this.#audit.uses();
+    } catch {
+      return new Map();
+    }
+  }
+
+  /** The record a call resolves: this Bot's own first, then the shared one; never expired. */
+  #resolve(key: string, scope: SecretScope | undefined, botId: string): SecretRecord | undefined {
+    if (scope !== undefined) return this.#find(key, scope, botId);
+    const own = this.#find(key, "bot", botId);
+    if (own !== undefined) return own;
+    return this.#find(key, "shared", botId);
+  }
+
+  /** One record by its full identity; a shared lookup ignores the bot that asked. */
+  #find(key: string, scope: SecretScope, botId?: string): SecretRecord | undefined {
+    return this.#records.find((record) => {
       if (record.key !== key || record.scope !== scope) return false;
+      if (this.#expired(record)) return false;
       if (scope === "shared") return true;
       return botId === undefined || record.botId === botId;
     });
+  }
+
+  /** One record by the identity a person's page names: a bot record needs its bot. */
+  #findOwned(identity: SecretIdentity): SecretRecord | undefined {
+    const key = identity.key.trim();
+    if (key.length === 0) return undefined;
+    if (identity.scope === "bot") {
+      const botId = identity.botId;
+      if (botId === undefined || botId.length === 0) return undefined;
+      return this.#find(key, "bot", botId);
+    }
+    return this.#find(key, "shared");
   }
 
   /** The records a Bot may see, its own first; a shared key it shadows appears once. */
@@ -538,7 +682,7 @@ export class SecretsStore {
     record: SecretRecord,
     uses: ReadonlyMap<string, { at: string; by: SecretAuditBy }>,
   ): SecretMeta {
-    const use = uses.get(`${record.scope}:${record.key}`);
+    const use = uses.get(this.#identityOf(record));
     return {
       key: record.key,
       scope: record.scope,
@@ -551,41 +695,40 @@ export class SecretsStore {
     };
   }
 
-  /** Removes the expired records and says how many went. */
-  async #dropExpired(scope: SecretScope | undefined): Promise<readonly SecretRecord[]> {
-    const expired = this.#records.filter(
-      (record) => this.#expired(record) && (scope === undefined || record.scope === scope),
-    );
-    if (expired.length === 0) return this.#records;
-    for (const record of expired) await this.#expire(record);
-    return this.#records;
+  /** A record's ledger identity, matching `SecretAudit.uses` exactly. */
+  #identityOf(record: SecretRecord): string {
+    return `${record.scope}:${record.scope === "bot" ? record.botId : ""}:${record.key}`;
   }
 
-  /** Deletes one expired record: the call that would have read it removes it. */
-  async #expire(record: SecretRecord): Promise<void> {
-    await this.#write(this.#without(this.#records, record));
-    await this.#audit.append({
-      ts: this.#now().toISOString(),
-      op: "expire",
-      scope: record.scope,
-      key: record.key,
-      botId: record.botId,
-      by: "bot",
-      trace: this.#trace,
-      ok: true,
-    });
-    this.#emitOk(Events.expireOk, record.scope, record.botId);
+  /** Removes every expired record in one write, so a read cannot expire one at a time. */
+  async #dropExpired(trace: string): Promise<void> {
+    const expired = this.#records.filter((record) => this.#expired(record));
+    if (expired.length === 0) return;
+    await this.#write(this.#records.filter((record) => !this.#expired(record)));
+    for (const record of expired) {
+      await this.#append({
+        ts: this.#now().toISOString(),
+        op: "expire",
+        scope: record.scope,
+        key: record.key,
+        botId: record.botId,
+        by: "bot",
+        trace,
+        ok: true,
+      });
+      this.#emitOk(Events.expireOk, record.scope, record.botId, trace);
+    }
   }
 
   /** The records without one; the replacement keeps the order of the rest. */
-  #without(records: readonly SecretRecord[], record: SecretRecord): readonly SecretRecord[] {
-    return records.filter((entry) => entry !== record);
+  #without(record: SecretRecord): readonly SecretRecord[] {
+    return this.#records.filter((entry) => entry !== record);
   }
 
   /** One record replaced by a new one; a shared key and a Bot's own key are one record. */
-  #replace(records: readonly SecretRecord[], record: SecretRecord): readonly SecretRecord[] {
+  #replace(record: SecretRecord): readonly SecretRecord[] {
     return [
-      ...records.filter(
+      ...this.#records.filter(
         (entry) =>
           !(
             entry.key === record.key &&
@@ -600,21 +743,25 @@ export class SecretsStore {
   #expired(record: SecretRecord): boolean {
     if (record.expiresAt === undefined) return false;
     const at = Date.parse(record.expiresAt);
-    return Number.isFinite(at) && at <= this.#now().getTime();
+    return !Number.isFinite(at) || at <= this.#now().getTime();
   }
 
   #checkKey(raw: string): string {
     const key = raw.trim();
     if (!SECRET_KEY_PATTERN.test(key)) {
       throw new SecretsStorageError(
-        "a secret key is lowercase letters, digits, dot, dash or underscore, at most 64 characters",
+        "a secret key starts with a lowercase letter or digit and holds lowercase letters, digits, dot, dash or underscore, at most 64 characters",
       );
     }
     return key;
   }
 
   #checkValue(raw: string): string {
-    if (raw.length === 0) throw new SecretsStorageError("a secret value cannot be empty");
+    if (raw.length < MIN_SECRET_VALUE_CHARS) {
+      throw new SecretsStorageError(
+        `a secret value is at least ${MIN_SECRET_VALUE_CHARS} characters, so the log can scrub it`,
+      );
+    }
     if (Buffer.byteLength(raw, "utf8") > MAX_SECRET_VALUE_BYTES) {
       throw new SecretsStorageError(`a secret value is at most ${MAX_SECRET_VALUE_BYTES} bytes`);
     }
@@ -652,19 +799,20 @@ export class SecretsStore {
       | typeof Events.revealOk
       | typeof Events.expireOk,
     scope: SecretScope,
-    botId?: string,
+    botId: string | undefined,
+    trace: string,
   ): void {
     this.#log?.emit("info", "core", evt, {
-      trace: this.#trace,
+      trace,
       ...(botId === undefined || botId.length === 0 ? {} : { botId }),
       detail: { scope },
     });
   }
 
   /** A storage failure: the record carries the scope and nothing else. */
-  #emitFail(scope: SecretScope | undefined): void {
+  #emitFail(scope: SecretScope | undefined, trace: string): void {
     this.#log?.emit("error", "core", Events.fail, {
-      trace: this.#trace,
+      trace,
       failure: newFailure("storage_failed", "core"),
       origin: true,
       ...(scope === undefined ? {} : { detail: { scope } }),

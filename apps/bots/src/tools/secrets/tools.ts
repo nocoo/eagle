@@ -53,6 +53,13 @@ const purposeOf = (raw: string): string => {
   return purpose;
 };
 
+/** A scope the call must name: a delete whose target was guessed is not replay-safe. */
+const scopeOfRequired = (raw: string): SecretScope => {
+  const scope = scopeOf(raw);
+  if (scope === undefined) throw new Error("scope is required: bot or shared");
+  return scope;
+};
+
 /** The scope the model named; absent means this Bot's own record first, then the shared one. */
 const scopeOf = (raw: string | undefined): SecretScope | undefined => {
   if (raw === undefined) return undefined;
@@ -172,7 +179,7 @@ export const createSecretsTools = (host: SecretsToolHost): readonly ToolRegistra
   defineTool({
     name: "secret_read",
     description:
-      "Read one secret as plain text, so you can use it verbatim. A missing or expired secret is a refusal that names the scopes, so list your secrets first if you are guessing the name.",
+      "Describe one secret you may use: its scope, its lifetime, its size and the environment variable it reaches a command by. The value itself never enters the conversation — that is what keeps it out of the transcript — so use it through that variable in bash: export GH_TOKEN=$EAGLE_SECRET_GITHUB_PAT, or pass it straight to a command. Never echo the variable and never write the value into a file you commit.",
     parameters: Type.Object({
       key: Type.String({ description: "The secret's exact name, as secret_list shows it" }),
       scope: scopeParameter,
@@ -190,7 +197,19 @@ export const createSecretsTools = (host: SecretsToolHost): readonly ToolRegistra
             ),
           );
         }
-        return { output: [{ type: "text" as const, text: found.value }] };
+        const env = host.envNameFor(found.key);
+        return result(
+          text({
+            key: found.key,
+            scope: found.scope,
+            bytes: Buffer.byteLength(found.value, "utf8"),
+            environment: env ?? null,
+            ...(env === null
+              ? { problem: "this name collides with another record after normalisation" }
+              : {}),
+            use: "the value is not printed: it is in your bash environment under that name",
+          }),
+        );
       } catch (error) {
         return result(failed(messageOf(error)));
       }
@@ -202,14 +221,17 @@ export const createSecretsTools = (host: SecretsToolHost): readonly ToolRegistra
       "Remove one secret you may remove: your own records and the shared ones you created. A name that is already gone is success, not an error, so a retry is harmless.",
     parameters: Type.Object({
       key: Type.String({ description: "The secret's exact name" }),
-      scope: scopeParameter,
+      scope: Type.Union([Type.Literal("bot"), Type.Literal("shared")], {
+        description:
+          "Required: which record to remove. Your own record and a shared one with the same name are two records, and a retry must not fall through to the other",
+      }),
     }),
     replay: "safe",
     async execute(args) {
       try {
         const key = keyOf(args.key);
-        const scope = scopeOf(args.scope);
-        const gone = await host.remove({ key, ...(scope === undefined ? {} : { scope }) });
+        const scope = scopeOfRequired(args.scope);
+        const gone = await host.remove({ key, scope });
         return result(text({ key: gone.key, scope: gone.scope, deleted: gone.deleted }));
       } catch (error) {
         return result(failed(messageOf(error)));
@@ -227,8 +249,8 @@ export const secretsExtension = (host: SecretsToolHost) =>
         [
           "A secret is a password, a token or a key the person gives you without putting it in the chat.",
           "Ask for one with secret_request: it puts a card with a single password field in front of the person and returns at once. This is the only recommended way to ask for a secret — never ask a person to paste a password into the conversation, where it would stay in the transcript and in every later prompt of that conversation.",
-          "The value arrives as the next message and never as an argument of yours; read it with secret_read when you need it, and do not repeat it in your answers.",
-          "Your own record comes first and a shared record follows it; secret_list shows every record with its own scope, and secret_delete removes one you may remove.",
+          "The value is never given to you as text: it sits in your bash environment under the variable secret_read names for the record, so use it there and never echo it or copy it into a file.",
+          "Your own record comes first and a shared record follows it; secret_list shows every record with its own scope, and secret_delete removes one you may remove, with the scope named.",
           "A secret is not a memory record: never write a secret into memory, and remove it when the work is done.",
         ].join("\n"),
       ),

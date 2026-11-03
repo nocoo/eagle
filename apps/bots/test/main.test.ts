@@ -907,14 +907,25 @@ test("the daemon mounts the secret routes and keeps the store out of the way", a
       assert.equal(listed.status, 200);
       assert.deepEqual(((await listed.json()) as { secrets: unknown[] }).secrets, []);
 
-      const revealed = await authorized("/v1/secrets/reveal", {
+      // A bot's own record is identified by its bot too: two bots may use one key.
+      const unnamed = await authorized("/v1/secrets/reveal", {
         method: "POST",
         body: JSON.stringify({ key: "absent", scope: "bot" }),
+      });
+      assert.equal(unnamed.status, 400, "a bot record needs the bot that owns it");
+
+      const revealed = await authorized("/v1/secrets/reveal", {
+        method: "POST",
+        body: JSON.stringify({ key: "absent", scope: "bot", botId: "b_1" }),
       });
       assert.equal(revealed.status, 404, "an unknown record is not a secret");
 
       const removed = await authorized("/v1/secrets/bot/absent", { method: "DELETE" });
-      assert.equal(removed.status, 404);
+      assert.equal(removed.status, 400, "a delete names the bot for a bot record");
+      const removedOwned = await authorized("/v1/secrets/bot/absent?botId=b_1", {
+        method: "DELETE",
+      });
+      assert.equal(removedOwned.status, 404);
 
       // The settings page is the only place a value comes back, and it needs the admin scope.
       const issued = (await (
@@ -925,7 +936,7 @@ test("the daemon mounts the secret routes and keeps the store out of the way", a
       ).json()) as { token: string };
       const refused = await authorized("/v1/secrets/reveal", {
         method: "POST",
-        body: JSON.stringify({ key: "absent", scope: "bot" }),
+        body: JSON.stringify({ key: "absent", scope: "bot", botId: "b_1" }),
         headers: { authorization: `Bearer ${issued.token}` },
       });
       assert.equal(refused.status, 403);

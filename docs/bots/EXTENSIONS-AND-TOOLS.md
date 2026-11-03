@@ -709,6 +709,8 @@ The plaintext is one JSON document, rewritten whole on every mutation and replac
 
 - `expiresAt` absent means permanent. `botId` is the Bot that answered the card and is never
 taken from the model.
+- A stored value is at least 4 characters, the length from which the daemon's log redaction can
+  recognise it as a secret rather than ordinary text; a shorter one is refused at the card.
 - A missing file is an empty store. A body that fails to decrypt, an unknown magic or version,
 or JSON that does not match the shape is a **refusal**: the file is never rewritten and never
 deleted, because a store that cannot be read is not a store that should be recreated.
@@ -745,7 +747,10 @@ asks for 1 hour, a long-lived token asks for nothing.
 
 Saving is `POST /v1/bots/:botId/secrets` ([PROTOCOL.md](PROTOCOL.md), "Secrets"). The daemon
 checks that the entry really carries a `secret_request` call and that the body's `key` is that
-call's key; anything else is a `400`. The value never appears in the response, in the hidden
+call's key; anything else is a `400`. One answer may ask for two passwords: each call is its own
+card, `callIndex` names which one, and the hidden answer for a second card is written back with
+`answersTo: "<entry>#<index>"`. A card is answered once — a retry after a lost response is
+refused instead of storing the value again, recomputing its lifetime or starting a second run. The value never appears in the response, in the hidden
 user message or in the audit file: the person's card closes and the Bot reads
 `The person saved the secret "github-pat" (this bot only, expires in 1 hour) from e_12.`, then
 gets the value from `secret_read` when it needs it.
@@ -759,11 +764,30 @@ and means "this Bot's own record first, then the shared one".
 | --- | --- | --- | --- |
 | `secret_request` | `key, purpose, scope?=bot, ttlMinutes?` | Text saying the card is on screen; the value arrives as the person's answer, never as an argument | Safe |
 | `secret_list` | `scope?, limit?` | `{items: [{key, scope, botId, purpose?, createdAt, updatedAt, expiresAt?}], truncated}`; never a value | Safe |
-| `secret_read` | `key, scope?` | The value as plain text, so it can be used verbatim; a missing or expired record is an `isError` naming the scopes | Safe |
-| `secret_delete` | `key, scope?` | `{key, scope, deleted}`; deleting an absent record is success with `deleted: false` | Safe by value |
+| `secret_read` | `key, scope?` | The record's scope, size, lifetime and the environment variable it reaches a command by — **never the value**; a missing or expired record is an `isError` naming the scopes | Safe |
+| `secret_delete` | `key, scope` | `{key, scope, deleted}`; deleting an absent record is success with `deleted: false`. `scope` is required: a retry of a call that fell through to another scope would delete the wrong record | Safe by value |
 
 There is no `secret_write`: the model never holds the value, so a tool that accepted one as an
 argument would only ever let it invent or overwrite a password.
+
+#### How a command gets the value
+
+A tool result is committed to the transcript, so a value must never be one: `secret_read`
+answers a description, and the value reaches a command as environment instead. Every record the
+Bot may read is in the environment the Bash tool builds, under
+`EAGLE_SECRET_<KEY>` — the key upper-cased with every character outside `[A-Z0-9]` replaced by
+`_`. Two keys that normalise to one name are dropped from the environment rather than guessed,
+and `secret_read` reports the collision.
+
+```sh
+GIT_ASKPASS=true git -c credential.helper=false push https://x-access-token:$EAGLE_SECRET_GITHUB_PAT@github.com/…
+```
+
+That keeps the value out of the model's context, the transcript, every snapshot and every
+client with conversation read. It does not stop a Bot that deliberately prints the variable —
+`echo $EAGLE_SECRET_GITHUB_PAT` lands in the transcript like any other output — so the prompt
+section forbids it, and the record can be deleted or given a short life. A command's environment
+is also readable by that command and by nothing else.
 
 #### Expiry
 
@@ -795,9 +819,18 @@ is empty or over 8 KiB, a `ttlMinutes` outside 1–1440, an unknown scope, a car
 is not the card's, and any unreadable container are refusals that name the rule. None of them
 writes anything.
 
-An unknown key is not an error to delete: `secret_delete` answers `deleted: false`. Only the
-person may delete from the settings page; a Bot may delete the `shared` records it created
-itself and every `bot` record it owns, and a `shared` record another Bot created is refused.
+An unknown key is not an error to delete: `secret_delete` answers `deleted: false`. A Bot may
+delete the `shared` records it created itself and every `bot` record it owns; a `shared` record
+another Bot created is refused, and the person may delete anything from the settings page.
+
+Writing is the person's act, so a card answer replaces whatever record it names, including a
+`shared` record another Bot created: the person sees the name on the card and is the one who
+types the value. The tool path cannot do that, because it cannot write at all.
+
+The store refuses rather than guesses when the file it is asked to trust is not private: a key
+file another account can read, a directory another account can write, and a ledger another
+account can read are all refusals that say what to fix. `mkdir`'s mode is a request, not proof,
+so the mode that exists is what counts.
 
 ## 7. Development and acceptance recipe
 

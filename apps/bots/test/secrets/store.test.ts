@@ -77,7 +77,7 @@ test("a store that cannot be decrypted is refused and never rewritten", async ()
   const { root, options, done } = await bench();
   try {
     const store = await SecretsStore.open(options);
-    await store.save({ botId: "b_1", key: "k", value: "v", scope: "bot" });
+    await store.save({ botId: "b_1", key: "k", value: "value", scope: "bot" });
     const file = join(options.dir, "secrets.v1.enc");
     const before = await readFile(file);
 
@@ -95,7 +95,7 @@ test("a body that is not the documented shape is refused and never rewritten", a
   const { options, done } = await bench();
   try {
     const store = await SecretsStore.open(options);
-    await store.save({ botId: "b_1", key: "k", value: "v", scope: "bot" });
+    await store.save({ botId: "b_1", key: "k", value: "value", scope: "bot" });
     const file = join(options.dir, "secrets.v1.enc");
     const before = await readFile(file);
 
@@ -116,7 +116,7 @@ test("a body that is not the documented shape is refused and never rewritten", a
       JSON.stringify({ version: 1, records: [{ key: "k", scope: "bot", botId: "b" }] }),
       JSON.stringify({
         version: 1,
-        records: [{ key: "k", scope: "bot", botId: "b", value: "v", createdAt: "t" }],
+        records: [{ key: "k", scope: "bot", botId: "b", value: "value", createdAt: "t" }],
       }),
       JSON.stringify({
         version: 1,
@@ -125,7 +125,7 @@ test("a body that is not the documented shape is refused and never rewritten", a
             key: "k",
             scope: "bot",
             botId: "b",
-            value: "v",
+            value: "value",
             createdAt: "t",
             updatedAt: "t",
             purpose: 7,
@@ -139,7 +139,7 @@ test("a body that is not the documented shape is refused and never rewritten", a
             key: "k",
             scope: "bot",
             botId: "b",
-            value: "v",
+            value: "value",
             createdAt: "t",
             updatedAt: "t",
             expiresAt: 7,
@@ -167,7 +167,7 @@ test("a missing key beside an existing ciphertext is a refusal, not a reset", as
   const { options, done } = await bench();
   try {
     const store = await SecretsStore.open(options);
-    await store.save({ botId: "b_1", key: "k", value: "v", scope: "bot" });
+    await store.save({ botId: "b_1", key: "k", value: "value", scope: "bot" });
     const file = join(options.dir, "secrets.v1.enc");
     const before = await readFile(file);
     await rm(options.keyPath, { force: true });
@@ -186,7 +186,7 @@ test("a container that is replaced by something else refuses every later call", 
   const { options, done } = await bench();
   try {
     const store = await SecretsStore.open(options);
-    await store.save({ botId: "b_1", key: "k", value: "v", scope: "bot" });
+    await store.save({ botId: "b_1", key: "k", value: "value", scope: "bot" });
     await writeFile(join(options.dir, "secrets.v1.enc"), "not a container");
     await assert.rejects(
       store.read({ botId: "b_1", key: "k" }),
@@ -226,7 +226,7 @@ test("a container that cannot be written is a refusal, and leaves no scratch fil
     await mkdir(options.dir, { recursive: true });
     await chmod(options.dir, 0o500);
     await assert.rejects(
-      store.save({ botId: "b_1", key: "k", value: "v", scope: "bot" }),
+      store.save({ botId: "b_1", key: "k", value: "value", scope: "bot" }),
       (error: unknown) => error instanceof SecretsStorageError,
     );
     assert.deepEqual(await readdir(options.dir), [], "nothing was written");
@@ -249,8 +249,8 @@ test("the secret events name the scope and never a key or a value", async () => 
       ttlMinutes: 5,
     });
     await store.read({ botId: "b_1", key: "github-pat" });
-    await store.reveal({ key: "github-pat", scope: "bot" });
-    await store.remove({ botId: "b_1", key: "github-pat" });
+    await store.reveal({ key: "github-pat", scope: "bot", botId: "b_1" });
+    await store.remove({ botId: "b_1", key: "github-pat", scope: "bot" });
     const events = records.map((record) => record.evt);
     assert.deepEqual(
       events.filter((evt) => evt.startsWith("core.secret.")),
@@ -330,7 +330,7 @@ test("an expired record is deleted by the call that would have read it", async (
     await store.save({
       botId: "b_1",
       key: "k",
-      value: "v",
+      value: "value",
       scope: "bot",
       ttlMinutes: 60,
     });
@@ -350,8 +350,8 @@ test("the startup sweep deletes what expired while the daemon was off", async ()
   const { options, advance, done } = await bench();
   try {
     const store = await SecretsStore.open(options);
-    await store.save({ botId: "b_1", key: "gone", value: "v", scope: "bot", ttlMinutes: 5 });
-    await store.save({ botId: "b_1", key: "kept", value: "v2", scope: "bot" });
+    await store.save({ botId: "b_1", key: "gone", value: "value", scope: "bot", ttlMinutes: 5 });
+    await store.save({ botId: "b_1", key: "kept", value: "value2", scope: "bot" });
     advance(10);
     assert.equal(await store.sweep(), 1);
     assert.deepEqual(
@@ -370,7 +370,7 @@ test("a list that finds an expired record removes it too", async () => {
     await store.save({
       botId: "b_1",
       key: "gone",
-      value: "v",
+      value: "value",
       scope: "bot",
       ttlMinutes: 5,
     });
@@ -392,7 +392,7 @@ test("the person reveals nothing from an expired record", async () => {
     await store.save({
       botId: "b_1",
       key: "k",
-      value: "v",
+      value: "value",
       scope: "shared",
       ttlMinutes: 5,
     });
@@ -408,14 +408,14 @@ test("the same key in the same scope is one record that keeps its creation time"
   const { options, advance, done } = await bench();
   try {
     const store = await SecretsStore.open(options);
-    const first = await store.save({ botId: "b_1", key: "k", value: "one", scope: "bot" });
+    const first = await store.save({ botId: "b_1", key: "k", value: "first", scope: "bot" });
     advance(5);
-    const second = await store.save({ botId: "b_1", key: "k", value: "two", scope: "bot" });
+    const second = await store.save({ botId: "b_1", key: "k", value: "second", scope: "bot" });
     const listed = await store.list({ botId: "b_1", limit: 20 });
     assert.equal(listed.items.length, 1);
     assert.equal(listed.items[0]?.createdAt, new Date(first.createdAt).toISOString());
     assert.equal(listed.items[0]?.updatedAt, new Date(second.updatedAt).toISOString());
-    assert.equal((await store.read({ botId: "b_1", key: "k" }))?.value, "two");
+    assert.equal((await store.read({ botId: "b_1", key: "k" }))?.value, "second");
   } finally {
     await done();
   }
@@ -425,22 +425,28 @@ test("a bot may delete its own records and a shared record it created, not anoth
   const { options, done } = await bench();
   try {
     const store = await SecretsStore.open(options);
-    await store.save({ botId: "b_1", key: "mine", value: "v", scope: "bot" });
-    await store.save({ botId: "b_1", key: "ours", value: "v", scope: "shared" });
-    await store.save({ botId: "b_2", key: "theirs", value: "v", scope: "shared" });
+    await store.save({ botId: "b_1", key: "mine", value: "value", scope: "bot" });
+    await store.save({ botId: "b_1", key: "ours", value: "value", scope: "shared" });
+    await store.save({ botId: "b_2", key: "theirs", value: "value", scope: "shared" });
 
-    assert.deepEqual(await store.remove({ botId: "b_1", key: "mine" }), {
+    assert.deepEqual(await store.remove({ botId: "b_1", key: "mine", scope: "bot" }), {
       key: "mine",
       scope: "bot",
       deleted: true,
     });
-    assert.deepEqual(await store.remove({ botId: "b_1", key: "ours" }), {
+    assert.deepEqual(await store.remove({ botId: "b_1", key: "ours", scope: "shared" }), {
       key: "ours",
       scope: "shared",
       deleted: true,
     });
-    await assert.rejects(store.remove({ botId: "b_1", key: "theirs" }), /another bot/);
-    assert.equal((await store.read({ botId: "b_2", key: "theirs", scope: "shared" }))?.value, "v");
+    await assert.rejects(
+      store.remove({ botId: "b_1", key: "theirs", scope: "shared" }),
+      /another bot/,
+    );
+    assert.equal(
+      (await store.read({ botId: "b_2", key: "theirs", scope: "shared" }))?.value,
+      "value",
+    );
   } finally {
     await done();
   }
@@ -450,7 +456,7 @@ test("deleting a record that is gone is success, not an error", async () => {
   const { options, done } = await bench();
   try {
     const store = await SecretsStore.open(options);
-    assert.deepEqual(await store.remove({ botId: "b_1", key: "absent" }), {
+    assert.deepEqual(await store.remove({ botId: "b_1", key: "absent", scope: "bot" }), {
       key: "absent",
       scope: "bot",
       deleted: false,
@@ -465,7 +471,7 @@ test("the store refuses a key, a value or a lifetime it cannot keep", async () =
   try {
     const store = await SecretsStore.open(options);
     await assert.rejects(
-      store.save({ botId: "b_1", key: "Bad Key", value: "v", scope: "bot" }),
+      store.save({ botId: "b_1", key: "Bad Key", value: "value", scope: "bot" }),
       /key/,
     );
     await assert.rejects(store.save({ botId: "b_1", key: "k", value: "", scope: "bot" }), /value/);
@@ -474,18 +480,18 @@ test("the store refuses a key, a value or a lifetime it cannot keep", async () =
       /8192/,
     );
     await assert.rejects(
-      store.save({ botId: "b_1", key: "k", value: "v", scope: "bot", ttlMinutes: 1441 }),
+      store.save({ botId: "b_1", key: "k", value: "value", scope: "bot", ttlMinutes: 1441 }),
       /1440/,
     );
     await assert.rejects(
-      store.save({ botId: "b_1", key: "k", value: "v", scope: "bot", ttlMinutes: 0 }),
+      store.save({ botId: "b_1", key: "k", value: "value", scope: "bot", ttlMinutes: 0 }),
       /1440/,
     );
     await assert.rejects(
       store.save({
         botId: "b_1",
         key: "k",
-        value: "v",
+        value: "value",
         scope: "bot",
         purpose: "x".repeat(241),
       }),
@@ -503,7 +509,7 @@ test("every operation is on the ledger, and the ledger holds no value", async ()
     const store = await SecretsStore.open(options);
     await store.save({ botId: "b_1", key: "k", value: "the-secret-value", scope: "bot" });
     await store.read({ botId: "b_1", key: "k" });
-    await store.remove({ botId: "b_1", key: "k" });
+    await store.remove({ botId: "b_1", key: "k", scope: "bot" });
     const audit = new SecretAudit({ path: join(options.dir, "secrets.audit.jsonl") });
     const entries = await audit.entries();
     assert.deepEqual(
@@ -524,11 +530,12 @@ test("the person may reveal a value, and the reveal is on the ledger", async () 
   const { options, done } = await bench();
   try {
     const store = await SecretsStore.open(options);
-    await store.save({ botId: "b_1", key: "k", value: "v", scope: "shared" });
+    await store.save({ botId: "b_1", key: "k", value: "value", scope: "shared" });
     assert.deepEqual(await store.reveal({ key: "k", scope: "shared" }), {
       key: "k",
       scope: "shared",
-      value: "v",
+      botId: "b_1",
+      value: "value",
     });
     assert.equal(await store.reveal({ key: "absent", scope: "shared" }), undefined);
     const audit = new SecretAudit({ path: join(options.dir, "secrets.audit.jsonl") });
@@ -544,14 +551,209 @@ test("a bot's host is bound to that bot and never names another one", async () =
   const { options, done } = await bench();
   try {
     const store = await SecretsStore.open(options);
-    await store.save({ botId: "b_1", key: "mine", value: "v", scope: "bot" });
+    await store.save({ botId: "b_1", key: "mine", value: "value", scope: "bot" });
     const host = store.hostFor("b_1");
     assert.equal(host.botId, "b_1");
     assert.deepEqual(
       (await host.list({ limit: 20 })).items.map((item) => item.key),
       ["mine"],
     );
-    assert.equal((await host.read({ key: "mine" }))?.value, "v");
+    assert.equal((await host.read({ key: "mine" }))?.value, "value");
+  } finally {
+    await done();
+  }
+});
+
+test("two bots with one key own two records, and neither reads the other's", async () => {
+  const { options, done } = await bench();
+  try {
+    const store = await SecretsStore.open(options);
+    await store.save({ botId: "b_1", key: "github-pat", value: "alpha", scope: "bot" });
+    await store.save({ botId: "b_2", key: "github-pat", value: "bravo", scope: "bot" });
+
+    const all = await store.listAll();
+    assert.deepEqual(
+      all.map((item) => `${item.scope}:${item.botId}:${item.key}`).sort(),
+      ["bot:b_1:github-pat", "bot:b_2:github-pat"],
+      "the settings page sees two rows, not one",
+    );
+
+    assert.equal((await store.read({ botId: "b_1", key: "github-pat" }))?.value, "alpha");
+    assert.equal((await store.read({ botId: "b_2", key: "github-pat" }))?.value, "bravo");
+
+    // The person's page names the bot too, or it would act on whichever record came first.
+    assert.deepEqual(
+      (await store.reveal({ key: "github-pat", scope: "bot", botId: "b_2" }))?.value,
+      "bravo",
+    );
+    assert.equal(await store.reveal({ key: "github-pat", scope: "bot" }), undefined);
+    assert.equal(await store.removeAsPerson({ key: "github-pat", scope: "bot" }), false);
+    assert.equal(
+      await store.removeAsPerson({ key: "github-pat", scope: "bot", botId: "b_1" }),
+      true,
+    );
+    assert.equal((await store.read({ botId: "b_2", key: "github-pat" }))?.value, "bravo");
+
+    // A read is recorded against the record it hit, so last use never crosses bots.
+    await store.read({ botId: "b_2", key: "github-pat" });
+    const [row] = (await store.listAll()).filter((item) => item.botId === "b_2");
+    assert.equal(row?.lastUsedBy, "bot");
+  } finally {
+    await done();
+  }
+});
+
+test("an expired bot record does not hide a live shared one", async () => {
+  const { options, advance, done } = await bench();
+  try {
+    const store = await SecretsStore.open(options);
+    await store.save({ botId: "b_1", key: "k", value: "own-value", scope: "bot", ttlMinutes: 5 });
+    await store.save({ botId: "b_1", key: "k", value: "shared-value", scope: "shared" });
+    advance(10);
+    assert.equal(
+      (await store.read({ botId: "b_1", key: "k" }))?.value,
+      "shared-value",
+      "the first read falls through to the live record",
+    );
+    assert.equal((await store.read({ botId: "b_1", key: "k" }))?.value, "shared-value");
+  } finally {
+    await done();
+  }
+});
+
+test("a record whose expiry is not a timestamp refuses the container", async () => {
+  const { root, done } = await bench();
+  try {
+    const { mkdir } = await import("node:fs/promises");
+    const { seal } = await import("../../src/secrets/container.ts");
+    const { loadOrCreateSecretKey } = await import("../../src/secrets/keyfile.ts");
+    const dir = join(root, "config");
+    const keyPath = join(root, "state", "secrets.key");
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    const key = await loadOrCreateSecretKey(keyPath);
+    const body = {
+      version: 1,
+      records: [
+        {
+          key: "k",
+          scope: "bot",
+          botId: "b_1",
+          createdAt: "2026-11-03T01:10:00.000Z",
+          updatedAt: "2026-11-03T01:10:00.000Z",
+          expiresAt: "not-a-date",
+          value: "value",
+        },
+      ],
+    };
+    await writeFile(join(dir, "secrets.v1.enc"), seal(key, JSON.stringify(body)), { mode: 0o600 });
+    // A document the daemon cannot trust is refused when it opens, so no route can answer
+    // from it — an unparsable expiry is not "no expiry".
+    await assert.rejects(SecretsStore.open({ dir, keyPath }), SecretsStorageError);
+    // The document is still there, untouched: a refusal never becomes a rewrite.
+    assert.equal((await readFile(join(dir, "secrets.v1.enc"))).subarray(0, 4).toString(), "EGLS");
+  } finally {
+    await done();
+  }
+});
+
+test("the environment a command gets holds this bot's values and nobody else's", async () => {
+  const { options, advance, done } = await bench();
+  try {
+    const store = await SecretsStore.open(options);
+    await store.save({ botId: "b_1", key: "github-pat", value: "alpha", scope: "bot" });
+    await store.save({ botId: "b_1", key: "npm-token", value: "bravo", scope: "shared" });
+    await store.save({ botId: "b_2", key: "mine", value: "charlie", scope: "bot" });
+    await store.save({
+      botId: "b_1",
+      key: "short-lived",
+      value: "delta",
+      scope: "bot",
+      ttlMinutes: 5,
+    });
+    advance(10);
+
+    assert.deepEqual(store.environment("b_1"), {
+      EAGLE_SECRET_GITHUB_PAT: "alpha",
+      EAGLE_SECRET_NPM_TOKEN: "bravo",
+    });
+    assert.deepEqual(store.environment("b_2"), {
+      EAGLE_SECRET_MINE: "charlie",
+      EAGLE_SECRET_NPM_TOKEN: "bravo",
+    });
+  } finally {
+    await done();
+  }
+});
+
+test("two names that normalise to one variable are dropped, not guessed", async () => {
+  const { options, done } = await bench();
+  try {
+    const store = await SecretsStore.open(options);
+    await store.save({ botId: "b_1", key: "a.b", value: "one-value", scope: "bot" });
+    await store.save({ botId: "b_1", key: "a-b", value: "two-value", scope: "bot" });
+    assert.deepEqual(store.environment("b_1"), {});
+    assert.equal(store.envNameFor("a.b"), undefined);
+  } finally {
+    await done();
+  }
+});
+
+test("a ledger that cannot be written does not fail the password", async () => {
+  const { options, done } = await bench();
+  try {
+    const { mkdir } = await import("node:fs/promises");
+    const { log, records } = captureLog();
+    const store = await SecretsStore.open({ ...options, log });
+    // A directory where the ledger should be: every append fails.
+    await mkdir(join(options.dir, "secrets.audit.jsonl"), { recursive: true });
+    const saved = await store.save({
+      botId: "b_1",
+      key: "k",
+      value: "value",
+      scope: "bot",
+    });
+    assert.equal(saved.scope, "bot");
+    assert.equal((await store.read({ botId: "b_1", key: "k" }))?.value, "value");
+    assert.ok(
+      records.some((record) => record.evt === "core.secret.fail"),
+      "the ledger failure is recorded, not swallowed",
+    );
+  } finally {
+    await done();
+  }
+});
+
+test("a directory another account can write is refused", async () => {
+  const { options, done } = await bench();
+  try {
+    const { chmod } = await import("node:fs/promises");
+    const store = await SecretsStore.open(options);
+    await store.save({ botId: "b_1", key: "k", value: "value", scope: "bot" });
+    await chmod(options.dir, 0o777);
+    await assert.rejects(store.listAll(), /writable by another account/);
+  } finally {
+    await done();
+  }
+});
+
+test("two daemons over one config directory see each other's records", async () => {
+  const { options, done } = await bench();
+  try {
+    const { readdir } = await import("node:fs/promises");
+    const first = await SecretsStore.open(options);
+    const second = await SecretsStore.open(options);
+    await first.save({ botId: "b_1", key: "k", value: "from-first", scope: "bot" });
+    assert.equal((await second.read({ botId: "b_1", key: "k" }))?.value, "from-first");
+    await second.save({ botId: "b_1", key: "k2", value: "from-second", scope: "bot" });
+    assert.deepEqual(
+      (await first.list({ botId: "b_1", limit: 20 })).items.map((item) => item.key),
+      ["k", "k2"],
+    );
+    assert.deepEqual(
+      (await readdir(options.dir)).filter((name) => name.endsWith(".lock")),
+      [],
+      "the lock is released after every operation",
+    );
   } finally {
     await done();
   }

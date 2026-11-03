@@ -8,6 +8,7 @@ export {
   MAX_SECRET_TTL_MINUTES,
   MAX_SECRET_VALUE_BYTES,
   MIN_SECRET_TTL_MINUTES,
+  MIN_SECRET_VALUE_CHARS,
   SECRET_KEY_PATTERN,
 } from "../core/domain.ts";
 
@@ -80,7 +81,8 @@ export type MemoryToolHost = {
 
 /**
  * What the secret tools may do (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5). The port is the
- * whole storage contract: the container, the key file and the ledger stay behind it.
+ * whole storage contract: the container, the key file and the ledger stay behind it, and a
+ * value reaches a command as environment, never a tool result the transcript keeps.
  */
 export type SecretsToolHost = {
   readonly botId: string;
@@ -96,11 +98,15 @@ export type SecretsToolHost = {
   }): Promise<
     { readonly key: string; readonly scope: SecretScope; readonly value: string } | undefined
   >;
-  /** Removes one record; an absent record is success with `deleted: false`. */
+  /** Removes one record; `scope` is required, so a retry cannot fall through to another one. */
   remove(input: {
     readonly key: string;
-    readonly scope?: SecretScope;
+    readonly scope: SecretScope;
   }): Promise<{ readonly key: string; readonly scope: SecretScope; readonly deleted: boolean }>;
+  /** Every value this Bot may hand to a command, keyed by its environment variable. */
+  environment(): Record<string, string>;
+  /** The environment variable one record reaches a command by; undefined on a name clash. */
+  envNameFor(key: string): string | undefined;
 };
 
 /** What one Bot may write about itself: the sidebar line the daemon stores in its catalog. */

@@ -9,7 +9,15 @@ import test from "node:test";
 import type { RuntimeEvent } from "../../src/core/RuntimePort.ts";
 import { secretCardOf } from "../../src/core/secretCard.ts";
 import { SecretsStore } from "../../src/secrets/store.ts";
-import { assistant, type Bench, createBench, toolCall, trace, waitFor } from "../support/pi.ts";
+import {
+  assistant,
+  type Bench,
+  createBench,
+  text,
+  toolCall,
+  trace,
+  waitFor,
+} from "../support/pi.ts";
 
 type Responses = Parameters<NonNullable<Bench["faux"]>["setResponses"]>[0];
 
@@ -81,6 +89,78 @@ test("a model asks for a password on a card and gets no value back", async () =>
       scope: "bot",
       ttlMinutes: 60,
     });
+  } finally {
+    await handle.close(trace, 1_000);
+    await bench.cleanup();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a saved value reaches a command as environment, and never the transcript", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bots-secret-runtime-"));
+  const store = await SecretsStore.open({
+    dir: join(root, "config"),
+    keyPath: join(root, "state", "secrets.key"),
+  });
+  const bench = await createBench({
+    toolGroups: ["core", "coding", "secrets"],
+    secrets: (spec) => store.hostFor(spec.id),
+  });
+  const events: RuntimeEvent[] = [];
+  const handle = await bench.runtime.open(bench.spec());
+  try {
+    // The person answered the card before this turn: this is the value the model must never
+    // see, in the transcript or in a tool result.
+    await store.save({
+      botId: bench.spec().id,
+      key: "github-pat",
+      value: "sentinel-value-9c1f",
+      scope: "bot",
+    });
+    await handle.subscribe(trace, (event) => events.push(event));
+    bench.faux.setResponses([
+      assistant([toolCall("secret_read", { key: "github-pat" })], { stopReason: "toolUse" }),
+      assistant(
+        [
+          toolCall("bash", {
+            command: 'if [ -n "$EAGLE_SECRET_GITHUB_PAT" ]; then printf present; fi',
+          }),
+        ],
+        { stopReason: "toolUse" },
+      ),
+      text("done"),
+    ]);
+    await handle.submit({
+      requestId: "r_secret_2",
+      text: "用我的 GitHub token 试一下",
+      whenBusy: "followUp",
+      trace,
+    });
+    await waitFor(
+      () => events.some((event) => event.type === "submission" && event.record.status === "done"),
+      "the run to settle",
+      10_000,
+    );
+
+    const asked = results(events).find((block) => block.name === "secret_read");
+    assert.ok(asked, "the model read the record");
+    assert.equal(asked.isError, false, asked.text);
+    assert.match(asked.text, /EAGLE_SECRET_GITHUB_PAT/);
+
+    const ran = results(events).find((block) => block.name === "bash");
+    assert.ok(ran, "the command ran");
+    assert.equal(ran.isError, false, ran.text);
+    assert.match(ran.text, /present/, "the value was in the command's environment");
+
+    // Nothing persisted — tool results, deltas, the lot — carries the value.
+    const transcript = JSON.stringify(events);
+    assert.equal(
+      transcript.includes("sentinel-value-9c1f"),
+      false,
+      "the value never enters the transcript",
+    );
+    const history = await handle.history({ limit: 200 });
+    assert.equal(JSON.stringify(history).includes("sentinel-value-9c1f"), false);
   } finally {
     await handle.close(trace, 1_000);
     await bench.cleanup();

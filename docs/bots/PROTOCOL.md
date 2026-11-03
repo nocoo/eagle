@@ -112,10 +112,10 @@ version, the instance id, the pid and a bot count, never bot content.
 | `GET` | `/v1/usage?days=` | — | `{ "usage": UsageReport }` — statistics over the daemon's retained days |
 | `GET` | `/v1/models` | — | `{ "models": [string] }` — the gateway's ids, empty when it cannot be asked |
 | `POST` | `/v1/bots/:botId/answers` | `{ "entryId", "answers"?: [[label]], "skipped"?: true }` | `{ "submission": Submission }` |
-| `POST` | `/v1/bots/:botId/secrets` | `{ "entryId", "key", "value", "scope"?, "ttlMinutes"?: number \| null, "skipped"?: true }` | `{ "submission": Submission }` |
+| `POST` | `/v1/bots/:botId/secrets` | `{ "entryId", "callIndex"?, "key", "value", "scope"?, "ttlMinutes"?: number \| null, "skipped"?: true }` | `{ "submission": Submission }` |
 | `GET` | `/v1/secrets` | — | `{ "secrets": [Secret] }` — metadata only, never a value |
-| `POST` | `/v1/secrets/reveal` | `{ "key", "scope" }` | `{ "secret": { "key", "scope", "value" } }` — requires `admin` |
-| `DELETE` | `/v1/secrets/:scope/:key` | — | `204`, or `404` for an unknown record — requires `admin` |
+| `POST` | `/v1/secrets/reveal` | `{ "key", "scope", "botId"? }` | `{ "secret": { "key", "scope", "botId", "value" } }` — requires `admin` |
+| `DELETE` | `/v1/secrets/:scope/:key?botId=` | — | `204`, or `404` for an unknown record — requires `admin` |
 | `GET` | `/v1/settings` | — | `{ "settings": GatewaySettings, "machinePrompt": MachinePrompt \| null, "tools"?: [ToolGroup] }` |
 | `GET` | `/v1/clients` | — | `{ "clients": [Client] }` — requires `admin` |
 | `POST` | `/v1/clients` | `{ "name", "scopes" }` — fields follow `CLI.md` rules | `201 { "client": Client, "token" }` — requires `admin`, the token is answered once |
@@ -486,9 +486,14 @@ container).
   "lastUsedAt": "2026-11-03T01:20:00.000Z", "lastUsedBy": "bot" }
 ```
 
+- **A record is identified by `(scope, key)` and, for a bot's own record, by its bot.** Two bots
+  may use the same name, so `reveal` and `DELETE` refuse a `bot` record without `botId` instead
+  of acting on whichever record came first; a `shared` record is one per key.
 - **The card answer is a submission, like an `ask_user` answer.** `entryId` is the transcript
   entry carrying the `secret_request` call and `key` must be that call's key: a client cannot
-  rename a record or answer a card it did not see. The answer stores the value and the daemon
+  rename a record or answer a card it did not see. `callIndex` names which card of that entry
+  when one answer asked for two passwords (the hidden answer then names `"<entryId>#<index>"`),
+  and a card that was already answered is a `400` rather than a second write. The answer stores the value and the daemon
   composes one hidden user input the Bot reads next (`hidden: true`, `answersTo: entryId`).
 - **The value is written, never read back, on this route.** The response carries the
   `Submission` and nothing else; `value` is required and bounded to 8 KiB, and `skipped: true`

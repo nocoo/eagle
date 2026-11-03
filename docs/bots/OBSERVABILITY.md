@@ -192,7 +192,8 @@ Specifics:
   every field including `err` and `detail`.
 - Every stored secret value joins that same redaction list while the daemon runs, so a tool
   argument that carries one — a `bash` command, an HTTP body — cannot reach a log record even
-  at `trace`. The list is loaded from the secrets store at startup and updated on every write
+  at `trace`. The list is scrubbed at four characters rather than at a credential's eight,
+  which is why a secret value shorter than four is refused at the card. The list is loaded from the secrets store at startup and updated on every write
   and deletion ([EXTENSIONS-AND-TOOLS.md](EXTENSIONS-AND-TOOLS.md) §6.5).
 - `core.secret.*` never carries a key name or a value: `detail` is `{scope}` alone, and the
   per-record ledger a person can read is `secrets.audit.jsonl`

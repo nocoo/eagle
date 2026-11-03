@@ -2,7 +2,7 @@
 // written 0600 in a 0700 directory, and created only when a store really needs it.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -65,7 +65,10 @@ test("a file that is not a 32-byte key is refused", async () => {
   try {
     const { mkdir } = await import("node:fs/promises");
     await mkdir(join(root, "state"), { recursive: true });
-    await writeFile(path, Buffer.from(randomBytes(16)).toString("base64url"), "utf8");
+    await writeFile(path, Buffer.from(randomBytes(16)).toString("base64url"), {
+      encoding: "utf8",
+      mode: 0o600,
+    });
     await assert.rejects(readSecretKey(path), (error: unknown) => {
       assert.ok(error instanceof SecretKeyError);
       assert.equal(error.reason, "invalid");
@@ -103,6 +106,46 @@ test("a key file that cannot be read says so", async () => {
       assert.equal(error.reason, "unreadable");
       return true;
     });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a key another account can read is refused before its bytes are trusted", async () => {
+  const { root, path } = await bench();
+  try {
+    const { chmod, mkdir } = await import("node:fs/promises");
+    await mkdir(join(root, "state"), { recursive: true });
+    await writeFile(path, Buffer.from(randomBytes(32)).toString("base64url"), { mode: 0o600 });
+    await chmod(path, 0o644);
+    await assert.rejects(readSecretKey(path), (error: unknown) => {
+      assert.ok(error instanceof SecretKeyError);
+      assert.equal(error.reason, "insecure");
+      return true;
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("two first writers converge on one complete key, and never on half of one", async () => {
+  const { root, path } = await bench();
+  try {
+    const keys = await Promise.all([
+      loadOrCreateSecretKey(path),
+      loadOrCreateSecretKey(path),
+      loadOrCreateSecretKey(path),
+    ]);
+    const first = keys[0];
+    assert.ok(first);
+    for (const key of keys) {
+      assert.deepEqual(Buffer.from(key), Buffer.from(first));
+      assert.equal(key.length, 32);
+    }
+    // The scratch file is published by `link`, so the winner's file is whole, never partial.
+    assert.deepEqual(Buffer.from(await readSecretKey(path)), Buffer.from(first));
+    const leftovers = (await readdir(join(root, "state"))).filter((name) => name !== "secrets.key");
+    assert.deepEqual(leftovers, [], "no scratch file survives the publish");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

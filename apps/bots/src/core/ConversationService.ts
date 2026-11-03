@@ -35,7 +35,12 @@ import {
 } from "./Invocation.ts";
 import type { OriginStore } from "./OriginStore.ts";
 import type { RuntimeEvent, RuntimeHandle, RuntimeHistory, SubmitInput } from "./RuntimePort.ts";
-import { type SecretAnswerInput, secretAnswerText, secretCardOf } from "./secretCard.ts";
+import {
+  type SecretAnswerInput,
+  secretAnswerText,
+  secretCardCount,
+  secretCardOf,
+} from "./secretCard.ts";
 import { reduceView, type SubmissionRanks, seedRanks, trimWindow } from "./view.ts";
 
 /** The closed origin set of the invocation port; `unknown` is a reconstruction only. */
@@ -200,6 +205,8 @@ export class ConversationService implements InvocationPort {
   readonly #triggersOf: ConversationServiceOptions["triggersOf"];
   readonly #pullsOf: ConversationServiceOptions["pullsOf"];
   readonly #secrets: SecretsPort | undefined;
+  /** Cards this daemon has already answered, so a retry cannot store a value twice. */
+  readonly #answeredCards = new Set<string>();
   /** Resolved views by bot id, so `observe` can answer synchronously without opening. */
   readonly #current = new Map<string, Bot>();
   /** Invocation observers, keyed by bot id and bound to the value, not to one Bot object. */
@@ -420,9 +427,26 @@ export class ConversationService implements InvocationPort {
   async answerSecret(botId: string, input: SecretAnswerInput, label?: string): Promise<Submission> {
     const bot = await this.#bot(botId, input.trace ?? input.entryId);
     const call = await bot.handle?.entryById?.(input.entryId);
-    const card = call === undefined ? undefined : secretCardOf(call);
+    const index = input.callIndex ?? 0;
+    if (call === undefined) {
+      throw new DirectoryError("invalid_answer", "no such secret_request call");
+    }
+    if (!Number.isInteger(index) || index < 0 || index >= secretCardCount(call)) {
+      throw new DirectoryError("invalid_answer", "no such secret_request call");
+    }
+    const card = secretCardOf(call, index);
     if (card === undefined) {
       throw new DirectoryError("invalid_answer", "no such secret_request call");
+    }
+    // A card is answered once: a retry after a lost response must not store the value again,
+    // recompute its lifetime or start a second run.
+    const answersTo = index === 0 ? input.entryId : `${input.entryId}#${index}`;
+    const answered = `${botId}\u0000${answersTo}`;
+    if (
+      this.#answeredCards.has(answered) ||
+      bot.snapshot.messages.some((message) => message.answersTo === answersTo)
+    ) {
+      throw new DirectoryError("invalid_answer", "this secret card was already answered");
     }
     // A client cannot rename a record: the key is the card's key.
     if (input.key !== card.key) {
@@ -462,7 +486,7 @@ export class ConversationService implements InvocationPort {
     }
     let text: string;
     if (input.skipped === true) {
-      text = secretAnswerText(card, { entryId: input.entryId, skipped: true });
+      text = secretAnswerText(card, { entryId: answersTo, skipped: true });
     } else {
       const store = this.#secrets;
       if (store === undefined) {
@@ -478,11 +502,12 @@ export class ConversationService implements InvocationPort {
         ...(input.trace === undefined ? {} : { trace: input.trace }),
       });
       text = secretAnswerText(card, {
-        entryId: input.entryId,
+        entryId: answersTo,
         scope,
         ...(ttl === undefined ? {} : { ttlMinutes: ttl }),
       });
     }
+    this.#answeredCards.add(answered);
     return this.#admitAndLog(
       {
         botId,
@@ -492,7 +517,7 @@ export class ConversationService implements InvocationPort {
         trace: input.trace ?? input.entryId,
         origin: label === undefined ? { kind: "human" } : { kind: "human", label },
         hidden: true,
-        answersTo: input.entryId,
+        answersTo,
       },
       undefined,
     );

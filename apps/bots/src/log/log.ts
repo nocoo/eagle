@@ -49,8 +49,13 @@ const DETAIL_TYPES = {
 
 const redact = (value: string, secrets: readonly string[] = []): string => {
   let text = value;
-  for (const secret of [process.env.BOTS_API_KEY, process.env.AGENT_SIGNING_KEY, ...secrets]) {
+  for (const secret of [process.env.BOTS_API_KEY, process.env.AGENT_SIGNING_KEY]) {
     if (secret && secret.length >= 8) text = text.split(secret).join("[redacted]");
+  }
+  // A stored secret is scrubbed at its own length, not at a credential's: a password is
+  // never long enough to be safe from a length filter (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5).
+  for (const secret of secrets) {
+    if (secret.length >= 4) text = text.split(secret).join("[redacted]");
   }
   text = text.replace(/[A-Za-z0-9_-]{0,2}sk-[A-Za-z0-9_-]{16,}/g, "[redacted]");
   const home = process.env.HOME;

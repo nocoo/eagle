@@ -1,7 +1,7 @@
 // The secrets audit ledger (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5 "Audit"): one JSON
 // object per line beside the ciphertext, the newest 2000 kept, and never a value. It is a
 // ledger a person can read, not a log record: it names the key, the scope and who used it.
-import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { SecretScope } from "../core/domain.ts";
 
@@ -81,6 +81,11 @@ export class SecretAudit {
   /** Appends one row, and trims the ledger when it grows past its limit. */
   async append(entry: SecretAuditEntry): Promise<void> {
     await mkdir(dirname(this.#path), { recursive: true, mode: 0o700 });
+    // The ledger names keys and bots, so it is private like the ciphertext beside it.
+    const existing = await stat(this.#path).catch(() => undefined);
+    if (existing !== undefined && (existing.mode & 0o077) !== 0) {
+      throw new Error(`the secrets ledger ${this.#path} is readable by another account`);
+    }
     if (!this.#counted) {
       this.#rows = (await this.#lines()).length;
       this.#counted = true;
@@ -107,30 +112,19 @@ export class SecretAudit {
     return parsed;
   }
 
-  /** When the record was last used, and by whom: the settings page reads this. */
-  async lastUse(
-    key: string,
-    scope: SecretScope,
-  ): Promise<{ readonly at: string; readonly by: SecretAuditBy } | undefined> {
-    const rows = await this.entries();
-    for (let index = rows.length - 1; index >= 0; index -= 1) {
-      const row = rows[index];
-      if (row === undefined) continue;
-      if (row.key !== key || row.scope !== scope) continue;
-      if (row.op !== "read" && row.op !== "reveal") continue;
-      if (!row.ok) continue;
-      return { at: row.ts, by: row.by };
-    }
-    return undefined;
-  }
-
-  /** When every record was last used, and by whom: the settings page reads this. */
+  /**
+   * When every record was last used, and by whom: the settings page reads this. The key is
+   * the record's whole identity, so two bots with the same key never share a last use.
+   */
   async uses(): Promise<ReadonlyMap<string, { readonly at: string; readonly by: SecretAuditBy }>> {
     const map = new Map<string, { at: string; by: SecretAuditBy }>();
     for (const row of await this.entries()) {
       if (row.op !== "read" && row.op !== "reveal") continue;
       if (!row.ok) continue;
-      map.set(`${row.scope}:${row.key}`, { at: row.ts, by: row.by });
+      map.set(`${row.scope}:${row.scope === "bot" ? row.botId : ""}:${row.key}`, {
+        at: row.ts,
+        by: row.by,
+      });
     }
     return map;
   }

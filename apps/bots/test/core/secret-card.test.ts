@@ -48,7 +48,7 @@ test("the hidden message names the record, its scope and its lifetime", () => {
   const text = secretAnswerText(card, { entryId: "e_12", scope: "bot", ttlMinutes: 60 });
   assert.equal(
     text,
-    'The person saved the secret "github-pat" (this bot only, expires in 1 hour) from e_12.',
+    'The person saved the secret "github-pat" (this bot only, expires in 1 hour) from e_12. Read it with secret_read and use the environment variable it names; the value itself never enters the conversation.',
   );
 });
 
@@ -57,7 +57,7 @@ test("a shared record and a permanent one say so", () => {
   assert.ok(card);
   assert.equal(
     secretAnswerText(card, { entryId: "e_12", scope: "shared" }),
-    'The person saved the secret "github-pat" (every bot on this machine, no expiry) from e_12.',
+    'The person saved the secret "github-pat" (every bot on this machine, no expiry) from e_12. Read it with secret_read and use the environment variable it names; the value itself never enters the conversation.',
   );
 });
 
@@ -66,7 +66,7 @@ test("the hidden message never carries a value", () => {
   assert.ok(card);
   const text = secretAnswerText(card, { entryId: "e_12", scope: "bot" });
   assert.equal(text.includes("ghp_example"), false);
-  assert.equal(text.includes("value"), false);
+  assert.equal(text.includes("EAGLE_SECRET"), false, "not even the variable is invented here");
 });
 
 test("a skipped card says the person did not answer", () => {

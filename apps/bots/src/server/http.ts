@@ -347,18 +347,29 @@ const extras = (
  */
 export type SecretsApi = {
   /** Every record, without a value. */
-  readonly list: () => Promise<readonly SecretMeta[]>;
+  readonly list: (input?: { readonly trace?: string }) => Promise<readonly SecretMeta[]>;
   /** The value of one record; undefined when it is missing or expired. */
   readonly reveal: (input: {
     readonly key: string;
     readonly scope: SecretScope;
+    /** Required for a bot's own record: two bots may use the same key. */
+    readonly botId?: string;
+    readonly trace?: string;
   }) => Promise<
-    { readonly key: string; readonly scope: SecretScope; readonly value: string } | undefined
+    | {
+        readonly key: string;
+        readonly scope: SecretScope;
+        readonly botId: string;
+        readonly value: string;
+      }
+    | undefined
   >;
   /** Removes one record; false when there was nothing to remove. */
   readonly remove: (input: {
     readonly key: string;
     readonly scope: SecretScope;
+    readonly botId?: string;
+    readonly trace?: string;
   }) => Promise<boolean>;
 };
 
@@ -972,6 +983,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         const scope = isObject(body) ? body.scope : undefined;
         const ttl = isObject(body) ? body.ttlMinutes : undefined;
         const skipped = isObject(body) ? body.skipped : undefined;
+        const callIndex = isObject(body) ? body.callIndex : undefined;
         const shaped =
           typeof entryId === "string" &&
           typeof key === "string" &&
@@ -980,7 +992,9 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
           (ttl === undefined ||
             ttl === null ||
             (typeof ttl === "number" && Number.isInteger(ttl))) &&
-          (skipped === undefined || skipped === true);
+          (skipped === undefined || skipped === true) &&
+          (callIndex === undefined ||
+            (typeof callIndex === "number" && Number.isInteger(callIndex) && callIndex >= 0));
         if (!shaped || (value === undefined && skipped !== true)) {
           json(response, 400, {
             error: {
@@ -993,6 +1007,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         }
         const record = await options.service.answerSecret(botId, {
           entryId: entryId as string,
+          ...(callIndex === undefined ? {} : { callIndex: callIndex as number }),
           key: key as string,
           value: (value as string | undefined) ?? "",
           ...(scope === undefined ? {} : { scope: scope as SecretScope }),
@@ -1010,7 +1025,9 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
           });
           return;
         }
-        json(response, 200, { secrets: await options.secrets.list() });
+        json(response, 200, {
+          secrets: await options.secrets.list({ trace: `tr_http_${++sequence}` }),
+        });
         return;
       }
       if (path === "/v1/secrets/reveal" && request.method === "POST") {
@@ -1023,13 +1040,27 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         const body = await readBody(request);
         const key = isObject(body) ? body.key : undefined;
         const scope = isObject(body) ? body.scope : undefined;
-        if (typeof key !== "string" || (scope !== "bot" && scope !== "shared")) {
+        const botId = isObject(body) ? body.botId : undefined;
+        // A bot's own record is identified by its bot too: two bots may use one key.
+        const owned =
+          scope === "bot"
+            ? typeof botId === "string" && botId.length > 0
+            : botId === undefined || typeof botId === "string";
+        if (typeof key !== "string" || (scope !== "bot" && scope !== "shared") || !owned) {
           json(response, 400, {
-            error: { kind: "invalid_command", message: "send { key, scope }" },
+            error: {
+              kind: "invalid_command",
+              message: "send { key, scope } and, for a bot record, the botId that owns it",
+            },
           });
           return;
         }
-        const secret = await options.secrets.reveal({ key, scope: scope as SecretScope });
+        const secret = await options.secrets.reveal({
+          key,
+          scope: scope as SecretScope,
+          trace: `tr_http_${++sequence}`,
+          ...(typeof botId === "string" && botId.length > 0 ? { botId } : {}),
+        });
         if (secret === undefined) {
           json(response, 404, { error: { kind: "unknown_bot", message: "no such secret" } });
           return;
@@ -1047,7 +1078,22 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         }
         const scope = secretMatch[1] as SecretScope;
         const key = secretMatch[2] as string;
-        const deleted = await options.secrets.remove({ key, scope });
+        const botId = new URL(request.url ?? "/", "http://127.0.0.1").searchParams.get("botId");
+        if (scope === "bot" && (botId === null || botId.length === 0)) {
+          json(response, 400, {
+            error: {
+              kind: "invalid_command",
+              message: "a bot record is identified by the bot that owns it: add ?botId=",
+            },
+          });
+          return;
+        }
+        const deleted = await options.secrets.remove({
+          key,
+          scope,
+          trace: `tr_http_${++sequence}`,
+          ...(botId === null || botId.length === 0 ? {} : { botId }),
+        });
         if (!deleted) {
           json(response, 404, { error: { kind: "unknown_bot", message: "no such secret" } });
           return;

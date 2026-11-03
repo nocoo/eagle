@@ -24,6 +24,11 @@ export type SecretCard = {
 export type SecretAnswerInput = {
   /** The transcript entry that carries the secret_request call: the card a client renders. */
   readonly entryId: string;
+  /**
+   * Which call of that entry, from zero. One model response may ask for two passwords, and
+   * each card is its own question, so the answer names the one it answers.
+   */
+  readonly callIndex?: number;
   /** The record's name; it must be the card's own key. */
   readonly key: string;
   /** The value the person typed; it never reaches the transcript. */
@@ -42,13 +47,23 @@ const asRecord = (value: unknown): Record<string, unknown> | undefined =>
     ? (value as Record<string, unknown>)
     : undefined;
 
+/** How many secret cards one entry carries: a model may ask for two passwords at once. */
+export const secretCardCount = (message: Message): number =>
+  message.blocks.filter((block) => block.type === "toolCall" && block.name === SECRET_REQUEST_TOOL)
+    .length;
+
 /**
  * The card one secret_request call asked for, read from the transcript itself: the call's
- * arguments are the only record of what was asked.
+ * arguments are the only record of what was asked. `index` picks the call, so two cards in
+ * one answer stay two questions.
  */
-export const secretCardOf = (message: Message): SecretCard | undefined => {
-  for (const block of message.blocks) {
-    if (block.type !== "toolCall" || block.name !== SECRET_REQUEST_TOOL) continue;
+export const secretCardOf = (message: Message, index = 0): SecretCard | undefined => {
+  const calls = message.blocks.filter(
+    (block): block is Extract<Message["blocks"][number], { type: "toolCall" }> =>
+      block.type === "toolCall" && block.name === SECRET_REQUEST_TOOL,
+  );
+  const block = calls[index];
+  if (block !== undefined) {
     const args = asRecord(block.args);
     if (args === undefined) return undefined;
     const key = args.key;
@@ -86,7 +101,9 @@ export const secretAnswerText = (
   card: SecretCard,
   input: {
     readonly entryId: string;
+    readonly callIndex?: number;
     readonly scope?: SecretScope;
+    /** The lifetime that was actually stored: absent means the record never expires. */
     readonly ttlMinutes?: number;
     readonly skipped?: boolean;
   },
@@ -96,7 +113,9 @@ export const secretAnswerText = (
   }
   const scope = input.scope ?? card.scope;
   const where = scope === "shared" ? "every bot on this machine" : "this bot only";
-  const ttl = input.ttlMinutes ?? card.ttlMinutes;
-  const life = ttl === undefined ? "no expiry" : `expires in ${duration(ttl)}`;
-  return `The person saved the secret "${card.key}" (${where}, ${life}) from ${input.entryId}.`;
+  // The stored lifetime is the answer's own, never the card's suggestion: a person who
+  // chose 永久 must not be reported as a one-hour record.
+  const life =
+    input.ttlMinutes === undefined ? "no expiry" : `expires in ${duration(input.ttlMinutes)}`;
+  return `The person saved the secret "${card.key}" (${where}, ${life}) from ${input.entryId}. Read it with secret_read and use the environment variable it names; the value itself never enters the conversation.`;
 };

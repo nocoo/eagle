@@ -110,12 +110,21 @@ test("the last use of a record is what the ledger says", async () => {
     await audit.append(entry({ op: "read", ts: "2026-11-03T02:10:00.000Z", by: "bot" }));
     await audit.append(entry({ op: "read", ts: "2026-11-03T03:10:00.000Z", by: "person" }));
     await audit.append(entry({ op: "write", ts: "2026-11-03T04:10:00.000Z" }));
-    assert.deepEqual(await audit.lastUse("github-pat", "shared"), {
+    await audit.append(
+      entry({ op: "read", scope: "bot", botId: "b_other", ts: "2026-11-03T05:10:00.000Z" }),
+    );
+    const uses = await audit.uses();
+    assert.deepEqual(uses.get("shared::github-pat"), {
       at: "2026-11-03T03:10:00.000Z",
       by: "person",
     });
-    assert.equal(await audit.lastUse("absent", "shared"), undefined);
-    assert.equal(await audit.lastUse("github-pat", "bot"), undefined);
+    // The same key under another bot is a different record, with its own last use.
+    assert.deepEqual(uses.get("bot:b_other:github-pat"), {
+      at: "2026-11-03T05:10:00.000Z",
+      by: "bot",
+    });
+    assert.equal(uses.get("bot:b_0190a1b0:github-pat"), undefined);
+    assert.equal(uses.get("shared::absent"), undefined);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -126,7 +135,7 @@ test("a ledger that does not exist is an empty ledger", async () => {
   try {
     const audit = new SecretAudit({ path });
     assert.deepEqual(await audit.entries(), []);
-    assert.equal(await audit.lastUse("github-pat", "shared"), undefined);
+    assert.equal((await audit.uses()).size, 0);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

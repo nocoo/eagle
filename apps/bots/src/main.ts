@@ -242,17 +242,24 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
       const refuse = (): never => {
         throw new SecretsStorageError("the secrets store could not be read");
       };
-      return { botId, list: refuse, read: refuse, remove: refuse };
+      return {
+        botId,
+        list: refuse,
+        read: refuse,
+        remove: refuse,
+        environment: refuse,
+        envNameFor: refuse,
+      };
     }
     return secretsStore.hostFor(botId);
   };
   /** The settings page's surface: metadata, and the one route that answers a value. */
   const secretsApi: SecretsApi = {
-    list: async () => {
+    list: async (input) => {
       if (secretsStore === undefined) {
         throw new SecretsStorageError("the secrets store could not be read");
       }
-      return secretsStore.listAll();
+      return secretsStore.listAll(input ?? {});
     },
     reveal: async (input) => {
       if (secretsStore === undefined) {
