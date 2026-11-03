@@ -1,5 +1,18 @@
 # 用户视角检查点
 
+## 2026-11-04 07:49 +08 — macOS 0.18.0 DMG published
+
+- `macos-v0.18.0` points to `9eb61e4`, whose GitHub root and macOS checks
+  passed. The published DMG has the locally verified SHA-256, mounted App
+  signature, version and Applications link. Its ad-hoc signature is not notarized.
+- The dev App runs in the right-hand pane against an isolated temporary root and
+  secret paths; the existing installed App was not stopped. Its UI has not been
+  manually inspected. No new Herdr collection, production authentication or D1
+  access was performed. Bots check and all 24 isolated eval cases passed locally.
+- The public App claim remains 0.17.0 until the declaration is deployed. Next:
+  push the verified claim, verify its exact CI and deployment, and check both
+  public `/api/live` endpoints and the downloaded release asset.
+
 ## 2026-11-04 07:37 +08 — macOS 0.18.0 DMG candidate
 
 - Source version 0.18.0 and DMG download instructions are committed; the live

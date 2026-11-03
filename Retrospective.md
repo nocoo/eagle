@@ -1,5 +1,12 @@
 # Retrospective
 
+## 2026-11-04 — A redaction scaling check varied across full runs
+
+The 0.18.0 publication-claim check failed the unchanged styled-redaction doubling
+ratio at 3.89; earlier full gates on the same implementation passed. One complete
+rerun passed with 15.70 ms / 36.15 ms. The performance threshold and test stayed
+unchanged; this is evidence of variability, not a proven root cause or fix.
+
 ## 2026-11-04 — npm needs distinct user and global config files
 
 While preparing a private offline release cache, npm refused to load `/dev/null`
