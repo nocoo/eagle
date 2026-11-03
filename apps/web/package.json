@@ -8,7 +8,7 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "4.0.88",
+    "@ai-sdk/anthropic": "4.0.96",
     "@ai-sdk/openai": "4.0.102",
     "@nocoo/basalt": "^3.2.1",
     "@nocoo/next-ai": "^0.4.0",
