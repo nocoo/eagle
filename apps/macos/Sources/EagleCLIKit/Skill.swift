@@ -29,6 +29,8 @@ public enum Skill {
       - Prefer `--json` when you need to parse an answer; the text form is for a person.
       - `chat send --wait` returns after the run settles and prints the answer; `chat watch`
         keeps streaming, including messages another client sends.
+      - Answer a secret card with `chat secret --stdin` from redirected input; never put a value in
+        arguments or chat. `--skip` answers without a value.
       - Creating, renaming, moving and deleting change the catalog the App shows immediately.
         Delete only when the user asked for it, and only with `--yes`.
       - Exit 3 means this credential lacks the scope; ask the person to add it in
@@ -52,6 +54,7 @@ public enum Skill {
       \(binaryName) chat send <bot> --text T [--wait] [--timeout 120] [--when-busy followUp|steer]
       \(binaryName) chat watch <bot>
       \(binaryName) chat history <bot> [--limit N] [--before e_12]
+      \(binaryName) chat secret <bot> --entry e_12 --key K --stdin|--skip [--call-index N]
       \(binaryName) chat abort <bot>
       \(binaryName) usage [--days N]
       ```
@@ -78,6 +81,13 @@ public enum Skill {
     The file holds one bearer of at least 32 characters, and its mode must be `0600`; any
     other mode is refused with exit 3 and the path in the message. `EAGLE_TOKEN` wins over
     the file, and the file wins over `~/.config/eagle/\(binaryName).json`.
+
+    ## CLI acceptance
+
+    From the repository root, `npm --prefix apps/bots run eval` builds this CLI and runs every
+    scripted case against isolated temporary daemons. `npm --prefix apps/bots run eval:cli`
+    runs the CLI cases only. Fix failures and rerun the complete suite; do not use real secrets.
+    The reusable three-round workflow is `.agents/skills/eagle-cli-eval/SKILL.md`.
     """
   }
 }

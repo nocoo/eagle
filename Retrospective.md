@@ -1,5 +1,64 @@
 # Retrospective
 
+## 2026-11-04 — A standalone Node binary was not an npm distribution
+
+The pre-push gate failed the device-runtime packaging test when I selected the app's bundled
+system-linked Node executable. That executable has no adjacent npm CLI; the packaging test
+intentionally requires both. An already installed official Node distribution contains the
+matching npm CLI and links only system libraries. Before a packaging gate, verify the whole
+Node distribution layout, not only the executable and its linked libraries.
+
+## 2026-11-04 — Eval safeguards needed their own negative control
+
+I initially added a stderr exclusion before demonstrating a failure. I removed that change,
+made a CLI case forbid text that the command actually writes, and observed the old runner
+incorrectly pass it. The repaired runner rejects the negative control without printing the
+forbidden value, and a deterministic assertion now guards both output streams. I also let a
+new eval JSON reach pre-commit before checking its root Biome format; format new fixtures in
+their owning package before committing.
+
+## 2026-11-04 — The macOS gate started without its device-service build
+
+I ran the macOS package tests in a fresh worktree before building the Agent's device-service
+entry. Four helper tests failed because their required executable did not exist. Building the
+Agent and rerunning the full macOS package with the system-linked Node passed. Read and execute
+the integration prerequisites before launching a gate; do not treat a partial or interrupted
+run as a pass.
+
+## 2026-11-03 — A running dev App was called latest after remote moved
+
+I described the dev App built from the in-progress merge as the latest source without checking
+whether `origin/main` had advanced since that merge began. The remote subsequently contained
+an integrated reflection commit and additional fixes not in this App. Before calling a running
+build latest, compare its actual worktree and merge target with a freshly checked remote tip;
+state explicitly when the process runs an uncommitted or older tree.
+
+## 2026-11-03 — A password-card answer started an unplanned command
+
+I asked the acceptance Bot to issue a synthetic password card and not run commands. Answering
+that card automatically started a new turn, and the Bot called `secret_read` and then Bash to
+check the test variable. The command completed without printing the test value or performing
+network or file operations, but its environment can contain every secret visible to the Bot,
+including shared records. I did not inspect whether any such records existed. A restriction
+in an earlier natural-language prompt is not a permission boundary for the automatic answer
+turn. Before another password-card test, constrain the executable tool surface or use an
+isolated daemon rather than assuming the Bot will not call Bash.
+
+## 2026-11-03 — A restart left two indistinguishable dev Apps running
+
+I started Eagle Dev from the merge worktree while a previous dev App from the main worktree
+was already running. I restarted only my own process, so both remained visible and the owner
+could not easily distinguish them. Before starting or restarting a dev App, inventory matching
+processes, explain which worktree each belongs to, and ask before stopping one owned elsewhere.
+
+## 2026-11-03 — Interrupting the dev App orphaned its daemon
+
+Restarting Eagle Dev with Ctrl-C stopped the foreground App without running its termination
+handler; its daemon remained on port 43117 with parent PID 1. I checked the daemon's exact PID
+and working directory, then stopped that owned process with SIGTERM before relaunching the App.
+A terminal interrupt is not proof that a GUI child's daemon stopped. Verify the owned listener
+and its identity before restarting; do not terminate a different App's process.
+
 ## 2026-11-03 — Reflection was absent from device acceptance
 
 The reflection change passed its own Bots checks and scripted eval but broke the

@@ -101,6 +101,7 @@ come from the daemon; a bot may also be named by its exact title when that title
 | `eagle chat watch <bot>` | read | Streams every append and delta until interrupted; another client's messages appear too |
 | `eagle chat history <bot> [--limit N] [--before e_12]` | read | Older messages, oldest first; without `--before` it pages from the oldest message the CLI just saw |
 | `eagle chat answer <bot> --entry e_12 --choose L[,L] \| --skip` | write | Answers an `ask_user` card: the daemon composes the hidden message the bot reads |
+| `eagle chat secret <bot> --entry e_12 --key K --stdin \| --skip [--call-index N]` | write | Answers a password card; the value is read from piped standard input, never from an argument |
 | `eagle chat abort <bot>` | write | Withdraws the running input and the queue |
 | `eagle usage [--days N]` | read | Token and call totals over the retention window |
 
@@ -114,6 +115,11 @@ told in the same message. The chat is never blocked by a card: the tool call it 
 already returned, and the answer arrives as a hidden user message that starts the next turn.
 `chat answer` uses the authenticated HTTP answer endpoint and reports only that command's
 admission. An unrelated conversation's socket settlement is never proof of a successful answer.
+
+`chat secret --stdin` accepts exact UTF-8 bytes from redirected input (at most 8 KiB); it
+refuses an interactive terminal rather than echoing a password. It never prints the value. The card's
+scope and lifetime remain those requested by the Bot. `--skip` answers without a value, and
+`--call-index` selects a later secret card in the same entry.
 
 `chat send --wait --timeout N` waits at most N positive seconds after sending for the
 submission's terminal record. A timeout ends only the CLI's wait: the daemon continues
@@ -170,6 +176,8 @@ Start with `eagle --help`, then one command group without arguments
 - Prefer `--json` when you need to parse an answer; the text form is for a person.
 - `chat send --wait` returns after the run settles and prints the answer; `chat watch`
   keeps streaming, including messages another client sends.
+- Answer a secret card with `chat secret --stdin` from redirected input; never put a value in
+  arguments or chat. `--skip` answers without a value.
 - Creating, renaming, moving and deleting change the catalog the App shows immediately.
   Delete only when the user asked for it, and only with `--yes`.
 - Exit 3 means this credential lacks the scope; ask the person to add it in
@@ -193,6 +201,7 @@ eagle groups list|create <title>|rename <id> <title>|order <id,id,…>|delete <i
 eagle chat send <bot> --text T [--wait] [--timeout 120] [--when-busy followUp|steer]
 eagle chat watch <bot>
 eagle chat history <bot> [--limit N] [--before e_12]
+eagle chat secret <bot> --entry e_12 --key K --stdin|--skip [--call-index N]
 eagle chat abort <bot>
 eagle usage [--days N]
 ```
@@ -213,6 +222,13 @@ umask 077 && mkdir -p ~/.config/eagle-dev && openssl rand -base64 48 > ~/.config
 The file holds one bearer of at least 32 characters, and its mode must be `0600`; any
 other mode is refused with exit 3 and the path in the message. `EAGLE_TOKEN` wins over
 the file, and the file wins over `~/.config/eagle/eagle-dev.json`.
+
+## CLI acceptance
+
+From the repository root, `npm --prefix apps/bots run eval` builds this CLI and runs every
+scripted case against isolated temporary daemons. `npm --prefix apps/bots run eval:cli`
+runs the CLI cases only. Fix failures and rerun the complete suite; do not use real secrets.
+The reusable three-round workflow is `.agents/skills/eagle-cli-eval/SKILL.md`.
 ```
 
 ## Limits and refusals

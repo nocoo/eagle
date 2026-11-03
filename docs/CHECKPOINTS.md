@@ -1,5 +1,50 @@
 # 用户视角检查点
 
+## 2026-11-04 06:28 +08 — Final Dev restart and CLI acceptance
+
+- Eagle Dev was rebuilt and restarted in the foreground on the final code tree. App PID
+  `31357` owns daemon PID `32146`, whose working directory is this worktree's `apps/bots`;
+  its device-policy binding matches the pre-existing local socket. CLI health and the
+  development credential's `whoami` succeeded. The owner was away; the UI was not inspected.
+- Three independent full eval rounds passed 24 cases each; round three was repeated after the
+  Swift coverage repair and again passed all 24. Bots check passed 995 tests, device-process
+  integration passed 7, and Swift coverage passed at 91.4% for the App and 90.6% for Bots.
+  Eval used isolated temporary roots and synthetic values, not the owner's password store.
+- No live Herdr collection, production Access authentication or production D1 was exercised.
+  Local device integration used isolated fixtures. Root `check` and browser gates remain
+  unverified: the root dependency link pointed to another checkout and was removed; the
+  approved registry did not provide the required package. The Swift build still reports
+  pre-existing async-lock and actor-isolation warnings; no release or push was performed.
+
+## 2026-11-04 06:20 +08 — Three eval rounds and Swift coverage repair
+
+- Three separate complete CLI/eval runs each passed 24 cases. The new password flow uses
+  synthetic stdin, checks read-only refusal and replay, and excludes the fixture from CLI
+  output and history. Each run used a separate temporary home and daemon, not existing Bots.
+- Bots check passed 995 tests; device-process integration passed 7 tests against local
+  fixtures. App Swift coverage passed at 91.4%. Bots Swift coverage first failed at 87.0%;
+  card-port and catalog transport tests raised it to 90.6% without changing the threshold.
+- Eagle Dev still runs from this worktree but predates the latest Swift source changes;
+  restart and verify the final build next. The owner was not watching, so rendered UI was
+  not visually inspected. No live Herdr collection, production authentication or production
+  D1 was exercised. Root release gates remain unverified because this worktree's root
+  dependencies resolve through another checkout and the approved mirror lacked a package.
+
+## 2026-11-04 05:54 +08 — CLI acceptance expanded after merge
+
+- This branch merged the fetched `origin/main` at `049d042`, including the later reflection,
+  secret-scope and card fixes. Eagle Dev was restarted from this worktree; its daemon runs
+  from `apps/bots`, and `eagle-dev whoami` authenticated. The process predates subsequent
+  CLI source changes and must be restarted again before final acceptance. The rendered App
+  was not visually inspected; Herdr collection and D1 were not exercised.
+- The merged baseline passed Bots check (994), both Swift packages (149 and 423) and all
+  20 scripted eval cases. A CLI isolation case demonstrated a real home leak before the
+  runner was fixed. New CLI cases cover memory, decisions and secret answer/skip; targeted
+  cases passed, as did macOS Swift tests (428) after the CLI changes.
+- Pi discovered `.agents/skills/eagle-cli-eval/SKILL.md`, and `eagle-dev --skill` now points
+  to it. Three separate full-suite rounds on the expanded cases and final gate runs remain;
+  the next broken hop is completing those rounds and restarting the current Dev App.
+
 ## 2026-11-03 20:35 +08 — three review rounds closed, gates green
 
 - Round 1 (read-only reviewer, pinned `01302e3..95cff80`) found nine issues; round 2
@@ -61,6 +106,20 @@
   Eval authentication and state were temporary; no production credentials were
   used. No new Herdr collection, D1 access or manual App rendering was performed.
 - Next: run the normal pre-push hooks and push the rebased commit without force.
+
+## 2026-11-03 14:00 +08 — Merge acceptance and dev App restart
+
+- The foreground Eagle Dev and its daemon were restarted from the merged working tree; the
+  daemon listens on the original local port with the original device-policy binding. The
+  development CLI authenticated, and the dedicated acceptance Bot used `memory_read` and
+  `note_set` after the restart. Herdr collection and D1 were not exercised in this checkpoint;
+  the App was built and started, but its visible screen was not independently inspected.
+- The isolated-HOME acceptance suite passed all 20 cases, including reflection and the mocked
+  decision provider. A review found that the default eval configuration can otherwise resolve
+  the real user's secrets paths; do not run it without an isolated home until fixed.
+- The live daemon still reports `secrets` and `decision` disabled; the next broken hop is saving
+  the tool settings in the intended App and then testing the password card and decision. The
+  merge remains uncommitted; root dependency installation was blocked by the approved mirror.
 
 ## 2026-11-03 13:10 +08 — `secrets` 三轮审查结束，门禁全绿
 

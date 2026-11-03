@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 
@@ -186,6 +187,76 @@ struct CommandsTests {
     #expect(printed.last?["entryId"] as? String == "e_20", "a placed answer keeps its entry")
   }
 
+  @Test("a secret card can be skipped through its own admission")
+  func skipSecretCard() async {
+    StubTransport.calls = []
+    StubTransport.answers = [
+      "/v1/bots": (200, #"{"bots":[{"id":"b_1","title":"helper"}]}"#),
+      "/v1/bots/b_1/secrets": (
+        200, #"{"submission":{"id":"s_1","requestId":"secret_1","status":"placed"}}"#
+      ),
+    ]
+    let result = await run([
+      "chat", "secret", "helper", "--entry", "e_12", "--key", "fixture", "--skip", "--json",
+    ])
+    #expect(result.code == 0)
+    let body = StubTransport.calls.last?.body?.data(using: .utf8)
+    let object = body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    #expect(object?["entryId"] as? String == "e_12")
+    #expect(object?["key"] as? String == "fixture")
+    #expect(object?["skipped"] as? Bool == true)
+    #expect(object?["value"] == nil)
+    #expect(result.out.contains { $0.contains("secret_1") })
+  }
+
+  @Test("secret card arguments refuse ambiguous modes and invalid indices")
+  func invalidSecretArguments() async {
+    StubTransport.calls = []
+    let ambiguous = await run([
+      "chat", "secret", "helper", "--entry", "e_12", "--key", "fixture", "--skip", "--stdin",
+    ])
+    let invalidIndex = await run([
+      "chat", "secret", "helper", "--entry", "e_12", "--key", "fixture", "--skip", "--call-index",
+      "-1",
+    ])
+    #expect(ambiguous.code == 2)
+    #expect(invalidIndex.code == 2)
+    #expect(StubTransport.calls.isEmpty)
+  }
+
+  @Test("secret stdin preserves bytes and refuses invalid or oversized values")
+  func secretInputValidation() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eagle-cli-secret-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("input")
+    func read(_ data: Data) throws -> String {
+      try data.write(to: file)
+      let handle = try FileHandle(forReadingFrom: file)
+      defer { try? handle.close() }
+      return try Commands.readSecretInput(handle)
+    }
+    #expect(try read(Data("fixture value\n".utf8)) == "fixture value\n")
+    #expect(try read(Data(repeating: 65, count: 8192)).utf8.count == 8192)
+    #expect((try? read(Data(repeating: 65, count: 8193))) == nil, "oversized input is refused")
+    #expect(throws: CLIError.self) { try read(Data([0x61, 0x00, 0x62])) }
+    #expect(throws: CLIError.self) { try read(Data([0xff])) }
+  }
+
+  @Test("secret stdin refuses an interactive terminal")
+  func secretInputTerminal() throws {
+    var master: Int32 = -1
+    var slave: Int32 = -1
+    guard openpty(&master, &slave, nil, nil, nil) == 0 else {
+      throw CLIError.usage("cannot create a test terminal")
+    }
+    defer { close(master) }
+    let handle = FileHandle(fileDescriptor: slave, closeOnDealloc: true)
+    defer { try? handle.close() }
+    #expect(throws: CLIError.self) { try Commands.readSecretInput(handle) }
+  }
+
   @Test("question-indexed answers support repeated labels")
   func groupedCardAnswer() async {
     StubTransport.calls = []
@@ -319,11 +390,14 @@ struct CommandsTests {
     #expect(development.contains("~/.config/eagle-dev/token"))
     #expect(development.contains("0600"))
     #expect(development.contains("EAGLE_TOKEN"))
+    #expect(development.contains("npm --prefix apps/bots run eval"))
+    #expect(development.contains(".agents/skills/eagle-cli-eval/SKILL.md"))
 
     let release = Skill.document(binaryName: "eagle", clientName: nil)
     #expect(release.contains("eagle-dev") == false)
     #expect(release.contains("development token") == false)
     #expect(release.contains("~/.config/eagle-dev") == false)
+    #expect(release.contains("npm --prefix apps/bots run eval") == false)
   }
 
   private func developmentHome(_ token: String, mode: Int = 0o600) throws -> URL {
@@ -447,6 +521,25 @@ struct QuestionLinesTests {
     let lines = Commands.questionLines(message)
     #expect(lines.first == "[question e_11] (单选) 要不要继续？: 继续 | 停止")
     #expect(lines.last?.contains("--entry e_11 --choose") == true)
+  }
+
+  @Test("secret cards display their key and index without a value")
+  func secretLines() {
+    let message: [String: Any] = [
+      "id": "e_12", "role": "assistant",
+      "blocks": [
+        [
+          "type": "toolCall", "name": "secret_request", "args": ["key": "first", "purpose": "One"],
+        ],
+        [
+          "type": "toolCall", "name": "secret_request",
+          "args": ["key": "second", "purpose": "Two"],
+        ],
+      ],
+    ]
+    let lines = Commands.questionLines(message)
+    #expect(lines.contains { $0.contains("first") && $0.contains("--call-index 0") })
+    #expect(lines.contains { $0.contains("second") && $0.contains("--call-index 1") })
   }
 
   @Test("a hidden answer is not chat: only the fact that the card was answered")

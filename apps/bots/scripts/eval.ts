@@ -8,10 +8,11 @@ import { randomBytes } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { WebSocket } from "ws";
 import { readConfig } from "../src/config.ts";
 import { type DaemonHandle, startDaemon } from "../src/main.ts";
+import { assertOutputExcludes } from "./eval-assertions.ts";
 import { createEvalRouter } from "./eval-routing.ts";
 
 type ScriptedReply =
@@ -135,12 +136,14 @@ type Step =
       /** Dotted paths to arrays and the exact length each must have. */
       readonly jsonLengths?: Readonly<Record<string, number>>;
       readonly stderrContains?: string;
+      readonly stderrExcludes?: string;
       /** Subset match against the last JSON line on stdout. */
       readonly json?: unknown;
       /** Exactly one terminal submission for the user input in the JSON stream. */
       readonly oneTerminal?: boolean;
       readonly capture?: string;
       readonly env?: Readonly<Record<string, string | null>>;
+      readonly stdin?: string;
       /** The command is expected to outlive its budget and be killed. */
       readonly expectTimeout?: boolean;
     }
@@ -398,7 +401,20 @@ const listen = (server: ReturnType<typeof createServer>): Promise<number> =>
 const boot = async (
   root: string,
   env: Readonly<Record<string, string>> = {},
-): Promise<DaemonHandle> => startDaemon(readConfig({ argv: ["--root", root, "--port", "0"], env }));
+): Promise<DaemonHandle> => {
+  const config = readConfig({
+    argv: ["--root", root, "--port", "0"],
+    home: join(root, "home"),
+    env: { ...env, XDG_CONFIG_HOME: join(root, "config"), XDG_STATE_HOME: join(root, "state") },
+  });
+  for (const path of [config.memoryDir, config.secretsDir, config.secretsKeyPath]) {
+    const fromRoot = relative(root, path);
+    if (isAbsolute(fromRoot) || fromRoot === ".." || fromRoot.startsWith(`..${sep}`)) {
+      throw new Error("eval state escaped its case root");
+    }
+  }
+  return startDaemon(config);
+};
 
 const api = async (
   port: number,
@@ -596,9 +612,15 @@ const runProcess = (
   args: readonly string[],
   env: Readonly<Record<string, string>>,
   timeoutMs: number,
+  stdin?: string,
 ): Promise<ProcessResult> =>
   new Promise((resolve_) => {
     const child = spawn(bin, args, { env });
+    let inputError: string | undefined;
+    child.stdin.on("error", (error) => {
+      inputError = error.message;
+    });
+    child.stdin.end(stdin);
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -618,7 +640,12 @@ const runProcess = (
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      resolve_({ status: code, stdout, stderr, timedOut });
+      resolve_({
+        status: inputError === undefined ? code : null,
+        stdout,
+        stderr: inputError === undefined ? stderr : `${stderr}${inputError}`,
+        timedOut,
+      });
     });
   });
 
@@ -643,6 +670,11 @@ const runCase = async (
   const root = await mkdtemp(join(tmpdir(), `bots-eval-${study.id}-`));
   const usesCli = study.steps.some((step) => step.kind === "cli");
   const home = join(root, "home");
+  const previousEnvironment = {
+    HOME: process.env.HOME,
+    XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+    XDG_STATE_HOME: process.env.XDG_STATE_HOME,
+  };
   const devTokenPath = join(home, ".config", "eagle-dev", "token");
   /** Values a step captured, addressed by later steps as `{{name.path}}`. */
   const captured = new Map<string, unknown>();
@@ -673,8 +705,9 @@ const runCase = async (
     /** Only a case that drives the CLI arms the development credential. */
     const daemonEnv = (): Readonly<Record<string, string>> =>
       devToken === undefined ? {} : { BOTS_DEV_AGENT_TOKEN: devTokenPath };
-    // Hermetic: provider keys and other user configuration must never be read by a case.
+    process.env.HOME = home;
     process.env.XDG_CONFIG_HOME = join(root, "config");
+    process.env.XDG_STATE_HOME = join(root, "state");
     await writeFile(
       join(root, "gateway.json"),
       `${JSON.stringify(
@@ -882,10 +915,28 @@ const runCase = async (
             else env[key] = fill(value);
           }
           const args = step.args.map(fill);
-          const result = await runProcess(bin, args, env, stepBudget);
+          const result = await runProcess(
+            bin,
+            args,
+            env,
+            stepBudget,
+            step.stdin === undefined ? undefined : fill(step.stdin),
+          );
           const stdout = result.stdout;
           const stderr = result.stderr;
           const command = `${step.bin ?? "dev"} ${args.join(" ")}`;
+          assertOutputExcludes(
+            stdout,
+            step.stdoutExcludes === undefined ? undefined : fill(step.stdoutExcludes),
+            command,
+            "stdout",
+          );
+          assertOutputExcludes(
+            stderr,
+            step.stderrExcludes === undefined ? undefined : fill(step.stderrExcludes),
+            command,
+            "stderr",
+          );
           if (step.expectTimeout === true) {
             if (!result.timedOut) {
               failure(`${command} finished instead of running past its budget`);
@@ -899,9 +950,6 @@ const runCase = async (
             failure(
               `${command} printed no ${JSON.stringify(step.stdoutContains)}: ${stdout}${stderr === "" ? "" : ` / stderr ${stderr}`}`,
             );
-          }
-          if (step.stdoutExcludes !== undefined && stdout.includes(fill(step.stdoutExcludes))) {
-            failure(`${command} printed ${JSON.stringify(step.stdoutExcludes)}: ${stdout}`);
           }
           if (step.stderrContains !== undefined && !stderr.includes(fill(step.stderrContains))) {
             failure(`${command} said no ${JSON.stringify(step.stderrContains)}: ${stderr}`);
@@ -1110,6 +1158,10 @@ const runCase = async (
     else process.stdout.write(`kept the eval root: ${root}\n`);
     if (!released)
       report = { id: study.id, ok: false, detail: "the daemon did not release its root" };
+    for (const [name, value] of Object.entries(previousEnvironment)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   }
   return report;
 };

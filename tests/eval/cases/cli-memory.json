@@ -1,0 +1,64 @@
+{
+  "id": "cli-memory",
+  "title": "Bot memory survives another CLI turn",
+  "kind": "chat",
+  "toolGroups": ["core", "memory"],
+  "model": {
+    "script": [
+      {
+        "toolCall": {
+          "name": "memory_write",
+          "args": {
+            "scope": "bot",
+            "key": "reading-club",
+            "content": "The club meets on Saturday."
+          }
+        }
+      },
+      { "text": "Saved the meeting day." },
+      {
+        "toolCall": {
+          "name": "memory_read",
+          "args": { "scope": "bot", "key": "reading-club" }
+        }
+      },
+      { "text": "The club meets on Saturday." }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval cli-memory",
+        "--text",
+        "Remember the meeting day",
+        "--wait",
+        "--json"
+      ],
+      "stdoutContains": "memory_write",
+      "oneTerminal": true
+    },
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval cli-memory",
+        "--text",
+        "When is the meeting?",
+        "--wait",
+        "--json"
+      ],
+      "stdoutContains": "The club meets on Saturday.",
+      "oneTerminal": true
+    }
+  ],
+  "expect": {
+    "toolsCalled": ["memory_write", "memory_read"],
+    "messages": [{ "role": "tool", "contains": "The club meets on Saturday." }],
+    "modelRequests": { "max": 4 },
+    "noErrors": true
+  }
+}
