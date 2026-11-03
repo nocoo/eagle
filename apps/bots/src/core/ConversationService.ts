@@ -526,6 +526,7 @@ export class ConversationService implements InvocationPort {
       throw new DirectoryError("invalid_answer", "this secret card was already answered");
     }
     let text: string;
+    let stored = false;
     try {
       if (input.skipped === true) {
         text = secretAnswerText(card, { entryId: input.entryId, skipped: true });
@@ -539,6 +540,7 @@ export class ConversationService implements InvocationPort {
           ...(ttl === undefined ? {} : { ttlMinutes: ttl }),
           ...(input.trace === undefined ? {} : { trace: input.trace }),
         });
+        stored = true;
         text = secretAnswerText(card, {
           entryId: input.entryId,
           scope,
@@ -564,9 +566,11 @@ export class ConversationService implements InvocationPort {
         undefined,
       );
     } catch (error) {
-      // Nothing reached the bot, so the person may answer again: the card is only spent by an
-      // answer that was admitted.
-      await store.releaseAnswer({ botId, entry: answersTo }).catch(() => undefined);
+      // An unknown admission may already be durable. A stored value also spends the card:
+      // allowing another answer would rotate the value and renew its lifetime.
+      if (!stored && error instanceof ClassifiedFailure && error.disposition === "not_admitted") {
+        await store.releaseAnswer({ botId, entry: answersTo }).catch(() => undefined);
+      }
       throw error;
     }
   }

@@ -2113,6 +2113,39 @@ test("a skipped card stores nothing and says the person did not answer", async (
   assert.match(hidden.text, /skipped/);
 });
 
+test("an unknown secret admission keeps its durable receipt", async () => {
+  const runtime = cardRuntime(secretCard({ key: "github-pat", purpose: "Publish" }));
+  const saved: SecretSave[] = [];
+  let claimed = false;
+  runtime.handle.submit = async (input) => {
+    runtime.submitted.push(input);
+    throw new Error("the admission response was lost");
+  };
+  const service = secretService(runtime, {
+    save: async (input) => {
+      saved.push(input);
+      return { scope: input.scope, createdAt: "t", updatedAt: "t" };
+    },
+    claimAnswer: async () => {
+      if (claimed) return false;
+      claimed = true;
+      return true;
+    },
+    releaseAnswer: async () => {
+      claimed = false;
+    },
+  });
+  const answer = { entryId: "e_card_1", key: "github-pat", value: "first-value" };
+  await assert.rejects(
+    service.answerSecret("b_1", answer),
+    (error: unknown) => error instanceof CommandError && error.disposition === "unknown",
+  );
+  assert.equal(claimed, true, "unknown is not proof that no answer was admitted");
+  await assert.rejects(service.answerSecret("b_1", { ...answer, value: "second-value" }));
+  assert.equal(saved.length, 1, "a retry must not rotate the stored value or renew its TTL");
+  assert.equal(runtime.submitted.length, 1);
+});
+
 test("a daemon without a secrets store refuses a card answer", async () => {
   const runtime = cardRuntime(secretCard({ key: "github-pat", purpose: "发布用" }));
   const service = secretService(runtime);
