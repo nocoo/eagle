@@ -1,5 +1,20 @@
 # 用户视角检查点
 
+## 2026-11-03 18:20 +08 — 48-hour review, first round
+
+- Scope is pinned to `01302e3..95cff80` (106 commits). One read-only reviewer in
+  the right-hand pane completed round 1: four P1 and five P2 findings across
+  reflection lifecycle, secret receipts/scope and question-card/CLI admission.
+  The coordinator owns all writes; rounds 2–3 will inspect these repairs only.
+- CI's device acceptance failure was reproduced locally, then fixed without
+  widening deadlines: root model requests remain exactly eighteen, reflection
+  has a separate session-bound lane with exactly nine requests. The process
+  gate now passes 7/7. Secret unknown-admission and scope mismatch regressions
+  were demonstrated red and fixed with targeted checks; full gates remain open.
+- No new live Herdr collection, authentication, D1 or manual App rendering was
+  performed. Next: finish reflection and question-card repairs, run full gates,
+  obtain incremental review and verify the exact pushed revision's CI.
+
 ## 2026-11-03 17:23 +08 — reflection rebased onto secrets
 
 - The local reflection commit was rebased onto the current main, retaining the

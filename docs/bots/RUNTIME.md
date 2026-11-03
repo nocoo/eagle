@@ -251,8 +251,13 @@ Before a root conversation settles its answer, `GenerationTask.onYield` asks a f
 conversation to consider a fixed checklist. The fork sees the original context and answer but
 only the checklist tools. The initial checklist asks whether to update the sidebar with
 `note_set`; it never includes memory. The prompt and the fork's answer are not root chat.
-Reflection happens at most once per input, including after a restart. A failed reflection is
-reported separately and does not replace the original answer or make it unanswered.
+Reflection happens at most once per input, including after a restart. Each fork has at most
+two model requests and a fifteen-second deadline, both recorded with its durable plan/candidate.
+Exhaustion cancels and joins the owned child; it never leaves a background reflection running.
+A failed reflection is reported separately and does not replace the original answer or make it
+unanswered. Auxiliary candidate/decision storage failures cannot interrupt delivery of an
+already committed submission. Opening a Bot releases its acquired Harness and usage subscription
+if reflection recovery fails.
 
 A reflection's note is a durable candidate, not an immediate catalog write: it is applied only
 when the original answer commits and still matches the answer the fork saw. A restart can

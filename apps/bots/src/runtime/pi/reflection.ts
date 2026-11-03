@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 import type { Context, JsonValue } from "@earendil-works/chord";
+import {
+  awaitWithContext,
+  withAbortSignal,
+  withoutAbortSignal,
+} from "@earendil-works/chord/context";
 import type { AssistantMessage, ToolCall } from "@earendil-works/pi-ai";
 import {
   AssistantEntry,
@@ -27,6 +32,8 @@ import { convertUsage } from "./convert.ts";
 
 export const REFLECTION_EXTENSION = "bots-reflection";
 export const REFLECTION_TOOL_ENTRY = "bots.reflection.tool";
+export const REFLECTION_MAX_REQUESTS = 2;
+export const REFLECTION_TIMEOUT_MS = 15_000;
 export const REFLECTION_PROMPT =
   "Before finishing, consider whether the sidebar status should change to reflect the current work. If it should, call note_set with a concise, factual status. Otherwise leave it unchanged. Do not address the user.";
 
@@ -40,6 +47,7 @@ const Plan = defineDocFamily<
     fallback?: string;
     pendingNote?: string;
     pendingSource?: string;
+    deadline?: number;
   },
   null
 >({
@@ -61,6 +69,8 @@ const Candidate = defineDoc<{
   previousRevision?: string;
   parentTaskId?: number;
   published?: string[];
+  requests?: number;
+  deadline?: number;
 }>({
   kind: "bots.reflection.candidate",
   version: 1,
@@ -82,6 +92,7 @@ export const reflectionExtension = (options: {
   readonly failed: (taskId: number, reason: string) => void;
 }) => {
   const note = createNoteSetTool(options.note);
+  const deadlines = new Map<number, () => void>();
   return defineExtension({
     name: REFLECTION_EXTENSION,
     wraps: [
@@ -171,6 +182,48 @@ export const reflectionExtension = (options: {
     ],
     hooks: [
       hook(GenerationTask, {
+        async beforeRequest(_request, api, context) {
+          if (api.conversationId === options.root.id) return;
+          const candidate = await api.snapshot(Candidate, api.conversationId, context);
+          if (candidate === undefined) return;
+          const exhausted = await options.root.commit(async (tx) => {
+            const current = await tx.doc(Candidate, api.conversationId);
+            if (
+              (current.requests ?? 0) >= REFLECTION_MAX_REQUESTS ||
+              (current.deadline !== undefined && Date.now() >= current.deadline)
+            )
+              return true;
+            current.requests = (current.requests ?? 0) + 1;
+            return false;
+          }, context);
+          if (exhausted) {
+            // Hook errors are advisory in the SDK. Abort this owned generation from outside
+            // its invocation; awaiting the abort itself here would join this very hook.
+            void options.harness
+              .abortTask(api.taskId, withoutAbortSignal(context))
+              .catch(() => undefined);
+            await awaitWithContext(new Promise<never>(() => undefined), context);
+          }
+          if (candidate.deadline !== undefined) {
+            deadlines.get(api.taskId)?.();
+            const abort = () => {
+              void options.harness
+                .abortTask(api.taskId, withoutAbortSignal(context))
+                .catch(() => undefined);
+            };
+            const timer = setTimeout(abort, Math.max(0, candidate.deadline - Date.now()));
+            const clear = () => {
+              clearTimeout(timer);
+              context.abortSignal?.removeEventListener("abort", clear);
+              deadlines.delete(api.taskId);
+            };
+            deadlines.set(api.taskId, clear);
+            context.abortSignal?.addEventListener("abort", clear, { once: true });
+          }
+        },
+        async afterResponse(_message, api) {
+          deadlines.get(api.taskId)?.();
+        },
         async onYield(answer, api, context) {
           if (api.conversationId !== options.root.id) return;
           try {
@@ -180,6 +233,7 @@ export const reflectionExtension = (options: {
               const plan = await tx.doc(Plan, key, null);
               if (plan.source !== "") return;
               plan.source = answerHash(answer);
+              plan.deadline = Date.now() + REFLECTION_TIMEOUT_MS;
               const text = answer.content
                 .flatMap((block) => (block.type === "text" ? [block.text] : []))
                 .join("");
@@ -200,6 +254,7 @@ export const reflectionExtension = (options: {
               await configure(tx, child.id, { tools: [note] });
               const candidate = await tx.doc(Candidate, child.id);
               candidate.source = answerHash(answer);
+              if (plan.deadline !== undefined) candidate.deadline = plan.deadline;
               candidate.parentTaskId = api.taskId;
               if (plan.previous !== undefined) candidate.previous = plan.previous;
               if (plan.previousAt !== undefined) candidate.previousAt = plan.previousAt;
@@ -219,7 +274,18 @@ export const reflectionExtension = (options: {
               },
               context,
             );
-            const outcome = await submission.wait(context);
+            const plan = await options.harness.snapshot(Plan, key, context);
+            const remaining = (plan?.deadline ?? Date.now()) - Date.now();
+            const timeout = AbortSignal.timeout(Math.max(0, remaining));
+            let outcome: Awaited<ReturnType<typeof submission.wait>>;
+            try {
+              outcome = await submission.wait(withAbortSignal(timeout, context));
+            } catch (error) {
+              if (context.abortSignal?.aborted === true) throw error;
+              await child.abort(withoutAbortSignal(context));
+              options.failed(api.taskId, "budget");
+              return;
+            }
             if (outcome.status !== "done") {
               options.failed(api.taskId, outcome.reason);
               return;
