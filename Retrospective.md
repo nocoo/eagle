@@ -1,5 +1,13 @@
 # Retrospective
 
+## 2026-11-04 — A standalone Node binary was not an npm distribution
+
+The pre-push gate failed the device-runtime packaging test when I selected the app's bundled
+system-linked Node executable. That executable has no adjacent npm CLI; the packaging test
+intentionally requires both. An already installed official Node distribution contains the
+matching npm CLI and links only system libraries. Before a packaging gate, verify the whole
+Node distribution layout, not only the executable and its linked libraries.
+
 ## 2026-11-04 — Eval safeguards needed their own negative control
 
 I initially added a stderr exclusion before demonstrating a failure. I removed that change,
