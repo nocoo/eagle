@@ -1,5 +1,27 @@
 # 用户视角检查点
 
+## 2026-11-03 20:35 +08 — three review rounds closed, gates green
+
+- Round 1 (read-only reviewer, pinned `01302e3..95cff80`) found nine issues; round 2
+  verified the repairs and found three more; round 3 verified those and found one
+  field-projection gap. All thirteen are fixed with regression tests. The review
+  budget (3 rounds) is spent; nothing is left in a known-broken state.
+- Repairs: device acceptance routes reflection per session without relaxing the
+  original request count; secret receipts survive unknown admission and are released
+  only for pre-effect validation or proven refusal; secret exports follow the
+  resolved scope; reflection has a durable two-request/15 s budget, cancels and joins
+  its child, releases the Harness when post-open recovery fails, and cannot drop a
+  committed settlement; recovered spend keeps its consumption date; question cards
+  carry grouped answers, admit over their own HTTP request, stay retryable on refusal
+  and never duplicate while pending; CLI answers correlate their own admission and
+  keep the wire JSON fields.
+- Gates on `2af81d9`: Bots check 994 (95.70 / 88.80 / 90.70), root check 265 with
+  typecheck/lint/build, browser 191, device acceptance 7/7, `apps/macos` 423,
+  `apps/bots-macos` 149, both strict-format clean.
+- Not verified: hand inspection of the cards and sheets in a rendered App, live Herdr
+  collection, production authentication and D1. The next broken hop is manual App
+  acceptance of the question/secret cards.
+
 ## 2026-11-03 19:36 +08 — first-round repairs awaiting incremental review
 
 - Device process acceptance passes 7/7 without relaxed limits. Regression tests
