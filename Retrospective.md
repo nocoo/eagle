@@ -1,5 +1,41 @@
 # Retrospective
 
+## 2026-11-03 — An empty local gateway key stopped acceptance before the model
+
+The first isolated CLI conversation failed with `model_error`: the gateway file carried an
+empty API key, so pi-ai rejected the configured provider before it contacted the local proxy.
+The local proxy accepted a non-secret local-only placeholder, after which the same isolated
+flow reached the real model. Check the provider's authentication contract before attributing
+an acceptance failure to the feature; never print or copy a production credential to debug it.
+
+## 2026-11-03 — Reflection ordering was coded ahead of its test
+
+While addressing the review's restart-ordering finding, I added a catalog note-owner field
+before writing its behavioral assertion. I removed the field's persistence, added the
+assertion and observed `undefined !== 12`, then restored the implementation. That negative
+control proves the assertion catches the missing behavior, but it does not make the original
+sequence test-first. Write and run the failing test before each behavioral change, including
+small pieces of a larger repair.
+
+## 2026-11-03 — Conversation usage is not harness usage
+
+I first wrote a reflection test expecting the root conversation's `usage` event to include
+all forked-conversation spend. The existing protocol defines that event as one conversation's
+usage, while per-Bot daily statistics have a broader purpose. Preserve the wire meaning and
+account for reflection spend in the statistics side channel instead of changing an existing
+field's semantics. Test the two totals separately.
+
+## 2026-11-03 — Reflection changed the submission outcome
+
+I proposed `GenerationTask.onYield` as a way to keep the first answer while an internal
+reflection runs, before checking failure settlement. In a real pi-durable 1.4.0 Harness with
+a scripted provider, the first answer was committed, but an error in the reflection request
+settled the original submission `unanswered` with `model_error` and no answer ID. Hiding the
+internal entries in the client cannot preserve the original submission semantics by itself.
+Before proposing a continuation as transparent housekeeping, test its success, failure,
+abort, queue and restart paths through the actual submission receipt and client, not only
+whether the hook can call a tool.
+
 ## 2026-11-02 — A pane's "all green" predated the change I asked for next
 
 A coding pane reported `apps/macos` green (221 + 48 + 60 + 29) after adding the memory row.

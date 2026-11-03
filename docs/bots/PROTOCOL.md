@@ -264,17 +264,19 @@ exactly as before.
 `BotSummary.note` is the one line a sidebar row shows about a Bot, so a person knows what
 it is doing without opening the conversation (which costs a socket and a restore).
 
-- **It is refreshed by every settled run.** When a run settles the daemon writes this
-  run's line: the value the Bot gave `note_set` during that run, or — when it gave none —
-  the first sentence of that run's answer, whitespace collapsed, at most 120 characters,
-  cut at a character boundary. The derivation is local and deterministic: no model call,
-  no extra tokens.
+- **It is refreshed by an answered run.** After reflection, the daemon writes the Bot's
+  proposed `note_set` value, the value it gave during the run, or — when it gave neither —
+  the first sentence of the answer, whitespace collapsed, at most 120 characters, cut at a
+  character boundary. The fallback itself is local and deterministic; reflection makes a
+  separate model request. Aborted or unanswered runs do not refresh the line.
 - **A Bot refines it, the daemon keeps it.** `note_set` (the `core` group) is how a Bot
   replaces the derived line with a better one ("在等 PR 审核" instead of the answer's first
   sentence), and `""` is how it clears the line for this run. A cleared line is not
   re-derived in the same run.
 - **The next run owns the next line.** A Bot that stopped caring about its note does not
-  leave a stale one behind: the following settled run replaces it.
+  leave a stale one behind: the following answered run replaces it. A human edit that races
+  with reflection wins: the catalog compares an internal note revision atomically, including
+  after a clear. Reflection's internal owner and revision never ride the wire.
 - **Bounded and normalized.** Whitespace runs collapse to one space, the value is trimmed,
   and 120 characters is the cap. A longer `note_set` value is refused instead of
   truncated: a silently shortened status line is a lie.
@@ -454,7 +456,11 @@ and on every write.
   title from the catalog, so a client shows a name even for a bot it never loaded.
 - The counters are deltas: the runtime reports cumulative totals, and the daemon books what
   a conversation gained since its last report. A reset conversation books nothing rather
-  than a negative row.
+  than a negative row. Hidden reflection conversations contribute their model spend through
+  a durable per-conversation counter, so replay does not book the same spend twice. These
+  content-free counter identities remain after daily rows expire to prevent a late replay
+  from booking old spend again. The `usage` event below remains the root conversation's
+  own usage.
 - Statistics are a side channel: if the store cannot be written, the conversation is
   unaffected and the row is missing, never invented.
 

@@ -45,15 +45,28 @@ export const createNoteSetTool = (host: NoteToolHost | undefined) =>
  */
 export const createNoteHost = (options: {
   readonly botId: string;
-  readonly write: (text: string) => Promise<{ readonly note?: string }>;
-  readonly current: () => { readonly note?: string; readonly at?: string };
+  readonly write: (
+    text: string,
+    expectedRevision?: string,
+    owner?: number,
+  ) => Promise<{ readonly note?: string } | undefined>;
+  readonly current: () => {
+    readonly note?: string;
+    readonly at?: string;
+    readonly revision?: string;
+    readonly owner?: number;
+  };
   readonly changed: () => void;
 }): NoteToolHost => ({
   botId: options.botId,
-  async set(text) {
-    const written = await options.write(text);
+  async set(text, expectedRevision, owner) {
+    const written = await options.write(text, expectedRevision, owner);
+    if (written === undefined) return { applied: false };
     options.changed();
-    return written.note === undefined ? {} : { note: written.note };
+    return {
+      ...(written.note === undefined ? {} : { note: written.note }),
+      ...(expectedRevision === undefined ? {} : { applied: true }),
+    };
   },
   current: options.current,
 });

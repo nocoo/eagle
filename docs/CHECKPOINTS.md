@@ -1,5 +1,81 @@
 # 用户视角检查点
 
+## 2026-11-03 10:17 +08 — reflection verified through an isolated CLI
+
+- The current implementation ran against a real local model through `eagle-dev` in an
+  isolated daemon root. Three chats produced visible `note_set` calls and updated the note
+  from awaiting reading-club venue preferences, to organizing invitations, to a cat-food
+  transition plan. Each original request settled `done`; the internal reflection prompt
+  was absent from the root chat. A prior history-page check showed the tool calls survive.
+- `apps/bots npm run check` passed: 842 tests, 95.24% lines / 88.52% branches / 90.70%
+  functions. The complete scripted CLI eval passed 18 cases, including `cli-reflection`.
+  Three read-only reviews were completed; the final round's two fallback findings were
+  reproduced and repaired with tests. The last fixes were not reviewed a fourth time.
+- The dev credential and daemon state were temporary; no production credential was copied.
+  Herdr collection, Cloudflare authentication, D1 and installed-App rendering were not
+  exercised. The source change is local and is not deployed or released.
+
+## 2026-11-03 09:57 +08 — final review repairs and CLI evidence
+
+- An isolated daemon running the 09:48 tree used a temporary dev credential and the local
+  real model. Three `eagle-dev` chats produced visible `note_set` calls and notes for venue,
+  invitations and cat food. A history page retained the three calls without the internal
+  reminder. No Herdr collection, Cloudflare authentication, D1 or installed-App rendering was
+  exercised. Later review fixes mean this is not yet verification of the final tree.
+- The full Bots `check` passed at 837 tests and 95.09% lines / 88.55% branches / 90.41%
+  functions before the latest review fixes. The full scripted CLI eval passed 18 cases before
+  the evaluator's routing identity repair. Both gates need a fresh run on the final tree.
+- Second review found three remaining issues: no-op fallback could overwrite a human note,
+  a prior fallback's owner was lost on restart, and eval routed by an unsafe prompt substring.
+  Regression tests were added and fixes applied; a third read-only review is still due.
+
+## 2026-11-03 09:39 +08 — reflection review repairs in progress
+
+- The three-turn isolated real-model CLI acceptance from 09:00 remains the latest live
+  evidence; its daemon predates subsequent code changes. Authentication used a temporary
+  development token. No Herdr collection, Cloudflare authentication, D1 or installed-App
+  rendering was exercised.
+- Added targeted tests and fixes for abort not applying a candidate, atomic catalog
+  compare-and-set including a clear, prior queued-answer recovery, restart ordering, and
+  visibility of a committed reflection tool call before cancellation. Reflection usage is
+  tracked from committed child usage changes with keyed replay-safe counters. These changes
+  have not yet received the required second read-only review.
+- The full Bots gate and eval remain open: the last full run had one saved-gateway test
+  expecting a single request; eval scripts misassigned model replies to the new reflection.
+  The saved-gateway test now explicitly expects both authorized requests. No successful full
+  rerun has been recorded, and existing eval limits have not been changed.
+
+## 2026-11-03 09:19 +08 — reflection review and gates remain open
+
+- The isolated `eagle-dev` conversation reached the local real model and showed three
+  `note_set` calls as its topics moved from venue to invitations to cat food. Its notes
+  followed those topics; this is evidence for an earlier local build, not the current tree.
+  Authentication used a temporary dev credential, not production credentials. Herdr
+  collection, Cloudflare authentication, D1 and installed-App rendering were not exercised.
+- `npm run check` stopped at one saved-gateway test expecting one model request, because
+  the new reflection makes another. `npm run eval` failed multiple cases: the scripted model
+  consumed user replies for reflection and some existing request limits failed. No limits or
+  tests were skipped. Runtime regression tests covered candidate recovery, changed answers,
+  queueing and a pre-existing newer manual note.
+- Read-only review identified six remaining correctness gaps: cancellation could apply a
+  candidate; note conflict checks are not atomic; queued-run recovery loses ordering; a
+  queued user hides an older recovery candidate; cancelled reflection tool rows can vanish;
+  and cancellation/background compaction spend can be missed. These are not fixed or verified.
+
+## 2026-11-03 09:00 +08 — reflection in an isolated CLI conversation
+
+- An isolated development daemon and `eagle-dev` used a temporary root, a newly minted local
+  development credential and the local model gateway; no production credential was copied.
+  Three real model turns showed `note_set` tool rows and sidebar notes move from arranging a
+  reading-club venue, to invitations, to a cat-food transition plan. The main answer remained
+  visible; the internal reminder and reflection answer did not appear in the CLI transcript.
+- The first attempt failed before reaching the model because the isolated gateway's key was
+  empty; a local-only placeholder fixed that configuration. This is not a production or
+  installed-App acceptance. Herdr collection, Cloudflare authentication and D1 were not exercised.
+- Scripted runtime tests cover a reflection failure, an interrupted generation whose answer
+  changes on reopen, and retrying a failed catalog write. The full Bots gate, model-usage
+  accounting, final-code CLI replay and read-only review are still outstanding.
+
 ## 2026-11-03 07:01 +08 — macOS 0.17.0 asset published
 
 - `macos-v0.17.0` points to `2d696e1`, whose GitHub root and macOS checks

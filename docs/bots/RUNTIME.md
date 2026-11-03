@@ -245,6 +245,21 @@ runs once per episode key. Channels never mint on their own.
 Normal ends (`close()` we asked for, `stopped`/`session_closed` watch reasons) are
 not failures and produce no `error` event.
 
+## Reflection before settlement
+
+Before a root conversation settles its answer, `GenerationTask.onYield` asks a forked, owned
+conversation to consider a fixed checklist. The fork sees the original context and answer but
+only the checklist tools. The initial checklist asks whether to update the sidebar with
+`note_set`; it never includes memory. The prompt and the fork's answer are not root chat.
+Reflection happens at most once per input, including after a restart. A failed reflection is
+reported separately and does not replace the original answer or make it unanswered.
+
+A reflection's note is a durable candidate, not an immediate catalog write: it is applied only
+when the original answer commits and still matches the answer the fork saw. A restart can
+regenerate a different answer, so a candidate for the abandoned answer is discarded. Queued
+user inputs remain ordered behind the current run. Reflection tool calls are observable without
+adding the internal prompt or answer to the root conversation.
+
 ## Submission ledger
 
 The adapter keeps `requestId → submissionId` in memory and answers from it:

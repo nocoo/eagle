@@ -282,11 +282,18 @@ export class BotRegistry {
   }
 
   /** The line a bot wrote about itself and when: the prompt shows both, the wire neither. */
-  noteOf(botId: string): { readonly note?: string; readonly at?: string } {
+  noteOf(botId: string): {
+    readonly note?: string;
+    readonly at?: string;
+    readonly revision: string;
+    readonly owner?: number;
+  } {
     const config = this.#entries.get(botId)?.config;
     return {
       ...(config?.note === undefined ? {} : { note: config.note }),
       ...(config?.noteAt === undefined ? {} : { at: config.noteAt }),
+      revision: config?.noteRevision ?? "",
+      ...(config?.noteOwner === undefined ? {} : { owner: config.noteOwner }),
     };
   }
 
@@ -306,6 +313,23 @@ export class BotRegistry {
     const config = await this.#write(trace, botId, () =>
       this.#options.directory.update(botId, changes, at),
     );
+    entry.config = config;
+    return this.#summary(entry);
+  }
+
+  async updateNoteIfRevision(
+    botId: string,
+    note: string,
+    revision: string,
+    trace: string,
+    owner?: number,
+  ): Promise<BotSummary | undefined> {
+    const entry = this.#entry(botId, trace);
+    const at = (this.#options.now?.() ?? new Date()).toISOString();
+    const config = await this.#write(trace, botId, () =>
+      this.#options.directory.updateNoteIfRevision(botId, note, revision, at, owner),
+    );
+    if (config === undefined) return undefined;
     entry.config = config;
     return this.#summary(entry);
   }

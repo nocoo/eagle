@@ -158,7 +158,10 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
             note: (spec: { readonly id: string }) =>
               createNoteHost({
                 botId: spec.id,
-                write: (text) => registry.update(spec.id, { note: text }, "tr_note_test"),
+                write: (text, revision, owner) =>
+                  revision === undefined
+                    ? registry.update(spec.id, { note: text }, "tr_note_test")
+                    : registry.updateNoteIfRevision(spec.id, text, revision, "tr_note_test", owner),
                 current: () => registry.noteOf(spec.id),
                 changed: () => broadcast?.(),
               }),

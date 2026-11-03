@@ -68,6 +68,11 @@ test("one run's own note_set value is read once and then forgotten", () => {
   assert.equal(run.take(), undefined, "a run that never called the tool has no value");
   run.record("在等 PR 审核");
   run.record("在等合并");
+  assert.equal(
+    run.peek(),
+    "在等合并",
+    "a durable fallback can inspect the value without consuming it",
+  );
   assert.equal(run.take(), "在等合并", "the last call of the run wins");
   assert.equal(run.take(), undefined, "one value belongs to one run");
 });

@@ -65,6 +65,24 @@ test("a cumulative total becomes one delta per day and resets book nothing", asy
   }
 });
 
+test("a keyed cumulative reflection counter is replay safe", async () => {
+  const bench = await store();
+  try {
+    bench.usage.record({ botId: "b_1", source: "model", counter: "reflection:12", tokens: 100 });
+    bench.usage.record({ botId: "b_1", source: "model", counter: "reflection:12", tokens: 100 });
+    bench.usage.record({ botId: "b_1", source: "model", counter: "reflection:12", tokens: 120 });
+    bench.advance(1);
+    bench.usage.record({ botId: "b_1", source: "model", counter: "reflection:12", tokens: 150 });
+    bench.usage.record({ botId: "b_1", source: "model", counter: "reflection:13", tokens: 30 });
+    const report = bench.usage.report(7);
+    assert.equal(report.days.at(-2)?.totalTokens, 120);
+    assert.equal(report.today.totalTokens, 60);
+    assert.equal(report.week.totalTokens, 180);
+  } finally {
+    await bench.cleanup();
+  }
+});
+
 test("today, week and month windows and the retention bound hold", async () => {
   const bench = await store({ retentionDays: 3 });
   try {
