@@ -29,6 +29,7 @@ import {
   stopReasonOf,
 } from "./convert.ts";
 import { MAX_MESSAGE_BYTES, OVERSIZED_NOTICE, WINDOW_MESSAGES } from "./limits.ts";
+import { REFLECTION_TOOL_ENTRY } from "./reflection.ts";
 
 export type EventMapperOptions = {
   readonly botId: string;
@@ -186,6 +187,12 @@ export class EventMapper {
         return this.#messageUpdate(event.changes, trace);
       case "message_end":
         return this.#messageEnd(event.entry, trace);
+      case "entry_appended": {
+        const message = this.#convertEntry(event.entry);
+        if (message === undefined) return [];
+        this.#upsert(message);
+        return [{ type: "append", trace, message }];
+      }
       case "run_start":
         this.#running = true;
         return [this.#status(trace)];
@@ -467,15 +474,22 @@ export class EventMapper {
   }
 
   #convertEntry(entry: EntryRecord): Message | undefined {
-    const model = entry.model?.[0];
-    if (model === undefined) return undefined;
-    if (
+    let model = entry.model?.[0];
+    if (entry.kind === REFLECTION_TOOL_ENTRY) {
+      const data = entry.data;
+      if (data === null || typeof data !== "object" || Array.isArray(data)) return undefined;
+      const value = data.message;
+      if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+      if (value.role !== "assistant" && value.role !== "toolResult") return undefined;
+      model = value as unknown as NonNullable<EntryRecord["model"]>[number];
+    } else if (
       entry.kind !== "pi.user" &&
       entry.kind !== "pi.assistant" &&
       entry.kind !== "pi.tool-result"
     ) {
       return undefined;
     }
+    if (model === undefined) return undefined;
     const id = entryMessageId(entry.id);
     const requestId = this.#requestByEntry.get(id);
     let message = convertMessage(model, {

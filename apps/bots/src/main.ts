@@ -472,13 +472,12 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     note: (spec) =>
       createNoteHost({
         botId: spec.id,
-        async write(text) {
+        async write(text, expectedRevision, owner) {
           noteTraces += 1;
-          return registry.update(
-            spec.id,
-            { note: text },
-            `tr_note_${Date.now().toString(36)}_${noteTraces.toString(36)}`,
-          );
+          const trace = `tr_note_${Date.now().toString(36)}_${noteTraces.toString(36)}`;
+          return expectedRevision === undefined
+            ? registry.update(spec.id, { note: text }, trace)
+            : registry.updateNoteIfRevision(spec.id, text, expectedRevision, trace, owner);
         },
         current: () => registry.noteOf(spec.id),
         changed: () => broadcast?.(),

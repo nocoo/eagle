@@ -335,6 +335,7 @@ export const noteLine = (
 /** What one run did to its own line: the last note_set value, or nothing at all. */
 export type RunNote = {
   record(text: string): void;
+  peek(): string | undefined;
   /** Reads the run's own value and forgets it: one value belongs to one run. */
   take(): string | undefined;
 };
@@ -345,6 +346,7 @@ export const createRunNote = (): RunNote => {
     record: (text) => {
       value = text;
     },
+    peek: () => value,
     take: () => {
       const taken = value;
       value = undefined;
@@ -480,6 +482,8 @@ export type BotRecord = {
   readonly note?: string;
   /** When that line was written; it lives and dies with the note and never rides the wire. */
   readonly noteAt?: string;
+  readonly noteRevision?: string;
+  readonly noteOwner?: number;
   /** Absent in catalogs written before appearance existed; defaults on load. */
   readonly appearance?: BotAppearance;
   readonly createdAt: string;

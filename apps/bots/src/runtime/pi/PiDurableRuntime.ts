@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { Models, ModelThinkingLevel } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Models, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { TaskGraph, TaskId } from "@earendil-works/pi-durable";
 import {
   type AgentEvent,
@@ -61,6 +61,15 @@ import { openWorkspace } from "../../tools/workspace.ts";
 import { FailureClassifier, type Minted } from "./classify.ts";
 import { entryMessageId } from "./convert.ts";
 import { convertSubmission, EventMapper } from "./mapEvents.ts";
+import {
+  answerHash,
+  REFLECTION_EXTENSION,
+  recoverReflectionNote,
+  reflectionCandidate,
+  reflectionExtension,
+  saveReflectionDecision,
+  trackReflectionUsage,
+} from "./reflection.ts";
 
 const Events = {
   openStart: declareEvent("runtime.open.start"),
@@ -89,6 +98,7 @@ const Events = {
   piSessionClosed: declareEvent("pi.session.closed"),
   toolsRefreshOk: declareEvent("runtime.tools.refresh.ok"),
   toolsRefreshFail: declareEvent("runtime.tools.refresh.fail"),
+  reflectionFail: declareEvent("runtime.reflection.fail"),
   // The line a settled run writes is a catalog field, so a failed write is recorded as one.
   catalogWriteFail: declareEvent("core.catalog.write.fail"),
 } as const;
@@ -302,7 +312,28 @@ export class PiDurableRuntime implements RuntimePort {
             : { thinkingLevel: spec.thinkingLevel as ModelThinkingLevel }),
         },
       });
+      if (note !== undefined) {
+        const reflection = reflectionExtension({
+          harness,
+          root,
+          note,
+          runNote,
+          failed: (taskId, reason) => handle?.reflectionFailed(taskId, reason),
+        });
+        registry.install(reflection);
+        installed.push(reflection);
+      }
       await root.configure({ extensions: installed }, BACKGROUND_CONTEXT);
+      const reflectionUsage =
+        note === undefined || this.#options.usage === undefined
+          ? undefined
+          : trackReflectionUsage({
+              harness,
+              root,
+              botId: spec.id,
+              usage: this.#options.usage,
+              failed: (taskId, reason) => handle?.reflectionFailed(taskId, reason),
+            });
       handle = new PiRuntimeHandle({
         spec,
         harness,
@@ -313,7 +344,10 @@ export class PiDurableRuntime implements RuntimePort {
         runNote,
         ...(note === undefined ? {} : { note }),
         ...(secrets === undefined ? {} : { secrets }),
+        ...(reflectionUsage === undefined ? {} : { reflectionUsage }),
       });
+      await reflectionUsage?.restore(BACKGROUND_CONTEXT);
+      await handle.recoverReflection();
       handle.attachTaskGraph(await harness.taskGraph(BACKGROUND_CONTEXT));
       harness.closed.then((end) => handle?.sessionEnd(end));
       for (const info of pending.splice(0)) handle.report(info);
@@ -368,6 +402,7 @@ type HandleOptions = {
   readonly runNote: RunNote;
   /** The secrets host this bot was opened with, so a live switch reaches its environment. */
   readonly secrets?: SecretsToolHost;
+  readonly reflectionUsage?: ReturnType<typeof trackReflectionUsage>;
 };
 
 class PiRuntimeHandle implements RuntimeHandle {
@@ -383,6 +418,7 @@ class PiRuntimeHandle implements RuntimeHandle {
   readonly #options: PiRuntimeOptions;
   readonly #note: NoteToolHost | undefined;
   readonly #runNote: RunNote;
+  readonly #reflectionUsage: ReturnType<typeof trackReflectionUsage> | undefined;
   readonly #mapper: EventMapper;
   /** One logical subscription per sink, holding whichever stream is current. */
   readonly #subscriptions = new Map<(event: RuntimeEvent) => void, Subscription>();
@@ -411,8 +447,13 @@ class PiRuntimeHandle implements RuntimeHandle {
   #watchSequence = 0;
   #closing: Promise<void> | undefined;
   #resubscribed = false;
-  /** The answer text of the run in flight, for the line its settlement derives. */
-  #runAnswer: string | undefined;
+  /** The answer of the run in flight, for the line its settlement derives. */
+  #runAnswer:
+    | { text: string; taskId: TaskId; entryId: EntryId; message: AssistantMessage }
+    | undefined;
+  #lastSettledNote:
+    | { readonly note?: string; readonly at?: string; readonly revision?: string }
+    | undefined;
   /** The run whose line was already written, so a second subscriber cannot write it twice. */
   #settledRun: string | undefined;
   /** Serializes the settlements: a line lands in the order its runs settled. */
@@ -428,6 +469,7 @@ class PiRuntimeHandle implements RuntimeHandle {
     this.#note = options.note;
     this.#runNote = options.runNote;
     this.#secretsHost = options.secrets;
+    this.#reflectionUsage = options.reflectionUsage;
     this.#toolGroups = resolveToolGroups(options.spec.toolGroups);
     this.#mapper = new EventMapper({
       botId: options.spec.id,
@@ -440,6 +482,27 @@ class PiRuntimeHandle implements RuntimeHandle {
         : { maxMessageBytes: options.options.maxMessageBytes }),
       marks: (requestId) => this.#answerMarks.get(requestId),
     });
+  }
+
+  async recoverReflection(): Promise<void> {
+    if (this.#note === undefined) return;
+    try {
+      const root = await this.#harness.root(BACKGROUND_CONTEXT);
+      await recoverReflectionNote({
+        harness: this.#harness,
+        root,
+        note: this.#note,
+        context: BACKGROUND_CONTEXT,
+      });
+    } catch (cause) {
+      if (!(cause instanceof ClassifiedFailure)) throw cause;
+      this.#options.log.emit("warn", "core", Events.catalogWriteFail, {
+        trace: this.#spec.trace,
+        botId: this.#spec.id,
+        failure: cause.failure,
+        propagated: true,
+      });
+    }
   }
 
   /** The committed view without publishing anything. */
@@ -831,6 +894,8 @@ class PiRuntimeHandle implements RuntimeHandle {
   async refreshTools(trace: string): Promise<void> {
     try {
       const extensions = selectToolExtensions(this.#registry, this.#toolGroups);
+      const reflection = this.#registry.snapshot().extension(REFLECTION_EXTENSION);
+      if (reflection !== undefined) extensions.push(reflection);
       const root = await this.#harness.root(BACKGROUND_CONTEXT);
       await root.configure({ extensions }, BACKGROUND_CONTEXT);
       this.#secretsHost?.setEnabled?.(this.#toolGroups.includes("secrets"));
@@ -871,6 +936,7 @@ class PiRuntimeHandle implements RuntimeHandle {
     log.emit("info", "runtime", Events.closeStart, { trace, botId: this.#spec.id });
     this.#closing ??= this.#harness.close(BACKGROUND_CONTEXT).then(async () => {
       await this.#noteQueue;
+      await this.#reflectionUsage?.close();
     });
     const closing = this.#closing;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -914,6 +980,17 @@ class PiRuntimeHandle implements RuntimeHandle {
       failure: minted.classification.failure,
       message: minted.classification.message,
     });
+  }
+
+  reflectionFailed(taskId: number, reason: string): void {
+    const kind = reason === "model_error" || reason === "no_model" ? "model_error" : "internal";
+    const minted = this.#classifier.classify(`reflection:${taskId}`, kind, "runtime");
+    this.#logFailure(
+      minted,
+      this.#runTrace ?? this.#lastTrace ?? this.#spec.trace,
+      Events.reflectionFail,
+      "runtime",
+    );
   }
 
   /** `HarnessOptions.onReport`, off the Session line; the channel never mints by itself. */
@@ -1128,7 +1205,7 @@ class PiRuntimeHandle implements RuntimeHandle {
       for (const mapped of this.#mapOne(event, trace, byEntry, active)) {
         this.#deliver(state, mapped);
       }
-      this.#followRun(event, trace);
+      await this.#followRun(event, trace, batch);
     }
     // The commit belongs to the run it ends, including the settlement that follows
     // `run_end` in the same batch; a run that starts in this batch sets its own trace.
@@ -1285,7 +1362,7 @@ class PiRuntimeHandle implements RuntimeHandle {
    * Keeps what one settled run's line needs: the newest answer text and the value the Bot
    * gave note_set. Runs on every subscriber's batch, so the second one must not write again.
    */
-  #followRun(event: AgentEvent, trace: string): void {
+  async #followRun(event: AgentEvent, trace: string, batch: readonly AgentEvent[]): Promise<void> {
     if (event.type === "run_start") {
       this.#runAnswer = undefined;
       return;
@@ -1296,7 +1373,20 @@ class PiRuntimeHandle implements RuntimeHandle {
         message === undefined || message.role !== "assistant"
           ? undefined
           : message.blocks.map((block) => (block.type === "text" ? block.text : "")).join("");
-      if (answer !== undefined && answer !== "") this.#runAnswer = answer;
+      const original = event.entry.model?.[0];
+      if (
+        answer !== undefined &&
+        answer !== "" &&
+        original?.role === "assistant" &&
+        event.entry.byTaskId !== undefined
+      ) {
+        this.#runAnswer = {
+          text: answer,
+          taskId: event.entry.byTaskId,
+          entryId: event.entry.id,
+          message: original,
+        };
+      }
       return;
     }
     if (event.type !== "run_end") return;
@@ -1305,19 +1395,78 @@ class PiRuntimeHandle implements RuntimeHandle {
     this.#settledRun = run;
     const answer = this.#runAnswer;
     this.#runAnswer = undefined;
-    this.#settleNote(answer, trace);
+    const answered =
+      answer !== undefined &&
+      batch.some(
+        (item) =>
+          item.type === "submission" &&
+          item.record.status === "done" &&
+          event.inputs.includes(item.record.id) &&
+          item.record.type === "input" &&
+          item.record.answer === answer.entryId,
+      );
+    if (!answered) {
+      this.#runNote.take();
+      return;
+    }
+    await this.#settleNote(answer, trace);
   }
 
   /**
    * Writes the run's line and broadcasts it through the host: the value the Bot gave, or the
    * line its answer derives. One write per run, and a failed write is never the run's failure.
    */
-  #settleNote(answer: string | undefined, trace: string): void {
+  async #settleNote(
+    answer:
+      | { text: string; taskId: TaskId; entryId: EntryId; message: AssistantMessage }
+      | undefined,
+    trace: string,
+  ): Promise<void> {
     const host = this.#note;
     if (host === undefined) return;
     const given = this.#runNote.take();
-    const note = given === undefined ? deriveBotNote(answer ?? "") : given;
-    const written = this.#noteQueue.then(() => host.set(note ?? ""));
+    const root = await this.#harness.root(BACKGROUND_CONTEXT);
+    const candidate =
+      answer === undefined
+        ? undefined
+        : await reflectionCandidate({
+            harness: this.#harness,
+            root,
+            taskId: answer.taskId,
+            context: BACKGROUND_CONTEXT,
+          });
+    if (candidate === undefined || answer === undefined) return;
+    const reflectionNote =
+      "note" in candidate &&
+      typeof candidate.note === "string" &&
+      "noteSource" in candidate &&
+      candidate.noteSource === answerHash(answer.message)
+        ? candidate.note
+        : undefined;
+    const note = reflectionNote ?? given ?? deriveBotNote(answer.text) ?? "";
+    await saveReflectionDecision({
+      root,
+      taskId: answer.taskId,
+      answer: answer.message,
+      note,
+      context: BACKGROUND_CONTEXT,
+    });
+    const written = this.#noteQueue.then(async () => {
+      const current = host.current();
+      const matchesPrevious =
+        candidate?.previous === current.note &&
+        candidate?.previousAt === current.at &&
+        candidate?.previousRevision === current.revision;
+      const matchesOwnWrite =
+        (answer !== undefined && current.owner !== undefined && current.owner < answer.taskId) ||
+        (current.revision === undefined &&
+          this.#lastSettledNote !== undefined &&
+          this.#lastSettledNote.note === current.note &&
+          this.#lastSettledNote.at === current.at);
+      if (!matchesPrevious && !matchesOwnWrite) return;
+      const written = await host.set(note, current.revision, answer.taskId);
+      if (written.applied !== false) this.#lastSettledNote = host.current();
+    });
     this.#noteQueue = written.catch(() => undefined);
     void written.catch((cause: unknown) => {
       // The catalog write records its own origin; this only says the settled run handed the

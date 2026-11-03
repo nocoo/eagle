@@ -95,7 +95,11 @@ test("saved gateway credentials authorize model requests on every daemon boot", 
           return record?.status === "done" || record?.status === "unanswered";
         }, "the saved-key request settles");
         assert.equal((await handle.submission({ requestId }))?.status, "done");
-        assert.equal(authorized, boot, "the saved key reached the local model endpoint");
+        assert.equal(
+          authorized,
+          boot * 2,
+          "the saved key authorizes both the answer and reflection",
+        );
       } finally {
         await daemon.close();
       }

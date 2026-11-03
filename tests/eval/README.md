@@ -92,7 +92,11 @@ stable rather than lucky once.
       { "toolCall": { "name": "bash", "args": { "command": "node check.mjs" } } },
       { "text": "修好了：加号。" }
     ],
-    "repeatLast": false                  // optional; default false fails on extra requests
+    "repeatLast": false,                 // optional; default false fails on extra requests
+    "reflectionScript": [               // optional; absent means one no-op reflection reply
+      { "toolCall": { "name": "note_set", "args": { "text": "reviewing" } } },
+      { "text": "Checked." }
+    ]
   },
   "steps": [
     { "kind": "chat", "text": "把 check.mjs 修好" },
@@ -117,13 +121,22 @@ stable rather than lucky once.
     "toolsCalled": ["read", "bash", "edit"],   // every named tool ran at least once
     "files": { "src/sum.js": "a + b" },        // the workspace afterwards
     "noErrors": true,                    // no error frame beyond an unconfigured search
-    "modelRequests": { "max": 8 }        // a loop guard: a runaway model fails the case
+    "modelRequests": { "max": 8 },       // unchanged loop guard for the user-facing run
+    "reflectionRequests": { "max": 2 }   // separate guard for the reflection script
   }
 }
 ```
 
 Steps run in order. Every step has `kind`; `timeoutMs` on a step overrides the case
-budget for that step.
+budget for that step. Reflection requests use a separate script and do not consume the
+user-facing script; the existing `modelRequests.max` still bounds user-facing requests.
+When no reflection script is supplied, each reflection has one no-op response and the
+runner rejects more reflection requests than completed user-facing model answers. A case
+with an explicit reflection script specifies its own `reflectionRequests.max`; exhausting
+that script fails the case. The runner binds the first reflection request's exact prompt and
+note-only tool loadout to its provider session identity; later requests in that session stay
+in the reflection budget. Missing session identity fails the case. Quoting the reminder in a
+root conversation does not change that root's request classification.
 
 | Step | Does |
 | --- | --- |
@@ -132,6 +145,7 @@ budget for that step.
 | `patch` | `PATCH /v1/triggers/<bot>/<trigger>` with `{ enabled }` |
 | `http` | Any request against the daemon; `expectStatus` asserts the code |
 | `waitFor` | Waits until the transcript has at least `count` messages matching `origin`/`role`/`contains` |
+| `waitNote` | Repeatedly runs `eagle-dev bots show --json` until its note equals `text`, with the step deadline |
 | `sleep` | Waits; only for spacing, never to "hope" for an outcome |
 
 ## What is already covered

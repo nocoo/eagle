@@ -168,6 +168,105 @@ test("a saved value reaches a command as environment, and never the transcript",
   }
 });
 
+test("reflection and secret group changes coexist without exposing the secret", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bots-secret-reflection-"));
+  const store = await SecretsStore.open({
+    dir: join(root, "config"),
+    keyPath: join(root, "state", "secrets.key"),
+  });
+  const notes: string[] = [];
+  const usage: string[] = [];
+  const bench = await createBench({
+    toolGroups: ["core", "coding", "secrets"],
+    secrets: (spec) => store.hostFor(spec.id),
+    usage: { record: (entry) => usage.push(entry.counter ?? "") },
+    note: (spec) => ({
+      botId: spec.id,
+      async set(value) {
+        notes.push(value);
+        return value === "" ? {} : { note: value };
+      },
+      current: () => (notes.length === 0 ? {} : { note: notes.at(-1) ?? "" }),
+    }),
+  });
+  const events: RuntimeEvent[] = [];
+  const handle = await bench.runtime.open(bench.spec());
+  try {
+    await store.save({
+      botId: bench.spec().id,
+      key: "github-pat",
+      value: "sentinel-reflection-value-9c1f",
+      scope: "bot",
+    });
+    await handle.subscribe(trace, (event) => events.push(event));
+    const check =
+      'if [ -n "$EAGLE_SECRET_GITHUB_PAT" ]; then printf present; else printf absent; fi';
+    bench.faux.setResponses([
+      assistant([toolCall("secret_read", { key: "github-pat" })], { stopReason: "toolUse" }),
+      assistant([toolCall("bash", { command: check })], { stopReason: "toolUse" }),
+      text("Ready."),
+      assistant([toolCall("note_set", { text: "Release ready" })], { stopReason: "toolUse" }),
+      text("Checked."),
+    ]);
+    await handle.submit({
+      requestId: "r_secret_reflect_1",
+      text: "Prepare.",
+      whenBusy: "followUp",
+      trace,
+    });
+    await waitFor(
+      () => events.some((event) => event.type === "submission" && event.record.status === "done"),
+      "the first reflected run to settle",
+      10_000,
+    );
+    assert.match(results(events).find((block) => block.name === "bash")?.text ?? "", /present/);
+    assert.ok(notes.includes("Release ready"));
+    assert.ok(handle.configureToolGroups);
+    await handle.configureToolGroups(["core", "coding"], trace);
+    bench.faux.setResponses([
+      assistant([toolCall("bash", { command: check })], { stopReason: "toolUse" }),
+      text("Disabled."),
+      assistant([toolCall("note_set", { text: "Secrets disabled" })], { stopReason: "toolUse" }),
+      text("Checked."),
+    ]);
+    await handle.submit({
+      requestId: "r_secret_reflect_2",
+      text: "Check.",
+      whenBusy: "followUp",
+      trace,
+    });
+    await waitFor(
+      () =>
+        events.filter((event) => event.type === "submission" && event.record.status === "done")
+          .length === 2,
+      "the second reflected run to settle",
+      10_000,
+    );
+    assert.match(
+      results(events)
+        .filter((block) => block.name === "bash")
+        .at(-1)?.text ?? "",
+      /absent/,
+    );
+    assert.ok(notes.includes("Secrets disabled"));
+    await waitFor(
+      () => usage.some((counter) => counter.startsWith("reflection:")),
+      "reflection usage to be recorded",
+    );
+    assert.equal(JSON.stringify(events).includes("sentinel-reflection-value-9c1f"), false);
+    assert.equal(
+      JSON.stringify(await handle.history({ limit: 200 })).includes(
+        "sentinel-reflection-value-9c1f",
+      ),
+      false,
+    );
+  } finally {
+    await handle.close(trace, 1_000);
+    await bench.cleanup();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("switching the group off takes the environment with it", async () => {
   const root = await mkdtemp(join(tmpdir(), "bots-secret-runtime-"));
   const store = await SecretsStore.open({

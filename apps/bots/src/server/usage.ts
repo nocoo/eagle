@@ -22,6 +22,7 @@ export type UsageEntry = {
   readonly tokens?: number;
   readonly calls?: number;
   readonly costUsd?: number;
+  readonly counter?: string;
 };
 
 /** The seam the daemon and its tools report through, so a new source needs no new store. */
@@ -106,6 +107,15 @@ export class UsageStore implements UsageMeter {
         total_tokens integer not null,
         cost_usd real not null
       );
+      create table if not exists usage_counters (
+        bot_id text not null,
+        source text not null,
+        counter_key text not null,
+        tokens integer not null,
+        calls integer not null,
+        cost_usd real not null,
+        primary key (bot_id, source, counter_key)
+      );
     `);
     this.#migrateModelOnlyDays();
     this.prune();
@@ -129,20 +139,56 @@ export class UsageStore implements UsageMeter {
   }
 
   record(entry: UsageEntry): void {
-    const tokens = Math.max(0, Math.round(entry.tokens ?? 0));
-    const calls = Math.max(0, Math.round(entry.calls ?? 0));
-    const costUsd = Math.max(0, entry.costUsd ?? 0);
-    if (tokens === 0 && calls === 0 && costUsd === 0) return;
-    this.#db
-      .prepare(
-        `insert into usage_daily (bot_id, day, source, tokens, calls, cost_usd)
-         values (?, ?, ?, ?, ?, ?)
-         on conflict(bot_id, day, source) do update set
-           tokens = tokens + excluded.tokens,
-           calls = calls + excluded.calls,
-           cost_usd = cost_usd + excluded.cost_usd`,
-      )
-      .run(entry.botId, dayOf(this.#now()), entry.source, tokens, calls, costUsd);
+    let tokens = Math.max(0, Math.round(entry.tokens ?? 0));
+    let calls = Math.max(0, Math.round(entry.calls ?? 0));
+    let costUsd = Math.max(0, entry.costUsd ?? 0);
+    const counter = entry.counter;
+    if (counter !== undefined) this.#db.exec("begin immediate");
+    try {
+      if (counter !== undefined) {
+        const previous = this.#db
+          .prepare(
+            "select tokens, calls, cost_usd from usage_counters where bot_id = ? and source = ? and counter_key = ?",
+          )
+          .get(entry.botId, entry.source, counter) as
+          | { tokens: number; calls: number; cost_usd: number }
+          | undefined;
+        this.#db
+          .prepare(
+            `insert into usage_counters (bot_id, source, counter_key, tokens, calls, cost_usd)
+           values (?, ?, ?, ?, ?, ?)
+           on conflict(bot_id, source, counter_key) do update set
+             tokens = max(tokens, excluded.tokens), calls = max(calls, excluded.calls),
+             cost_usd = max(cost_usd, excluded.cost_usd)`,
+          )
+          .run(entry.botId, entry.source, counter, tokens, calls, costUsd);
+        tokens = Math.max(0, tokens - (previous?.tokens ?? 0));
+        calls = Math.max(0, calls - (previous?.calls ?? 0));
+        costUsd = Math.max(0, costUsd - (previous?.cost_usd ?? 0));
+      }
+      if (tokens !== 0 || calls !== 0 || costUsd !== 0) {
+        this.#db
+          .prepare(
+            `insert into usage_daily (bot_id, day, source, tokens, calls, cost_usd)
+             values (?, ?, ?, ?, ?, ?)
+             on conflict(bot_id, day, source) do update set
+               tokens = tokens + excluded.tokens,
+               calls = calls + excluded.calls,
+               cost_usd = cost_usd + excluded.cost_usd`,
+          )
+          .run(entry.botId, dayOf(this.#now()), entry.source, tokens, calls, costUsd);
+      }
+      if (counter !== undefined) this.#db.exec("commit");
+    } catch (error) {
+      if (counter !== undefined) {
+        try {
+          this.#db.exec("rollback");
+        } catch {
+          // Preserve the original storage error.
+        }
+      }
+      throw error;
+    }
     this.prune();
   }
 

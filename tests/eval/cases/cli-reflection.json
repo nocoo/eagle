@@ -1,0 +1,83 @@
+{
+  "id": "cli-reflection",
+  "title": "Reflection through the CLI",
+  "kind": "chat",
+  "model": {
+    "script": [
+      { "text": "The venue is being considered." },
+      { "text": "The invitation phase is underway." }
+    ],
+    "reflectionScript": [
+      {
+        "toolCall": {
+          "name": "note_set",
+          "args": { "text": "Choosing a venue" }
+        }
+      },
+      { "text": "Internal reflection one." },
+      {
+        "toolCall": {
+          "name": "note_set",
+          "args": { "text": "Inviting attendees" }
+        }
+      },
+      { "text": "Internal reflection two." }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval cli-reflection",
+        "--text",
+        "Choose a venue",
+        "--wait",
+        "--json"
+      ],
+      "stdoutContains": "note_set",
+      "stdoutExcludes": "Internal reflection one.",
+      "oneTerminal": true
+    },
+    { "kind": "waitNote", "text": "Choosing a venue", "timeoutMs": 5000 },
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval cli-reflection",
+        "--text",
+        "Now invite attendees",
+        "--wait",
+        "--json"
+      ],
+      "stdoutContains": "note_set",
+      "stdoutExcludes": "Internal reflection two.",
+      "oneTerminal": true,
+      "capture": "second"
+    },
+    { "kind": "waitNote", "text": "Inviting attendees", "timeoutMs": 5000 },
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "history",
+        "eval cli-reflection",
+        "--before",
+        "{{second.answerEntryId}}",
+        "--limit",
+        "20",
+        "--json"
+      ],
+      "stdoutContains": "note_set",
+      "stdoutExcludes": "Before finishing"
+    }
+  ],
+  "expect": {
+    "toolsCalled": ["note_set"],
+    "modelRequests": { "max": 2 },
+    "reflectionRequests": { "max": 4 },
+    "noErrors": true
+  }
+}

@@ -119,9 +119,18 @@ export type SecretsToolHost = {
 export type NoteToolHost = {
   readonly botId: string;
   /** Sets the note; an empty string clears it. Answers what the catalog now holds. */
-  set(text: string): Promise<{ readonly note?: string }>;
+  set(
+    text: string,
+    expectedRevision?: string,
+    owner?: number,
+  ): Promise<{ readonly note?: string; readonly applied?: boolean }>;
   /** The stored line and when it was written, read whenever the prompt is built. */
-  current(): { readonly note?: string; readonly at?: string };
+  current(): {
+    readonly note?: string;
+    readonly at?: string;
+    readonly revision?: string;
+    readonly owner?: number;
+  };
 };
 
 /** One trigger as a tool sees it: the daemon owns the storage, the tool owns the surface. */

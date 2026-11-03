@@ -91,6 +91,8 @@ const RECORD_KEYS = new Set([
   "label",
   "note",
   "noteAt",
+  "noteRevision",
+  "noteOwner",
   "appearance",
   "createdAt",
   "updatedAt",
@@ -113,11 +115,20 @@ const isBotRecord = (value: unknown): value is BotConfig => {
     label?: unknown;
     note?: unknown;
     noteAt?: unknown;
+    noteRevision?: unknown;
+    noteOwner?: unknown;
     appearance?: unknown;
   };
   if (labelled.label !== undefined && typeof labelled.label !== "string") return false;
   if (labelled.note !== undefined && typeof labelled.note !== "string") return false;
   if (labelled.noteAt !== undefined && typeof labelled.noteAt !== "string") return false;
+  if (labelled.noteRevision !== undefined && typeof labelled.noteRevision !== "string")
+    return false;
+  if (
+    labelled.noteOwner !== undefined &&
+    (typeof labelled.noteOwner !== "number" || !Number.isSafeInteger(labelled.noteOwner))
+  )
+    return false;
   if (labelled.appearance !== undefined) {
     const appearance = labelled.appearance;
     if (!isObject(appearance)) return false;
@@ -303,46 +314,82 @@ export class BotDirectory {
     },
     at: string,
   ): Promise<BotConfig> {
-    return this.#serial(async () => {
-      const bots = await this.load();
-      const index = bots.findIndex((bot) => bot.id === id);
-      if (index === -1) throw new DirectoryError("unknown_bot", `bot ${id} does not exist`);
-      const current = bots[index] as BotConfig;
-      const { label, note: storedNote, noteAt: storedNoteAt, ...rest } = current;
-      const note =
-        changes.note === undefined
-          ? storedNote
-          : changes.note === null
-            ? undefined
-            : normalizeBotNote(changes.note);
-      if (note !== undefined && note.length > MAX_BOT_NOTE_CHARS) {
-        throw new DirectoryError(
-          "invalid_note",
-          `a note is at most ${MAX_BOT_NOTE_CHARS} characters`,
-        );
-      }
-      // The time is the note's own: a rewritten line is as old as its latest write, and a
-      // cleared one has no age to report.
-      const noteAt =
-        changes.note === undefined ? storedNoteAt : note === undefined ? undefined : at;
-      const updated: BotConfig = {
-        ...rest,
-        ...(changes.title === undefined ? {} : { title: changes.title }),
-        ...(changes.appearance === undefined ? {} : { appearance: changes.appearance }),
-        ...(changes.label === undefined
-          ? label === undefined
-            ? {}
-            : { label }
-          : changes.label === null
-            ? {}
-            : { label: changes.label }),
-        ...(note === undefined ? {} : { note }),
-        ...(noteAt === undefined ? {} : { noteAt }),
-        updatedAt: at,
-      };
-      await this.#writeAll(bots.map((bot, position) => (position === index ? updated : bot)));
-      return updated;
-    });
+    const result = await this.#serial(() => this.#update(id, changes, at));
+    if (result === undefined) throw new Error("unconditional catalog update was refused");
+    return result;
+  }
+
+  async updateNoteIfRevision(
+    id: string,
+    note: string,
+    revision: string,
+    at: string,
+    owner?: number,
+  ): Promise<BotConfig | undefined> {
+    return this.#serial(() => this.#update(id, { note }, at, revision, owner));
+  }
+
+  async #update(
+    id: string,
+    changes: {
+      readonly title?: string;
+      readonly label?: string | null;
+      readonly note?: string | null;
+      readonly appearance?: BotAppearance;
+    },
+    at: string,
+    expectedRevision?: string,
+    owner?: number,
+  ): Promise<BotConfig | undefined> {
+    const bots = await this.load();
+    const index = bots.findIndex((bot) => bot.id === id);
+    if (index === -1) throw new DirectoryError("unknown_bot", `bot ${id} does not exist`);
+    const current = bots[index] as BotConfig;
+    if (expectedRevision !== undefined && (current.noteRevision ?? "") !== expectedRevision) {
+      return undefined;
+    }
+    const {
+      label,
+      note: storedNote,
+      noteAt: storedNoteAt,
+      noteOwner: storedNoteOwner,
+      ...rest
+    } = current;
+    const note =
+      changes.note === undefined
+        ? storedNote
+        : changes.note === null
+          ? undefined
+          : normalizeBotNote(changes.note);
+    if (note !== undefined && note.length > MAX_BOT_NOTE_CHARS) {
+      throw new DirectoryError(
+        "invalid_note",
+        `a note is at most ${MAX_BOT_NOTE_CHARS} characters`,
+      );
+    }
+    // The time is the note's own: a rewritten line is as old as its latest write, and a
+    // cleared one has no age to report.
+    const noteAt = changes.note === undefined ? storedNoteAt : note === undefined ? undefined : at;
+    const nextOwner = changes.note === undefined ? storedNoteOwner : owner;
+    const updated: BotConfig = {
+      ...rest,
+      ...(changes.title === undefined ? {} : { title: changes.title }),
+      ...(changes.appearance === undefined ? {} : { appearance: changes.appearance }),
+      ...(changes.label === undefined
+        ? label === undefined
+          ? {}
+          : { label }
+        : changes.label === null
+          ? {}
+          : { label: changes.label }),
+      ...(note === undefined ? {} : { note }),
+      ...(noteAt === undefined ? {} : { noteAt }),
+      ...(changes.note === undefined ? {} : { noteRevision: randomUUID() }),
+      ...(nextOwner === undefined ? {} : { noteOwner: nextOwner }),
+      updatedAt: at,
+    };
+    await this.#writeAll(bots.map((bot, position) => (position === index ? updated : bot)));
+    return updated;
   }
 
   /** Gateway settings changed the model of every bot; the catalog is the source of truth. */

@@ -12,6 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { WebSocket } from "ws";
 import { readConfig } from "../src/config.ts";
 import { type DaemonHandle, startDaemon } from "../src/main.ts";
+import { createEvalRouter } from "./eval-routing.ts";
 
 type ScriptedReply =
   | { readonly text: string; readonly delayMs?: number; readonly holdFor?: string }
@@ -37,7 +38,11 @@ type CaseFile = {
     readonly timezone?: string;
     readonly enabled?: boolean;
   }[];
-  readonly model: { readonly script: readonly ScriptedReply[]; readonly repeatLast?: boolean };
+  readonly model: {
+    readonly script: readonly ScriptedReply[];
+    readonly repeatLast?: boolean;
+    readonly reflectionScript?: readonly ScriptedReply[];
+  };
   /** What the same local server answers at `/v1/systemone`, so a decision tool runs for real. */
   readonly systemone?: {
     readonly model?: string;
@@ -67,6 +72,7 @@ type CaseFile = {
     readonly files?: Readonly<Record<string, string>>;
     readonly noErrors?: boolean;
     readonly modelRequests?: { readonly max: number };
+    readonly reflectionRequests?: { readonly max: number };
   };
 };
 
@@ -146,6 +152,7 @@ type Step =
       readonly count: number;
       readonly timeoutMs?: number;
     }
+  | { readonly kind: "waitNote"; readonly text: string; readonly timeoutMs?: number }
   | { readonly kind: "sleep"; readonly ms: number };
 
 type Frame = { readonly type: string } & Record<string, unknown>;
@@ -165,11 +172,21 @@ const scriptedModel = (
   script: readonly ScriptedReply[],
   repeatLast: boolean,
   systemone: CaseFile["systemone"],
+  reflectionScript: readonly ScriptedReply[] | undefined,
 ) => {
-  const requests: { readonly lastInput: string; readonly tools: number }[] = [];
+  const requests: {
+    readonly lastInput: string;
+    readonly tools: number;
+    readonly reflection: boolean;
+  }[] = [];
   const waiters = new Map<string, (() => void)[]>();
   let arrivals = 0;
+  let rootFinals = 0;
   let index = 0;
+  let reflectionIndex = 0;
+  let reflectionExhausted = false;
+  let routingFailure: string | undefined;
+  const route = createEvalRouter();
   const holdUntilReleased = (hold: string): Promise<void> =>
     new Promise((resolve_) => {
       const waiting = waiters.get(hold) ?? [];
@@ -210,17 +227,40 @@ const scriptedModel = (
         stream?: boolean;
         tools?: unknown[];
         input?: unknown[];
+        prompt_cache_key?: string;
       };
       if (process.env.EVAL_TRACE === "1") {
         process.stdout.write(`model request ${requests.length + 1}\n`);
       }
+      let reflection: boolean;
+      try {
+        reflection = route(body) === "reflection";
+      } catch (error) {
+        routingFailure = error instanceof Error ? error.message : "model request routing failed";
+        response.writeHead(500, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: routingFailure } }));
+        return;
+      }
       requests.push({
         lastInput: JSON.stringify(body.input?.at(-1) ?? null).slice(0, 2_000),
         tools: body.tools?.length ?? 0,
+        reflection,
       });
-      const reply = index < script.length ? script[index] : repeatLast ? script.at(-1) : undefined;
-      index += 1;
-      arrivals += 1;
+      const reply = reflection
+        ? reflectionScript === undefined
+          ? { text: "No status update needed." }
+          : reflectionScript[reflectionIndex++]
+        : index < script.length
+          ? script[index]
+          : repeatLast
+            ? script.at(-1)
+            : undefined;
+      if (reflection && reply === undefined) reflectionExhausted = true;
+      if (!reflection) {
+        index += 1;
+        arrivals += 1;
+        if (reply !== undefined && "text" in reply) rootFinals += 1;
+      }
       if (reply === undefined) {
         response.writeHead(500, { "content-type": "application/json" });
         response.end(JSON.stringify({ error: { message: "eval script exhausted" } }));
@@ -233,7 +273,7 @@ const scriptedModel = (
             ? {
                 type: "function_call",
                 id: "fc_eval",
-                call_id: `call_${index}`,
+                call_id: `call_${requests.length}`,
                 name: reply.toolCall.name,
                 arguments: JSON.stringify(reply.toolCall.args),
               }
@@ -335,7 +375,15 @@ const scriptedModel = (
       else respond();
     });
   });
-  return { server, requests, arrivals: () => arrivals, release };
+  return {
+    server,
+    requests,
+    arrivals: () => arrivals,
+    rootFinals: () => rootFinals,
+    reflectionExhausted: () => reflectionExhausted,
+    routingFailure: () => routingFailure,
+    release,
+  };
 };
 
 const listen = (server: ReturnType<typeof createServer>): Promise<number> =>
@@ -488,13 +536,13 @@ const wait = async (ms: number): Promise<void> =>
   new Promise((resolve_) => setTimeout(resolve_, ms));
 
 const waitUntil = async (
-  check: () => boolean,
+  check: () => boolean | Promise<boolean>,
   message: string,
   timeoutMs: number,
 ): Promise<void> => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (check()) return;
+    if (await check()) return;
     await wait(50);
   }
   failure(`${message} within ${timeoutMs} ms`);
@@ -598,7 +646,12 @@ const runCase = async (
   const devTokenPath = join(home, ".config", "eagle-dev", "token");
   /** Values a step captured, addressed by later steps as `{{name.path}}`. */
   const captured = new Map<string, unknown>();
-  const model = scriptedModel(study.model.script, study.model.repeatLast === true, study.systemone);
+  const model = scriptedModel(
+    study.model.script,
+    study.model.repeatLast === true,
+    study.systemone,
+    study.model.reflectionScript,
+  );
   const modelPort = await listen(model.server);
   let handle: DaemonHandle | undefined;
   let botId = "";
@@ -899,6 +952,31 @@ const runCase = async (
           if (step.capture !== undefined) captured.set(step.capture, lastJsonLine(stdout));
           break;
         }
+        case "waitNote": {
+          const bin = await cliLink("dev");
+          const env = {
+            PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin",
+            HOME: home,
+            EAGLE_ROOT: root,
+            EAGLE_PORT: String(running.port),
+          };
+          await waitUntil(
+            async () => {
+              const result = await runProcess(
+                bin,
+                ["bots", "show", botId, "--json"],
+                env,
+                stepBudget,
+              );
+              if (result.status !== 0) failure(`CLI could not read the bot: ${result.stderr}`);
+              const value = lastJsonLine(result.stdout) as { bot?: { note?: string } };
+              return value.bot?.note === fill(step.text);
+            },
+            `the sidebar note ${JSON.stringify(step.text)}`,
+            stepBudget,
+          );
+          break;
+        }
         case "waitSubmission":
           await waitUntil(
             () => view.statuses().includes(step.status),
@@ -952,9 +1030,17 @@ const runCase = async (
     }
 
     const expect = study.expect ?? {};
-    if (expect.modelRequests !== undefined && model.requests.length > expect.modelRequests.max) {
+    if (model.routingFailure() !== undefined)
+      failure(`model request routing failed: ${model.routingFailure()}`);
+    const rootRequests = model.requests.filter((request) => !request.reflection).length;
+    const reflectionRequests = model.requests.length - rootRequests;
+    if (expect.modelRequests !== undefined && rootRequests > expect.modelRequests.max) {
+      failure(`${rootRequests} root model requests, expected at most ${expect.modelRequests.max}`);
+    }
+    const reflectionLimit = expect.reflectionRequests?.max ?? model.rootFinals();
+    if (reflectionRequests > reflectionLimit || model.reflectionExhausted()) {
       failure(
-        `${model.requests.length} model requests, expected at most ${expect.modelRequests.max}`,
+        `${reflectionRequests} reflection model requests, expected at most ${reflectionLimit} within the script`,
       );
     }
     if (expect.messages !== undefined) {

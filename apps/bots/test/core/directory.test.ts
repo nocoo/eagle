@@ -59,6 +59,49 @@ test("create, rename and remove are visible to the next load", async () => {
   }
 });
 
+test("a note candidate cannot overwrite a newer write or an intervening clear", async () => {
+  const { root, dir } = await workspace();
+  try {
+    await dir.create(record("b_1"));
+    const initial = await dir.update("b_1", { note: "Original" }, "2026-10-25T03:00:00.000Z");
+    assert.ok(initial.noteRevision);
+    const manual = dir.update("b_1", { note: "Manual" }, "2026-10-25T03:00:00.000Z");
+    const candidate = dir.updateNoteIfRevision(
+      "b_1",
+      "Candidate",
+      initial.noteRevision,
+      "2026-10-25T03:00:00.000Z",
+    );
+    assert.equal((await manual).note, "Manual");
+    assert.equal(await candidate, undefined);
+    const cleared = await dir.update("b_1", { note: null }, "2026-10-25T03:00:00.000Z");
+    assert.ok(cleared.noteRevision);
+    assert.notEqual(cleared.noteRevision, initial.noteRevision);
+    assert.equal(
+      await dir.updateNoteIfRevision(
+        "b_1",
+        "Stale",
+        initial.noteRevision,
+        "2026-10-25T03:00:00.000Z",
+      ),
+      undefined,
+    );
+    assert.equal((await dir.load())[0]?.note, undefined);
+    const applied = await dir.updateNoteIfRevision(
+      "b_1",
+      "Candidate",
+      cleared.noteRevision,
+      "2026-10-25T03:00:00.000Z",
+      12,
+    );
+    assert.equal(applied?.noteOwner, 12);
+    const changed = await dir.update("b_1", { note: "Manual again" }, "2026-10-25T03:00:00.000Z");
+    assert.equal(changed.noteOwner, undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("a duplicate id is refused and the catalog is unchanged", async () => {
   const { root, dir } = await workspace();
   try {
