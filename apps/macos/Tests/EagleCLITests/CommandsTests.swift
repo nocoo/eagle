@@ -20,13 +20,28 @@ final class StubTransport: URLProtocol, @unchecked Sendable {
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func stopLoading() {}
 
+  private func requestBody() -> Data? {
+    if let data = request.httpBody { return data }
+    guard let stream = request.httpBodyStream else { return nil }
+    stream.open()
+    defer { stream.close() }
+    var result = Data()
+    var buffer = [UInt8](repeating: 0, count: 1024)
+    while stream.hasBytesAvailable {
+      let count = stream.read(&buffer, maxLength: buffer.count)
+      if count <= 0 { break }
+      result.append(buffer, count: count)
+    }
+    return result
+  }
+
   override func startLoading() {
     let path = request.url?.path ?? ""
     Self.calls.append(
       Call(
         method: request.httpMethod ?? "GET", path: path,
         bearer: request.value(forHTTPHeaderField: "authorization"),
-        body: request.httpBody.map { String(decoding: $0, as: UTF8.self) }))
+        body: requestBody().map { String(decoding: $0, as: UTF8.self) }))
     if let failure = Self.failure {
       client?.urlProtocol(self, didFailWithError: failure)
       return
@@ -162,6 +177,25 @@ struct CommandsTests {
     ])
     #expect(accepted.code == 0)
     #expect(accepted.out.contains { $0.contains("answer_1") })
+  }
+
+  @Test("question-indexed answers support repeated labels")
+  func groupedCardAnswer() async {
+    StubTransport.calls = []
+    StubTransport.answers = [
+      "/v1/bots": (200, #"{"bots":[{"id":"b_1","title":"helper"}]}"#),
+      "/v1/bots/b_1/answers": (
+        200, #"{"submission":{"id":"s_1","requestId":"answer_1","status":"queued"}}"#
+      ),
+    ]
+    let result = await run([
+      "chat", "answer", "helper", "--entry", "e_12", "--answers", #"[["Yes"],["No"]]"#,
+    ])
+    #expect(result.code == 0)
+    let body = StubTransport.calls.last?.body?.data(using: .utf8)
+    let object = body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    #expect(object?["answers"] as? [[String]] == [["Yes"], ["No"]])
+    #expect(object?["chosen"] == nil)
   }
 
   @Test("delete sends nothing without --yes and answers code 2")

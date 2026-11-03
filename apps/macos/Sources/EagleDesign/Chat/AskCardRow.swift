@@ -43,28 +43,29 @@ public struct AskCard: Identifiable, Hashable, Sendable {
     self.questions = questions
     self.answered = answered
   }
+
+  public func orderedAnswers(_ chosen: [Int: Set<String>]) -> [[String]] {
+    questions.map { question in
+      question.options.map(\.label).filter { chosen[question.id]?.contains($0) ?? false }
+    }
+  }
 }
 
 /// The card itself: every option is a whole-row target, the chosen rows carry a filled check on
 /// the left, and submit stays disabled until every question has a choice.
 public struct AskCardRow: View {
   private let card: AskCard
-  private let onSubmit: (String, [String]) -> Void
-  private let onSkip: (String) -> Void
+  private let onAnswer: (String, [[String]], Bool) async -> Result<Void, AskCardFailure>
   /// Chosen labels per question, kept here so a reload never pretends a choice was made.
   @State private var chosen: [Int: Set<String>] = [:]
-  /// The person already acted: the card locks at once instead of waiting for the round trip,
-  /// because a button that stays clickable reads as a click that did nothing.
-  @State private var submitted = false
+  @StateObject private var submission = AskCardSubmission()
 
   public init(
     card: AskCard,
-    onSubmit: @escaping (String, [String]) -> Void,
-    onSkip: @escaping (String) -> Void
+    onAnswer: @escaping (String, [[String]], Bool) async -> Result<Void, AskCardFailure>
   ) {
     self.card = card
-    self.onSubmit = onSubmit
-    self.onSkip = onSkip
+    self.onAnswer = onAnswer
   }
 
   public var body: some View {
@@ -79,6 +80,12 @@ public struct AskCardRow: View {
       if !locked {
         rule
         actions
+      }
+      if let failure = submission.failure {
+        Text(failure)
+          .font(Theme.TypeScale.note)
+          .foregroundStyle(Theme.Palette.destructive)
+          .padding(12)
       }
     }
     .clipShape(RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous))
@@ -104,14 +111,15 @@ public struct AskCardRow: View {
       Image(systemName: locked ? "checkmark.circle.fill" : "questionmark.circle")
         .font(.system(size: 13, weight: .medium))
         .foregroundStyle(locked ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
-      Text(card.answered ? "已回答" : submitted ? "已提交" : "需要你确认")
-        .font(.system(size: 13, weight: .medium))
-        .foregroundStyle(Theme.Palette.textPrimary)
+      Text(
+        card.answered ? "已回答" : submission.pending ? "提交中" : submission.confirmed ? "已提交" : "需要你确认"
+      )
+      .font(.system(size: 13, weight: .medium))
+      .foregroundStyle(Theme.Palette.textPrimary)
       Spacer(minLength: 0)
       if !locked {
         Button("忽略") {
-          submitted = true
-          onSkip(card.id)
+          send(skipped: true)
         }
         .buttonStyle(.plain)
         .font(Theme.TypeScale.note)
@@ -197,8 +205,7 @@ public struct AskCardRow: View {
   private var actions: some View {
     HStack(spacing: 10) {
       Button {
-        submitted = true
-        onSubmit(card.id, orderedChoices)
+        send(skipped: false)
       } label: {
         Text("提交")
           .font(.system(size: 13, weight: .medium))
@@ -224,16 +231,16 @@ public struct AskCardRow: View {
   }
 
   /// Read-only once the person answered or has just submitted.
-  private var locked: Bool { card.answered || submitted }
+  private var locked: Bool { card.answered || submission.pending || submission.confirmed }
 
   private var complete: Bool {
     card.questions.allSatisfy { !(chosen[$0.id]?.isEmpty ?? true) }
   }
 
-  /// Labels only: the daemon checks them against the card it drew and writes what the bot reads.
-  private var orderedChoices: [String] {
-    card.questions.flatMap { question in
-      question.options.map(\.label).filter { chosen[question.id]?.contains($0) ?? false }
+  private func send(skipped: Bool) {
+    let answers = skipped ? [] : card.orderedAnswers(chosen)
+    Task { @MainActor in
+      await submission.submit { await onAnswer(card.id, answers, skipped) }
     }
   }
 }

@@ -842,6 +842,9 @@ Every command except `hello` and `ping` carries `trace`.
 - `answer` closes an `ask_user` card. `entryId` is the transcript entry carrying the call; the
   daemon reads the questions out of that entry's arguments, checks every label against them and
   composes one hidden user input that the bot reads next (`hidden: true`, `answersTo: entryId`).
+  The App preserves one array per question in `answers`, including when questions reuse labels.
+  A card is pending only while its own HTTP admission is in flight; a definite refusal leaves
+  it editable for retry, while an acknowledged admission locks it against duplicate clicks.
   `answers` carries one list of labels per question, in the card's order; a single-choice
   question takes exactly one, a multiple-choice question one or more. `skipped` is the person
   ignoring the whole card, which the bot is told. The two forms are exclusive, a payload that

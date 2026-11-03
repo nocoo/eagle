@@ -1,5 +1,20 @@
 # 用户视角检查点
 
+## 2026-11-03 19:36 +08 — first-round repairs awaiting incremental review
+
+- Device process acceptance passes 7/7 without relaxed limits. Regression tests
+  now cover unknown secret admission retaining its receipt, explicit shared
+  reads refusing a shadowing Bot variable, reflection request/deadline bounds,
+  post-open cleanup, committed settlement delivery despite bookkeeping failure,
+  and recovery recording model spend on its original consumption date.
+- Question-card repairs are in progress: grouped answers and an awaited HTTP
+  admission replace the flattening/fire-and-forget App path; CLI answers already
+  use their own HTTP response. Pending/confirmed/refused card state is tested.
+- Round 1 is complete (nine findings). Rounds 2–3 remain available. Full Bots,
+  root/browser and Swift gates have not yet been rerun on the combined tree.
+  No manual App acceptance, live collection, production authentication or D1
+  has been exercised; the next broken hop is combined validation.
+
 ## 2026-11-03 18:20 +08 — 48-hour review, first round
 
 - Scope is pinned to `01302e3..95cff80` (106 commits). One read-only reviewer in

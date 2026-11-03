@@ -106,8 +106,10 @@ come from the daemon; a bot may also be named by its exact title when that title
 
 A card from `ask_user` is printed by `chat watch` and `chat send --wait` as one line per
 question, with the entry id to answer, and then the exact `chat answer` form. `--choose`
-takes a comma-separated list of option labels; the daemon checks every label against the
-card and refuses one that is not in it. `--skip` ignores the whole card, which the bot is
+takes a comma-separated list of unambiguous option labels. For repeated labels across
+questions, use `--answers '[["Yes"],["No"]]'`: one array per question, preserving its
+identity. Exactly one of `--choose`, `--answers` and `--skip` is accepted. The daemon checks
+every label against its question and refuses an option that is not in it. `--skip` ignores the whole card, which the bot is
 told in the same message. The chat is never blocked by a card: the tool call it belongs to
 already returned, and the answer arrives as a hidden user message that starts the next turn.
 `chat answer` uses the authenticated HTTP answer endpoint and reports only that command's

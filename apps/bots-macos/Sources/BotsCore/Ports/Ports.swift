@@ -273,6 +273,11 @@ public protocol TriggerPort: AnyObject, Sendable {
 
 /// The daemon's secrets (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5). The card answer is the only
 /// write, and a value is only ever read back when a person asks for it.
+public protocol QuestionPort: AnyObject {
+  func answerQuestions(
+    botId: String, entryId: String, answers: [[String]], skipped: Bool) async throws
+}
+
 public protocol SecretPort: AnyObject {
   /// Every record's metadata; the value is never part of it.
   func secrets() async throws -> [Secret]

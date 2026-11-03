@@ -519,7 +519,7 @@ public struct Commands: Sendable {
   /// printed by `watch` and `send --wait`, so an agent reads the options and answers in one go.
   private func answer(_ tokens: [String]) async throws {
     let arguments = try Arguments.parse(
-      tokens, valueFlags: ["entry", "choose"], switchFlags: ["json", "skip"])
+      tokens, valueFlags: ["entry", "choose", "answers"], switchFlags: ["json", "skip"])
     let name = try arguments.positional(0, "<bot>")
     let entry = try arguments.required("entry")
     let skipped = arguments.switches.contains("skip")
@@ -527,13 +527,30 @@ public struct Commands: Sendable {
       .split(separator: ",")
       .map { $0.trimmingCharacters(in: .whitespaces) }
       .filter { !$0.isEmpty }
-    guard skipped ? chosen.isEmpty : !chosen.isEmpty else {
-      throw CLIError.usage("pass --choose label[,label] or --skip, not both")
+    var grouped: [[String]]?
+    if let raw = arguments.value("answers") {
+      guard let data = raw.data(using: .utf8),
+        let parsed = try? JSONSerialization.jsonObject(with: data) as? [[String]],
+        !parsed.isEmpty, parsed.allSatisfy({ !$0.isEmpty })
+      else {
+        throw CLIError.usage("--answers takes a JSON array of choice arrays, one per question")
+      }
+      grouped = parsed
+    }
+    let modes = (skipped ? 1 : 0) + (!chosen.isEmpty ? 1 : 0) + (grouped != nil ? 1 : 0)
+    guard modes == 1 else {
+      throw CLIError.usage("pass exactly one of --choose label[,label], --answers JSON, or --skip")
     }
     let bot = try await resolve(name)
     let botId = bot["id"] as? String ?? name
     var body: JSONObject = ["entryId": entry]
-    if skipped { body["skipped"] = true } else { body["chosen"] = chosen }
+    if skipped {
+      body["skipped"] = true
+    } else if let grouped {
+      body["answers"] = grouped
+    } else {
+      body["chosen"] = chosen
+    }
     let payload = try await client.request("POST", "v1/bots/\(botId)/answers", body: body)
     guard let record = payload["submission"] as? JSONObject,
       let status = record["status"] as? String

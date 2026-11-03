@@ -67,6 +67,29 @@ final class SecretHTTPTests: XCTestCase {
     XCTAssertEqual(StubProtocol.lastAuthorization, "Bearer test-token-0123456789")
   }
 
+  func testQuestionAnswersKeepTheirGroupsAndReportRefusals() async throws {
+    var sent: [String: Any] = [:]
+    StubProtocol.handler = { request in
+      XCTAssertEqual(request.httpMethod, "POST")
+      XCTAssertEqual(request.url?.path, "/v1/bots/b_1/answers")
+      sent = self.body(request) ?? [:]
+      return (
+        200, Data(#"{"submission":{"id":"s_1","requestId":"answer_1","status":"queued"}}"#.utf8)
+      )
+    }
+    try await client.answerQuestions(
+      botId: "b_1", entryId: "e_12", answers: [["Yes"], ["No"]], skipped: false)
+    XCTAssertEqual(sent["answers"] as? [[String]], [["Yes"], ["No"]])
+    XCTAssertNil(sent["chosen"])
+    StubProtocol.handler = { _ in
+      (400, Data(#"{"error":{"kind":"invalid_command","message":"refused answer"}}"#.utf8))
+    }
+    do {
+      try await client.answerQuestions(botId: "b_1", entryId: "e_12", answers: [], skipped: true)
+      XCTFail("a refused answer must leave the card retryable")
+    } catch { XCTAssertTrue(String(describing: error).contains("refused answer")) }
+  }
+
   func testRevealAsksForOneRecordAndAnswersItsValue() async throws {
     var sent: [String: Any] = [:]
     StubProtocol.handler = { request in

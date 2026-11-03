@@ -104,7 +104,7 @@ public struct GatewayProbe: Decodable, Sendable, Equatable {
 
 /// The catalog over HTTP (docs/bots/PROTOCOL.md, "HTTP endpoints"). Every call carries the
 /// bearer token; a 401 is an authentication failure, never a retry.
-public final class CatalogHTTPClient: CatalogPort, SecretPort, Sendable {
+public final class CatalogHTTPClient: CatalogPort, SecretPort, QuestionPort, Sendable {
   private let baseURL: URL
   private let token: String
   private let session: URLSession
@@ -364,6 +364,17 @@ public final class CatalogHTTPClient: CatalogPort, SecretPort, Sendable {
 
   /// Every record's metadata. A store that cannot be read is a refusal, not an empty list, so
   /// the caller never shows "no passwords" when it means "cannot read them".
+  public func answerQuestions(
+    botId: String, entryId: String, answers: [[String]], skipped: Bool
+  ) async throws {
+    struct Payload: Decodable { let submission: Submission }
+    var body: [String: Any] = ["entryId": entryId]
+    if skipped { body["skipped"] = true } else { body["answers"] = answers }
+    let result = try await request(
+      path: "/v1/bots/\(botId)/answers", method: "POST", body: body, as: Payload.self)
+    if result.submission.status == .unanswered { throw ClientError("这个回答没有被接纳") }
+  }
+
   public func secrets() async throws -> [Secret] {
     struct Payload: Decodable { let secrets: [Secret] }
     return try await request(path: "/v1/secrets", method: "GET", body: nil, as: Payload.self)
