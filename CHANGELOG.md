@@ -8,8 +8,10 @@
   `~/.config/eagle-bots/secrets.v1.enc` whose key lives in a separate file under
   `~/Library/Application Support/ai.hexly.bots`. The person decides on the card whether the
   record is this Bot's alone or shared with every Bot, and how long it lives (5 minutes to 24
-  hours, or permanent); the Bot's call proposes both and the person has the last word. The Bot
-  reads the value back with `secret_read` when it needs it, and a `secrets.audit.jsonl` ledger
+  hours, or permanent); the Bot's call proposes both and the person has the last word. The value
+  never enters the conversation: `secret_read` answers what the record is and which environment
+  variable it reaches a command by, and the Bash tool gets `EAGLE_SECRET_<NAME>` so a password
+  stays out of the transcript, the snapshots and every client. A `secrets.audit.jsonl` ledger
   beside the ciphertext records every read, write and expiry without ever holding a value.
   Settings → `密码` lists the records, reveals a value on a click, copies it and deletes it;
   a store that cannot be read says so instead of showing an empty list. The group is on by

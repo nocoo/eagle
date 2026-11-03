@@ -30,7 +30,9 @@ public struct GatewaySettings: Decodable, Sendable, Equatable {
     thinkingLevel = try container.decodeIfPresent(String.self, forKey: .thinkingLevel) ?? "medium"
     toolGroups =
       try container.decodeIfPresent([String].self, forKey: .toolGroups)
-      ?? ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"]
+      ?? [
+        "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "trigger",
+      ]
     corePrompt = try container.decodeIfPresent(String.self, forKey: .corePrompt) ?? ""
   }
 }
@@ -369,7 +371,7 @@ public final class CatalogHTTPClient: CatalogPort, SecretPort, Sendable {
   }
 
   /// One value, read on request: the daemon records the read and answers the value alone.
-  public func revealSecret(key: String, scope: SecretScope) async throws -> String {
+  public func revealSecret(key: String, scope: SecretScope, botId: String?) async throws -> String {
     struct Payload: Decodable {
       struct Body: Decodable {
         let key: String
@@ -378,18 +380,23 @@ public final class CatalogHTTPClient: CatalogPort, SecretPort, Sendable {
       }
       let secret: Body
     }
+    var body: [String: Any] = ["key": key, "scope": scope.rawValue]
+    if let botId, !botId.isEmpty { body["botId"] = botId }
     let payload = try await request(
       path: "/v1/secrets/reveal",
       method: "POST",
-      body: ["key": key, "scope": scope.rawValue],
+      body: body,
       as: Payload.self
     )
     return payload.secret.value
   }
 
   /// Removes one record. The daemon answers 204, or 404 for a record that is already gone.
-  public func deleteSecret(key: String, scope: SecretScope) async throws {
-    _ = try await raw(path: "/v1/secrets/\(scope.rawValue)/\(key)", method: "DELETE", body: nil)
+  public func deleteSecret(key: String, scope: SecretScope, botId: String?) async throws {
+    var query: [URLQueryItem] = []
+    if let botId, !botId.isEmpty { query.append(URLQueryItem(name: "botId", value: botId)) }
+    _ = try await raw(
+      path: "/v1/secrets/\(scope.rawValue)/\(key)", method: "DELETE", body: nil, query: query)
   }
 
   /// Answers a secret card. The value travels once: the response carries the submission and
@@ -398,6 +405,7 @@ public final class CatalogHTTPClient: CatalogPort, SecretPort, Sendable {
   public func answerSecret(
     botId: String,
     entryId: String,
+    callIndex: Int,
     key: String,
     value: String,
     scope: SecretScope,
@@ -407,6 +415,7 @@ public final class CatalogHTTPClient: CatalogPort, SecretPort, Sendable {
     struct Payload: Decodable { let submission: Submission }
     var body: [String: Any] = [
       "entryId": entryId,
+      "callIndex": callIndex,
       "key": key,
       "value": value,
       "scope": scope.rawValue,

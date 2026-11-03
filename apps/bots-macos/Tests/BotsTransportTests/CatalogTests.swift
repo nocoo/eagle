@@ -147,7 +147,9 @@ final class CatalogHTTPClientTests: XCTestCase {
     XCTAssertEqual(loaded.settings.thinkingLevel, "medium")
     XCTAssertEqual(
       loaded.settings.toolGroups,
-      ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"])
+      [
+        "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "trigger",
+      ])
     // An omitted key must not be sent, so the daemon keeps the stored one.
     let saved = try await client.saveGateway(
       baseURL: "http://x/v1", model: "m2", thinkingLevel: "xhigh", toolGroups: ["core", "coding"],

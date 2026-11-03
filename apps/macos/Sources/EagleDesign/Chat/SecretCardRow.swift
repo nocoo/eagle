@@ -10,6 +10,13 @@ public enum SecretCardScope: String, Hashable, Sendable, CaseIterable {
 /// What the answer says about the expiry. The Bot's suggestion and the person's last word
 /// are two different things, so the card keeps them apart.
 public enum SecretCardExpiry: Hashable, Sendable {
+  /// The minutes a person may choose, in the order the contract lists them.
+  public static let presets = [5, 30, 60, 240, 480, 1440]
+
+  /// The preset a suggestion lands on: whichever is closest, never a value of its own.
+  public static func nearestPreset(_ minutes: Int) -> Int {
+    presets.min { abs($0 - minutes) < abs($1 - minutes) } ?? minutes
+  }
   /// The card offered no expiry choice at all: the answer says nothing about it.
   case unspecified
   /// The person chose: the record never expires.
@@ -23,6 +30,9 @@ public enum SecretCardExpiry: Hashable, Sendable {
 public struct SecretCard: Identifiable, Hashable, Sendable {
   /// The transcript entry that carries the call: what an answer names.
   public var id: String
+  /// Which call of that entry, from zero: one answer may ask for two passwords, and each card
+  /// is its own question.
+  public var callIndex: Int
   /// The record's name. The person cannot rename it, so the name the Bot will use is the name
   /// on the card.
   public var key: String
@@ -34,21 +44,27 @@ public struct SecretCard: Identifiable, Hashable, Sendable {
   public var ttlMinutes: Int?
   /// True once the person's answer to this call has arrived.
   public var answered: Bool
+  /// True when that answer was 取消: the record was never stored, and the card says so.
+  public var skipped: Bool
 
   public init(
     id: String,
+    callIndex: Int = 0,
     key: String,
     purpose: String? = nil,
     scope: SecretCardScope = .bot,
     ttlMinutes: Int? = nil,
-    answered: Bool = false
+    answered: Bool = false,
+    skipped: Bool = false
   ) {
     self.id = id
+    self.callIndex = callIndex
     self.key = key
     self.purpose = purpose
     self.scope = scope
     self.ttlMinutes = ttlMinutes
     self.answered = answered
+    self.skipped = skipped
   }
 }
 
@@ -65,6 +81,8 @@ public struct SecretCardFailure: Error, Hashable, Sendable {
 /// request and nowhere else.
 public struct SecretCardAnswer: Hashable, Sendable {
   public var entryId: String
+  /// Which call of that entry: one answer may ask for two passwords.
+  public var callIndex: Int
   public var key: String
   public var scope: SecretCardScope
   public var expiry: SecretCardExpiry
@@ -74,6 +92,7 @@ public struct SecretCardAnswer: Hashable, Sendable {
 
   public init(
     entryId: String,
+    callIndex: Int = 0,
     key: String,
     scope: SecretCardScope,
     expiry: SecretCardExpiry,
@@ -81,6 +100,7 @@ public struct SecretCardAnswer: Hashable, Sendable {
     skipped: Bool = false
   ) {
     self.entryId = entryId
+    self.callIndex = callIndex
     self.key = key
     self.scope = scope
     self.expiry = expiry
@@ -93,8 +113,6 @@ public struct SecretCardAnswer: Hashable, Sendable {
 /// two choices: the card is a control, not chat history, so it never hides with the tool
 /// traffic. The value leaves this view as soon as the daemon has it.
 public struct SecretCardRow: View {
-  /// The minutes a person may choose, in the order the contract lists them.
-  static let presetMinutes = [5, 30, 60, 240, 480, 1440]
 
   private let card: SecretCard
   private let onAnswer: (SecretCardAnswer) async -> Result<Void, SecretCardFailure>
@@ -109,6 +127,8 @@ public struct SecretCardRow: View {
   @State private var working = false
   /// Why the last attempt failed; the value stays, so the person decides what to do next.
   @State private var failure: String?
+  /// True when the person declined: the card says 已取消, never 已保存.
+  @State private var skipped = false
 
   public init(
     card: SecretCard,
@@ -117,8 +137,12 @@ public struct SecretCardRow: View {
     self.card = card
     self.onAnswer = onAnswer
     _shared = State(initialValue: card.scope == .shared)
+    // A suggestion that is not one of the presets reads as the nearest preset, because the
+    // card only offers choices the contract lists.
     _expiry = State(
-      initialValue: card.ttlMinutes.map { SecretCardExpiry.minutes($0) } ?? .unspecified)
+      initialValue: card.ttlMinutes.map {
+        SecretCardExpiry.minutes(SecretCardExpiry.nearestPreset($0))
+      } ?? .unspecified)
   }
 
   public var body: some View {
@@ -151,10 +175,13 @@ public struct SecretCardRow: View {
 
   private var header: some View {
     HStack(spacing: 10) {
-      Image(systemName: locked ? "checkmark.circle.fill" : "key.fill")
-        .font(.system(size: 13, weight: .medium))
-        .foregroundStyle(locked ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
-      Text(locked ? "已保存" : "需要你提供密码")
+      Image(
+        systemName: locked
+          ? (card.skipped || skipped ? "xmark.circle.fill" : "checkmark.circle.fill") : "key.fill"
+      )
+      .font(.system(size: 13, weight: .medium))
+      .foregroundStyle(locked ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
+      Text(locked ? (card.skipped || skipped ? "已取消" : "已保存") : "需要你提供密码")
         .font(.system(size: 13, weight: .medium))
         .foregroundStyle(Theme.Palette.textPrimary)
       Spacer(minLength: 0)
@@ -294,13 +321,8 @@ public struct SecretCardRow: View {
   /// The choices a person may pick: the presets, the Bot's own suggestion when it is not one
   /// of them, and the record that never expires.
   private var expiryOptions: [ExpiryChoice] {
-    var minutes = Self.presetMinutes
-    if let suggested = card.ttlMinutes, !minutes.contains(suggested) {
-      minutes.append(suggested)
-      minutes.sort()
-    }
-    return [ExpiryChoice(expiry: .permanent, title: "永久")]
-      + minutes.map { ExpiryChoice(expiry: .minutes($0), title: "\($0) 分钟") }
+    [ExpiryChoice(expiry: .permanent, title: "永久")]
+      + SecretCardExpiry.presets.map { ExpiryChoice(expiry: .minutes($0), title: "\($0) 分钟") }
   }
 
   private func expiryTitle(_ expiry: SecretCardExpiry) -> String {
@@ -310,10 +332,10 @@ public struct SecretCardRow: View {
     }
   }
 
-  /// After the answer arrived the card shows what was stored, never the value itself.
+  /// After the answer arrived the card says what happened, never the value itself.
   private var savedValue: some View {
     HStack(spacing: 8) {
-      Text("已保存")
+      Text(card.skipped ? "已取消" : "已保存")
         .font(.system(size: 12.5))
         .foregroundStyle(Theme.Palette.textSecondary)
       Text(card.key)
@@ -378,6 +400,7 @@ public struct SecretCardRow: View {
     failure = nil
     let answer = SecretCardAnswer(
       entryId: card.id,
+      callIndex: card.callIndex,
       key: card.key,
       scope: shared ? .shared : .bot,
       expiry: expiry,
@@ -391,6 +414,7 @@ public struct SecretCardRow: View {
       case .success:
         self.value = ""
         revealed = false
+        self.skipped = skipped
         submitted = true
       case .failure(let problem):
         failure = problem.message

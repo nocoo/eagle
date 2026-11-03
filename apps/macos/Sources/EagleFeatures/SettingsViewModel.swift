@@ -77,18 +77,19 @@ public final class SettingsViewModel: ObservableObject {
   /// Every group the daemon knows, in display order; the daemon owns which are installed.
   /// The two core prompts lead, because they are the first sections of the system prompt.
   public static let toolGroups = [
-    "persona", "machine", "core", "coding", "memory", "herdr", "agents", "search", "decision",
-    "trigger", "peers",
+    "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "search",
+    "decision", "trigger", "peers",
   ]
   /// What a daemon that predates a new group is assumed to run: both core prompts are on,
   /// memory is on because remembering is a habit, and the rest is opt-in.
   public static let defaultToolGroups = [
-    "persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger",
+    "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "trigger",
   ]
   public static let mandatoryToolGroups: Set<String> = ["core", "coding"]
   public static let personaToolGroup = "persona"
   public static let machineToolGroup = "machine"
   public static let memoryToolGroup = "memory"
+  public static let secretsToolGroup = "secrets"
   public static let herdrToolGroup = "herdr"
   public static let agentsToolGroup = "agents"
   public static let searchToolGroup = "search"
@@ -275,6 +276,8 @@ public final class SettingsViewModel: ObservableObject {
     secretBusy = true
     defer { secretBusy = false }
     secretLoadError = nil
+    // A revealed value lives for one look at this page, never across a reload.
+    revealedSecrets.removeAll()
     do {
       secrets = try await client().secrets()
       await loadSecretBotTitles()
@@ -282,6 +285,12 @@ public final class SettingsViewModel: ObservableObject {
       secrets = []
       secretLoadError = (error as? ClientError)?.message ?? error.localizedDescription
     }
+  }
+
+  /// Leaving the page forgets every revealed value and every message it produced.
+  public func leaveSecrets() {
+    revealedSecrets.removeAll()
+    secretMessage = nil
   }
 
   /// The records every Bot on this machine reads.
@@ -301,7 +310,7 @@ public final class SettingsViewModel: ObservableObject {
     defer { secretBusy = false }
     do {
       revealedSecrets[secret.id] = try await client().revealSecret(
-        key: secret.key, scope: secret.scope)
+        key: secret.key, scope: secret.scope, botId: secret.botId)
       secretMessage = nil
     } catch {
       secretMessage = (error as? ClientError)?.message ?? error.localizedDescription
@@ -314,7 +323,8 @@ public final class SettingsViewModel: ObservableObject {
     secretBusy = true
     defer { secretBusy = false }
     do {
-      let value = try await client().revealSecret(key: secret.key, scope: secret.scope)
+      let value = try await client().revealSecret(
+        key: secret.key, scope: secret.scope, botId: secret.botId)
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(value, forType: .string)
       secretMessage = "已复制 \(secret.key)"
@@ -329,7 +339,8 @@ public final class SettingsViewModel: ObservableObject {
     secretBusy = true
     defer { secretBusy = false }
     do {
-      try await client().deleteSecret(key: secret.key, scope: secret.scope)
+      try await client().deleteSecret(
+        key: secret.key, scope: secret.scope, botId: secret.botId)
       revealedSecrets.removeValue(forKey: secret.id)
       secrets.removeAll { $0.id == secret.id }
       secretMessage = "已删除 \(secret.key)"

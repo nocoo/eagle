@@ -1071,8 +1071,9 @@ public struct Secret: Decodable, Sendable, Equatable, Identifiable, Hashable {
   public var lastUsedAt: String?
   public var lastUsedBy: String?
 
-  /// One record is one key in one scope; the same key in two scopes is two records.
-  public var id: String { "\(scope.rawValue):\(key)" }
+  /// One record is one key in one scope for one bot: two bots may use the same key, so the
+  /// bot is part of the identity the settings page acts on.
+  public var id: String { "\(scope.rawValue):\(scope == .bot ? (botId ?? "") : ""):\(key)" }
 
   public init(
     key: String,
@@ -1120,6 +1121,8 @@ public struct Secret: Decodable, Sendable, Equatable, Identifiable, Hashable {
 public struct SecretAnswer: Sendable, Equatable {
   /// The transcript entry that carries the `secret_request` call.
   public var entryId: String
+  /// Which call of that entry, from zero: one answer may ask for two passwords.
+  public var callIndex: Int
   /// The record's name, exactly as the card showed it.
   public var key: String
   public var value: String
@@ -1130,6 +1133,7 @@ public struct SecretAnswer: Sendable, Equatable {
 
   public init(
     entryId: String,
+    callIndex: Int = 0,
     key: String,
     value: String,
     scope: SecretScope,
@@ -1137,6 +1141,7 @@ public struct SecretAnswer: Sendable, Equatable {
     skipped: Bool = false
   ) {
     self.entryId = entryId
+    self.callIndex = callIndex
     self.key = key
     self.value = value
     self.scope = scope

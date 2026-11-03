@@ -106,3 +106,112 @@ struct SecretCardPresenterTests {
     #expect(BotsWorkspaceViewModel.secretTTL(.minutes(30)) == .minutes(30))
   }
 }
+
+/// One answer may ask for two passwords, and each card is its own question.
+@Suite("Two secret cards in one answer")
+struct SecretCardPairTests {
+  private let presenter = BotsPresenter()
+
+  private func pair() -> Message {
+    Message(
+      id: "e_12",
+      role: .assistant,
+      state: .complete,
+      createdAt: "2026-11-03T01:00:00.000Z",
+      blocks: [
+        .toolCall(
+          callId: "c_1", name: "secret_request",
+          args: ["key": .string("github-pat"), "purpose": .string("发布用")]),
+        .toolCall(
+          callId: "c_2", name: "secret_request",
+          args: ["key": .string("npm-token"), "purpose": .string("装依赖")]),
+      ]
+    )
+  }
+
+  private func transcript(_ messages: [Message]) -> [TranscriptEntry] {
+    var state = ConversationState(botId: "b_1")
+    for message in messages {
+      state = Reducer.apply(.append(message: message, replaces: nil), to: state)
+    }
+    return presenter.transcript(for: state)
+  }
+
+  @Test("both cards render, each with its own index and identity")
+  func twoCards() {
+    let cards = transcript([pair()]).compactMap { entry -> SecretCard? in
+      if case .secret(_, let card) = entry { return card }
+      return nil
+    }
+    #expect(cards.count == 2, "one answer can ask for two passwords")
+    #expect(cards.map(\.callIndex) == [0, 1])
+    #expect(cards.map(\.id) == ["e_12", "e_12"], "both name the entry the daemon stores")
+    #expect(cards.map(\.key) == ["github-pat", "npm-token"])
+  }
+
+  @Test("the answer names the call it answers, so the second card stays open")
+  func answeredSecond() {
+    let answer = Message(
+      id: "e_13",
+      role: .user,
+      state: .complete,
+      createdAt: "2026-11-03T01:05:00.000Z",
+      blocks: [.text("")],
+      hidden: true,
+      answersTo: "e_12#1"
+    )
+    let cards = transcript([pair(), answer]).compactMap { entry -> SecretCard? in
+      if case .secret(_, let card) = entry { return card }
+      return nil
+    }
+    #expect(cards[0].answered == false, "the first card is still waiting for the person")
+    #expect(cards[1].answered == true)
+  }
+
+  @Test("a cancelled card says so instead of claiming a saved password")
+  func skippedCard() {
+    let answer = Message(
+      id: "e_13",
+      role: .user,
+      state: .complete,
+      createdAt: "2026-11-03T01:05:00.000Z",
+      blocks: [
+        .text(
+          "The person skipped the secret request for \"github-pat\" from e_12 without answering.")
+      ],
+      hidden: true,
+      answersTo: "e_12"
+    )
+    let card = transcript([
+      Message(
+        id: "e_12",
+        role: .assistant,
+        state: .complete,
+        createdAt: "2026-11-03T01:00:00.000Z",
+        blocks: [
+          .toolCall(
+            callId: "c_1", name: "secret_request",
+            args: ["key": .string("github-pat"), "purpose": .string("发布用")])
+        ]),
+      answer,
+    ]).compactMap { entry -> SecretCard? in
+      if case .secret(_, let card) = entry { return card }
+      return nil
+    }
+    #expect(card.first?.skipped == true, "the record was never stored")
+  }
+}
+
+/// The card only offers the choices the contract lists.
+@Suite("Secret card presets")
+struct SecretCardPresetTests {
+  @Test("a suggestion between presets lands on the nearest one")
+  func nearest() {
+    #expect(SecretCardExpiry.nearestPreset(1) == 5)
+    #expect(SecretCardExpiry.nearestPreset(15) == 5, "ten minutes away beats fifteen")
+    #expect(SecretCardExpiry.nearestPreset(20) == 30)
+    #expect(SecretCardExpiry.nearestPreset(90) == 60)
+    #expect(SecretCardExpiry.nearestPreset(300) == 240)
+    #expect(SecretCardExpiry.nearestPreset(1440) == 1440)
+  }
+}

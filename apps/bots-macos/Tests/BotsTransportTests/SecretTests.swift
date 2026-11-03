@@ -78,10 +78,12 @@ final class SecretHTTPTests: XCTestCase {
         Data(#"{"secret":{"key":"github-pat","scope":"shared","value":"ghp_example"}}"#.utf8)
       )
     }
-    let value = try await client.revealSecret(key: "github-pat", scope: .shared)
+    let value = try await client.revealSecret(
+      key: "github-pat", scope: .shared, botId: "b_1")
     XCTAssertEqual(value, "ghp_example")
     XCTAssertEqual(sent["key"] as? String, "github-pat")
     XCTAssertEqual(sent["scope"] as? String, "shared")
+    XCTAssertEqual(sent["botId"] as? String, "b_1", "two bots may use one key")
   }
 
   func testDeleteNamesTheScopeAndTheKeyInThePath() async throws {
@@ -90,8 +92,8 @@ final class SecretHTTPTests: XCTestCase {
       paths.append("\(request.httpMethod ?? "") \(request.url?.path ?? "")")
       return (204, Data())
     }
-    try await client.deleteSecret(key: "github-pat", scope: .shared)
-    try await client.deleteSecret(key: "npm-token", scope: .bot)
+    try await client.deleteSecret(key: "github-pat", scope: .shared, botId: "b_1")
+    try await client.deleteSecret(key: "npm-token", scope: .bot, botId: "b_1")
     XCTAssertEqual(
       paths, ["DELETE /v1/secrets/shared/github-pat", "DELETE /v1/secrets/bot/npm-token"])
   }
@@ -111,16 +113,18 @@ final class SecretHTTPTests: XCTestCase {
       )
     }
     try await client.answerSecret(
-      botId: "b_1", entryId: "e_12", key: "github-pat", value: "ghp_example", scope: .shared,
-      ttlMinutes: .minutes(60), skipped: false)
+      botId: "b_1", entryId: "e_12", callIndex: 0, key: "github-pat", value: "ghp_example",
+      scope: .shared, ttlMinutes: .minutes(60), skipped: false)
     try await client.answerSecret(
-      botId: "b_1", entryId: "e_12", key: "github-pat", value: "ghp_example", scope: .shared,
-      ttlMinutes: .permanent, skipped: false)
+      botId: "b_1", entryId: "e_12", callIndex: 1, key: "github-pat", value: "ghp_example",
+      scope: .shared, ttlMinutes: .permanent, skipped: false)
     try await client.answerSecret(
-      botId: "b_1", entryId: "e_12", key: "github-pat", value: "", scope: .bot,
+      botId: "b_1", entryId: "e_12", callIndex: 0, key: "github-pat", value: "", scope: .bot,
       ttlMinutes: .inherit, skipped: true)
 
     XCTAssertEqual(bodies[0]["entryId"] as? String, "e_12")
+    XCTAssertEqual(bodies[0]["callIndex"] as? Int, 0)
+    XCTAssertEqual(bodies[1]["callIndex"] as? Int, 1, "the second card is its own question")
     XCTAssertEqual(bodies[0]["key"] as? String, "github-pat")
     XCTAssertEqual(bodies[0]["value"] as? String, "ghp_example")
     XCTAssertEqual(bodies[0]["scope"] as? String, "shared")

@@ -373,6 +373,10 @@ public struct SettingsView: View {
         group: SettingsViewModel.memoryToolGroup)
       Divider().overlay(Theme.Palette.line)
       toolGroupRow(
+        "secrets", "密码", detail: "Bot 需要密码时弹一张卡片要你填，值加密存放、不进对话记录；在“密码”页管理",
+        group: SettingsViewModel.secretsToolGroup)
+      Divider().overlay(Theme.Palette.line)
+      toolGroupRow(
         "herdr", "Herdr 终端协作", detail: "把终端工作区当作 Bot 的手脚：开、派发、读回",
         group: SettingsViewModel.herdrToolGroup)
       Divider().overlay(Theme.Palette.line)
@@ -626,6 +630,7 @@ public struct SettingsView: View {
       }
     }
     .task { await model.loadSecrets() }
+    .onDisappear { model.leaveSecrets() }
     .alert(
       "删除这个密码？",
       isPresented: Binding(

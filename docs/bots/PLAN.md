@@ -893,9 +893,14 @@ The extension/tool track has its own proposed sequence in
    AES-256-GCM container with a separate key file, two scopes (`bot`, `shared`), lazy expiry
    with a startup sweep, a person-editable audit ledger and `core.secret.*` behaviour events.
    Eager, on by default, storage behind `SecretsToolHost`. `npm run check` in `apps/bots` is
-   green at 943 tests with 95.38% lines / 88.67% branches / 90.76% functions; the root check
-   passes with the official Node 26 build, `apps/macos` (415) and `apps/bots-macos` (148)
-   pass with strict formatting. The App has the card and the `密码` settings page. Not yet
+   green at 957 tests with 95.36% lines / 88.72% branches / 90.47% functions; the root check
+   passes with the official Node 26 build, `apps/macos` (419) and `apps/bots-macos` (148)
+   pass with strict formatting. The App has the card and the `密码` settings page. A first
+   read-only review round found eighteen defects and all of them are closed: the value used to
+   travel through a tool result (now environment only, with a sentinel test asserting it never
+   reaches the transcript or history), `(scope, key)` could not tell two bots' records apart,
+   a card could be answered twice, the delete fallback was not replay-safe, and expiry,
+   permission, ledger and TTL-reporting edge cases are each covered by a test. Not yet
    verified: a card answered against a live daemon from the rendered App, and the Time
    Machine/keychain threat boundaries the section reports as out of scope.
 

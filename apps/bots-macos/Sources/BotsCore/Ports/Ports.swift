@@ -276,14 +276,16 @@ public protocol TriggerPort: AnyObject, Sendable {
 public protocol SecretPort: AnyObject {
   /// Every record's metadata; the value is never part of it.
   func secrets() async throws -> [Secret]
-  /// One value, read on request. The daemon records the read as the person's.
-  func revealSecret(key: String, scope: SecretScope) async throws -> String
+  /// One value, read on request. The daemon records the read as the person's. A bot's own
+  /// record is identified by its bot too, because two bots may use one key.
+  func revealSecret(key: String, scope: SecretScope, botId: String?) async throws -> String
   /// Removes one record. Deleting an absent record is a success.
-  func deleteSecret(key: String, scope: SecretScope) async throws
+  func deleteSecret(key: String, scope: SecretScope, botId: String?) async throws
   /// Answers a secret card: the value travels once and is never read back.
   func answerSecret(
     botId: String,
     entryId: String,
+    callIndex: Int,
     key: String,
     value: String,
     scope: SecretScope,

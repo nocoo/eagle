@@ -333,6 +333,7 @@ extension AppViewModel {
     try await secrets.answerSecret(
       botId: botId,
       entryId: answer.entryId,
+      callIndex: answer.callIndex,
       key: answer.key,
       value: answer.value,
       scope: answer.scope,

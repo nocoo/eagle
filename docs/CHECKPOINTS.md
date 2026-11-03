@@ -1,5 +1,24 @@
 # 用户视角检查点
 
+## 2026-11-03 10:20 +08 — `secrets` 组第一轮审查后修正并全绿
+
+- 第一轮只读审查（`group/reviewing` xhigh）提出 18 条，全部关闭。最重的一条：`secret_read`
+  原本把明文当 tool result 返回，而 tool result 是不可变地写进 transcript 的，等于密码永久
+  落在 bot 的 SQLite 里、任何有会话读权限的客户端都能拿到。现在值只以环境变量
+  `EAGLE_SECRET_<KEY>` 交给 Bash，`secret_read` 只回答「记录是什么 + 用哪个变量」；新增一个
+  sentinel 值班测试，断言该值在 events 与 history 里一次都不出现。
+- 其余：记录身份改为 `(scope, botId, key)`（两个 bot 同名不再串行）、卡片只能被回答一次
+  （重放被拒，不再重复写值/延长 TTL）、`secret_delete` 必须显式给 scope（重放不会掉进 shared）、
+  一张回答里两张卡的 `callIndex` 与 `answersTo: e_#n`、过期项不再遮蔽 shared、容器里非法
+  `expiresAt` 直接拒绝整库、keyfile 用 link 原子发布且拒绝 0644、目录不可被他人写、审计写失败
+  不再把已保存的密码报成失败、日志脱敏按 4 字符（更短的值在卡片阶段就拒绝）、跨 daemon 的
+  `secrets.lock`、隐藏消息用最终 TTL 而不是卡片建议、Swift 侧工具组词汇/共享值/跳过态。
+- 门禁：`apps/bots` check 957 通过（95.36 / 88.72 / 90.47）；根 check 用官方 Node 26 全绿
+  （265 测试 + typecheck + lint + build，Homebrew Node 会让 device-runtime 两例失败，这是
+  既有环境限制）；`apps/macos` 419、`apps/bots-macos` 148 全过，两个包 strict format 干净。
+- 未验证：仍没有从渲染出的 App 对活 daemon 真实作答一次；没有人工看过卡片与「密码」页；
+  Time Machine/整机备份这条边界仍是文档里写明的「不防」。
+
 ## 2026-11-03 08:40 +08 — `secrets` 工具组：契约定稿，双 pane 实现中
 
 - 契约已写进三份文档并作为唯一来源：`EXTENSIONS-AND-TOOLS.md` §6.5（容器格式 v1、

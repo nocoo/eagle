@@ -574,6 +574,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
         botId: botId,
         answer: SecretAnswer(
           entryId: answer.entryId,
+          callIndex: answer.callIndex,
           key: answer.key,
           value: answer.value,
           scope: answer.scope == .shared ? .shared : .bot,
@@ -832,6 +833,13 @@ struct BotsPresenter {
       state.messages.compactMap { message in
         message.hidden == true ? message.answersTo : nil
       })
+    // A secret card that the person cancelled says so: the daemon's hidden answer begins with
+    // "The person skipped", and the card must not claim a password it never stored.
+    let skippedCalls = Set(
+      state.messages.compactMap { message -> String? in
+        guard message.hidden == true, let answersTo = message.answersTo else { return nil }
+        return message.text.contains("skipped the secret request") ? answersTo : nil
+      })
     /// Every exchange this bot is in becomes one row, placed where it started: the sender's side
     /// shows it too, so both chats carry the same entry.
     var pending =
@@ -875,7 +883,8 @@ struct BotsPresenter {
         running: state.running,
         current: index > (lastUserIndex ?? -1),
         skipCalls: peerCalls,
-        answeredCalls: answeredCalls
+        answeredCalls: answeredCalls,
+        skippedCalls: skippedCalls
       ) {
         if case .tool(_, let tool) = row {
           pendingTools.append(tool)
@@ -1022,7 +1031,13 @@ struct BotsPresenter {
 
   /// The card a `secret_request` call asked for, read from its own arguments: the same shape
   /// the daemon read to validate an answer, so the two never disagree about what was asked.
-  static func secretCard(id: String, args: [String: JSONValue], answered: Bool) -> SecretCard? {
+  static func secretCard(
+    id: String,
+    callIndex: Int,
+    args: [String: JSONValue],
+    answered: Bool,
+    skipped: Bool
+  ) -> SecretCard? {
     guard case .string(let key)? = args["key"], !key.isEmpty else { return nil }
     guard case .string(let purpose)? = args["purpose"], !purpose.isEmpty else { return nil }
     var scope: SecretCardScope = .bot
@@ -1030,7 +1045,15 @@ struct BotsPresenter {
     var ttlMinutes: Int?
     if case .number(let value)? = args["ttlMinutes"] { ttlMinutes = Int(value) }
     return SecretCard(
-      id: id, key: key, purpose: purpose, scope: scope, ttlMinutes: ttlMinutes, answered: answered)
+      id: id,
+      callIndex: callIndex,
+      key: key,
+      purpose: purpose,
+      scope: scope,
+      ttlMinutes: ttlMinutes,
+      answered: answered,
+      skipped: skipped
+    )
   }
 
   /// Every call id that belongs to a peer tool, so the call row and its result both stay out of
@@ -1054,7 +1077,8 @@ struct BotsPresenter {
     running: Bool,
     current: Bool,
     skipCalls: Set<String> = [],
-    answeredCalls: Set<String> = []
+    answeredCalls: Set<String> = [],
+    skippedCalls: Set<String> = []
   ) -> [TranscriptEntry] {
     switch message.role {
     case .user:
@@ -1101,6 +1125,8 @@ struct BotsPresenter {
         text = ""
         runs += 1
       }
+      // Which secret card of this answer a call is: one answer may ask for two passwords.
+      var secretCall = 0
       for (blockIndex, block) in message.blocks.enumerated() {
         switch block {
         case .text(let value):
@@ -1118,14 +1144,23 @@ struct BotsPresenter {
             rows.append(.question(id: "ask-\(message.id)", card: card))
             continue
           }
-          if name == "secret_request",
-            let card = Self.secretCard(
-              id: message.id, args: args, answered: answeredCalls.contains(message.id))
-          {
-            hasTool = true
-            flush()
-            rows.append(.secret(id: "secret-\(message.id)", card: card))
-            continue
+          if name == "secret_request" {
+            // The first card is named by its entry; a second one appends its index, which is
+            // what the daemon writes back in `answersTo`.
+            let token = secretCall == 0 ? message.id : "\(message.id)#\(secretCall)"
+            if let card = Self.secretCard(
+              id: message.id,
+              callIndex: secretCall,
+              args: args,
+              answered: answeredCalls.contains(token),
+              skipped: skippedCalls.contains(token)
+            ) {
+              hasTool = true
+              flush()
+              secretCall += 1
+              rows.append(.secret(id: "secret-\(token)", card: card))
+              continue
+            }
           }
           hasTool = true
           flush()
