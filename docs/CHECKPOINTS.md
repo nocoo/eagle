@@ -1,5 +1,20 @@
 # 用户视角检查点
 
+## 2026-11-04 05:54 +08 — CLI acceptance expanded after merge
+
+- This branch merged the fetched `origin/main` at `049d042`, including the later reflection,
+  secret-scope and card fixes. Eagle Dev was restarted from this worktree; its daemon runs
+  from `apps/bots`, and `eagle-dev whoami` authenticated. The process predates subsequent
+  CLI source changes and must be restarted again before final acceptance. The rendered App
+  was not visually inspected; Herdr collection and D1 were not exercised.
+- The merged baseline passed Bots check (994), both Swift packages (149 and 423) and all
+  20 scripted eval cases. A CLI isolation case demonstrated a real home leak before the
+  runner was fixed. New CLI cases cover memory, decisions and secret answer/skip; targeted
+  cases passed, as did macOS Swift tests (428) after the CLI changes.
+- Pi discovered `.agents/skills/eagle-cli-eval/SKILL.md`, and `eagle-dev --skill` now points
+  to it. Three separate full-suite rounds on the expanded cases and final gate runs remain;
+  the next broken hop is completing those rounds and restarting the current Dev App.
+
 ## 2026-11-03 20:35 +08 — three review rounds closed, gates green
 
 - Round 1 (read-only reviewer, pinned `01302e3..95cff80`) found nine issues; round 2
