@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// One parsed command line: positionals plus the flags the command declared.
@@ -132,7 +133,7 @@ public struct Commands: Sendable {
       \(config.binaryName) whoami                  the credential and its scopes
       \(config.binaryName) bots list|show|create|update|move|delete
       \(config.binaryName) groups list|create|rename|order|delete
-      \(config.binaryName) chat send|watch|history|answer|abort <bot>
+      \(config.binaryName) chat send|watch|history|answer|secret|abort <bot>
       \(config.binaryName) usage [--days N]
 
     Every command takes --json. Destructive commands need --yes.
@@ -408,7 +409,7 @@ public struct Commands: Sendable {
 
   private func chat(tokens: [String]) async throws {
     guard let sub = tokens.first else {
-      throw CLIError.usage("chat send|watch|history|answer|abort <bot>")
+      throw CLIError.usage("chat send|watch|history|answer|secret|abort <bot>")
     }
     let rest = Array(tokens.dropFirst())
     switch sub {
@@ -420,6 +421,8 @@ public struct Commands: Sendable {
       try await history(rest)
     case "answer":
       try await answer(rest)
+    case "secret":
+      try await secret(rest)
     case "abort":
       try await abort(rest)
     default:
@@ -552,6 +555,58 @@ public struct Commands: Sendable {
       body["chosen"] = chosen
     }
     let payload = try await client.request("POST", "v1/bots/\(botId)/answers", body: body)
+    try printAdmission(payload, arguments: arguments, entry: entry, skipped: skipped)
+  }
+
+  private func secret(_ tokens: [String]) async throws {
+    let arguments = try Arguments.parse(
+      tokens, valueFlags: ["entry", "key", "call-index"], switchFlags: ["json", "stdin", "skip"])
+    let name = try arguments.positional(0, "<bot>")
+    let entry = try arguments.required("entry")
+    let key = try arguments.required("key")
+    let skipped = arguments.switches.contains("skip")
+    guard skipped != arguments.switches.contains("stdin") else {
+      throw CLIError.usage("pass exactly one of --stdin or --skip")
+    }
+    let index: Int
+    if let raw = arguments.value("call-index") {
+      guard let parsed = Int(raw), parsed >= 0 else {
+        throw CLIError.usage("--call-index must be a non-negative integer")
+      }
+      index = parsed
+    } else {
+      index = 0
+    }
+    var body: JSONObject = ["entryId": entry, "key": key, "callIndex": index]
+    if skipped {
+      body["skipped"] = true
+    } else {
+      body["value"] = try Self.readSecretInput(.standardInput)
+    }
+    let bot = try await resolve(name)
+    let botId = bot["id"] as? String ?? name
+    let payload = try await client.request("POST", "v1/bots/\(botId)/secrets", body: body)
+    try printAdmission(payload, arguments: arguments, entry: entry, skipped: skipped)
+  }
+
+  static func readSecretInput(_ input: FileHandle) throws -> String {
+    guard isatty(input.fileDescriptor) == 0 else {
+      throw CLIError.usage("--stdin requires redirected input; it does not read from a terminal")
+    }
+    var data = Data()
+    while data.count <= 8192 {
+      let chunk = try input.read(upToCount: min(4096, 8193 - data.count))
+      guard let chunk, !chunk.isEmpty else { break }
+      data.append(chunk)
+    }
+    guard data.count <= 8192, !data.contains(0), let text = String(data: data, encoding: .utf8)
+    else { throw CLIError.usage("secret input must be UTF-8, without NUL, and at most 8 KiB") }
+    return text
+  }
+
+  private func printAdmission(
+    _ payload: JSONObject, arguments: Arguments, entry: String, skipped: Bool
+  ) throws {
     guard let record = payload["submission"] as? JSONObject,
       let status = record["status"] as? String
     else {
@@ -722,11 +777,27 @@ public struct Commands: Sendable {
     let entry = message["id"] as? String ?? "?"
     if message["hidden"] as? Bool == true { return [] }
     var lines: [String] = []
+    var secretIndex = 0
     for block in message["blocks"] as? [JSONObject] ?? [] {
-      guard block["type"] as? String == "toolCall", block["name"] as? String == "ask_user",
-        let args = block["args"] as? JSONObject,
+      guard block["type"] as? String == "toolCall" else { continue }
+      let name = block["name"] as? String
+      if name == "secret_request" {
+        let index = secretIndex
+        secretIndex += 1
+        guard let args = block["args"] as? JSONObject, let key = args["key"] as? String else {
+          continue
+        }
+        let purpose = args["purpose"] as? String ?? ""
+        lines.append("[secret \(entry)] \(purpose)")
+        lines.append(
+          "answer: chat secret <bot> --entry \(entry) --key \(key) --call-index \(index) --stdin (or --skip)"
+        )
+        continue
+      }
+      guard name == "ask_user", let args = block["args"] as? JSONObject,
         let questions = args["questions"] as? [JSONObject]
       else { continue }
+      let start = lines.count
       for question in questions {
         let prompt = question["prompt"] as? String ?? ""
         let kind = question["kind"] as? String == "multi" ? "多选" : "单选"
@@ -735,7 +806,7 @@ public struct Commands: Sendable {
           .joined(separator: " | ")
         lines.append("[question \(entry)] (\(kind)) \(prompt): \(labels)")
       }
-      if !lines.isEmpty {
+      if lines.count > start {
         lines.append("answer: --entry \(entry) --choose <label>[,<label>] (or --skip)")
       }
     }

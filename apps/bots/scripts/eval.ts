@@ -141,6 +141,7 @@ type Step =
       readonly oneTerminal?: boolean;
       readonly capture?: string;
       readonly env?: Readonly<Record<string, string | null>>;
+      readonly stdin?: string;
       /** The command is expected to outlive its budget and be killed. */
       readonly expectTimeout?: boolean;
     }
@@ -609,9 +610,15 @@ const runProcess = (
   args: readonly string[],
   env: Readonly<Record<string, string>>,
   timeoutMs: number,
+  stdin?: string,
 ): Promise<ProcessResult> =>
   new Promise((resolve_) => {
     const child = spawn(bin, args, { env });
+    let inputError: string | undefined;
+    child.stdin.on("error", (error) => {
+      inputError = error.message;
+    });
+    child.stdin.end(stdin);
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -631,7 +638,12 @@ const runProcess = (
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      resolve_({ status: code, stdout, stderr, timedOut });
+      resolve_({
+        status: inputError === undefined ? code : null,
+        stdout,
+        stderr: inputError === undefined ? stderr : `${stderr}${inputError}`,
+        timedOut,
+      });
     });
   });
 
@@ -901,7 +913,13 @@ const runCase = async (
             else env[key] = fill(value);
           }
           const args = step.args.map(fill);
-          const result = await runProcess(bin, args, env, stepBudget);
+          const result = await runProcess(
+            bin,
+            args,
+            env,
+            stepBudget,
+            step.stdin === undefined ? undefined : fill(step.stdin),
+          );
           const stdout = result.stdout;
           const stderr = result.stderr;
           const command = `${step.bin ?? "dev"} ${args.join(" ")}`;

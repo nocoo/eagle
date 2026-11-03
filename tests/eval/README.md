@@ -47,7 +47,7 @@ daemon with that path. A `file` step rewrites it (mode or value) to prove a case
 
 | Extra step | Does |
 | --- | --- |
-| `cli` | Runs `args` with `HOME`, `EAGLE_ROOT` and `EAGLE_PORT` set; asserts `expectExit`, `stdoutContains`, `stderrContains` and a `json` subset. `oneTerminal` checks the whole JSON stream has exactly one terminal submission for the appended user input. `bin: "release"` runs a link named `eagle`; `expectTimeout` is for a command that must outlive its budget (`chat watch`). `capture` stores the last JSON line. |
+| `cli` | Runs `args` with `HOME`, `EAGLE_ROOT` and `EAGLE_PORT` set; `stdin` supplies fixture input through a pipe, never in the argument vector. Asserts `expectExit`, `stdoutContains`, `stderrContains` and a `json` subset. `oneTerminal` checks the whole JSON stream has exactly one terminal submission for the appended user input. `bin: "release"` runs a link named `eagle`; `expectTimeout` is for a command that must outlive its budget (`chat watch`). `capture` stores the last JSON line. |
 | `file` | Writes a path under the case root with an optional octal `mode`. |
 
 `http` and `cli` steps may `capture` a name, and later steps address it as
@@ -174,6 +174,8 @@ root conversation does not change that root's request classification.
 - `cli-isolation` — a real CLI turn and Bash tool prove the tool's home is the case home,
   not the runner's inherited home.
 - `cli-memory` — two CLI turns write and read a Bot-scoped memory.
+- `cli-secret` and `cli-secret-skip` — the CLI answers or skips a Bot-scoped password card.
+  The answer uses a synthetic value on stdin and checks `secret_read` and history for leaks.
 - `cli-decision-decide` and `cli-decision-unconfigured` — CLI turns exercise a scripted
   System One decision and an unconfigured-provider refusal, respectively.
 - `cli-auth` — the development token works, an unsafe or replaced file is refused, a
