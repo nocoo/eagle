@@ -39,10 +39,11 @@ quietly. `eval:cli` narrows the same run to the `cli-*` cases.
 
 The runner links the built binary as `eagle-dev` inside the case's temp root, because
 the CLI takes its own name from argv0: that name selects the development credential.
-Each case gets a temporary `HOME`, mints `~/.config/eagle-dev/token` there (mode 0600)
-and starts the daemon with `BOTS_DEV_AGENT_TOKEN` pointing at it, so a run never reads
-or writes the real `~/.config`. A `file` step rewrites that token (mode or value) to
-prove a case fails closed.
+Each case gets its own temporary `HOME`, `XDG_CONFIG_HOME` and `XDG_STATE_HOME`; the
+in-process daemon, provider lookup, tool subprocesses and CLI all use that case's paths.
+Before boot, the runner refuses memory, secrets or secrets-key paths outside the case root.
+A CLI case mints its development credential under the case home (mode 0600) and arms the
+daemon with that path. A `file` step rewrites it (mode or value) to prove a case fails closed.
 
 | Extra step | Does |
 | --- | --- |
@@ -170,6 +171,8 @@ root conversation does not change that root's request classification.
   through commands, each write read back by the next command.
 - `cli-chat` — `chat send --wait`, `chat history`, `chat watch`, and an answer aborted
   while it is still in flight; the transcript must never carry that answer.
+- `cli-isolation` — a real CLI turn and Bash tool prove the tool's home is the case home,
+  not the runner's inherited home.
 - `cli-auth` — the development token works, an unsafe or replaced file is refused, a
   release binary ignores the file, and a read-only credential cannot write.
 - `complex-*` — three different end-to-end shapes (a coding loop, a triggered triage

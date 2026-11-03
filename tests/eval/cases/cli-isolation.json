@@ -1,0 +1,42 @@
+{
+  "id": "cli-isolation",
+  "title": "CLI eval tools use the case home",
+  "kind": "coding",
+  "toolGroups": ["core", "coding"],
+  "model": {
+    "script": [
+      {
+        "toolCall": {
+          "name": "bash",
+          "args": {
+            "command": "if [ -f \"$HOME/eval-marker\" ]; then printf isolated > env-proof.txt; else printf escaped > env-proof.txt; fi"
+          }
+        }
+      },
+      { "text": "Checked the test home." }
+    ]
+  },
+  "steps": [
+    { "kind": "file", "path": "home/eval-marker", "content": "fixture" },
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval cli-isolation",
+        "--text",
+        "Check the test home",
+        "--wait",
+        "--json"
+      ],
+      "stdoutContains": "Checked the test home.",
+      "oneTerminal": true
+    }
+  ],
+  "expect": {
+    "toolsCalled": ["bash"],
+    "files": { "env-proof.txt": "isolated" },
+    "modelRequests": { "max": 2 },
+    "noErrors": true
+  }
+}

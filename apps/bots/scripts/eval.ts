@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { WebSocket } from "ws";
 import { readConfig } from "../src/config.ts";
 import { type DaemonHandle, startDaemon } from "../src/main.ts";
@@ -398,7 +398,20 @@ const listen = (server: ReturnType<typeof createServer>): Promise<number> =>
 const boot = async (
   root: string,
   env: Readonly<Record<string, string>> = {},
-): Promise<DaemonHandle> => startDaemon(readConfig({ argv: ["--root", root, "--port", "0"], env }));
+): Promise<DaemonHandle> => {
+  const config = readConfig({
+    argv: ["--root", root, "--port", "0"],
+    home: join(root, "home"),
+    env: { ...env, XDG_CONFIG_HOME: join(root, "config"), XDG_STATE_HOME: join(root, "state") },
+  });
+  for (const path of [config.memoryDir, config.secretsDir, config.secretsKeyPath]) {
+    const fromRoot = relative(root, path);
+    if (isAbsolute(fromRoot) || fromRoot === ".." || fromRoot.startsWith(`..${sep}`)) {
+      throw new Error("eval state escaped its case root");
+    }
+  }
+  return startDaemon(config);
+};
 
 const api = async (
   port: number,
@@ -643,6 +656,11 @@ const runCase = async (
   const root = await mkdtemp(join(tmpdir(), `bots-eval-${study.id}-`));
   const usesCli = study.steps.some((step) => step.kind === "cli");
   const home = join(root, "home");
+  const previousEnvironment = {
+    HOME: process.env.HOME,
+    XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+    XDG_STATE_HOME: process.env.XDG_STATE_HOME,
+  };
   const devTokenPath = join(home, ".config", "eagle-dev", "token");
   /** Values a step captured, addressed by later steps as `{{name.path}}`. */
   const captured = new Map<string, unknown>();
@@ -673,8 +691,9 @@ const runCase = async (
     /** Only a case that drives the CLI arms the development credential. */
     const daemonEnv = (): Readonly<Record<string, string>> =>
       devToken === undefined ? {} : { BOTS_DEV_AGENT_TOKEN: devTokenPath };
-    // Hermetic: provider keys and other user configuration must never be read by a case.
+    process.env.HOME = home;
     process.env.XDG_CONFIG_HOME = join(root, "config");
+    process.env.XDG_STATE_HOME = join(root, "state");
     await writeFile(
       join(root, "gateway.json"),
       `${JSON.stringify(
@@ -1110,6 +1129,10 @@ const runCase = async (
     else process.stdout.write(`kept the eval root: ${root}\n`);
     if (!released)
       report = { id: study.id, ok: false, detail: "the daemon did not release its root" };
+    for (const [name, value] of Object.entries(previousEnvironment)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   }
   return report;
 };
