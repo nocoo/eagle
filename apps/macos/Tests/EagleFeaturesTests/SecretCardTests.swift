@@ -88,7 +88,7 @@ struct SecretCardPresenterTests {
       createdAt: "2026-11-03T01:05:00.000Z",
       blocks: [.text("")],
       hidden: true,
-      answersTo: "e_12"
+      answersTo: "secret:e_12"
     )
     let entries = presenter.transcript(
       for: state([call(["key": .string("github-pat"), "purpose": .string("发布用")]), answer]))
@@ -158,7 +158,7 @@ struct SecretCardPairTests {
       createdAt: "2026-11-03T01:05:00.000Z",
       blocks: [.text("")],
       hidden: true,
-      answersTo: "e_12#1"
+      answersTo: "secret:e_12#1"
     )
     let cards = transcript([pair(), answer]).compactMap { entry -> SecretCard? in
       if case .secret(_, let card) = entry { return card }
@@ -180,7 +180,7 @@ struct SecretCardPairTests {
           "The person skipped the secret request for \"github-pat\" from e_12 without answering.")
       ],
       hidden: true,
-      answersTo: "e_12"
+      answersTo: "secret:e_12"
     )
     let card = transcript([
       Message(

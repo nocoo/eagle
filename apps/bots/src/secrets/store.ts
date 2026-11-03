@@ -1,6 +1,7 @@
 // The secrets store (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5): one encrypted document, two
 // scopes, lazy expiry and a startup sweep. This is the only module that knows the
 // container's shape; the tools see a narrow port and the model never holds a value.
+import { randomBytes } from "node:crypto";
 import { type FileHandle, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -13,6 +14,7 @@ import { newFailure } from "../core/failures.ts";
 import { declareEvent } from "../log/events.ts";
 import type { Log } from "../log/log.ts";
 import {
+  MAX_SECRET_ENV_BYTES,
   MAX_SECRET_PURPOSE_CHARS,
   MAX_SECRET_TTL_MINUTES,
   MAX_SECRET_VALUE_BYTES,
@@ -79,6 +81,16 @@ const LOCK_FILE = "secrets.lock";
 const LOCK_WAIT_MS = 2_000;
 const LOCK_STALE_MS = 10_000;
 
+/** Whether a process still exists; a signal we may not send still means it is there. */
+const isAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+
 const missing = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
 
@@ -120,8 +132,12 @@ const parseDocument = (text: string): SecretRecord[] => {
     if (!isString(record.botId) || record.botId.length === 0) {
       throw new SecretsStorageError("a secrets record has no owner");
     }
-    if (!isString(record.value) || record.value.length === 0) {
-      throw new SecretsStorageError("a secrets record holds no value");
+    if (
+      !isString(record.value) ||
+      record.value.length < MIN_SECRET_VALUE_CHARS ||
+      record.value.includes("\u0000")
+    ) {
+      throw new SecretsStorageError("a secrets record holds no usable value");
     }
     if (!isTimestamp(record.createdAt) || !isTimestamp(record.updatedAt)) {
       throw new SecretsStorageError("a secrets record has unusable timestamps");
@@ -163,6 +179,8 @@ export class SecretsStore {
   #records: SecretRecord[] = [];
   /** One mutation at a time inside this process. */
   #queue: Promise<unknown> = Promise.resolve();
+  /** The trace of the operation in flight, so a failure is attributable to the call. */
+  #activeTrace: string | undefined;
 
   constructor(options: SecretsStoreOptions) {
     this.#dir = options.dir;
@@ -188,11 +206,20 @@ export class SecretsStore {
   }
 
   /**
-   * The values this Bot may hand to a command, as environment variables. It reads the last
-   * loaded document, so the Bash tool's synchronous prepare can answer; a name collision
-   * after normalisation is dropped rather than guessed.
+   * The values a command may see: read fresh under the lock, so a rotation, a deletion or a
+   * container that turned unreadable all reach the next command. A store that cannot be read
+   * exports nothing and records the failure — a broken password store must not break coding.
    */
-  environment(botId: string): Record<string, string> {
+  async environment(botId: string): Promise<Record<string, string>> {
+    try {
+      return await this.#exclusive(async () => this.#environmentFor(botId));
+    } catch {
+      return {};
+    }
+  }
+
+  /** The same, over the document this store already holds. */
+  #environmentFor(botId: string): Record<string, string> {
     const counts = new Map<string, number>();
     for (const record of this.#records) {
       if (record.scope === "bot" && record.botId !== botId) continue;
@@ -201,21 +228,28 @@ export class SecretsStore {
       counts.set(name, (counts.get(name) ?? 0) + 1);
     }
     const env: Record<string, string> = {};
+    let bytes = 0;
     for (const record of this.#records) {
       if (record.scope === "bot" && record.botId !== botId) continue;
       if (this.#expired(record)) continue;
       const name = secretEnvName(record.key);
       if (counts.get(name) !== 1) continue;
+      bytes += name.length + record.value.length;
+      // One environment has to fit in the kernel's own limit; the newest records win.
+      if (bytes > MAX_SECRET_ENV_BYTES) break;
       env[name] = record.value;
     }
     return env;
   }
 
-  /** The environment name a record reaches a command by, or undefined when it collides. */
-  envNameFor(key: string): string | undefined {
+  /** The environment name a record reaches this Bot's commands by, or a name clash. */
+  envNameFor(botId: string, key: string): string | undefined {
     const name = secretEnvName(key);
     const clashing = this.#records.filter(
-      (record) => !this.#expired(record) && secretEnvName(record.key) === name,
+      (record) =>
+        !this.#expired(record) &&
+        (record.scope === "shared" || record.botId === botId) &&
+        secretEnvName(record.key) === name,
     );
     return clashing.length > 1 ? undefined : name;
   }
@@ -461,7 +495,7 @@ export class SecretsStore {
       read: (input) => this.read({ botId, ...input }),
       remove: (input) => this.remove({ botId, ...input }),
       environment: () => this.environment(botId),
-      envNameFor: (key) => this.envNameFor(key),
+      envNameFor: (key) => this.envNameFor(botId, key),
     };
   }
 
@@ -522,12 +556,14 @@ export class SecretsStore {
   ): Promise<T> {
     const own = trace ?? this.#trace;
     const next = this.#queue.then(async () => {
+      this.#activeTrace = own;
       const release = await this.#lock();
       try {
         await this.load();
         if (dropExpired) await this.#dropExpired(own);
         return await run(own);
       } finally {
+        this.#activeTrace = undefined;
         await release();
       }
     });
@@ -538,27 +574,31 @@ export class SecretsStore {
     return next;
   }
 
-  /** An exclusive lock file; a stale one from a daemon that died is cleared, not waited on. */
+  /**
+   * An exclusive lock file with an owner: the release only removes a lock this call still
+   * holds, and a lock whose daemon is gone is cleared. Age alone never proves that, so a slow
+   * but live writer keeps its lock.
+   */
   async #lock(): Promise<() => Promise<void>> {
     const path = join(this.#dir, LOCK_FILE);
     await mkdir(this.#dir, { recursive: true, mode: 0o700 });
     // `mkdir`'s mode is a request, not a proof: a directory another account can write is a
     // directory that account can swap the ciphertext in.
     const directory = await stat(this.#dir).catch(() => undefined);
-    if (directory !== undefined && (directory.mode & 0o022) !== 0) {
+    if (directory !== undefined && (directory.mode & 0o077) !== 0) {
       this.#emitFail(undefined, this.#trace);
-      throw new SecretsStorageError(
-        "the secrets directory is writable by another account; chmod 700 it",
-      );
+      throw new SecretsStorageError("the secrets directory is not private; chmod 700 it");
     }
     const deadline = Date.now() + LOCK_WAIT_MS;
+    const token = randomBytes(9).toString("hex");
     for (;;) {
       try {
         const handle = await open(path, "wx", 0o600);
-        await handle.writeFile(`${process.pid}\n`);
+        await handle.writeFile(JSON.stringify({ pid: process.pid, token }));
         await handle.close();
         return async () => {
-          await rm(path, { force: true }).catch(() => undefined);
+          const held = await this.#lockOwner(path);
+          if (held?.token === token) await rm(path, { force: true }).catch(() => undefined);
         };
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
@@ -566,11 +606,14 @@ export class SecretsStore {
           throw new SecretsStorageError("the secrets store could not be locked", { cause: error });
         }
       }
-      const age = await stat(path).then(
-        (stats) => Date.now() - stats.mtimeMs,
-        () => 0,
-      );
-      if (age > LOCK_STALE_MS) {
+      const owner = await this.#lockOwner(path);
+      // A lock whose daemon is gone, or one nobody can make sense of and that has aged out,
+      // is cleared; a live owner is waited for, however slow it is.
+      const stale =
+        owner === undefined
+          ? await this.#aged(path)
+          : owner.pid !== process.pid && !isAlive(owner.pid);
+      if (stale) {
         await rm(path, { force: true }).catch(() => undefined);
         continue;
       }
@@ -579,6 +622,26 @@ export class SecretsStore {
       }
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
+  }
+
+  /** The lock file's owner, or undefined when the file is absent or unreadable. */
+  async #lockOwner(
+    path: string,
+  ): Promise<{ readonly pid: number; readonly token: string } | undefined> {
+    const body = await readFile(path, "utf8").catch(() => undefined);
+    if (body === undefined) return undefined;
+    try {
+      const parsed = JSON.parse(body) as { pid?: unknown; token?: unknown };
+      if (typeof parsed.pid !== "number" || typeof parsed.token !== "string") return undefined;
+      return { pid: parsed.pid, token: parsed.token };
+    } catch {
+      return undefined;
+    }
+  }
+
+  async #aged(path: string): Promise<boolean> {
+    const stats = await stat(path).catch(() => undefined);
+    return stats === undefined || Date.now() - stats.mtimeMs > LOCK_STALE_MS;
   }
 
   /** Rewrites the whole document: a private scratch file, then a rename over the target. */
@@ -624,8 +687,9 @@ export class SecretsStore {
   async #uses(): Promise<ReadonlyMap<string, { at: string; by: SecretAuditBy }>> {
     try {
       return await this.#audit.uses();
-    } catch {
-      return new Map();
+    } catch (error) {
+      this.#emitFail(undefined, this.#trace);
+      throw new SecretsStorageError("the secrets ledger could not be read", { cause: error });
     }
   }
 
@@ -762,6 +826,10 @@ export class SecretsStore {
         `a secret value is at least ${MIN_SECRET_VALUE_CHARS} characters, so the log can scrub it`,
       );
     }
+    // A value an environment cannot carry would fail the spawn and be echoed in its error.
+    if (raw.includes("\u0000")) {
+      throw new SecretsStorageError("a secret value cannot contain a NUL character");
+    }
     if (Buffer.byteLength(raw, "utf8") > MAX_SECRET_VALUE_BYTES) {
       throw new SecretsStorageError(`a secret value is at most ${MAX_SECRET_VALUE_BYTES} bytes`);
     }
@@ -812,7 +880,7 @@ export class SecretsStore {
   /** A storage failure: the record carries the scope and nothing else. */
   #emitFail(scope: SecretScope | undefined, trace: string): void {
     this.#log?.emit("error", "core", Events.fail, {
-      trace,
+      trace: this.#activeTrace ?? trace,
       failure: newFailure("storage_failed", "core"),
       origin: true,
       ...(scope === undefined ? {} : { detail: { scope } }),

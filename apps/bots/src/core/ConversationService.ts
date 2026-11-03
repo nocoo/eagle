@@ -37,6 +37,7 @@ import type { OriginStore } from "./OriginStore.ts";
 import type { RuntimeEvent, RuntimeHandle, RuntimeHistory, SubmitInput } from "./RuntimePort.ts";
 import {
   type SecretAnswerInput,
+  secretAnswersTo,
   secretAnswerText,
   secretCardCount,
   secretCardOf,
@@ -207,6 +208,8 @@ export class ConversationService implements InvocationPort {
   readonly #secrets: SecretsPort | undefined;
   /** Cards this daemon has already answered, so a retry cannot store a value twice. */
   readonly #answeredCards = new Set<string>();
+  /** One answer at a time per card: the duplicate check must not have a window. */
+  readonly #answerChains = new Map<string, Promise<unknown>>();
   /** Resolved views by bot id, so `observe` can answer synchronously without opening. */
   readonly #current = new Map<string, Bot>();
   /** Invocation observers, keyed by bot id and bound to the value, not to one Bot object. */
@@ -439,9 +442,36 @@ export class ConversationService implements InvocationPort {
       throw new DirectoryError("invalid_answer", "no such secret_request call");
     }
     // A card is answered once: a retry after a lost response must not store the value again,
-    // recompute its lifetime or start a second run.
-    const answersTo = index === 0 ? input.entryId : `${input.entryId}#${index}`;
+    // recompute its lifetime or start a second run. The answer is serialised per card, so
+    // two clients arriving together cannot both pass this check.
+    const answersTo = secretAnswersTo(input.entryId, index);
     const answered = `${botId}\u0000${answersTo}`;
+    const chain = this.#answerChains.get(answered) ?? Promise.resolve();
+    const run = chain.then(() =>
+      this.#answerSecretOnce(botId, bot, card, input, answersTo, answered, label),
+    );
+    this.#answerChains.set(
+      answered,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return run;
+  }
+
+  /** The body of one card answer, inside that card's own serial section. */
+  async #answerSecretOnce(
+    botId: string,
+    bot: Bot,
+    card: ReturnType<typeof secretCardOf>,
+    input: SecretAnswerInput,
+    answersTo: string,
+    answered: string,
+    label?: string,
+  ): Promise<Submission> {
+    if (card === undefined)
+      throw new DirectoryError("invalid_answer", "no such secret_request call");
     if (
       this.#answeredCards.has(answered) ||
       bot.snapshot.messages.some((message) => message.answersTo === answersTo)
@@ -486,7 +516,7 @@ export class ConversationService implements InvocationPort {
     }
     let text: string;
     if (input.skipped === true) {
-      text = secretAnswerText(card, { entryId: answersTo, skipped: true });
+      text = secretAnswerText(card, { entryId: input.entryId, skipped: true });
     } else {
       const store = this.#secrets;
       if (store === undefined) {
@@ -502,25 +532,32 @@ export class ConversationService implements InvocationPort {
         ...(input.trace === undefined ? {} : { trace: input.trace }),
       });
       text = secretAnswerText(card, {
-        entryId: answersTo,
+        entryId: input.entryId,
         scope,
         ...(ttl === undefined ? {} : { ttlMinutes: ttl }),
       });
     }
     this.#answeredCards.add(answered);
-    return this.#admitAndLog(
-      {
-        botId,
-        requestId: `answer_${randomUUID().replaceAll("-", "")}`,
-        text,
-        whenBusy: "followUp",
-        trace: input.trace ?? input.entryId,
-        origin: label === undefined ? { kind: "human" } : { kind: "human", label },
-        hidden: true,
-        answersTo,
-      },
-      undefined,
-    );
+    try {
+      return await this.#admitAndLog(
+        {
+          botId,
+          requestId: `answer_${randomUUID().replaceAll("-", "")}`,
+          text,
+          whenBusy: "followUp",
+          trace: input.trace ?? input.entryId,
+          origin: label === undefined ? { kind: "human" } : { kind: "human", label },
+          hidden: true,
+          answersTo,
+        },
+        undefined,
+      );
+    } catch (error) {
+      // Nothing reached the bot, so the person may still answer: a card is only spent when
+      // the answer was admitted.
+      this.#answeredCards.delete(answered);
+      throw error;
+    }
   }
 
   /**

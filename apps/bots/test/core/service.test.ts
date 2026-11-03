@@ -2042,7 +2042,7 @@ test("the secret answer stores the value and admits a hidden message without it"
   const hidden = runtime.submitted.at(-1);
   assert.ok(hidden);
   assert.equal(hidden.hidden, true);
-  assert.equal(hidden.answersTo, "e_card_1");
+  assert.equal(hidden.answersTo, "secret:e_card_1");
   assert.equal(
     hidden.text.includes("ghp_example"),
     false,

@@ -181,7 +181,7 @@ public struct SecretCardRow: View {
       )
       .font(.system(size: 13, weight: .medium))
       .foregroundStyle(locked ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
-      Text(locked ? (card.skipped || skipped ? "已取消" : "已保存") : "需要你提供密码")
+      Text(locked ? (effectiveSkipped ? "已取消" : "已保存") : "需要你提供密码")
         .font(.system(size: 13, weight: .medium))
         .foregroundStyle(Theme.Palette.textPrimary)
       Spacer(minLength: 0)
@@ -335,7 +335,7 @@ public struct SecretCardRow: View {
   /// After the answer arrived the card says what happened, never the value itself.
   private var savedValue: some View {
     HStack(spacing: 8) {
-      Text(card.skipped ? "已取消" : "已保存")
+      Text(effectiveSkipped ? "已取消" : "已保存")
         .font(.system(size: 12.5))
         .foregroundStyle(Theme.Palette.textSecondary)
       Text(card.key)
@@ -391,6 +391,9 @@ public struct SecretCardRow: View {
 
   /// Read-only once the person answered or has just submitted.
   private var locked: Bool { card.answered || submitted }
+
+  /// Whether this card was cancelled: the local act first, the daemon's answer after a reload.
+  private var effectiveSkipped: Bool { card.skipped || skipped }
 
   /// The answer leaves the card in one request. On success the value is gone from this view;
   /// on failure it stays, and the person decides whether to try again or to give up.

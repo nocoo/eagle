@@ -47,6 +47,14 @@ const asRecord = (value: unknown): Record<string, unknown> | undefined =>
     ? (value as Record<string, unknown>)
     : undefined;
 
+/**
+ * The name a secret card's answer is written back under. It is always namespaced, so an
+ * `ask_user` answer for the same entry — which names the entry itself — cannot close a secret
+ * card, and the second card of one answer appends its index.
+ */
+export const secretAnswersTo = (entryId: string, index = 0): string =>
+  index === 0 ? `secret:${entryId}` : `secret:${entryId}#${index}`;
+
 /** How many secret cards one entry carries: a model may ask for two passwords at once. */
 export const secretCardCount = (message: Message): number =>
   message.blocks.filter((block) => block.type === "toolCall" && block.name === SECRET_REQUEST_TOOL)

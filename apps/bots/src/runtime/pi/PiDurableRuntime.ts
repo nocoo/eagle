@@ -264,7 +264,11 @@ export class PiDurableRuntime implements RuntimePort {
         ...(peers === undefined ? {} : { peers }),
         ...(pulls === undefined ? {} : { pulls }),
         ...(memory === undefined ? {} : { memory }),
-        ...(secrets === undefined ? {} : { secrets }),
+        // The environment export is the group's second half: a person who switched 密码 off
+        // switched off the values reaching a command too, not only the four tools.
+        ...(secrets === undefined || !resolveToolGroups(groups).includes("secrets")
+          ? {}
+          : { secrets }),
         ...(noteTools === undefined ? {} : { note: noteTools }),
         ...(this.#options.now === undefined ? {} : { now: this.#options.now }),
       });

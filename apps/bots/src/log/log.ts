@@ -47,16 +47,23 @@ const DETAIL_TYPES = {
   scope: "string",
 } as const;
 
-const redact = (value: string, secrets: readonly string[] = []): string => {
-  let text = value;
-  for (const secret of [process.env.BOTS_API_KEY, process.env.AGENT_SIGNING_KEY]) {
-    if (secret && secret.length >= 8) text = text.split(secret).join("[redacted]");
+/** A credential has a shape; a stored password only has a length somebody chose. */
+const CREDENTIAL_MIN_CHARS = 8;
+const SECRET_MIN_CHARS = 4;
+
+const scrub = (text: string, values: readonly (string | undefined)[], minimum: number): string => {
+  let out = text;
+  for (const value of values) {
+    if (value !== undefined && value.length >= minimum) out = out.split(value).join("[redacted]");
   }
+  return out;
+};
+
+const redact = (value: string, secrets: readonly string[] = []): string => {
+  let text = scrub(value, [process.env.BOTS_API_KEY, process.env.AGENT_SIGNING_KEY], 8);
   // A stored secret is scrubbed at its own length, not at a credential's: a password is
   // never long enough to be safe from a length filter (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5).
-  for (const secret of secrets) {
-    if (secret.length >= 4) text = text.split(secret).join("[redacted]");
-  }
+  text = scrub(text, secrets, SECRET_MIN_CHARS);
   text = text.replace(/[A-Za-z0-9_-]{0,2}sk-[A-Za-z0-9_-]{16,}/g, "[redacted]");
   const home = process.env.HOME;
   if (home && home.length > 1) text = text.split(home).join("~");
@@ -250,7 +257,14 @@ export class Log {
       level,
       layer,
       evt,
-      trace: redact(fields.trace, this.#secrets()),
+      // A trace is a bounded identifier, never content: a short password that happens to sit
+      // inside one must not rewrite the only key joining a log record to the ledger, while a
+      // credential-shaped value that reached the field is still scrubbed.
+      trace: scrub(
+        scrub(fields.trace, [process.env.BOTS_API_KEY, process.env.AGENT_SIGNING_KEY], 8),
+        this.#secrets(),
+        CREDENTIAL_MIN_CHARS,
+      ),
       ...(fields.botId === undefined ? {} : { botId: redact(fields.botId, this.#secrets()) }),
       ...(fields.connId === undefined ? {} : { connId: redact(fields.connId, this.#secrets()) }),
       ...(fields.reqId === undefined ? {} : { reqId: redact(fields.reqId, this.#secrets()) }),

@@ -276,9 +276,9 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
    * a tool result is persisted into the transcript, so a value must never be one.
    */
   const bash = createBashTool({
-    prepare(execution) {
+    async prepare(execution) {
       baseEnvironment(execution);
-      const secrets = options.secrets?.environment() ?? {};
+      const secrets = (await options.secrets?.environment()) ?? {};
       for (const [name, value] of Object.entries(secrets)) execution.env[name] = value;
     },
   });

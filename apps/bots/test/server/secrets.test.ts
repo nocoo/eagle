@@ -131,7 +131,7 @@ test("the card answer stores the value and never echoes it", async (t) => {
     const hidden = runtime.submitted.at(-1);
     assert.ok(hidden, "the answer was admitted");
     assert.equal(hidden.hidden, true, "the answer is a hidden message");
-    assert.equal(hidden.answersTo, "e_card_1");
+    assert.equal(hidden.answersTo, "secret:e_card_1");
     assert.equal(hidden.text.includes("ghp_example"), false, "the hidden message holds no value");
     assert.match(hidden.text, /github-pat/);
     assert.match(hidden.text, /expires in 1 hour/);
@@ -420,7 +420,11 @@ test("two cards in one answer are two questions", async (t) => {
     assert.equal(second.status, 200, "the second card is answerable");
     const hidden = runtime.submitted.at(-1);
     assert.ok(hidden);
-    assert.equal(hidden.answersTo, "e_card_1#1", "the second card is named apart from the first");
+    assert.equal(
+      hidden.answersTo,
+      "secret:e_card_1#1",
+      "the second card is named apart from the first",
+    );
     assert.equal((await secrets.read({ botId, key: "npm-token" }))?.value, "npm_example");
 
     const wrongIndex = await call(stack, `/v1/bots/${botId}/secrets`, {
@@ -428,6 +432,108 @@ test("two cards in one answer are two questions", async (t) => {
       body: { entryId: "e_card_1", key: "github-pat", value: "ghp_again", callIndex: 5 },
     });
     assert.equal(wrongIndex.status, 400, "a card index that does not exist is refused");
+  } finally {
+    await stack.close();
+  }
+});
+
+test("an ask_user answer for the same entry does not spend a secret card", async (t) => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = await mkdtemp(join(tmpdir(), "bots-secret-http-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const secrets = await SecretsStore.open({
+    dir: join(root, "config"),
+    keyPath: join(root, "state", "secrets.key"),
+  });
+  // One answer that asks a question and for a password: the two answers are named apart.
+  const mixed: Message = {
+    ...card({ key: "github-pat", purpose: "发布用" }),
+    blocks: [
+      {
+        type: "toolCall",
+        callId: "c_1",
+        name: "ask_user",
+        args: {
+          questions: [
+            { prompt: "用哪个账号？", kind: "single", options: [{ label: "a" }, { label: "b" }] },
+          ],
+        },
+      },
+      {
+        type: "toolCall",
+        callId: "c_2",
+        name: "secret_request",
+        args: { key: "github-pat", purpose: "发布用" },
+      },
+    ],
+  };
+  const runtime = new CardRuntime(mixed);
+  const stack = await startStack({
+    runtime,
+    secrets: { save: (input) => secrets.save(input) },
+    secretsApi: {
+      list: () => secrets.listAll(),
+      reveal: (input) => secrets.reveal(input),
+      remove: (input) => secrets.removeAsPerson(input),
+    },
+  });
+  try {
+    const botId = await stack.createBot("发布助手");
+    const asked = await call(stack, `/v1/bots/${botId}/answers`, {
+      method: "POST",
+      body: { entryId: "e_card_1", answers: [["a"]] },
+    });
+    assert.equal(asked.status, 200);
+    const saved = await call(stack, `/v1/bots/${botId}/secrets`, {
+      method: "POST",
+      body: { entryId: "e_card_1", key: "github-pat", value: "ghp_example" },
+    });
+    assert.equal(saved.status, 200, "the question's answer is not the password's");
+    assert.equal((await secrets.read({ botId, key: "github-pat" }))?.value, "ghp_example");
+  } finally {
+    await stack.close();
+  }
+});
+
+test("two clients answering one card at once store one value and admit one run", async (t) => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = await mkdtemp(join(tmpdir(), "bots-secret-http-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const secrets = await SecretsStore.open({
+    dir: join(root, "config"),
+    keyPath: join(root, "state", "secrets.key"),
+  });
+  const runtime = new CardRuntime(card({ key: "github-pat", purpose: "发布用" }));
+  const stack = await startStack({
+    runtime,
+    secrets: { save: (input) => secrets.save(input) },
+    secretsApi: {
+      list: () => secrets.listAll(),
+      reveal: (input) => secrets.reveal(input),
+      remove: (input) => secrets.removeAsPerson(input),
+    },
+  });
+  try {
+    const botId = await stack.createBot("发布助手");
+    const [left, right] = await Promise.all([
+      call(stack, `/v1/bots/${botId}/secrets`, {
+        method: "POST",
+        body: { entryId: "e_card_1", key: "github-pat", value: "ghp_first" },
+      }),
+      call(stack, `/v1/bots/${botId}/secrets`, {
+        method: "POST",
+        body: { entryId: "e_card_1", key: "github-pat", value: "ghp_second" },
+      }),
+    ]);
+    const statuses = [left.status, right.status].sort();
+    assert.deepEqual(statuses, [200, 400], "one answer is admitted, the other is refused");
+    assert.equal(runtime.submitted.length, 1, "one run, not two");
+    const stored = (await secrets.read({ botId, key: "github-pat" }))?.value;
+    assert.ok(stored === "ghp_first" || stored === "ghp_second");
   } finally {
     await stack.close();
   }

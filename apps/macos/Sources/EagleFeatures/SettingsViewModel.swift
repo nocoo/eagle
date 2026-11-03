@@ -41,6 +41,8 @@ public final class SettingsViewModel: ObservableObject {
   @Published public var secretBusy = false
   /// The values a person asked to see; a second click hides them again.
   @Published public var revealedSecrets: [String: String] = [:]
+  /// A page visit: a reveal that lands after the page was left must not fill it back in.
+  private var secretsGeneration = 0
   /// The bot names behind a record's creator.
   @Published public var secretBotTitles: [String: String] = [:]
   @Published public var launchAtLogin = true
@@ -275,6 +277,7 @@ public final class SettingsViewModel: ObservableObject {
     guard !secretBusy else { return }
     secretBusy = true
     defer { secretBusy = false }
+    secretsGeneration += 1
     secretLoadError = nil
     // A revealed value lives for one look at this page, never across a reload.
     revealedSecrets.removeAll()
@@ -289,6 +292,7 @@ public final class SettingsViewModel: ObservableObject {
 
   /// Leaving the page forgets every revealed value and every message it produced.
   public func leaveSecrets() {
+    secretsGeneration += 1
     revealedSecrets.removeAll()
     secretMessage = nil
   }
@@ -308,9 +312,13 @@ public final class SettingsViewModel: ObservableObject {
     }
     secretBusy = true
     defer { secretBusy = false }
+    let generation = secretsGeneration
     do {
-      revealedSecrets[secret.id] = try await client().revealSecret(
+      let value = try await client().revealSecret(
         key: secret.key, scope: secret.scope, botId: secret.botId)
+      // The page may have been left while this was in flight: a late value must not appear.
+      guard generation == secretsGeneration else { return }
+      revealedSecrets[secret.id] = value
       secretMessage = nil
     } catch {
       secretMessage = (error as? ClientError)?.message ?? error.localizedDescription

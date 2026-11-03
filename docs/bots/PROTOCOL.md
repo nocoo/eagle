@@ -492,8 +492,13 @@ container).
 - **The card answer is a submission, like an `ask_user` answer.** `entryId` is the transcript
   entry carrying the `secret_request` call and `key` must be that call's key: a client cannot
   rename a record or answer a card it did not see. `callIndex` names which card of that entry
-  when one answer asked for two passwords (the hidden answer then names `"<entryId>#<index>"`),
-  and a card that was already answered is a `400` rather than a second write. The answer stores the value and the daemon
+  when one answer asked for two passwords, and a card that was already answered is a `400`
+  rather than a second write. Answers are serialised per card, so two clients arriving at once
+  cannot both be admitted.
+- **A secret answer is namespaced.** Its hidden input carries `answersTo: "secret:<entryId>"`
+  (`"secret:<entryId>#<index>"` for a second card), never the bare entry id: one answer may hold
+  an `ask_user` call and a `secret_request` call, and the two answers must not close or spend
+  each other. The answer stores the value and the daemon
   composes one hidden user input the Bot reads next (`hidden: true`, `answersTo: entryId`).
 - **The value is written, never read back, on this route.** The response carries the
   `Submission` and nothing else; `value` is required and bounded to 8 KiB, and `skipped: true`
@@ -588,7 +593,9 @@ The `usage` capability is `true`.
   "blocks": [ { "type": "text", "text": "巴黎。" } ],
   "requestId": "r_0190a1b3",             // user messages only; ties the entry to a send
   "hidden": true,                        // optional: the person's answer to ask_user
-  "answersTo": "e_12"                    // optional: the ask_user call this hidden input closes
+  "answersTo": "e_12"                    // optional: the card this hidden input closes. A
+                                         // secret card is "secret:e_12", and the second card of
+                                         // one answer "secret:e_12#1"
 }
 
 // Messages are never split or clipped. The bound is structural: assistant answers are

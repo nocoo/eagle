@@ -152,6 +152,8 @@ export const SECRET_KEY_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 export const MAX_SECRET_VALUE_BYTES = 8 * 1024;
 /** Shorter than the log's own redaction bound: a value it cannot scrub is not stored. */
 export const MIN_SECRET_VALUE_CHARS = 4;
+/** One command's environment has to fit in the kernel's own limit. */
+export const MAX_SECRET_ENV_BYTES = 64 * 1024;
 export const MAX_SECRET_PURPOSE_CHARS = 240;
 export const MIN_SECRET_TTL_MINUTES = 1;
 export const MAX_SECRET_TTL_MINUTES = 1440;

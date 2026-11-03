@@ -167,3 +167,58 @@ test("a saved value reaches a command as environment, and never the transcript",
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("switching the group off takes the environment with it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bots-secret-runtime-"));
+  const store = await SecretsStore.open({
+    dir: join(root, "config"),
+    keyPath: join(root, "state", "secrets.key"),
+  });
+  // The host is available, but this bot was not given the 密码 group: the stored value must
+  // not reach its commands either.
+  const bench = await createBench({
+    toolGroups: ["core", "coding"],
+    secrets: (spec) => store.hostFor(spec.id),
+  });
+  const events: RuntimeEvent[] = [];
+  const handle = await bench.runtime.open(bench.spec());
+  try {
+    await store.save({
+      botId: bench.spec().id,
+      key: "github-pat",
+      value: "sentinel-value-9c1f",
+      scope: "bot",
+    });
+    await handle.subscribe(trace, (event) => events.push(event));
+    bench.faux.setResponses([
+      assistant(
+        [
+          toolCall("bash", {
+            command:
+              'if [ -n "$EAGLE_SECRET_GITHUB_PAT" ]; then printf present; else printf absent; fi',
+          }),
+        ],
+        { stopReason: "toolUse" },
+      ),
+      text("done"),
+    ]);
+    await handle.submit({
+      requestId: "r_secret_3",
+      text: "看看环境",
+      whenBusy: "followUp",
+      trace,
+    });
+    await waitFor(
+      () => events.some((event) => event.type === "submission" && event.record.status === "done"),
+      "the run to settle",
+      10_000,
+    );
+    const ran = results(events).find((block) => block.name === "bash");
+    assert.ok(ran, "the command ran");
+    assert.match(ran.text, /absent/, "a group that is off hands out nothing");
+  } finally {
+    await handle.close(trace, 1_000);
+    await bench.cleanup();
+    await rm(root, { recursive: true, force: true });
+  }
+});

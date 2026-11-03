@@ -745,6 +745,9 @@ restart loses nothing:
 The Bot decides from context whether to offer an expiry at all: a password for a one-off install
 asks for 1 hour, a long-lived token asks for nothing.
 
+A cancelled card is not a saved one: the hidden answer begins `The person skipped`, and the card
+shows 取消 rather than a check mark.
+
 Saving is `POST /v1/bots/:botId/secrets` ([PROTOCOL.md](PROTOCOL.md), "Secrets"). The daemon
 checks that the entry really carries a `secret_request` call and that the body's `key` is that
 call's key; anything else is a `400`. One answer may ask for two passwords: each call is its own
@@ -782,6 +785,14 @@ and `secret_read` reports the collision.
 ```sh
 GIT_ASKPASS=true git -c credential.helper=false push https://x-access-token:$EAGLE_SECRET_GITHUB_PAT@github.com/…
 ```
+
+The export is read fresh under the store's lock before every command, so a rotation, a deletion
+or a container that turned unreadable reaches the next command rather than the next restart;
+a store that cannot be read exports nothing and records the failure, because a broken password
+store must not break coding. Switching the `secrets` group off switches the export off too: the
+group's tools and the values a command sees are one decision. The export is bounded to 64 KiB
+of names and values, and a value that an environment cannot carry — anything holding a NUL — is
+refused when it is stored rather than failing the spawn that would echo it.
 
 That keeps the value out of the model's context, the transcript, every snapshot and every
 client with conversation read. It does not stop a Bot that deliberately prints the variable —

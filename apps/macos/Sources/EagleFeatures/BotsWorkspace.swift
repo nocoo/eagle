@@ -1145,9 +1145,12 @@ struct BotsPresenter {
             continue
           }
           if name == "secret_request" {
-            // The first card is named by its entry; a second one appends its index, which is
-            // what the daemon writes back in `answersTo`.
-            let token = secretCall == 0 ? message.id : "\(message.id)#\(secretCall)"
+            // The answer the daemon writes back is namespaced under `secret:`, so an ask_user
+            // answer for the same entry is a different card; a second secret card appends its
+            // index.
+            let token =
+              secretCall == 0
+              ? "secret:\(message.id)" : "secret:\(message.id)#\(secretCall)"
             if let card = Self.secretCard(
               id: message.id,
               callIndex: secretCall,

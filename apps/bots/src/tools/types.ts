@@ -3,6 +3,7 @@ import type { SecretMeta, SecretScope, SubmissionStatus } from "../core/domain.t
 export type { SecretMeta, SecretScope } from "../core/domain.ts";
 export {
   DEFAULT_SECRET_LIST_LIMIT,
+  MAX_SECRET_ENV_BYTES,
   MAX_SECRET_LIST_LIMIT,
   MAX_SECRET_PURPOSE_CHARS,
   MAX_SECRET_TTL_MINUTES,
@@ -104,7 +105,7 @@ export type SecretsToolHost = {
     readonly scope: SecretScope;
   }): Promise<{ readonly key: string; readonly scope: SecretScope; readonly deleted: boolean }>;
   /** Every value this Bot may hand to a command, keyed by its environment variable. */
-  environment(): Record<string, string>;
+  environment(): Promise<Record<string, string>>;
   /** The environment variable one record reaches a command by; undefined on a name clash. */
   envNameFor(key: string): string | undefined;
 };

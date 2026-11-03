@@ -672,11 +672,11 @@ test("the environment a command gets holds this bot's values and nobody else's",
     });
     advance(10);
 
-    assert.deepEqual(store.environment("b_1"), {
+    assert.deepEqual(await store.environment("b_1"), {
       EAGLE_SECRET_GITHUB_PAT: "alpha",
       EAGLE_SECRET_NPM_TOKEN: "bravo",
     });
-    assert.deepEqual(store.environment("b_2"), {
+    assert.deepEqual(await store.environment("b_2"), {
       EAGLE_SECRET_MINE: "charlie",
       EAGLE_SECRET_NPM_TOKEN: "bravo",
     });
@@ -691,8 +691,11 @@ test("two names that normalise to one variable are dropped, not guessed", async 
     const store = await SecretsStore.open(options);
     await store.save({ botId: "b_1", key: "a.b", value: "one-value", scope: "bot" });
     await store.save({ botId: "b_1", key: "a-b", value: "two-value", scope: "bot" });
-    assert.deepEqual(store.environment("b_1"), {});
-    assert.equal(store.envNameFor("a.b"), undefined);
+    assert.deepEqual(await store.environment("b_1"), {});
+    assert.equal(store.envNameFor("b_1", "a.b"), undefined);
+    // Another bot's clash is not this bot's problem.
+    await store.save({ botId: "b_2", key: "c-d", value: "other-value", scope: "bot" });
+    assert.equal(store.envNameFor("b_1", "c.d"), "EAGLE_SECRET_C_D");
   } finally {
     await done();
   }
@@ -701,11 +704,13 @@ test("two names that normalise to one variable are dropped, not guessed", async 
 test("a ledger that cannot be written does not fail the password", async () => {
   const { options, done } = await bench();
   try {
-    const { mkdir } = await import("node:fs/promises");
+    const { chmod, mkdir } = await import("node:fs/promises");
     const { log, records } = captureLog();
     const store = await SecretsStore.open({ ...options, log });
     // A directory where the ledger should be: every append fails.
-    await mkdir(join(options.dir, "secrets.audit.jsonl"), { recursive: true });
+    await mkdir(options.dir, { recursive: true, mode: 0o700 });
+    await chmod(options.dir, 0o700);
+    await mkdir(join(options.dir, "secrets.audit.jsonl"), { mode: 0o700 });
     const saved = await store.save({
       botId: "b_1",
       key: "k",
@@ -730,7 +735,7 @@ test("a directory another account can write is refused", async () => {
     const store = await SecretsStore.open(options);
     await store.save({ botId: "b_1", key: "k", value: "value", scope: "bot" });
     await chmod(options.dir, 0o777);
-    await assert.rejects(store.listAll(), /writable by another account/);
+    await assert.rejects(store.listAll(), /not private/);
   } finally {
     await done();
   }
@@ -754,6 +759,68 @@ test("two daemons over one config directory see each other's records", async () 
       [],
       "the lock is released after every operation",
     );
+  } finally {
+    await done();
+  }
+});
+
+test("a value an environment cannot carry is refused before it is stored", async () => {
+  const { options, done } = await bench();
+  try {
+    const store = await SecretsStore.open(options);
+    await assert.rejects(
+      store.save({ botId: "b_1", key: "k", value: "before\u0000after", scope: "bot" }),
+      /NUL/,
+    );
+    assert.deepEqual(await store.environment("b_1"), {});
+  } finally {
+    await done();
+  }
+});
+
+test("the environment is read fresh, so a rotation or a deletion reaches the next command", async () => {
+  const { options, done } = await bench();
+  try {
+    const first = await SecretsStore.open(options);
+    const second = await SecretsStore.open(options);
+    await first.save({ botId: "b_1", key: "k", value: "old-value", scope: "bot" });
+    assert.deepEqual(await second.environment("b_1"), { EAGLE_SECRET_K: "old-value" });
+
+    await first.save({ botId: "b_1", key: "k", value: "new-value", scope: "bot" });
+    assert.deepEqual(await second.environment("b_1"), { EAGLE_SECRET_K: "new-value" });
+
+    await first.remove({ botId: "b_1", key: "k", scope: "bot" });
+    assert.deepEqual(await second.environment("b_1"), {});
+  } finally {
+    await done();
+  }
+});
+
+test("a lock held by a live daemon is waited for, never taken away", async () => {
+  const { options, done } = await bench();
+  try {
+    const { chmod, mkdir, writeFile: write } = await import("node:fs/promises");
+    const store = await SecretsStore.open(options);
+    await mkdir(options.dir, { recursive: true, mode: 0o700 });
+    await chmod(options.dir, 0o700);
+    // A live process (init) holds the lock and never releases it.
+    await write(join(options.dir, "secrets.lock"), JSON.stringify({ pid: 1, token: "held" }));
+    await assert.rejects(store.listAll(), /another daemon/);
+  } finally {
+    await done();
+  }
+});
+
+test("a lock whose daemon is gone is cleared", async () => {
+  const { options, done } = await bench();
+  try {
+    const { chmod, mkdir, writeFile: write } = await import("node:fs/promises");
+    const store = await SecretsStore.open(options);
+    await mkdir(options.dir, { recursive: true, mode: 0o700 });
+    await chmod(options.dir, 0o700);
+    // A pid that cannot be running: the lock is a leftover, not a writer.
+    await write(join(options.dir, "secrets.lock"), JSON.stringify({ pid: 999_999, token: "gone" }));
+    assert.deepEqual(await store.listAll(), []);
   } finally {
     await done();
   }
