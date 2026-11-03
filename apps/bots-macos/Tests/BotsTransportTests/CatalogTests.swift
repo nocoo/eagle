@@ -101,6 +101,28 @@ final class CatalogHTTPClientTests: XCTestCase {
     XCTAssertEqual(StubProtocol.lastAuthorization, "Bearer test-token-0123456789")
   }
 
+  func testUpdateSendsOnlyTheSpecifiedBotFields() async throws {
+    var bodies: [[String: Any]] = []
+    StubProtocol.handler = { request in
+      XCTAssertEqual(request.httpMethod, "PATCH")
+      XCTAssertEqual(request.url?.path, "/v1/bots/b_1")
+      let data = try XCTUnwrap(bodyData(request))
+      bodies.append(try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any]))
+      return (200, Data("{\"bot\":\(self.bot("b_1", "fixture"))}".utf8))
+    }
+    let changed = try await client.update(
+      id: "b_1", title: nil, label: "", appearance: BotAppearance(shape: .star, tint: .pink))
+    XCTAssertEqual(changed.id, "b_1")
+    XCTAssertNil(bodies[0]["title"])
+    XCTAssertEqual(bodies[0]["label"] as? String, "")
+    let appearance = try XCTUnwrap(bodies[0]["appearance"] as? [String: String])
+    XCTAssertEqual(appearance, ["shape": "star", "tint": "pink"])
+    _ = try await client.update(id: "b_1", title: "renamed", label: nil, appearance: nil)
+    XCTAssertEqual(bodies[1]["title"] as? String, "renamed")
+    XCTAssertNil(bodies[1]["label"])
+    XCTAssertNil(bodies[1]["appearance"])
+  }
+
   func testGatewaySettingsDecodeTestAndSave() async throws {
     var savedBody: [String: Any] = [:]
     var savedProviderBody: [String: Any] = [:]
@@ -159,10 +181,29 @@ final class CatalogHTTPClientTests: XCTestCase {
     XCTAssertEqual(savedBody["model"] as? String, "m2")
     XCTAssertEqual(savedBody["thinkingLevel"] as? String, "xhigh")
     XCTAssertEqual(savedBody["toolGroups"] as? [String], ["core", "coding"])
+    _ = try await client.saveToolSettings(corePrompt: "fixture", toolGroups: ["core", "secrets"])
+    XCTAssertEqual(savedBody["corePrompt"] as? String, "fixture")
+    XCTAssertEqual(savedBody["toolGroups"] as? [String], ["core", "secrets"])
+    XCTAssertNil(savedBody["model"])
     let probe = try await client.testGateway(baseURL: "http://x/v1", model: "m", apiKey: "k")
     XCTAssertTrue(probe.ok)
     XCTAssertEqual(probe.models, 2)
     XCTAssertEqual(savedProviderBody["apiKey"] as? String, "k")
+  }
+
+  func testUsageRequestsTheChosenRetentionWindow() async throws {
+    StubProtocol.handler = { request in
+      XCTAssertEqual(request.url?.path, "/v1/usage")
+      XCTAssertEqual(request.url?.query, "days=7")
+      return (
+        200,
+        Data(
+          #"{"usage":{"retentionDays":90,"today":{"totalTokens":2,"costUsd":0},"week":{"totalTokens":2,"costUsd":0},"month":{"totalTokens":2,"costUsd":0},"days":[],"bots":[]}}"#
+            .utf8)
+      )
+    }
+    let usage = try await client.loadUsage(days: 7)
+    XCTAssertEqual(usage.today.totalTokens, 2)
   }
 
   func testARejectedTokenIsASetupError() async {
