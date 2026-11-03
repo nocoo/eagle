@@ -107,7 +107,7 @@ export type SecretsToolHost = {
   /** Every value this Bot may hand to a command, keyed by its environment variable. */
   environment(): Promise<Record<string, string>>;
   /** The variable a record really reaches a command by, or undefined when it reaches none. */
-  envNameFor(key: string): string | undefined;
+  envNameFor(key: string, scope?: SecretScope): string | undefined;
   /**
    * Whether the group is on for this Bot right now. A person who switches 密码 off turns off
    * the values a command sees as well, without reopening the Bot.

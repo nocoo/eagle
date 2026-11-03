@@ -291,7 +291,11 @@ export class SecretsStore {
   }
 
   /** The variable a record really reaches this Bot's commands by; undefined when it does not. */
-  envNameFor(botId: string, key: string): string | undefined {
+  envNameFor(botId: string, key: string, scope?: SecretScope): string | undefined {
+    const requested = this.#resolve(key, scope, botId);
+    if (requested === undefined || requested !== this.#resolve(key, undefined, botId)) {
+      return undefined;
+    }
     const env = this.#environmentFor(botId);
     const name = secretEnvName(key);
     return env[name] === undefined ? undefined : name;
@@ -576,7 +580,7 @@ export class SecretsStore {
       read: (input) => this.read({ botId, ...input }),
       remove: (input) => this.remove({ botId, ...input }),
       environment: () => (enabled ? this.environment(botId) : Promise.resolve({})),
-      envNameFor: (key) => this.envNameFor(botId, key),
+      envNameFor: (key, scope) => this.envNameFor(botId, key, scope),
     };
   }
 

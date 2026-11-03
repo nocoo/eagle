@@ -215,6 +215,24 @@ test("a read describes the record and never prints the value", async () => {
   }
 });
 
+test("an explicit shared read never advertises the bot's shadowing value", async () => {
+  const { host, store, done } = await bench();
+  try {
+    await store.save({ botId: "b_1", key: "account", value: "private-value", scope: "bot" });
+    await store.save({ botId: "b_2", key: "account", value: "shared-value", scope: "shared" });
+    const shared = await call(host, "secret_read", { key: "account", scope: "shared" });
+    assert.equal(shared.isError, true, "the exported variable resolves to a different scope");
+    assert.match(shared.output, /not exported/);
+    const own = await call(host, "secret_read", { key: "account", scope: "bot" });
+    assert.equal(own.isError, undefined);
+    assert.equal(JSON.parse(own.output).environment, "EAGLE_SECRET_ACCOUNT");
+    assert.equal((await host.environment()).EAGLE_SECRET_ACCOUNT, "private-value");
+    assert.equal(shared.output.includes("shared-value"), false);
+  } finally {
+    await done();
+  }
+});
+
 test("an expired record reads exactly like a missing one", async () => {
   const { host, store, advance, done } = await bench();
   try {

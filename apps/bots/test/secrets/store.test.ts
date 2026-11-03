@@ -697,7 +697,8 @@ test("two names that normalise to one variable are dropped, not guessed", async 
     await store.save({ botId: "b_2", key: "c-d", value: "other-value", scope: "bot" });
     assert.equal(store.envNameFor("b_1", "c.d"), undefined);
     await store.save({ botId: "b_1", key: "c-e", value: "own-value", scope: "bot" });
-    assert.equal(store.envNameFor("b_1", "c.e"), "EAGLE_SECRET_C_E");
+    assert.equal(store.envNameFor("b_1", "c-e"), "EAGLE_SECRET_C_E");
+    assert.equal(store.envNameFor("b_1", "c.e"), undefined, "a different key is not a record");
     // A shared twin of the bot's own record is shadowed, not a clash.
     await store.save({ botId: "b_2", key: "c-e", value: "shared-value", scope: "shared" });
     assert.equal((await store.environment("b_1")).EAGLE_SECRET_C_E, "own-value");

@@ -197,16 +197,20 @@ export const createSecretsTools = (host: SecretsToolHost): readonly ToolRegistra
             ),
           );
         }
-        const env = host.envNameFor(found.key);
+        const env = host.envNameFor(found.key, found.scope);
+        if (env === undefined) {
+          return result(
+            failed(
+              "this record is not exported: it is shadowed, collides, or exceeds the environment budget",
+            ),
+          );
+        }
         return result(
           text({
             key: found.key,
             scope: found.scope,
             bytes: Buffer.byteLength(found.value, "utf8"),
-            environment: env ?? null,
-            ...(env === null
-              ? { problem: "this name collides with another record after normalisation" }
-              : {}),
+            environment: env,
             use: "the value is not printed: it is in your bash environment under that name",
           }),
         );

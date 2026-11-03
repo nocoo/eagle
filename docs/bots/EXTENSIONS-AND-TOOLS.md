@@ -801,8 +801,10 @@ a store that cannot be read exports nothing and records the failure, because a b
 store must not break coding. Switching the `secrets` group off switches the export off too: the
 group's tools and the values a command sees are one decision. The export is bounded to 64 KiB of names and
 values counted in UTF-8 bytes, keeping the newest records and dropping the rest; `secret_read`
-answers a variable only when that variable is really in the export, so it never promises one the
-daemon chose not to hand over. A value that an environment cannot carry — anything holding a
+answers a variable only when that variable is really in the export for the requested scope.
+An explicitly requested shared record that is shadowed by a Bot's own record is refused rather
+than advertised under the other record's variable. Colliding and over-budget records are refused
+too, so the daemon never promises a value it chose not to hand over. A value that an environment cannot carry — anything holding a
 NUL — is refused when it is stored rather than failing the spawn that would echo it. Handing a
 value to a command is a use of the record and appends one `read` row per exported record, so the
 settings page's "last used" is not blind to the way a password is actually used.
