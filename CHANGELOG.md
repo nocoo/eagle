@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Secrets, the one way a password reaches a Bot.** A Bot that needs a password now asks for it
+  on a card with a single password field instead of asking a person to paste it into the chat.
+  The value is stored once, outside the transcript, in an AES-256-GCM container at
+  `~/.config/eagle-bots/secrets.v1.enc` whose key lives in a separate file under
+  `~/Library/Application Support/ai.hexly.bots`. The person decides on the card whether the
+  record is this Bot's alone or shared with every Bot, and how long it lives (5 minutes to 24
+  hours, or permanent); the Bot's call proposes both and the person has the last word. The Bot
+  reads the value back with `secret_read` when it needs it, and a `secrets.audit.jsonl` ledger
+  beside the ciphertext records every read, write and expiry without ever holding a value.
+  Settings → `密码` lists the records, reveals a value on a click, copies it and deletes it;
+  a store that cannot be read says so instead of showing an empty list. The group is on by
+  default, because a Bot without it asks for the password in the conversation.
+
 ## macOS v0.17.0 — 2026-11-03
 
 - Add an optional, default-on memory group: Bots can list, search, read, write and delete

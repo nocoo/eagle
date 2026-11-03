@@ -112,6 +112,10 @@ version, the instance id, the pid and a bot count, never bot content.
 | `GET` | `/v1/usage?days=` | — | `{ "usage": UsageReport }` — statistics over the daemon's retained days |
 | `GET` | `/v1/models` | — | `{ "models": [string] }` — the gateway's ids, empty when it cannot be asked |
 | `POST` | `/v1/bots/:botId/answers` | `{ "entryId", "answers"?: [[label]], "skipped"?: true }` | `{ "submission": Submission }` |
+| `POST` | `/v1/bots/:botId/secrets` | `{ "entryId", "key", "value", "scope"?, "ttlMinutes"?: number \| null, "skipped"?: true }` | `{ "submission": Submission }` |
+| `GET` | `/v1/secrets` | — | `{ "secrets": [Secret] }` — metadata only, never a value |
+| `POST` | `/v1/secrets/reveal` | `{ "key", "scope" }` | `{ "secret": { "key", "scope", "value" } }` — requires `admin` |
+| `DELETE` | `/v1/secrets/:scope/:key` | — | `204`, or `404` for an unknown record — requires `admin` |
 | `GET` | `/v1/settings` | — | `{ "settings": GatewaySettings, "machinePrompt": MachinePrompt \| null, "tools"?: [ToolGroup] }` |
 | `GET` | `/v1/clients` | — | `{ "clients": [Client] }` — requires `admin` |
 | `POST` | `/v1/clients` | `{ "name", "scopes" }` — fields follow `CLI.md` rules | `201 { "client": Client, "token" }` — requires `admin`, the token is answered once |
@@ -465,6 +469,43 @@ that already carries them.
   `assess`, `rate`, `judge`): each tool call is one `POST /v1/systemone`, the selection is read
   per call, and a missing selection is a tool error rather than a silent fallback. The group is
   off by default.
+
+## Secrets
+
+A Bot asks for a password on a card; the person types it; the daemon stores it out of the
+transcript and hands the value back only to the Bot that asked, or to every Bot when the person
+ticked 共享. The model never supplies a value on any path, and no response ever echoes one
+([EXTENSIONS-AND-TOOLS.md](EXTENSIONS-AND-TOOLS.md) §6.5 owns the tools, the card and the
+container).
+
+```json
+// Secret: the metadata a list returns. The value is never part of it.
+{ "key": "github-pat", "scope": "shared", "botId": "b_0190a1b0",
+  "purpose": "发布 Eagle 用", "createdAt": "2026-11-03T01:10:00.000Z",
+  "updatedAt": "2026-11-03T01:10:00.000Z", "expiresAt": "2026-11-03T02:10:00.000Z",
+  "lastUsedAt": "2026-11-03T01:20:00.000Z", "lastUsedBy": "bot" }
+```
+
+- **The card answer is a submission, like an `ask_user` answer.** `entryId` is the transcript
+  entry carrying the `secret_request` call and `key` must be that call's key: a client cannot
+  rename a record or answer a card it did not see. The answer stores the value and the daemon
+  composes one hidden user input the Bot reads next (`hidden: true`, `answersTo: entryId`).
+- **The value is written, never read back, on this route.** The response carries the
+  `Submission` and nothing else; `value` is required and bounded to 8 KiB, and `skipped: true`
+  stores nothing and says so. `scope` narrows or widens what the Bot proposed (`bot` or
+  `shared`), and `ttlMinutes` (1–1440, or `null` for permanent) overrides the Bot's suggestion:
+  the person has the last word on both.
+- **Metadata is readable, values are not.** `GET /v1/secrets` answers every record with `read`
+  scope and no value. `POST /v1/secrets/reveal` is the only route that answers a value and it
+  requires `admin`; `DELETE` does too, because deleting a shared password is destructive.
+  `lastUsedAt`/`lastUsedBy` come from the audit ledger, so a client can show when a Bot last
+  used a record without reading the log.
+- **Expiry is lazy.** A record past `expiresAt` is deleted by the call that would have read it,
+  by a list, or by the daemon's startup sweep; it is never returned as a stale value. An expired
+  or unknown key speaks exactly like a missing one, which the tools report as a refusal.
+- **A corrupt or undecryptable store is a refusal.** `GET /v1/secrets` answers `503` with
+  `storage_failed` rather than an empty list, so a client never shows "no passwords" when it
+  means "cannot read them"; nothing is deleted or rewritten.
 
 ## Usage statistics
 

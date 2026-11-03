@@ -1,5 +1,21 @@
 # 用户视角检查点
 
+## 2026-11-03 08:40 +08 — `secrets` 工具组：契约定稿，双 pane 实现中
+
+- 契约已写进三份文档并作为唯一来源：`EXTENSIONS-AND-TOOLS.md` §6.5（容器格式 v1、
+  keyfile 分离、两个 scope、卡片参数、四个工具、惰性过期、审计文件、refusal 清单）、
+  `PROTOCOL.md`「Secrets」+ 四条 HTTP 路由、`OBSERVABILITY.md` 的 `core.secret.*` 与两条
+  redaction 规则。
+- 哥拍板的七项：AES-256-GCM + 分离 keyfile（不是 Keychain）；bot 可读明文、共享与否由人在
+  卡片决定且 bot 可预置；密文/审计在 `~/.config/eagle-bots`；共享记录只有创建者可被 bot 删除；
+  `temporary` 默认 1 小时、bot 可按语义设 `ttlMinutes`、上限 24 小时；过期惰性 + 启动扫描；
+  不做生成密码按钮。审计另存 `secrets.audit.jsonl`，日志另存 `core.secret.*` 行为事件。
+- 两个受控 pane 并行：`w18:pF` 只写 `apps/bots/`（容器、keyfile、store、审计、四个工具、
+  卡片答案 HTTP、事件、测试），`w18:pG` 只写 `apps/macos` + `apps/bots-macos`（卡片 UI、
+  运输层、`密码` 设置页、测试）。主控保留根门禁、文档、commit。
+- 未验证：尚无任何实现落地，两个 pane 都未跑完各自门禁；`npm run check`（根）、
+  `test:browser`、真机 dev App 手工验收都还没做。
+
 ## 2026-11-03 07:01 +08 — macOS 0.17.0 asset published
 
 - `macos-v0.17.0` points to `2d696e1`, whose GitHub root and macOS checks

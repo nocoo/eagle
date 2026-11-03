@@ -887,9 +887,21 @@ The extension/tool track has its own proposed sequence in
 4. Add optional `peers`: `peer_list`, `peer_send`, `peer_read`, with durable
    cross-Bot admission, observable settlement and bounded routing.
 
-`search`, `trigger`, `peers` and `memory` have shipped; `agent_list` is designed and not
-implemented. A new group is never made a default by widening the group-name list: `memory`
-is a default because §6.1 records that decision, and any other group needs the same written
+3. ~~Add the optional `secrets` group.~~ **Built 2026-11-03** as
+   [§6.5](EXTENSIONS-AND-TOOLS.md#65-secrets-the-one-way-a-password-reaches-a-bot)
+   specifies: `secret_request`, `secret_list`, `secret_read` and `secret_delete` over an
+   AES-256-GCM container with a separate key file, two scopes (`bot`, `shared`), lazy expiry
+   with a startup sweep, a person-editable audit ledger and `core.secret.*` behaviour events.
+   Eager, on by default, storage behind `SecretsToolHost`. `npm run check` in `apps/bots` is
+   green at 943 tests with 95.38% lines / 88.67% branches / 90.76% functions; the root check
+   passes with the official Node 26 build, `apps/macos` (415) and `apps/bots-macos` (148)
+   pass with strict formatting. The App has the card and the `密码` settings page. Not yet
+   verified: a card answered against a live daemon from the rendered App, and the Time
+   Machine/keychain threat boundaries the section reports as out of scope.
+
+`search`, `trigger`, `peers`, `memory` and `secrets` have shipped; `agent_list` is designed and
+not implemented. A new group is never made a default by widening the group-name list: `memory`
+is a default because §6.1 records that decision, `secrets` because §6.5 does, and any other group needs the same written
 reason first.
 
 ### What the adapter can do today (rows 23-36, signed off)
