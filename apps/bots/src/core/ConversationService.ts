@@ -1,7 +1,7 @@
 // Command routing for the daemon (docs/bots/PLAN.md, rows 17-22): a connection sees one
 // bot for its whole life, a subscription renders the first snapshot before it is live,
 // and a command either reaches the runtime or is refused before admission.
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { declareEvent } from "../log/events.ts";
 import type { Log } from "../log/log.ts";
 import { type AnswerInput, answerText, questionsOf } from "./ask.ts";
@@ -410,7 +410,12 @@ export class ConversationService implements InvocationPort {
     return this.#admitAndLog(
       {
         botId,
-        requestId: `answer_${randomUUID().replaceAll("-", "")}`,
+        // One card, one submission id: a client that lost the response can retry and get the
+        // same admission instead of starting a second hidden input.
+        requestId: `answer_${createHash("sha256")
+          .update(`${botId}\u0000answer:${input.entryId}`)
+          .digest("hex")
+          .slice(0, 24)}`,
         text: answerText(questions, input),
         whenBusy: "followUp",
         trace: input.trace ?? input.entryId,

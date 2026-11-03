@@ -843,6 +843,9 @@ Every command except `hello` and `ping` carries `trace`.
   daemon reads the questions out of that entry's arguments, checks every label against them and
   composes one hidden user input that the bot reads next (`hidden: true`, `answersTo: entryId`).
   The App preserves one array per question in `answers`, including when questions reuse labels.
+  An answer's submission id is derived from `(botId, entryId)`, so a client whose HTTP response
+  was lost can repeat the call and receive the same admission rather than a second hidden input;
+  the card is answered once either way.
   A card is pending only while its own HTTP admission is in flight; a definite refusal leaves
   it editable for retry, while an acknowledged admission locks it against duplicate clicks.
   `answers` carries one list of labels per question, in the card's order; a single-choice

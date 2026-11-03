@@ -2000,6 +2000,25 @@ const cardRuntime = (card: Message | undefined) => {
   return { handle, submitted };
 };
 
+const askCard = (): Message => ({
+  id: "e_card_1",
+  role: "assistant",
+  state: "complete",
+  createdAt: "2026-11-03T01:10:00.000Z",
+  blocks: [
+    {
+      type: "toolCall",
+      callId: "c_1",
+      name: "ask_user",
+      args: {
+        questions: [
+          { prompt: "Proceed?", kind: "single", options: [{ label: "Yes" }, { label: "No" }] },
+        ],
+      },
+    },
+  ],
+});
+
 const secretCard = (args: Record<string, unknown>): Message => ({
   id: "e_card_1",
   role: "assistant",
@@ -2148,6 +2167,15 @@ test("an unknown secret admission keeps its durable receipt", async () => {
   await assert.rejects(service.answerSecret("b_1", { ...answer, value: "second-value" }));
   assert.equal(saved.length, 1, "a retry must not rotate the stored value or renew its TTL");
   assert.equal(runtime.submitted.length, 1);
+});
+
+test("a repeated question answer reuses its admission instead of starting another input", async () => {
+  const runtime = cardRuntime(askCard());
+  const service = secretService(runtime);
+  const answer = { entryId: "e_card_1", answers: [["Yes"]] };
+  const first = await service.answerBot("b_1", answer);
+  const second = await service.answerBot("b_1", answer);
+  assert.equal(first.requestId, second.requestId, "one card, one submission identity");
 });
 
 test("a value the store cannot accept leaves the card answerable", async () => {

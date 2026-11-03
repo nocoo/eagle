@@ -177,6 +177,11 @@ struct CommandsTests {
     ])
     #expect(accepted.code == 0)
     #expect(accepted.out.contains { $0.contains("answer_1") })
+    let printed = accepted.out.compactMap {
+      try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+    }
+    #expect(printed.last?["submissionId"] as? String == "s_1")
+    #expect(printed.last?["type"] as? String == "submission")
   }
 
   @Test("question-indexed answers support repeated labels")

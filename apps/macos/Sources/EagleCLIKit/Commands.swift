@@ -563,8 +563,13 @@ public struct Commands: Sendable {
         kind: "unanswered", message: "the answer was not admitted: \(record["reason"] ?? "?")")
     }
     if printer.wantsJSON(arguments) {
-      var frame = record
-      frame["type"] = "submission"
+      // The CLI's own JSON shape is the wire submission, not the HTTP domain object: a caller
+      // reading `submissionId` keeps working.
+      var frame: JSONObject = ["type": "submission"]
+      for key in ["requestId", "status", "answerEntryId", "reason", "detail"] {
+        if let value = record[key] { frame[key] = value }
+      }
+      frame["submissionId"] = record["id"]
       printer.json(frame)
     } else {
       printer.text(skipped ? "skipped \(entry)" : "answered \(entry)")
