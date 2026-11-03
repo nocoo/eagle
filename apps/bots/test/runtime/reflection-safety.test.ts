@@ -4,6 +4,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { StorageRequestError } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type { RuntimeEvent } from "../../src/core/RuntimePort.ts";
+import { UsageStore } from "../../src/server/usage.ts";
 import { assistant, createBench, text, toolCall, trace, waitFor } from "../support/pi.ts";
 
 const noteHost = (botId: string) => ({
@@ -131,6 +132,49 @@ test("a failed reflection recovery closes the already-open storage", async () =>
   } finally {
     await first.close(trace, 1_000);
     await bench.cleanup();
+  }
+});
+
+test("reflection recovery books consumption on its original day", async () => {
+  const meter = new UsageStore(":memory:", { now: () => new Date("2026-11-04T12:00:00") });
+  let outage = true;
+  const bench = await createBench({
+    note: (spec) => noteHost(spec.id),
+    usage: {
+      record: (entry) => {
+        if (outage) throw new Error("usage unavailable");
+        meter.record(entry);
+      },
+    },
+  });
+  const handle = await bench.runtime.open(bench.spec());
+  const events: RuntimeEvent[] = [];
+  try {
+    await handle.subscribe(trace, (event) => events.push(event));
+    bench.faux.setResponses([
+      text("Original answer."),
+      assistant("Checked.", { timestamp: new Date("2026-11-03T12:00:00").getTime() }),
+    ]);
+    await handle.submit({ requestId: "r_day", text: "Question", whenBusy: "followUp", trace });
+    await waitFor(
+      () => events.some((event) => event.type === "submission" && event.record.status === "done"),
+      "the original answer",
+    );
+    await handle.close(trace, 1_000);
+    outage = false;
+    const reopened = await bench.runtime.open(bench.spec());
+    await reopened.close(trace, 1_000);
+    const report = meter.report(2);
+    assert.ok((report.days[0]?.totalTokens ?? 0) > 0);
+    assert.equal(report.today.totalTokens, 0, "yesterday's reflection is not today's spend");
+    const total = report.week.totalTokens;
+    const again = await bench.runtime.open(bench.spec());
+    await again.close(trace, 1_000);
+    assert.equal(meter.report(2).week.totalTokens, total, "reopen never books it twice");
+  } finally {
+    await handle.close(trace, 1_000);
+    await bench.cleanup();
+    meter.close();
   }
 });
 

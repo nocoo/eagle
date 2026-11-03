@@ -552,7 +552,11 @@ and on every write.
 - The counters are deltas: the runtime reports cumulative totals, and the daemon books what
   a conversation gained since its last report. A reset conversation books nothing rather
   than a negative row. Hidden reflection conversations contribute their model spend through
-  a durable per-conversation counter, so replay does not book the same spend twice. These
+  a durable per-conversation counter, so replay does not book the same spend twice. Recovery
+  replays cumulative model-response increments in entry order with their original response
+  timestamps, not the recovery date; expired consumption never becomes today's spend. The
+  bounded fork's non-entry spend uses its latest response (or its recorded start) as the date.
+  These
   content-free counter identities remain after daily rows expire to prevent a late replay
   from booking old spend again. The `usage` event below remains the root conversation's
   own usage.

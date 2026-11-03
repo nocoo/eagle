@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Context, JsonValue } from "@earendil-works/chord";
 import {
   awaitWithContext,
+  BACKGROUND_CONTEXT,
   withAbortSignal,
   withoutAbortSignal,
 } from "@earendil-works/chord/context";
@@ -71,6 +72,7 @@ const Candidate = defineDoc<{
   published?: string[];
   requests?: number;
   deadline?: number;
+  startedAt?: number;
 }>({
   kind: "bots.reflection.candidate",
   version: 1,
@@ -254,6 +256,7 @@ export const reflectionExtension = (options: {
               await configure(tx, child.id, { tools: [note] });
               const candidate = await tx.doc(Candidate, child.id);
               candidate.source = answerHash(answer);
+              candidate.startedAt = Date.now();
               if (plan.deadline !== undefined) candidate.deadline = plan.deadline;
               candidate.parentTaskId = api.taskId;
               if (plan.previous !== undefined) candidate.previous = plan.previous;
@@ -309,18 +312,59 @@ export const trackReflectionUsage = (options: {
 }) => {
   const children = new Map<number, number>();
   let queue: Promise<void> = Promise.resolve();
+  const booked = new Map<number, { tokens: number; cost: number }>();
   const book = (id: number, taskId: number, value: UsageState): void => {
     const total = convertUsage(value);
     if (total.totalTokens === 0 && (total.costUsd ?? 0) === 0) return;
     queue = queue
-      .then(() => {
-        options.usage.record({
-          botId: options.botId,
-          source: "model",
-          counter: `reflection:${id}`,
-          tokens: total.totalTokens,
-          ...(total.costUsd === undefined ? {} : { costUsd: total.costUsd }),
-        });
+      .then(async () => {
+        const child = await options.harness.conversation(id as ConversationId, BACKGROUND_CONTEXT);
+        if (child === undefined) return;
+        let tokens = 0;
+        let cost = 0;
+        let at: number | undefined;
+        const record = (at: number) => {
+          const previous = booked.get(id);
+          if (previous !== undefined && tokens <= previous.tokens && cost <= previous.cost) return;
+          options.usage.record({
+            botId: options.botId,
+            source: "model",
+            counter: `reflection:${id}`,
+            tokens,
+            costUsd: cost,
+            at,
+          });
+          booked.set(id, { tokens, cost });
+        };
+        let cursor: Cursor | undefined;
+        do {
+          const page = await child.entries({ order: "ascending" }, 100, cursor, BACKGROUND_CONTEXT);
+          for (const entry of page.items) {
+            const message = entry.model?.[0];
+            if (
+              entry.conversationId !== id ||
+              entry.byTaskId === undefined ||
+              message?.role !== "assistant"
+            )
+              continue;
+            const nextTokens = tokens + message.usage.totalTokens;
+            const nextCost = cost + message.usage.cost.total;
+            if (nextTokens > total.totalTokens || nextCost > (total.costUsd ?? 0) + 1e-9) continue;
+            tokens = nextTokens;
+            cost = nextCost;
+            at = message.timestamp;
+            record(at);
+          }
+          cursor = page.next;
+        } while (cursor !== undefined);
+        if (tokens < total.totalTokens || cost < (total.costUsd ?? 0)) {
+          const candidate = await options.harness.snapshot(Candidate, child.id, BACKGROUND_CONTEXT);
+          at ??= candidate?.startedAt;
+          if (at === undefined) return;
+          tokens = total.totalTokens;
+          cost = total.costUsd ?? 0;
+          record(at);
+        }
       })
       .catch(() => options.failed(taskId, "usage"));
   };

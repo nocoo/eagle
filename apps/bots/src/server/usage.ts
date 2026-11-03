@@ -23,6 +23,7 @@ export type UsageEntry = {
   readonly calls?: number;
   readonly costUsd?: number;
   readonly counter?: string;
+  readonly at?: number;
 };
 
 /** The seam the daemon and its tools report through, so a new source needs no new store. */
@@ -176,7 +177,14 @@ export class UsageStore implements UsageMeter {
                calls = calls + excluded.calls,
                cost_usd = cost_usd + excluded.cost_usd`,
           )
-          .run(entry.botId, dayOf(this.#now()), entry.source, tokens, calls, costUsd);
+          .run(
+            entry.botId,
+            dayOf(entry.at === undefined ? this.#now() : new Date(entry.at)),
+            entry.source,
+            tokens,
+            calls,
+            costUsd,
+          );
       }
       if (counter !== undefined) this.#db.exec("commit");
     } catch (error) {

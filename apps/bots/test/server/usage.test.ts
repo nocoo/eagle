@@ -83,6 +83,29 @@ test("a keyed cumulative reflection counter is replay safe", async () => {
   }
 });
 
+test("replayed counters retain their consumption date and retention boundary", async () => {
+  const bench = await store({ retentionDays: 3 });
+  try {
+    const at = new Date("2026-10-20T23:59:00").getTime();
+    bench.advance(1);
+    const entry = { botId: "b_1", source: "model", counter: "reflection:day", tokens: 100, at };
+    bench.usage.record(entry);
+    assert.equal(bench.usage.report(2).days[0]?.totalTokens, 100);
+    assert.equal(bench.usage.report(2).today.totalTokens, 0);
+    bench.advance(5);
+    bench.usage.record({ ...entry, tokens: 120 });
+    assert.equal(
+      bench.usage.report(3).week.totalTokens,
+      0,
+      "expired spend never becomes today's spend",
+    );
+    bench.usage.record({ ...entry, tokens: 120 });
+    assert.equal(bench.usage.report(3).today.totalTokens, 0);
+  } finally {
+    await bench.cleanup();
+  }
+});
+
 test("today, week and month windows and the retention bound hold", async () => {
   const bench = await store({ retentionDays: 3 });
   try {
