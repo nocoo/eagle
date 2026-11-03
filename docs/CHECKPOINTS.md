@@ -1,5 +1,15 @@
 # 用户视角检查点
 
+## 2026-11-03 17:23 +08 — reflection rebased onto secrets
+
+- The local reflection commit was rebased onto the current main, retaining the
+  decision and secrets features. A real-Harness integration test verifies that
+  reflection and secret-group toggling coexist without exposing the fixture value.
+- Bots check passed 984 tests and the complete scripted eval passed 20 cases.
+  Eval authentication and state were temporary; no production credentials were
+  used. No new Herdr collection, D1 access or manual App rendering was performed.
+- Next: run the normal pre-push hooks and push the rebased commit without force.
+
 ## 2026-11-03 13:10 +08 — `secrets` 三轮审查结束，门禁全绿
 
 - 第三轮复核 A–M：其中 6 条在上一轮已真正关闭（G/H/M/部分 I/K），其余按最小修法补齐：
