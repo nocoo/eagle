@@ -140,6 +140,30 @@ struct CommandsTests {
     #expect(missing.err.first?.contains("unknown_bot") == true)
   }
 
+  @Test("card answers use their own HTTP admission, never an unrelated socket submission")
+  func answerAdmission() async {
+    StubTransport.calls = []
+    StubTransport.answers = [
+      "/v1/bots": (200, #"{"bots":[{"id":"b_1","title":"helper"}]}"#),
+      "/v1/bots/b_1/answers": (
+        400, #"{"error":{"kind":"invalid_command","message":"ambiguous answer"}}"#
+      ),
+    ]
+    let refused = await run(["chat", "answer", "helper", "--entry", "e_12", "--choose", "Yes"])
+    #expect(refused.code != 0)
+    #expect(refused.out.allSatisfy { !$0.contains("answered") })
+    #expect(
+      StubTransport.calls.contains { $0.method == "POST" && $0.path == "/v1/bots/b_1/answers" })
+    StubTransport.answers["/v1/bots/b_1/answers"] = (
+      200, #"{"submission":{"id":"s_1","requestId":"answer_1","status":"queued"}}"#
+    )
+    let accepted = await run([
+      "chat", "answer", "helper", "--entry", "e_12", "--choose", "Yes", "--json",
+    ])
+    #expect(accepted.code == 0)
+    #expect(accepted.out.contains { $0.contains("answer_1") })
+  }
+
   @Test("delete sends nothing without --yes and answers code 2")
   func deleteNeedsYes() async {
     StubTransport.calls = []

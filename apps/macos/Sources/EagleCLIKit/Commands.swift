@@ -532,31 +532,25 @@ public struct Commands: Sendable {
     }
     let bot = try await resolve(name)
     let botId = bot["id"] as? String ?? name
-    let socket = try await client.connect(clientName: "eagle-cli/\(EagleCLIKit.version)")
-    defer { socket.close() }
-    _ = try await socket.subscribe(botId: botId)
-    try await socket.answer(entryId: entry, chosen: chosen, skipped: skipped)
-    while true {
-      let frame = try await socket.read()
-      let type = frame["type"] as? String ?? ""
-      if type == "submission" {
-        if printer.wantsJSON(arguments) { printer.json(frame) }
-        let status = frame["status"] as? String ?? ""
-        if status == "unanswered" {
-          throw CLIError.refused(
-            kind: "unanswered", message: "the answer was not admitted: \(frame["reason"] ?? "?")")
-        }
-        if !printer.wantsJSON(arguments) {
-          printer.text(skipped ? "skipped \(entry)" : "answered \(entry)")
-        }
-        return
-      }
-      if type == "error" {
-        if printer.wantsJSON(arguments) { printer.json(frame) }
-        throw CLIError.refused(
-          kind: frame["kind"] as? String ?? "refused",
-          message: frame["message"] as? String ?? "the daemon refused the answer")
-      }
+    var body: JSONObject = ["entryId": entry]
+    if skipped { body["skipped"] = true } else { body["chosen"] = chosen }
+    let payload = try await client.request("POST", "v1/bots/\(botId)/answers", body: body)
+    guard let record = payload["submission"] as? JSONObject,
+      let status = record["status"] as? String
+    else {
+      throw CLIError.refused(
+        kind: "invalid_response", message: "the daemon did not acknowledge the answer")
+    }
+    if status == "unanswered" {
+      throw CLIError.refused(
+        kind: "unanswered", message: "the answer was not admitted: \(record["reason"] ?? "?")")
+    }
+    if printer.wantsJSON(arguments) {
+      var frame = record
+      frame["type"] = "submission"
+      printer.json(frame)
+    } else {
+      printer.text(skipped ? "skipped \(entry)" : "answered \(entry)")
     }
   }
 

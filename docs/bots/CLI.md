@@ -110,6 +110,8 @@ takes a comma-separated list of option labels; the daemon checks every label aga
 card and refuses one that is not in it. `--skip` ignores the whole card, which the bot is
 told in the same message. The chat is never blocked by a card: the tool call it belongs to
 already returned, and the answer arrives as a hidden user message that starts the next turn.
+`chat answer` uses the authenticated HTTP answer endpoint and reports only that command's
+admission. An unrelated conversation's socket settlement is never proof of a successful answer.
 
 `chat send --wait --timeout N` waits at most N positive seconds after sending for the
 submission's terminal record. A timeout ends only the CLI's wait: the daemon continues
