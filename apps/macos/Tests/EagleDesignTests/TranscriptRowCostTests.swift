@@ -18,18 +18,27 @@ struct TranscriptRowCostTests {
     let columnView = ConversationColumn(
       title: "Bot", tintIndex: 1, entries: entries,
       preparedMarkdown: markdown, draft: .constant(""), onSend: {})
-    // Interleaved rounds: a machine that slows down mid-test must not tilt one side.
+    let plainView = Self.plainText(entries)
+    // Warm both variants so scored rounds are not cold-start biased toward either side.
     _ = Self.pageCost(columnView)
-    // The **lowest** of several interleaved rounds, because interference can only add time:
-    // a loaded machine inflates both sides unevenly, so every round is a ceiling on the true
-    // cost and the cheapest one is the least disturbed. A real regression raises all of
-    // them, so the guard still catches it — this test exists for a structural cost, not to
-    // police a tenth of a millisecond. (A median right at the bound flaked twice on a busy
-    // machine: 2.51 against 2.5.)
+    _ = Self.pageCost(plainView)
+    // Each round times column and plain back-to-back on the same load. Measuring column
+    // *before* plain warmed the run loop and font caches that plain reuses but column does
+    // not, so plain looked artificially fast and every round's ratio sat above the bound
+    // (2.51 on CI) even when the structural cost was fine. Alternate order and keep the
+    // **lowest** ratio: plain-first rounds are the least upward-biased; interference still
+    // only adds time, and a real regression raises every round.
     var ratios: [Double] = []
-    for _ in 0..<9 {
-      let column = Self.pageCost(columnView)
-      let plain = Self.pageCost(Self.plainText(entries))
+    for round in 0..<9 {
+      let column: Double
+      let plain: Double
+      if round.isMultiple(of: 2) {
+        plain = Self.pageCost(plainView)
+        column = Self.pageCost(columnView)
+      } else {
+        column = Self.pageCost(columnView)
+        plain = Self.pageCost(plainView)
+      }
       ratios.append(column / max(plain, 0.000_001))
     }
     let ratio = ratios.min() ?? .greatestFiniteMagnitude
