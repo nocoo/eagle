@@ -719,8 +719,8 @@ taken from the model.
 or JSON that does not match the shape is a **refusal**: the file is never rewritten and never
 deleted, because a store that cannot be read is not a store that should be recreated.
 - `answers` keeps the newest 500 receipts and holds no value. A card is claimed before its value
-  is written. It is released only when no value was stored and admission is proven refused;
-  unknown outcomes retain the receipt. Its
+  is written. It is released only when nothing was stored and the store validated the value
+  before any effect, or admission is proven refused; unknown outcomes retain the receipt. Its
   submission id is derived from the card, so a repeated admission is answered from the
   submission record instead of starting a second run.
 - The same key in the same scope is one record: a later write replaces it whole and keeps

@@ -218,6 +218,14 @@ export class SecretsStorageError extends Error {
   }
 }
 
+/** A value, key or lifetime the store refuses before writing; nothing changed. */
+export class SecretsValidationError extends SecretsStorageError {
+  constructor(message: string) {
+    super(message);
+    this.name = "SecretsValidationError";
+  }
+}
+
 /** One pull request a bot reported: a link, a title and a state (coding group). */
 export type PullSummary = {
   readonly url: string;

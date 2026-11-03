@@ -1,6 +1,9 @@
 // Ladder rows 17-18: a command needs a subscription, and a send is idempotent by
 // requestId while its reply stays connection-scoped.
 import assert from "node:assert/strict";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { DirectoryError } from "../../src/core/BotDirectory.ts";
 import {
@@ -21,6 +24,7 @@ import { SubscriberTooSlow } from "../../src/core/EventHub.ts";
 import type { RuntimeEvent, RuntimeHandle, SubmitInput } from "../../src/core/RuntimePort.ts";
 import type { SecretAnswerInput } from "../../src/core/secretCard.ts";
 import { encodeServerEvent } from "../../src/protocol/encode.ts";
+import { SecretsStore } from "../../src/secrets/store.ts";
 import { FakeRuntime } from "../../src/testing/FakeRuntime.ts";
 
 const trace = "tr_0190a1b2-3e4f-7a50-8b1c-2d3e4f506172";
@@ -2144,6 +2148,37 @@ test("an unknown secret admission keeps its durable receipt", async () => {
   await assert.rejects(service.answerSecret("b_1", { ...answer, value: "second-value" }));
   assert.equal(saved.length, 1, "a retry must not rotate the stored value or renew its TTL");
   assert.equal(runtime.submitted.length, 1);
+});
+
+test("a value the store cannot accept leaves the card answerable", async () => {
+  const runtime = cardRuntime(secretCard({ key: "github-pat", purpose: "Publish" }));
+  const store = await SecretsStore.open({
+    dir: join(await mkdtemp(join(tmpdir(), "bots-secret-card-")), "config"),
+    keyPath: join(await mkdtemp(join(tmpdir(), "bots-secret-card-")), "state", "s.key"),
+  });
+  const service = secretService(runtime, {
+    save: (input) => store.save(input),
+    claimAnswer: (input) => store.claimAnswer(input),
+    releaseAnswer: (input) => store.releaseAnswer(input),
+  });
+  try {
+    await assert.rejects(
+      service.answerSecret("b_1", {
+        entryId: "e_card_1",
+        key: "github-pat",
+        value: "bad\u0000value",
+      }),
+      /NUL/,
+    );
+    const accepted = await service.answerSecret("b_1", {
+      entryId: "e_card_1",
+      key: "github-pat",
+      value: "valid-value",
+    });
+    assert.equal(accepted.status, "queued", "a refused value never spends the card");
+  } finally {
+    await service.drain();
+  }
 });
 
 test("a daemon without a secrets store refuses a card answer", async () => {

@@ -25,6 +25,7 @@ import {
   MAX_SECRET_VALUE_BYTES,
   MIN_SECRET_VALUE_CHARS,
   SecretsStorageError,
+  SecretsValidationError,
 } from "./domain.ts";
 import { EventHub, type HubSubscriber, type HubSubscription } from "./EventHub.ts";
 import { newFailure } from "./failures.ts";
@@ -568,7 +569,10 @@ export class ConversationService implements InvocationPort {
     } catch (error) {
       // An unknown admission may already be durable. A stored value also spends the card:
       // allowing another answer would rotate the value and renew its lifetime.
-      if (!stored && error instanceof ClassifiedFailure && error.disposition === "not_admitted") {
+      const refusedBeforeAnyEffect =
+        error instanceof SecretsValidationError ||
+        (error instanceof ClassifiedFailure && error.disposition === "not_admitted");
+      if (!stored && refusedBeforeAnyEffect) {
         await store.releaseAnswer({ botId, entry: answersTo }).catch(() => undefined);
       }
       throw error;
