@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## macOS v0.18.0 — 2026-11-04
+
+- Add a decision tool group and configurable providers for structured judgments.
+- Give Bots bounded post-answer reflection that can update their sidebar status without
+  replacing the original answer; account for reflection usage separately.
+- Extend the CLI and acceptance suite for decision tools, memory and secret cards, with
+  isolated fixtures and safeguards against exposing secrets in output and history.
 - **Secrets, the one way a password reaches a Bot.** A Bot that needs a password now asks for it
   on a card with a single password field instead of asking a person to paste it into the chat.
   The value is stored once, outside the transcript, in an AES-256-GCM container at

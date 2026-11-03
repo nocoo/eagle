@@ -1,5 +1,12 @@
 # Retrospective
 
+## 2026-11-04 — npm needs distinct user and global config files
+
+While preparing a private offline release cache, npm refused to load `/dev/null`
+for both user and global configuration. A separate empty user config fixed the
+local cache operation; no registry install or remote retry was involved. Supply
+separate paths when isolating npm configuration.
+
 ## 2026-11-04 — A standalone Node binary was not an npm distribution
 
 The pre-push gate failed the device-runtime packaging test when I selected the app's bundled

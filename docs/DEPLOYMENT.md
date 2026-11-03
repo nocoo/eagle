@@ -97,8 +97,8 @@ Publishing an app release:
 #    EAGLE_ADHOC_RELEASE=1 is the explicit opt-in, and the point release tag carries the same number.
 node -p "require('./apps/macos/Support/Version.json').version"
 
-# 2. Attach the zip to the release before claiming it.
-gh release create macos-v<app-version> /tmp/Eagle-<app-version>-macos.zip --title "Eagle for Mac <app-version>"
+# 2. Attach the DMG to the release before claiming it.
+gh release create macos-v<app-version> /tmp/Eagle-for-Mac-<app-version>.dmg --title "Eagle for Mac <app-version>"
 
 # 3. Declare what is published, then deploy so /api/live answers it.
 #    "config": { "publishedMacosVersion": "<app-version>", "macosReleaseUrl": "..." }

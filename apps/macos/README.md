@@ -14,20 +14,17 @@ Other overview and inspector content still includes demos.
 
 A published build is **ad-hoc signed and not notarized**: there is no Developer ID
 certificate in this project's release path, so macOS cannot vouch for the download and
-blocks it on first launch. One command clears that, and nothing else should be disabled:
+blocks it on first launch. Open `Eagle-for-Mac-<version>.dmg` and drag the App to
+Applications. Then remove quarantine from that App only:
 
 ```sh
-cd ~/Downloads
-ditto -x -k Eagle-<version>-macos.zip .
-xattr -dr com.apple.quarantine "Eagle for Mac.app"
-cp -R "Eagle for Mac.app" /Applications/
+xattr -dr com.apple.quarantine "/Applications/Eagle for Mac.app"
 open "/Applications/Eagle for Mac.app"
 ```
 
-Extract with `ditto -x -k` (or double-click the zip in Finder); plain `unzip` turns the
-archive's AppleDouble metadata into real `._*` files and breaks the code signature. After the
-step above `codesign --verify --deep --strict "Eagle for Mac.app"` passes and the App runs; `spctl`
-still reports `rejected`, which is what "ad-hoc, un-notarized" means.
+After installation `codesign --verify --deep --strict "/Applications/Eagle for Mac.app"`
+checks the bundle. `spctl` may still report `rejected`, which is what "ad-hoc,
+un-notarized" means.
 
 `xattr -dr` removes the quarantine attribute that the browser/`gh` put on the unpacked
 bundle, which is exactly what Gatekeeper refuses. If macOS still asks after that, allow the
@@ -65,12 +62,17 @@ export EAGLE_UPDATES_URL=https://app.example.com/api/live
 export EAGLE_CODESIGN_IDENTITY=-
 export EAGLE_ADHOC_RELEASE=1
 apps/macos/Scripts/build-app.sh release
-ditto -c -k --keepParent "apps/macos/.build/device-release/Eagle for Mac.app" \
-  "/tmp/Eagle-$(node -p "require('./apps/macos/Support/Version.json').version")-macos.zip"
-shasum -a 256 /tmp/Eagle-*-macos.zip
+STAGE="$(mktemp -d "${TMPDIR:-/tmp}/eagle-dmg.XXXXXX")"
+ditto "apps/macos/.build/device-release/Eagle for Mac.app" "$STAGE/Eagle for Mac.app"
+ln -s /Applications "$STAGE/Applications"
+VERSION="$(node -p "require('./apps/macos/Support/Version.json').version")"
+hdiutil create -volname "Eagle for Mac" -srcfolder "$STAGE" -format UDZO \
+  "/tmp/Eagle-for-Mac-$VERSION.dmg"
+rm -rf "$STAGE"
+shasum -a 256 "/tmp/Eagle-for-Mac-$VERSION.dmg"
 ```
 
-The zip is the release asset: `gh release create v<version> /tmp/Eagle-<version>-macos.zip`
+The DMG is the release asset: `gh release create macos-v<version> /tmp/Eagle-for-Mac-<version>.dmg`
 (or `gh release upload`). The bundle records `"mode": "ad-hoc-release"` in
 `Contents/Resources/DeviceSigning.json`, so an installed copy states what it is.
 
