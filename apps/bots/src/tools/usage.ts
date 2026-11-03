@@ -10,6 +10,7 @@ export type UsageEntry = {
   readonly calls?: number;
   readonly costUsd?: number;
   readonly counter?: string;
+  readonly at?: number;
 };
 
 export interface UsageMeter {

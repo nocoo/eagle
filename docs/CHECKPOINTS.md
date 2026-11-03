@@ -1,5 +1,67 @@
 # 用户视角检查点
 
+## 2026-11-03 20:35 +08 — three review rounds closed, gates green
+
+- Round 1 (read-only reviewer, pinned `01302e3..95cff80`) found nine issues; round 2
+  verified the repairs and found three more; round 3 verified those and found one
+  field-projection gap. All thirteen are fixed with regression tests. The review
+  budget (3 rounds) is spent; nothing is left in a known-broken state.
+- Repairs: device acceptance routes reflection per session without relaxing the
+  original request count; secret receipts survive unknown admission and are released
+  only for pre-effect validation or proven refusal; secret exports follow the
+  resolved scope; reflection has a durable two-request/15 s budget, cancels and joins
+  its child, releases the Harness when post-open recovery fails, and cannot drop a
+  committed settlement; recovered spend keeps its consumption date; question cards
+  carry grouped answers, admit over their own HTTP request, stay retryable on refusal
+  and never duplicate while pending; CLI answers correlate their own admission and
+  keep the wire JSON fields.
+- Gates on `2af81d9`: Bots check 994 (95.70 / 88.80 / 90.70), root check 265 with
+  typecheck/lint/build, browser 191, device acceptance 7/7, `apps/macos` 423,
+  `apps/bots-macos` 149, both strict-format clean.
+- Not verified: hand inspection of the cards and sheets in a rendered App, live Herdr
+  collection, production authentication and D1. The next broken hop is manual App
+  acceptance of the question/secret cards.
+
+## 2026-11-03 19:36 +08 — first-round repairs awaiting incremental review
+
+- Device process acceptance passes 7/7 without relaxed limits. Regression tests
+  now cover unknown secret admission retaining its receipt, explicit shared
+  reads refusing a shadowing Bot variable, reflection request/deadline bounds,
+  post-open cleanup, committed settlement delivery despite bookkeeping failure,
+  and recovery recording model spend on its original consumption date.
+- Question-card repairs are in progress: grouped answers and an awaited HTTP
+  admission replace the flattening/fire-and-forget App path; CLI answers already
+  use their own HTTP response. Pending/confirmed/refused card state is tested.
+- Round 1 is complete (nine findings). Rounds 2–3 remain available. Full Bots,
+  root/browser and Swift gates have not yet been rerun on the combined tree.
+  No manual App acceptance, live collection, production authentication or D1
+  has been exercised; the next broken hop is combined validation.
+
+## 2026-11-03 18:20 +08 — 48-hour review, first round
+
+- Scope is pinned to `01302e3..95cff80` (106 commits). One read-only reviewer in
+  the right-hand pane completed round 1: four P1 and five P2 findings across
+  reflection lifecycle, secret receipts/scope and question-card/CLI admission.
+  The coordinator owns all writes; rounds 2–3 will inspect these repairs only.
+- CI's device acceptance failure was reproduced locally, then fixed without
+  widening deadlines: root model requests remain exactly eighteen, reflection
+  has a separate session-bound lane with exactly nine requests. The process
+  gate now passes 7/7. Secret unknown-admission and scope mismatch regressions
+  were demonstrated red and fixed with targeted checks; full gates remain open.
+- No new live Herdr collection, authentication, D1 or manual App rendering was
+  performed. Next: finish reflection and question-card repairs, run full gates,
+  obtain incremental review and verify the exact pushed revision's CI.
+
+## 2026-11-03 17:23 +08 — reflection rebased onto secrets
+
+- The local reflection commit was rebased onto the current main, retaining the
+  decision and secrets features. A real-Harness integration test verifies that
+  reflection and secret-group toggling coexist without exposing the fixture value.
+- Bots check passed 984 tests and the complete scripted eval passed 20 cases.
+  Eval authentication and state were temporary; no production credentials were
+  used. No new Herdr collection, D1 access or manual App rendering was performed.
+- Next: run the normal pre-push hooks and push the rebased commit without force.
+
 ## 2026-11-03 14:00 +08 — Merge acceptance and dev App restart
 
 - The foreground Eagle Dev and its daemon were restarted from the merged working tree; the
@@ -110,7 +172,7 @@
 - The isolated `eagle-dev` conversation reached the local real model and showed three
   `note_set` calls as its topics moved from venue to invitations to cat food. Its notes
   followed those topics; this is evidence for an earlier local build, not the current tree.
-  Authentication used a temporary development token, not production credentials. Herdr
+  Authentication used a temporary dev credential, not production credentials. Herdr
   collection, Cloudflare authentication, D1 and installed-App rendering were not exercised.
 - `npm run check` stopped at one saved-gateway test expecting one model request, because
   the new reflection makes another. `npm run eval` failed multiple cases: the scripted model

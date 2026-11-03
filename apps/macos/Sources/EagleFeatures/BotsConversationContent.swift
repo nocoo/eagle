@@ -35,8 +35,9 @@ struct BotsConversationContent: View {
       onShowSidebar: { layout.toggleSidebar() },
       onToggleInspector: { layout.toggleInspector() },
       onOpenPeerExchange: { id in Task { await bots.openExchange(id) } },
-      onAnswerCard: { id, chosen in bots.answer(entryId: id, chosen: chosen) },
-      onSkipCard: { id in bots.skipQuestion(entryId: id) },
+      onAnswerCard: { id, answers, skipped in
+        await bots.answerQuestions(entryId: id, answers: answers, skipped: skipped)
+      },
       onAnswerSecret: { answer in await bots.answerSecret(answer) }
     )
     .id(bots.selectedId)

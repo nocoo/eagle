@@ -171,8 +171,8 @@ function failure(message: string): never {
 const scriptedModel = (
   script: readonly ScriptedReply[],
   repeatLast: boolean,
-  reflectionScript: readonly ScriptedReply[] | undefined,
   systemone: CaseFile["systemone"],
+  reflectionScript: readonly ScriptedReply[] | undefined,
 ) => {
   const requests: {
     readonly lastInput: string;
@@ -649,8 +649,8 @@ const runCase = async (
   const model = scriptedModel(
     study.model.script,
     study.model.repeatLast === true,
-    study.model.reflectionScript,
     study.systemone,
+    study.model.reflectionScript,
   );
   const modelPort = await listen(model.server);
   let handle: DaemonHandle | undefined;

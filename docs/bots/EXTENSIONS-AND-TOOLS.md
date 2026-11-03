@@ -719,7 +719,8 @@ taken from the model.
 or JSON that does not match the shape is a **refusal**: the file is never rewritten and never
 deleted, because a store that cannot be read is not a store that should be recreated.
 - `answers` keeps the newest 500 receipts and holds no value. A card is claimed before its value
-  is written and released again when nothing was stored and nothing was admitted, and its
+  is written. It is released only when nothing was stored and the store validated the value
+  before any effect, or admission is proven refused; unknown outcomes retain the receipt. Its
   submission id is derived from the card, so a repeated admission is answered from the
   submission record instead of starting a second run.
 - The same key in the same scope is one record: a later write replaces it whole and keeps
@@ -800,8 +801,10 @@ a store that cannot be read exports nothing and records the failure, because a b
 store must not break coding. Switching the `secrets` group off switches the export off too: the
 group's tools and the values a command sees are one decision. The export is bounded to 64 KiB of names and
 values counted in UTF-8 bytes, keeping the newest records and dropping the rest; `secret_read`
-answers a variable only when that variable is really in the export, so it never promises one the
-daemon chose not to hand over. A value that an environment cannot carry — anything holding a
+answers a variable only when that variable is really in the export for the requested scope.
+An explicitly requested shared record that is shadowed by a Bot's own record is refused rather
+than advertised under the other record's variable. Colliding and over-budget records are refused
+too, so the daemon never promises a value it chose not to hand over. A value that an environment cannot carry — anything holding a
 NUL — is refused when it is stored rather than failing the spawn that would echo it. Handing a
 value to a command is a use of the record and appends one `read` row per exported record, so the
 settings page's "last used" is not blind to the way a password is actually used.

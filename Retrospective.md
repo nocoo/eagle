@@ -1,5 +1,13 @@
 # Retrospective
 
+## 2026-11-04 — The macOS gate started without its device-service build
+
+I ran the macOS package tests in a fresh worktree before building the Agent's device-service
+entry. Four helper tests failed because their required executable did not exist. Building the
+Agent and rerunning the full macOS package with the system-linked Node passed. Read and execute
+the integration prerequisites before launching a gate; do not treat a partial or interrupted
+run as a pass.
+
 ## 2026-11-03 — A running dev App was called latest after remote moved
 
 I described the dev App built from the in-progress merge as the latest source without checking
@@ -33,6 +41,29 @@ handler; its daemon remained on port 43117 with parent PID 1. I checked the daem
 and working directory, then stopped that owned process with SIGTERM before relaunching the App.
 A terminal interrupt is not proof that a GUI child's daemon stopped. Verify the owned listener
 and its identity before restarting; do not terminate a different App's process.
+
+## 2026-11-03 — Reflection was absent from device acceptance
+
+The reflection change passed its own Bots checks and scripted eval but broke the
+independent device-process acceptance. That fixture queued exactly two model
+responses per tool round. The new note-only reflection request exhausted that
+queue and retried a 500 until the original submission exceeded its unchanged
+settlement deadline. The current tree reproduced the CI failure; the same test
+against the preceding Bots source passed.
+
+The fixture now binds each provider session to its tool loadout, serves reflection
+from a separate no-op lane, and asserts nine reflection requests alongside the
+original eighteen root requests. Device execution, recovery and deadlines remain
+unchanged. A new model invocation path must be exercised through the independent
+process gate, not only the feature's own scripted model.
+
+## 2026-11-03 — Rebase integration test setup
+
+The new reflection/secrets integration test passed at runtime but first failed
+strict typechecking because an optional note could explicitly be undefined. Its
+formatter was also first invoked from the root, whose Biome scope excludes Bots.
+Keep optional fields consistent with exact types and run each package's formatter
+from its own root before the full gate.
 
 ## 2026-11-03 — An empty local gateway key stopped acceptance before the model
 

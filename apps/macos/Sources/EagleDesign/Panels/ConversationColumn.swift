@@ -61,9 +61,7 @@ public struct ConversationColumn: View {
   private let onToggleInspector: () -> Void
   /// Opens a peer exchange by id; nil leaves the rows inert for surfaces that never show one.
   private let onOpenPeerExchange: ((String) -> Void)?
-  /// Answers an ask_user card: (entry id, chosen labels).
-  private let onAnswerCard: ((String, [String]) -> Void)?
-  private let onSkipCard: ((String) -> Void)?
+  private let onAnswerCard: ((String, [[String]], Bool) async -> Result<Void, AskCardFailure>)?
   /// Answers a secret card: the answer, and what the daemon said about it.
   private let onAnswerSecret: ((SecretCardAnswer) async -> Result<Void, SecretCardFailure>)?
   private let showsSidebar: Bool
@@ -100,8 +98,7 @@ public struct ConversationColumn: View {
     onShowSidebar: @escaping () -> Void = {},
     onToggleInspector: @escaping () -> Void = {},
     onOpenPeerExchange: ((String) -> Void)? = nil,
-    onAnswerCard: ((String, [String]) -> Void)? = nil,
-    onSkipCard: ((String) -> Void)? = nil,
+    onAnswerCard: ((String, [[String]], Bool) async -> Result<Void, AskCardFailure>)? = nil,
     onAnswerSecret: ((SecretCardAnswer) async -> Result<Void, SecretCardFailure>)? = nil
   ) {
     self.title = title
@@ -125,7 +122,6 @@ public struct ConversationColumn: View {
     self.onToggleInspector = onToggleInspector
     self.onOpenPeerExchange = onOpenPeerExchange
     self.onAnswerCard = onAnswerCard
-    self.onSkipCard = onSkipCard
     self.onAnswerSecret = onAnswerSecret
   }
 
@@ -303,8 +299,10 @@ public struct ConversationColumn: View {
     case .question(_, let card):
       AskCardRow(
         card: card,
-        onSubmit: { id, chosen in onAnswerCard?(id, chosen) },
-        onSkip: { id in onSkipCard?(id) }
+        onAnswer: { id, answers, skipped in
+          guard let onAnswerCard else { return .failure(AskCardFailure("这个客户端不能提交回答")) }
+          return await onAnswerCard(id, answers, skipped)
+        }
       )
       .transition(.opacity)
     case .secret(_, let card):

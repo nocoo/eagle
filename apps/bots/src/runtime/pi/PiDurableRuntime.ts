@@ -207,6 +207,7 @@ export class PiDurableRuntime implements RuntimePort {
     log.emit("info", "runtime", Events.openStart, { trace: spec.trace, botId: spec.id });
     const classifier = new FailureClassifier({ now: this.#options.now ?? Date.now });
     let handle: PiRuntimeHandle | undefined;
+    let cleanup: (() => Promise<void>) | undefined;
     // A park discovered by `open()`'s recovery has no handle yet, so its report is
     // buffered and replayed rather than dropped.
     const pending: ReportInfo[] = [];
@@ -217,6 +218,7 @@ export class PiDurableRuntime implements RuntimePort {
       const storage = await (this.#options.storage ?? defaultStorage)(
         join(spec.dir, "session.sqlite"),
       );
+      cleanup = () => storage.close(BACKGROUND_CONTEXT);
       const groups = resolveToolGroups(spec.toolGroups);
       const search = this.#options.search?.(spec);
       const decision = this.#options.decision?.(spec);
@@ -302,6 +304,7 @@ export class PiDurableRuntime implements RuntimePort {
         },
         BACKGROUND_CONTEXT,
       );
+      cleanup = () => harness.close(BACKGROUND_CONTEXT);
       const root = await harness.root(BACKGROUND_CONTEXT, {
         agent: {
           model: { provider: spec.model.provider, modelId: spec.model.modelId },
@@ -334,6 +337,13 @@ export class PiDurableRuntime implements RuntimePort {
               usage: this.#options.usage,
               failed: (taskId, reason) => handle?.reflectionFailed(taskId, reason),
             });
+      cleanup = async () => {
+        try {
+          await harness.close(BACKGROUND_CONTEXT);
+        } finally {
+          await reflectionUsage?.close();
+        }
+      };
       handle = new PiRuntimeHandle({
         spec,
         harness,
@@ -343,8 +353,8 @@ export class PiDurableRuntime implements RuntimePort {
         registry,
         runNote,
         ...(note === undefined ? {} : { note }),
-        ...(reflectionUsage === undefined ? {} : { reflectionUsage }),
         ...(secrets === undefined ? {} : { secrets }),
+        ...(reflectionUsage === undefined ? {} : { reflectionUsage }),
       });
       await reflectionUsage?.restore(BACKGROUND_CONTEXT);
       await handle.recoverReflection();
@@ -354,6 +364,7 @@ export class PiDurableRuntime implements RuntimePort {
       // `open()` already recovered; resuming only enables scheduling (RUNTIME.md).
       harness.resume();
     } catch (cause) {
+      await cleanup?.().catch(() => undefined);
       const minted = classifier.classify("open", "storage_failed", "runtime");
       log.emit("error", "runtime", Events.openFail, {
         trace: spec.trace,
@@ -400,9 +411,9 @@ type HandleOptions = {
   readonly note?: NoteToolHost;
   /** What the run in flight gave note_set, so its settlement writes that and nothing else. */
   readonly runNote: RunNote;
-  readonly reflectionUsage?: ReturnType<typeof trackReflectionUsage>;
   /** The secrets host this bot was opened with, so a live switch reaches its environment. */
   readonly secrets?: SecretsToolHost;
+  readonly reflectionUsage?: ReturnType<typeof trackReflectionUsage>;
 };
 
 class PiRuntimeHandle implements RuntimeHandle {
@@ -468,8 +479,8 @@ class PiRuntimeHandle implements RuntimeHandle {
     this.#registry = options.registry;
     this.#note = options.note;
     this.#runNote = options.runNote;
-    this.#reflectionUsage = options.reflectionUsage;
     this.#secretsHost = options.secrets;
+    this.#reflectionUsage = options.reflectionUsage;
     this.#toolGroups = resolveToolGroups(options.spec.toolGroups);
     this.#mapper = new EventMapper({
       botId: options.spec.id,
@@ -983,7 +994,12 @@ class PiRuntimeHandle implements RuntimeHandle {
   }
 
   reflectionFailed(taskId: number, reason: string): void {
-    const kind = reason === "model_error" || reason === "no_model" ? "model_error" : "internal";
+    const kind =
+      reason === "storage"
+        ? "storage_failed"
+        : reason === "model_error" || reason === "no_model"
+          ? "model_error"
+          : "internal";
     const minted = this.#classifier.classify(`reflection:${taskId}`, kind, "runtime");
     this.#logFailure(
       minted,
@@ -1409,7 +1425,11 @@ class PiRuntimeHandle implements RuntimeHandle {
       this.#runNote.take();
       return;
     }
-    await this.#settleNote(answer, trace);
+    try {
+      await this.#settleNote(answer, trace);
+    } catch {
+      this.reflectionFailed(answer.taskId, "storage");
+    }
   }
 
   /**

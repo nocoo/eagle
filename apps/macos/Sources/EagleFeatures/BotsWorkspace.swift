@@ -196,7 +196,8 @@ final class BotsWorkspaceViewModel: ObservableObject {
       outbox: outbox,
       triggers: TriggerHTTPClient(baseURL: settings.baseURL, token: token),
       peers: PeerHTTPClient(baseURL: settings.baseURL, token: token),
-      secrets: catalog
+      secrets: catalog,
+      questions: catalog
     )
   }
 
@@ -553,14 +554,19 @@ final class BotsWorkspaceViewModel: ObservableObject {
 
   /// The person answered an ask_user card. The card's own labels travel; the daemon writes
   /// the hidden message the bot reads, so the App never authors model input.
-  func answer(entryId: String, chosen: [String]) {
-    app?.conversation.answer(entryId: entryId, chosen: chosen, skipped: false)
-    publish()
-  }
-
-  func skipQuestion(entryId: String) {
-    app?.conversation.answer(entryId: entryId, chosen: [], skipped: true)
-    publish()
+  func answerQuestions(
+    entryId: String, answers: [[String]], skipped: Bool
+  ) async -> Result<Void, AskCardFailure> {
+    guard let app, let botId = selectedId else { return .failure(AskCardFailure("没有选中的 Bot")) }
+    do {
+      try await app.answerQuestions(
+        botId: botId, entryId: entryId, answers: answers, skipped: skipped)
+      publish()
+      return .success(())
+    } catch {
+      return .failure(
+        AskCardFailure((error as? ClientError)?.message ?? error.localizedDescription))
+    }
   }
 
   /// The person answered a secret card: the value crosses the wire once, the daemon keeps it

@@ -9,6 +9,7 @@ import {
   type SecretSave,
   type SecretScope,
   SecretsStorageError,
+  SecretsValidationError,
 } from "../core/domain.ts";
 import { newFailure } from "../core/failures.ts";
 import { declareEvent } from "../log/events.ts";
@@ -291,7 +292,11 @@ export class SecretsStore {
   }
 
   /** The variable a record really reaches this Bot's commands by; undefined when it does not. */
-  envNameFor(botId: string, key: string): string | undefined {
+  envNameFor(botId: string, key: string, scope?: SecretScope): string | undefined {
+    const requested = this.#resolve(key, scope, botId);
+    if (requested === undefined || requested !== this.#resolve(key, undefined, botId)) {
+      return undefined;
+    }
     const env = this.#environmentFor(botId);
     const name = secretEnvName(key);
     return env[name] === undefined ? undefined : name;
@@ -576,7 +581,7 @@ export class SecretsStore {
       read: (input) => this.read({ botId, ...input }),
       remove: (input) => this.remove({ botId, ...input }),
       environment: () => (enabled ? this.environment(botId) : Promise.resolve({})),
-      envNameFor: (key) => this.envNameFor(botId, key),
+      envNameFor: (key, scope) => this.envNameFor(botId, key, scope),
     };
   }
 
@@ -904,7 +909,7 @@ export class SecretsStore {
   #checkKey(raw: string): string {
     const key = raw.trim();
     if (!SECRET_KEY_PATTERN.test(key)) {
-      throw new SecretsStorageError(
+      throw new SecretsValidationError(
         "a secret key starts with a lowercase letter or digit and holds lowercase letters, digits, dot, dash or underscore, at most 64 characters",
       );
     }
@@ -913,16 +918,16 @@ export class SecretsStore {
 
   #checkValue(raw: string): string {
     if (raw.length < MIN_SECRET_VALUE_CHARS) {
-      throw new SecretsStorageError(
+      throw new SecretsValidationError(
         `a secret value is at least ${MIN_SECRET_VALUE_CHARS} characters, so the log can scrub it`,
       );
     }
     // A value an environment cannot carry would fail the spawn and be echoed in its error.
     if (raw.includes("\u0000")) {
-      throw new SecretsStorageError("a secret value cannot contain a NUL character");
+      throw new SecretsValidationError("a secret value cannot contain a NUL character");
     }
     if (Buffer.byteLength(raw, "utf8") > MAX_SECRET_VALUE_BYTES) {
-      throw new SecretsStorageError(`a secret value is at most ${MAX_SECRET_VALUE_BYTES} bytes`);
+      throw new SecretsValidationError(`a secret value is at most ${MAX_SECRET_VALUE_BYTES} bytes`);
     }
     return raw;
   }
@@ -930,7 +935,7 @@ export class SecretsStore {
   #checkPurpose(raw: string): string {
     const purpose = raw.trim();
     if (purpose.length > MAX_SECRET_PURPOSE_CHARS) {
-      throw new SecretsStorageError(
+      throw new SecretsValidationError(
         `a secret purpose is at most ${MAX_SECRET_PURPOSE_CHARS} characters`,
       );
     }
@@ -943,7 +948,7 @@ export class SecretsStore {
       minutes < MIN_SECRET_TTL_MINUTES ||
       minutes > MAX_SECRET_TTL_MINUTES
     ) {
-      throw new SecretsStorageError(
+      throw new SecretsValidationError(
         `a secret lifetime is ${MIN_SECRET_TTL_MINUTES}-${MAX_SECRET_TTL_MINUTES} minutes`,
       );
     }

@@ -66,13 +66,13 @@ final class ConversationTests: XCTestCase {
     ready(model)
     fake.emit(.connection(.ready))
     fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
-    try await Task.sleep(for: .milliseconds(30))
+    try await waitUntil { model.hasSnapshot }
 
     model.draft = "先排队"
     model.send()
     model.draft = "改方向"
     model.send(inserting: true)
-    try await Task.sleep(for: .milliseconds(60))
+    try await waitUntil { fake.busyModes.count == 2 }
 
     // Two sends started from one turn race each other on the wire; what the person asked for
     // is that one queues and one steers, not which of them the socket wrote first.

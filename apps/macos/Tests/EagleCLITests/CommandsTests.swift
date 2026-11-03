@@ -20,13 +20,28 @@ final class StubTransport: URLProtocol, @unchecked Sendable {
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func stopLoading() {}
 
+  private func requestBody() -> Data? {
+    if let data = request.httpBody { return data }
+    guard let stream = request.httpBodyStream else { return nil }
+    stream.open()
+    defer { stream.close() }
+    var result = Data()
+    var buffer = [UInt8](repeating: 0, count: 1024)
+    while stream.hasBytesAvailable {
+      let count = stream.read(&buffer, maxLength: buffer.count)
+      if count <= 0 { break }
+      result.append(buffer, count: count)
+    }
+    return result
+  }
+
   override func startLoading() {
     let path = request.url?.path ?? ""
     Self.calls.append(
       Call(
         method: request.httpMethod ?? "GET", path: path,
         bearer: request.value(forHTTPHeaderField: "authorization"),
-        body: request.httpBody.map { String(decoding: $0, as: UTF8.self) }))
+        body: requestBody().map { String(decoding: $0, as: UTF8.self) }))
     if let failure = Self.failure {
       client?.urlProtocol(self, didFailWithError: failure)
       return
@@ -138,6 +153,56 @@ struct CommandsTests {
     let missing = await run(["bots", "show", "不存在"])
     #expect(missing.code == 1)
     #expect(missing.err.first?.contains("unknown_bot") == true)
+  }
+
+  @Test("card answers use their own HTTP admission, never an unrelated socket submission")
+  func answerAdmission() async {
+    StubTransport.calls = []
+    StubTransport.answers = [
+      "/v1/bots": (200, #"{"bots":[{"id":"b_1","title":"helper"}]}"#),
+      "/v1/bots/b_1/answers": (
+        400, #"{"error":{"kind":"invalid_command","message":"ambiguous answer"}}"#
+      ),
+    ]
+    let refused = await run(["chat", "answer", "helper", "--entry", "e_12", "--choose", "Yes"])
+    #expect(refused.code != 0)
+    #expect(refused.out.allSatisfy { !$0.contains("answered") })
+    #expect(
+      StubTransport.calls.contains { $0.method == "POST" && $0.path == "/v1/bots/b_1/answers" })
+    StubTransport.answers["/v1/bots/b_1/answers"] = (
+      200,
+      #"{"submission":{"id":"s_1","requestId":"answer_1","status":"placed","entryId":"e_20"}}"#
+    )
+    let accepted = await run([
+      "chat", "answer", "helper", "--entry", "e_12", "--choose", "Yes", "--json",
+    ])
+    #expect(accepted.code == 0)
+    #expect(accepted.out.contains { $0.contains("answer_1") })
+    let printed = accepted.out.compactMap {
+      try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+    }
+    #expect(printed.last?["submissionId"] as? String == "s_1")
+    #expect(printed.last?["type"] as? String == "submission")
+    #expect(printed.last?["entryId"] as? String == "e_20", "a placed answer keeps its entry")
+  }
+
+  @Test("question-indexed answers support repeated labels")
+  func groupedCardAnswer() async {
+    StubTransport.calls = []
+    StubTransport.answers = [
+      "/v1/bots": (200, #"{"bots":[{"id":"b_1","title":"helper"}]}"#),
+      "/v1/bots/b_1/answers": (
+        200, #"{"submission":{"id":"s_1","requestId":"answer_1","status":"queued"}}"#
+      ),
+    ]
+    let result = await run([
+      "chat", "answer", "helper", "--entry", "e_12", "--answers", #"[["Yes"],["No"]]"#,
+    ])
+    #expect(result.code == 0)
+    let body = StubTransport.calls.last?.body?.data(using: .utf8)
+    let object = body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    #expect(object?["answers"] as? [[String]] == [["Yes"], ["No"]])
+    #expect(object?["chosen"] == nil)
   }
 
   @Test("delete sends nothing without --yes and answers code 2")
