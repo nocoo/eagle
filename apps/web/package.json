@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.96",
-    "@ai-sdk/openai": "4.0.102",
+    "@ai-sdk/openai": "4.0.108",
     "@nocoo/basalt": "^3.2.1",
     "@nocoo/next-ai": "^0.4.0",
     "ai": "7.0.153",
