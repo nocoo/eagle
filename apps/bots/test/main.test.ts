@@ -769,10 +769,58 @@ test("provider keys are saved behind the bearer and never returned", async () =>
         [
           ["deepseek-search", true, false],
           ["tavily-search", true, true],
+          ["typesafe", false, false],
+          ["falcon", false, false],
+          ["falcon-relay", false, false],
+          ["jev-relay", false, false],
+          ["raven", false, false],
         ],
       );
       const unauthenticated = await fetch(`http://127.0.0.1:${daemon.port}/v1/providers`);
       assert.equal(unauthenticated.status, 401);
+
+      const decision = await fetch(`http://127.0.0.1:${daemon.port}/v1/providers/raven`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          apiKey: "rk-http-fixture",
+          enabled: true,
+          baseUrl: "http://127.0.0.1:7024/v1",
+          model: "auto",
+        }),
+      });
+      assert.equal(decision.status, 200);
+      const chosen = (
+        (await decision.json()) as {
+          provider: { id: string; baseUrl: string; model: string; enabled: boolean };
+        }
+      ).provider;
+      assert.equal(chosen.baseUrl, "http://127.0.0.1:7024", "a typed /v1 collapses to the root");
+      assert.equal(chosen.model, "auto");
+      assert.equal(chosen.enabled, true);
+      assert.equal(
+        (
+          (await (
+            await fetch(`http://127.0.0.1:${daemon.port}/v1/providers`, { headers })
+          ).json()) as { providers: { id: string; enabled: boolean }[] }
+        ).providers
+          .filter((provider) => provider.enabled)
+          .map((provider) => provider.id)
+          .join(","),
+        "tavily-search,raven",
+        "both services are chosen at once",
+      );
+      const badAddress = await fetch(`http://127.0.0.1:${daemon.port}/v1/providers/raven`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ baseUrl: "127.0.0.1:7024" }),
+      });
+      assert.equal(badAddress.status, 400);
+      const searchOverride = await fetch(
+        `http://127.0.0.1:${daemon.port}/v1/providers/tavily-search`,
+        { method: "PUT", headers, body: JSON.stringify({ model: "x" }) },
+      );
+      assert.equal(searchOverride.status, 400, "a search provider has no model to override");
     } finally {
       await daemon.close();
     }
@@ -834,5 +882,75 @@ test("the daemon reads the machine prompt and saves the core prompt", async () =
     if (previous === undefined) delete process.env.BOTS_MACHINE_AGENTS;
     else process.env.BOTS_MACHINE_AGENTS = previous;
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the daemon mounts the secret routes and keeps the store out of the way", async () => {
+  const root = await daemonRoot("bots-main-secrets-");
+  const home = await mkdtemp(join(tmpdir(), "bots-main-secrets-home-"));
+  try {
+    const config = readConfig({
+      argv: ["--root", root, "--port", "0"],
+      env: {
+        BOTS_SECRETS_DIR: join(home, "config"),
+        BOTS_SECRETS_KEY: join(home, "state", "secrets.key"),
+      },
+    });
+    const daemon = await startDaemon(config);
+    try {
+      const authorized = async (path: string, init: RequestInit = {}) =>
+        fetch(`http://127.0.0.1:${daemon.port}${path}`, {
+          ...init,
+          headers: {
+            authorization: `Bearer ${daemon.token}`,
+            "content-type": "application/json",
+            ...(init.headers ?? {}),
+          },
+        });
+      const listed = await authorized("/v1/secrets");
+      assert.equal(listed.status, 200);
+      assert.deepEqual(((await listed.json()) as { secrets: unknown[] }).secrets, []);
+
+      // A bot's own record is identified by its bot too: two bots may use one key.
+      const unnamed = await authorized("/v1/secrets/reveal", {
+        method: "POST",
+        body: JSON.stringify({ key: "absent", scope: "bot" }),
+      });
+      assert.equal(unnamed.status, 400, "a bot record needs the bot that owns it");
+
+      const revealed = await authorized("/v1/secrets/reveal", {
+        method: "POST",
+        body: JSON.stringify({ key: "absent", scope: "bot", botId: "b_1" }),
+      });
+      assert.equal(revealed.status, 404, "an unknown record is not a secret");
+
+      const removed = await authorized("/v1/secrets/bot/absent", { method: "DELETE" });
+      assert.equal(removed.status, 400, "a delete names the bot for a bot record");
+      const removedOwned = await authorized("/v1/secrets/bot/absent?botId=b_1", {
+        method: "DELETE",
+      });
+      assert.equal(removedOwned.status, 404);
+
+      // The settings page is the only place a value comes back, and it needs the admin scope.
+      const issued = (await (
+        await authorized("/v1/clients", {
+          method: "POST",
+          body: JSON.stringify({ name: "reader", scopes: ["read"] }),
+        })
+      ).json()) as { token: string };
+      const refused = await authorized("/v1/secrets/reveal", {
+        method: "POST",
+        body: JSON.stringify({ key: "absent", scope: "bot", botId: "b_1" }),
+        headers: { authorization: `Bearer ${issued.token}` },
+      });
+      assert.equal(refused.status, 403);
+    } finally {
+      assert.equal(await daemon.close(), "closed");
+    }
+    // Nothing was stored, so the store wrote nothing: the key file is created on demand.
+    await assert.rejects(readFile(join(home, "state", "secrets.key"), "utf8"), /ENOENT/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
   }
 });

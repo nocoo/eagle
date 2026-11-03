@@ -511,29 +511,58 @@ public struct Usage: Codable, Hashable, Sendable {
   }
 }
 
+/// What the catalogue says a provider's address and model are, so a page can name the value an
+/// override falls back to (docs/bots/PROTOCOL.md, "Providers").
+public struct ProviderDefaults: Codable, Sendable, Equatable, Hashable {
+  public var baseUrl: String
+  public var model: String
+
+  public init(baseUrl: String, model: String) {
+    self.baseUrl = baseUrl
+    self.model = model
+  }
+}
+
 /// A third-party service a bot's tools may call (docs/bots/PROTOCOL.md, "Providers").
 public struct ProviderSettings: Codable, Sendable, Equatable, Identifiable {
+  /// The two services; each is chosen on its own, so one provider of each can be in use.
+  public static let searchService = "search"
+  public static let decisionService = "decision"
+
   public var id: String
   public var title: String
+  public var service: String
   public var kind: String
+  /// The address and model in use: the catalogue value unless an override was saved.
   public var baseUrl: String
+  public var model: String
   public var docsUrl: String
   public var keyLabel: String
+  /// A relay may carry its own upstream credential, so its key field is optional.
+  public var keyRequired: Bool
   public var hasApiKey: Bool
   public var enabled: Bool
+  public var defaults: ProviderDefaults
+
+  public var isDecision: Bool { service == Self.decisionService }
 
   public init(
-    id: String, title: String, kind: String, baseUrl: String, docsUrl: String,
-    keyLabel: String, hasApiKey: Bool, enabled: Bool
+    id: String, title: String, service: String, kind: String, baseUrl: String, model: String,
+    docsUrl: String, keyLabel: String, keyRequired: Bool, hasApiKey: Bool, enabled: Bool,
+    defaults: ProviderDefaults
   ) {
     self.id = id
     self.title = title
+    self.service = service
     self.kind = kind
     self.baseUrl = baseUrl
+    self.model = model
     self.docsUrl = docsUrl
     self.keyLabel = keyLabel
+    self.keyRequired = keyRequired
     self.hasApiKey = hasApiKey
     self.enabled = enabled
+    self.defaults = defaults
   }
 }
 
@@ -543,12 +572,20 @@ public struct ProviderProbe: Codable, Sendable, Equatable {
   public var message: String
   public var latencyMs: Int
   public var results: Int?
+  /// A decision probe reports the model it asked for and the one the answer names.
+  public var model: String?
+  public var resolvedModel: String?
 
-  public init(ok: Bool, message: String, latencyMs: Int, results: Int? = nil) {
+  public init(
+    ok: Bool, message: String, latencyMs: Int, results: Int? = nil, model: String? = nil,
+    resolvedModel: String? = nil
+  ) {
     self.ok = ok
     self.message = message
     self.latencyMs = latencyMs
     self.results = results
+    self.model = model
+    self.resolvedModel = resolvedModel
   }
 }
 
@@ -996,5 +1033,119 @@ public struct TriggerSummary: Codable, Sendable, Equatable, Identifiable, Hashab
     if let skipped = lastSkipped { return skipped.reason == "missed" ? "错过" : skipped.reason }
     if counters.dropped > 0 { return "丢弃 \(counters.dropped)" }
     return nil
+  }
+}
+
+/// Where a secret record lives: this Bot's own record, or one every Bot on this machine
+/// reads (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5, "Two scopes").
+public enum SecretScope: String, Codable, Sendable, Equatable, Hashable {
+  case bot
+  case shared
+}
+
+/// The expiry a secret answer carries. The Bot's suggestion and the person's last word are
+/// two different things, so the body says which one it carries.
+public enum SecretTTL: Sendable, Equatable {
+  /// The body carries no `ttlMinutes`: the daemon keeps the card's own rule.
+  case inherit
+  /// The body carries `ttlMinutes: null`: the record never expires.
+  case permanent
+  /// The body carries `ttlMinutes: n`.
+  case minutes(Int)
+}
+
+/// One secret's metadata, as the daemon lists it. The value is never part of it
+/// (docs/bots/PROTOCOL.md, "Secrets").
+public struct Secret: Decodable, Sendable, Equatable, Identifiable, Hashable {
+  public var key: String
+  public var scope: SecretScope
+  /// The Bot that answered the card; the model never names it.
+  public var botId: String?
+  /// What the value is for, in the Bot's own words.
+  public var purpose: String?
+  public var createdAt: String
+  public var updatedAt: String
+  /// Absent means the record never expires.
+  public var expiresAt: String?
+  /// When the record was read last, and who read it (`bot` or `person`).
+  public var lastUsedAt: String?
+  public var lastUsedBy: String?
+
+  /// One record is one key in one scope for one bot: two bots may use the same key, so the
+  /// bot is part of the identity the settings page acts on.
+  public var id: String { "\(scope.rawValue):\(scope == .bot ? (botId ?? "") : ""):\(key)" }
+
+  public init(
+    key: String,
+    scope: SecretScope,
+    botId: String? = nil,
+    purpose: String? = nil,
+    createdAt: String,
+    updatedAt: String,
+    expiresAt: String? = nil,
+    lastUsedAt: String? = nil,
+    lastUsedBy: String? = nil
+  ) {
+    self.key = key
+    self.scope = scope
+    self.botId = botId
+    self.purpose = purpose
+    self.createdAt = createdAt
+    self.updatedAt = updatedAt
+    self.expiresAt = expiresAt
+    self.lastUsedAt = lastUsedAt
+    self.lastUsedBy = lastUsedBy
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case key, scope, botId, purpose, createdAt, updatedAt, expiresAt, lastUsedAt, lastUsedBy
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    key = try container.decode(String.self, forKey: .key)
+    scope = try container.decode(SecretScope.self, forKey: .scope)
+    botId = try container.decodeIfPresent(String.self, forKey: .botId)
+    purpose = try container.decodeIfPresent(String.self, forKey: .purpose)
+    createdAt = try container.decode(String.self, forKey: .createdAt)
+    // A record that was never written again keeps the moment it was created.
+    updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt) ?? createdAt
+    expiresAt = try container.decodeIfPresent(String.self, forKey: .expiresAt)
+    lastUsedAt = try container.decodeIfPresent(String.self, forKey: .lastUsedAt)
+    lastUsedBy = try container.decodeIfPresent(String.self, forKey: .lastUsedBy)
+  }
+}
+
+/// What a person typed on a secret card. The value lives here for the length of one request
+/// and nowhere else: no store, no file and no log keeps it.
+public struct SecretAnswer: Sendable, Equatable {
+  /// The transcript entry that carries the `secret_request` call.
+  public var entryId: String
+  /// Which call of that entry, from zero: one answer may ask for two passwords.
+  public var callIndex: Int
+  /// The record's name, exactly as the card showed it.
+  public var key: String
+  public var value: String
+  public var scope: SecretScope
+  public var ttlMinutes: SecretTTL
+  /// True when the person declined to answer: nothing is stored.
+  public var skipped: Bool
+
+  public init(
+    entryId: String,
+    callIndex: Int = 0,
+    key: String,
+    value: String,
+    scope: SecretScope,
+    ttlMinutes: SecretTTL,
+    skipped: Bool = false
+  ) {
+    self.entryId = entryId
+    self.callIndex = callIndex
+    self.key = key
+    self.value = value
+    self.scope = scope
+    self.ttlMinutes = ttlMinutes
+    self.skipped = skipped
   }
 }

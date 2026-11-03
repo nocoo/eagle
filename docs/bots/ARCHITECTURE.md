@@ -82,7 +82,9 @@ Guard tests: `test/architecture.test.ts` asserts (a) no `@earendil-works/*`
 import outside `src/runtime/**` and `src/tools/**` (the adapter boundary), (b) `src/core/**` and `src/protocol/**` do not
 import each other's internals in the forbidden direction (`core` imports nothing
 from `protocol`), (c) `src/runtime/**` imports no `core/` module other than
-`core/domain.ts` and `core/RuntimePort.ts`.
+`core/domain.ts` and `core/RuntimePort.ts`, and (d) `src/server/**` reaches the
+tool layer for exactly one file, `tools/decision/address.ts` — the address rule
+the provider store publishes and the outbound transport also applies.
 `BotsCoreTests/DependencyRulesTests.swift` asserts `BotsCore` and `BotsFeatures`
 contain no `URLSession`/`URLRequest`/`WebSocket`/`URLProtocol` and that wire
 decoding lives only in `BotsTransport`.

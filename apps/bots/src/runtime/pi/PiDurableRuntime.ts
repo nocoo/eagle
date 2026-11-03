@@ -43,6 +43,7 @@ import type {
 } from "../../core/RuntimePort.ts";
 import { type DeclaredEvent, declareEvent } from "../../log/events.ts";
 import type { Log } from "../../log/log.ts";
+import type { DecisionClient } from "../../tools/decision/client.ts";
 import { createHerdrClient } from "../../tools/herdr/client.ts";
 import type { MachinePrompt } from "../../tools/machine/tools.ts";
 import { createToolRegistry, selectToolExtensions } from "../../tools/registry.ts";
@@ -52,6 +53,7 @@ import type {
   NoteToolHost,
   PeerToolHost,
   PullToolHost,
+  SecretsToolHost,
   TriggerToolHost,
 } from "../../tools/types.ts";
 import type { UsageMeter } from "../../tools/usage.ts";
@@ -170,12 +172,16 @@ export type PiRuntimeOptions = {
   readonly workspaceRoot?: (spec: RuntimeBotSpec) => string;
   /** The web-search client for a bot, absent when no provider key is configured. */
   readonly search?: (spec: RuntimeBotSpec) => SearchClient | undefined;
+  /** The decision client for a bot: one request per judgment, resolved per call. */
+  readonly decision?: (spec: RuntimeBotSpec) => DecisionClient | undefined;
   /** The trigger tools' host for a bot, bound to that bot's own definitions. */
   readonly trigger?: (spec: RuntimeBotSpec) => Promise<TriggerToolHost | undefined>;
   /** The peer tools' host for a bot, bound to that bot as the sender. */
   readonly peers?: (spec: RuntimeBotSpec) => Promise<PeerToolHost | undefined>;
   /** The memory tools' host for a bot: its own file plus the machine-wide one. */
   readonly memory?: (spec: RuntimeBotSpec) => MemoryToolHost | undefined;
+  /** The secret tools' host for a bot: its own records plus the shared ones. */
+  readonly secrets?: (spec: RuntimeBotSpec) => SecretsToolHost | undefined;
   /** The pull-request tools' host for a bot, bound to that bot's own reports. */
   readonly pulls?: (spec: RuntimeBotSpec) => Promise<PullToolHost | undefined>;
   /** The bot's own sidebar note, written into the catalog this daemon owns. */
@@ -213,10 +219,15 @@ export class PiDurableRuntime implements RuntimePort {
       );
       const groups = resolveToolGroups(spec.toolGroups);
       const search = this.#options.search?.(spec);
+      const decision = this.#options.decision?.(spec);
       const trigger = await this.#options.trigger?.(spec);
       const peers = await this.#options.peers?.(spec);
       const pulls = await this.#options.pulls?.(spec);
       const memory = this.#options.memory?.(spec);
+      const secrets = this.#options.secrets?.(spec);
+      // The group's two halves move together: the tools follow the extension selection, the
+      // environment follows this flag, and a live switch updates both.
+      secrets?.setEnabled?.(groups.includes("secrets"));
       const note = this.#options.note?.(spec);
       const runNote = createRunNote();
       // The tool owns what the Bot wrote; this run keeps the last value so its settlement
@@ -253,10 +264,20 @@ export class PiDurableRuntime implements RuntimePort {
                 ...(this.#options.usage === undefined ? {} : { meter: this.#options.usage }),
               },
             }),
+        ...(decision === undefined
+          ? {}
+          : {
+              decision: {
+                client: decision,
+                botId: spec.id,
+                ...(this.#options.usage === undefined ? {} : { meter: this.#options.usage }),
+              },
+            }),
         ...(trigger === undefined ? {} : { trigger }),
         ...(peers === undefined ? {} : { peers }),
         ...(pulls === undefined ? {} : { pulls }),
         ...(memory === undefined ? {} : { memory }),
+        ...(secrets === undefined ? {} : { secrets }),
         ...(noteTools === undefined ? {} : { note: noteTools }),
         ...(this.#options.now === undefined ? {} : { now: this.#options.now }),
       });
@@ -323,6 +344,7 @@ export class PiDurableRuntime implements RuntimePort {
         runNote,
         ...(note === undefined ? {} : { note }),
         ...(reflectionUsage === undefined ? {} : { reflectionUsage }),
+        ...(secrets === undefined ? {} : { secrets }),
       });
       await reflectionUsage?.restore(BACKGROUND_CONTEXT);
       await handle.recoverReflection();
@@ -379,11 +401,15 @@ type HandleOptions = {
   /** What the run in flight gave note_set, so its settlement writes that and nothing else. */
   readonly runNote: RunNote;
   readonly reflectionUsage?: ReturnType<typeof trackReflectionUsage>;
+  /** The secrets host this bot was opened with, so a live switch reaches its environment. */
+  readonly secrets?: SecretsToolHost;
 };
 
 class PiRuntimeHandle implements RuntimeHandle {
   readonly #registry: Registry;
   #toolGroups: readonly string[];
+  /** The secrets host this Bot was opened with, so a live switch reaches the environment. */
+  readonly #secretsHost: SecretsToolHost | undefined;
 
   readonly #spec: RuntimeBotSpec;
   readonly #harness: Harness;
@@ -443,6 +469,7 @@ class PiRuntimeHandle implements RuntimeHandle {
     this.#note = options.note;
     this.#runNote = options.runNote;
     this.#reflectionUsage = options.reflectionUsage;
+    this.#secretsHost = options.secrets;
     this.#toolGroups = resolveToolGroups(options.spec.toolGroups);
     this.#mapper = new EventMapper({
       botId: options.spec.id,
@@ -871,6 +898,7 @@ class PiRuntimeHandle implements RuntimeHandle {
       if (reflection !== undefined) extensions.push(reflection);
       const root = await this.#harness.root(BACKGROUND_CONTEXT);
       await root.configure({ extensions }, BACKGROUND_CONTEXT);
+      this.#secretsHost?.setEnabled?.(this.#toolGroups.includes("secrets"));
       this.#options.log.emit("info", "runtime", Events.toolsRefreshOk, {
         trace,
         botId: this.#spec.id,

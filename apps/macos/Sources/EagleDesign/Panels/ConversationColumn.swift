@@ -16,6 +16,8 @@ public enum TranscriptEntry: Identifiable, Hashable, Sendable {
   case tool(id: String, row: ToolRow)
   /// An `ask_user` call: a control the person answers, not chat history.
   case question(id: String, card: AskCard)
+  /// A `secret_request` call: a card the person fills in with a password.
+  case secret(id: String, card: SecretCard)
   /// Several calls from one turn, collapsed into a single line with a detail sheet.
   case toolRun(id: String, rows: [ToolRow])
 
@@ -23,7 +25,7 @@ public enum TranscriptEntry: Identifiable, Hashable, Sendable {
     switch self {
     case .assistant(let id, _, _), .streamingAssistant(let id, _), .user(let id, _, _),
       .note(let id, _, _), .peerExchange(let id, _), .tool(let id, _), .toolRun(let id, _),
-      .question(let id, _):
+      .question(let id, _), .secret(let id, _):
       return id
     }
   }
@@ -62,6 +64,8 @@ public struct ConversationColumn: View {
   /// Answers an ask_user card: (entry id, chosen labels).
   private let onAnswerCard: ((String, [String]) -> Void)?
   private let onSkipCard: ((String) -> Void)?
+  /// Answers a secret card: the answer, and what the daemon said about it.
+  private let onAnswerSecret: ((SecretCardAnswer) async -> Result<Void, SecretCardFailure>)?
   private let showsSidebar: Bool
   private let showsInspector: Bool
   private let participantStatus: ParticipantStatus?
@@ -97,7 +101,8 @@ public struct ConversationColumn: View {
     onToggleInspector: @escaping () -> Void = {},
     onOpenPeerExchange: ((String) -> Void)? = nil,
     onAnswerCard: ((String, [String]) -> Void)? = nil,
-    onSkipCard: ((String) -> Void)? = nil
+    onSkipCard: ((String) -> Void)? = nil,
+    onAnswerSecret: ((SecretCardAnswer) async -> Result<Void, SecretCardFailure>)? = nil
   ) {
     self.title = title
     self.tintIndex = tintIndex
@@ -121,6 +126,7 @@ public struct ConversationColumn: View {
     self.onOpenPeerExchange = onOpenPeerExchange
     self.onAnswerCard = onAnswerCard
     self.onSkipCard = onSkipCard
+    self.onAnswerSecret = onAnswerSecret
   }
 
   public var body: some View {
@@ -300,6 +306,12 @@ public struct ConversationColumn: View {
         onSubmit: { id, chosen in onAnswerCard?(id, chosen) },
         onSkip: { id in onSkipCard?(id) }
       )
+      .transition(.opacity)
+    case .secret(_, let card):
+      SecretCardRow(card: card) { answer in
+        guard let onAnswerSecret else { return .failure(SecretCardFailure("这个客户端不能保存密码")) }
+        return await onAnswerSecret(answer)
+      }
       .transition(.opacity)
     case .tool(_, let row):
       ToolCallRow(row)

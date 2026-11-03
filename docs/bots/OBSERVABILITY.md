@@ -71,7 +71,7 @@ uses; before that it asserts `used ⊆ declared`.
 | --- | --- |
 | transport | `transport.devtoken.ok`, `transport.devtoken.unsafe` — the development agent token's file, read once at startup: `ok` when it is a usable credential, `unsafe` when it is not, `transport.conn.open.ok`, `transport.conn.open.reject`, `transport.conn.close.ok`, `transport.conn.close.end`, `transport.auth.fail`, `transport.request.fail` (an unexpected HTTP, upgrade or WebSocket dispatch failure, without request content), `transport.frame.recv.ok`, `transport.frame.send.ok`, `transport.frame.send.drop` — a frame that cannot be decoded is `protocol.*`, not a second transport record |
 | protocol | `protocol.decode.fail`, `protocol.encode.fail`, `protocol.limit.fail`, `protocol.version.fail`, `protocol.command.start`, `protocol.command.ok`, `protocol.command.fail` — `ok` means decoded, validated and dispatched (not "succeeded"); `fail` is a propagated refusal after dispatch, or the origin record when no layer below classified the failure |
-| core | `core.catalog.load.ok`, `core.catalog.load.fail`, `core.catalog.write.ok`, `core.catalog.write.fail`, `core.bot.resolve.fail`, `core.bot.open.start`, `core.bot.open.ok`, `core.bot.open.fail`, `core.bot.close.ok`, `core.bot.close.fail`, `core.bot.close.degrade` (quarantine), `core.subscribe.start`, `core.subscribe.ok`, `core.subscribe.fail`, `core.submit.start`, `core.submit.ok`, `core.submit.fail`, `core.history.start`, `core.history.ok`, `core.history.fail`, `core.hub.publish.ok`, `core.hub.coalesce.ok`, `core.hub.snapshot.ok`, `core.hub.degrade`, `core.singleton.start`, `core.singleton.ok`, `core.singleton.fail`, `core.origin.replay.degrade` (an unreadable origin record line), `core.recovery.start`, `core.recovery.bot.ok`, `core.recovery.bot.fail`, `core.recovery.ok`, `core.delete.start`, `core.delete.ok`, `core.delete.fail`, `core.reconcile.ok`, `core.group.write.ok` |
+| core | `core.catalog.load.ok`, `core.catalog.load.fail`, `core.catalog.write.ok`, `core.catalog.write.fail`, `core.bot.resolve.fail`, `core.bot.open.start`, `core.bot.open.ok`, `core.bot.open.fail`, `core.bot.close.ok`, `core.bot.close.fail`, `core.bot.close.degrade` (quarantine), `core.subscribe.start`, `core.subscribe.ok`, `core.subscribe.fail`, `core.submit.start`, `core.submit.ok`, `core.submit.fail`, `core.history.start`, `core.history.ok`, `core.history.fail`, `core.hub.publish.ok`, `core.hub.coalesce.ok`, `core.hub.snapshot.ok`, `core.hub.degrade`, `core.singleton.start`, `core.singleton.ok`, `core.singleton.fail`, `core.origin.replay.degrade` (an unreadable origin record line), `core.recovery.start`, `core.recovery.bot.ok`, `core.recovery.bot.fail`, `core.recovery.ok`, `core.delete.start`, `core.delete.ok`, `core.delete.fail`, `core.reconcile.ok`, `core.group.write.ok`, `core.secret.write.ok`, `core.secret.read.ok`, `core.secret.delete.ok`, `core.secret.reveal.ok`, `core.secret.expire.ok`, `core.secret.fail` |
 | runtime | `runtime.device.start`, `runtime.device.ok`, `runtime.device.fail`, `runtime.open.start`, `runtime.open.ok`, `runtime.open.fail`, `runtime.subscribe.start`, `runtime.subscribe.ok`, `runtime.subscribe.fail`, `runtime.submit.start`, `runtime.submit.ok`, `runtime.submit.fail`, `runtime.abort.start`, `runtime.abort.ok`, `runtime.abort.fail`, `runtime.recover.start`, `runtime.task.retry.ok`, `runtime.task.abort.ok`, `runtime.recover.ok`, `runtime.recover.fail`, `runtime.tools.refresh.ok`, `runtime.tools.refresh.fail`, `runtime.reflection.fail`, `runtime.close.start`, `runtime.close.ok`, `runtime.close.fail`, `runtime.watch.end.ok`, `runtime.failure.classify` |
 | pi | `pi.report`, `pi.session.closed` |
 
@@ -190,6 +190,15 @@ Specifics:
   the log.
 - The daemon token, `BOTS_API_KEY`, and any `sk-`-shaped value are scrubbed from
   every field including `err` and `detail`.
+- Every stored secret value joins that same redaction list while the daemon runs, so a tool
+  argument that carries one — a `bash` command, an HTTP body — cannot reach a log record even
+  at `trace`. The list is scrubbed at four characters rather than at a credential's eight,
+  which is why a secret value shorter than four is refused at the card. The list is loaded from the secrets store at startup and updated on every write
+  and deletion ([EXTENSIONS-AND-TOOLS.md](EXTENSIONS-AND-TOOLS.md) §6.5).
+- `core.secret.*` never carries a key name or a value: `detail` is `{scope}` alone, and the
+  per-record ledger a person can read is `secrets.audit.jsonl`
+  ([EXTENSIONS-AND-TOOLS.md](EXTENSIONS-AND-TOOLS.md) §6.5 "Audit"), which is not a log and is
+  not rotated by the log sink.
 - `detail` keys are whitelisted per event; an undeclared key fails the shape test.
 
 ## Levels

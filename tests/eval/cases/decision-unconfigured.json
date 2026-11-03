@@ -1,0 +1,48 @@
+{
+  "id": "decision-unconfigured",
+  "title": "没有选决策服务商时，决策工具给出可读的拒绝，运行继续",
+  "kind": "decision",
+  "notes": "Like search-unconfigured: a deferred provider-backed tool must fail as a result the model can read when nothing is selected, and the run must still settle.",
+  "toolGroups": ["core", "coding", "decision"],
+  "model": {
+    "script": [
+      {
+        "toolCall": {
+          "name": "tool_search",
+          "args": { "query": "decision assess classify" }
+        }
+      },
+      {
+        "toolCall": {
+          "name": "assess",
+          "args": {
+            "state": "客户说：也许下周再看。",
+            "statement": "客户已经确认要购买"
+          }
+        }
+      },
+      {
+        "text": "决策不可用：还没有选择决策服务商，所以我无法判断。"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "chat",
+      "text": "判断一下这个客户是不是已经确认要买了"
+    }
+  ],
+  "expect": {
+    "messages": [
+      { "role": "user", "origin": "human", "contains": "判断一下" },
+      {
+        "role": "tool",
+        "contains": "决策失败：请先在服务中选择一个已保存 Key 的决策服务商。"
+      },
+      { "role": "assistant", "contains": "决策不可用" }
+    ],
+    "toolsCalled": ["tool_search", "assess"],
+    "noErrors": true,
+    "modelRequests": { "max": 4 }
+  }
+}

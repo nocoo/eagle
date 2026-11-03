@@ -15,6 +15,8 @@ import {
   isThinkingLevel,
   isToolGroup,
   resolveToolGroups,
+  type SecretsPort,
+  SecretsStorageError,
 } from "./core/domain.ts";
 import { newFailure } from "./core/failures.ts";
 import { OriginStore, originPath } from "./core/OriginStore.ts";
@@ -32,6 +34,7 @@ import { encodeServerEvent } from "./protocol/encode.ts";
 import { composePulls, pullPublisher } from "./pulls/host.ts";
 import { createDaemonModels } from "./runtime/pi/models.ts";
 import { PiDurableRuntime, type PiSettings } from "./runtime/pi/PiDurableRuntime.ts";
+import { SecretsStore } from "./secrets/store.ts";
 import { loadToken } from "./server/auth.ts";
 import { ClientStore } from "./server/clients.ts";
 import { armDevToken } from "./server/devToken.ts";
@@ -49,10 +52,11 @@ import {
   testGateway,
   writeGateway,
 } from "./server/gateway.ts";
-import { type Daemon, startServer, type TriggerIngress } from "./server/http.ts";
+import { type Daemon, type SecretsApi, startServer, type TriggerIngress } from "./server/http.ts";
 import {
   PROVIDERS,
   type ProviderApi,
+  type ProviderConfig,
   type ProviderDefinition,
   type PublicProvider,
   providerDefinition,
@@ -65,6 +69,9 @@ import {
 import { acquireLock, LockError } from "./server/singleton.ts";
 import { toServerEvent } from "./server/socket.ts";
 import { UsageStore } from "./server/usage.ts";
+import { ADDRESS_REFUSED, decisionRoot } from "./tools/decision/address.ts";
+import type { DecisionClient } from "./tools/decision/client.ts";
+import { probeDecision, systemOne } from "./tools/decision/systemone.ts";
 import {
   MACHINE_PROMPT_CANDIDATES,
   type MachinePrompt,
@@ -75,6 +82,7 @@ import { createCatalogRegistry, describeToolCatalog } from "./tools/registry.ts"
 import type { SearchClient } from "./tools/search/client.ts";
 import { createDeepSeekSearch } from "./tools/search/deepseek.ts";
 import { createTavilySearch } from "./tools/search/tavily.ts";
+import type { SecretsToolHost } from "./tools/types.ts";
 import { triggerHost } from "./triggers/host.ts";
 import { createIngress } from "./triggers/ingress.ts";
 import { TriggerProducers } from "./triggers/producers.ts";
@@ -168,6 +176,8 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
   const triggerTokens = new Set<string>();
   // A development bearer is a credential like any other: it must never reach a log line.
   const devTokens = new Set<string>();
+  // Every stored secret value joins the redaction list while the daemon runs.
+  const secretValues = new Set<string>();
   const sink = new FileLogSink({ root, minimum: canonical.logLevel });
   const log = new Log(sink.sink, undefined, {
     secrets: () => [
@@ -176,6 +186,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
       ...providers.secrets(),
       ...triggerTokens,
       ...devTokens,
+      ...secretValues,
     ],
   });
   const startup = "tr_boot_1";
@@ -198,6 +209,81 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     throw error;
   }
   log.emit("info", "core", StartupEvents.singletonOk, { trace: startup });
+  // The secrets store (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5): a container that cannot be
+  // read is a refusal, not a reset, and it must not keep the daemon from starting. The
+  // store records its own failure; here it only decides what the rest of the daemon can do.
+  const secretsStore = await SecretsStore.open({
+    dir: canonical.secretsDir,
+    keyPath: canonical.secretsKeyPath,
+    log,
+    trace: startup,
+    onValues: (values) => {
+      secretValues.clear();
+      for (const value of values) secretValues.add(value);
+    },
+  }).catch(() => undefined);
+  if (secretsStore !== undefined) {
+    for (const value of secretsStore.values()) secretValues.add(value);
+    // A daemon that was off for three hours still expires what it should.
+    await secretsStore.sweep().catch(() => undefined);
+  }
+  /** The store behind the card answer; without one a card answer is a refusal. */
+  const secretsPort: SecretsPort = {
+    save: async (input) => {
+      if (secretsStore === undefined) {
+        throw new SecretsStorageError("the secrets store could not be read");
+      }
+      return secretsStore.save(input);
+    },
+    claimAnswer: async (input) => {
+      if (secretsStore === undefined) {
+        throw new SecretsStorageError("the secrets store could not be read");
+      }
+      return secretsStore.claimAnswer(input);
+    },
+    releaseAnswer: async (input) => {
+      if (secretsStore === undefined) return;
+      await secretsStore.releaseAnswer(input);
+    },
+  };
+  /** The tools' host for one Bot; a broken store refuses instead of losing the group. */
+  const secretsHost = (botId: string): SecretsToolHost => {
+    if (secretsStore === undefined) {
+      const refuse = (): never => {
+        throw new SecretsStorageError("the secrets store could not be read");
+      };
+      return {
+        botId,
+        list: refuse,
+        read: refuse,
+        remove: refuse,
+        environment: refuse,
+        envNameFor: refuse,
+      };
+    }
+    return secretsStore.hostFor(botId);
+  };
+  /** The settings page's surface: metadata, and the one route that answers a value. */
+  const secretsApi: SecretsApi = {
+    list: async (input) => {
+      if (secretsStore === undefined) {
+        throw new SecretsStorageError("the secrets store could not be read");
+      }
+      return secretsStore.listAll(input ?? {});
+    },
+    reveal: async (input) => {
+      if (secretsStore === undefined) {
+        throw new SecretsStorageError("the secrets store could not be read");
+      }
+      return secretsStore.reveal(input);
+    },
+    remove: async (input) => {
+      if (secretsStore === undefined) {
+        throw new SecretsStorageError("the secrets store could not be read");
+      }
+      return secretsStore.removeAsPerson(input);
+    },
+  };
   // The development agent's credential is armed here: the file is read once to say
   // whether it is usable, and again on every authentication, so a rewritten file takes
   // effect at once. Without the environment variable there is no reader at all, and no
@@ -368,6 +454,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     corePrompt: () => gateway?.corePrompt,
     machinePrompt: () => machinePrompt(),
     search: () => providers.client,
+    decision: () => providers.decision,
     trigger: async (spec) =>
       triggerHost(spec.id, await triggerStoreFor(spec.id), async (triggerId) => {
         const queue = queues.get(`${spec.id}/${triggerId}`);
@@ -377,6 +464,9 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     // The two markdown scopes are the person's own documents: the daemon only reads and
     // rewrites records, and the host binds this bot's file so the model never names one.
     memory: (spec) => fileMemoryHost({ dir: canonical.memoryDir, botId: spec.id }),
+    // The secrets: the host binds this bot, so the model never names a bot id and never
+    // holds a value.
+    secrets: (spec) => secretsHost(spec.id),
     // The tool owns the line; the catalog owns the truth, and the broadcast is how the
     // sidebar sees it without another read. A settled run writes through the same host.
     note: (spec) =>
@@ -443,6 +533,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     },
     triggersOf: { list: summarize },
     pullsOf: { list: pulls.list },
+    secrets: secretsPort,
     // Every admission is labelled, so an unlabelled message means "unknown", never
     // "human" (TRIGGERS.md §6.2). One file per bot, under its own directory.
     origins: {
@@ -682,6 +773,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     // Built once: the tool surface is fixed at start, and describing it never runs a tool.
     toolCatalog: () => catalogDescriptions,
     triggers: triggerApi,
+    secrets: secretsApi,
     peers: peerApi({
       store: peerStore,
       bots: () => registry.summaries(),
@@ -752,7 +844,13 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
 
 export const createProviderService = async (
   options: { readonly path?: string; readonly fetch?: typeof fetch } = {},
-): Promise<ProviderApi & { readonly client: SearchClient; secrets(): readonly string[] }> => {
+): Promise<
+  ProviderApi & {
+    readonly client: SearchClient;
+    readonly decision: DecisionClient;
+    secrets(): readonly string[];
+  }
+> => {
   const path = options.path ?? providersPath();
   let configs = await readProviders(path);
   let queue = Promise.resolve();
@@ -767,28 +865,60 @@ export const createProviderService = async (
       : createTavilySearch(http);
   };
   const selectedClient = (): SearchClient => {
-    const definition = selectedProvider(configs);
+    const definition = selectedProvider(configs, "search");
     if (definition === undefined) throw new Error("请先在服务中选择一个已保存 Key 的搜索服务商。");
     return clientFor(definition);
   };
   const save: ProviderApi["save"] = async (id, input) => {
     const definition = providerDefinition(id);
     if (definition === undefined) return { error: `未知的服务：${id}` };
+    if (
+      definition.service !== "decision" &&
+      (input.baseUrl !== undefined || input.model !== undefined)
+    ) {
+      return { error: "搜索服务没有可覆盖的地址或模型" };
+    }
     const current = configs[id] ?? { apiKey: "", enabled: false };
     const apiKey = input.apiKey === undefined ? current.apiKey : input.apiKey.trim();
-    if ((input.apiKey !== undefined || input.enabled === true) && apiKey.length === 0) {
+    if (
+      definition.keyRequired &&
+      (input.apiKey !== undefined || input.enabled === true) &&
+      apiKey.length === 0
+    ) {
       return { error: "请先保存 API Key" };
     }
-    const next = { ...configs, [id]: { apiKey, enabled: input.enabled ?? current.enabled } };
-    if (input.enabled === true) {
-      for (const provider of PROVIDERS) {
-        const config = next[provider.id];
-        if (config !== undefined && provider.id !== id)
-          next[provider.id] = { ...config, enabled: false };
+    const next: { -readonly [K in keyof ProviderConfig]: ProviderConfig[K] } = {
+      apiKey,
+      enabled: input.enabled ?? current.enabled,
+    };
+    if (current.baseUrl !== undefined) next.baseUrl = current.baseUrl;
+    if (current.model !== undefined) next.model = current.model;
+    if (input.baseUrl !== undefined) {
+      const typed = input.baseUrl.trim();
+      if (typed.length === 0) {
+        delete next.baseUrl;
+      } else {
+        const root = decisionRoot(typed);
+        if (root === undefined) return { error: ADDRESS_REFUSED };
+        if (root === definition.baseUrl) delete next.baseUrl;
+        else next.baseUrl = root;
       }
     }
-    await writeProviders(next, path);
-    configs = next;
+    if (input.model !== undefined) {
+      const model = input.model.trim();
+      if (model.length === 0 || model === definition.model) delete next.model;
+      else next.model = model;
+    }
+    const saved = { ...configs, [id]: next };
+    if (input.enabled === true) {
+      for (const provider of PROVIDERS) {
+        if (provider.id === id || provider.service !== definition.service) continue;
+        const config = saved[provider.id];
+        if (config !== undefined) saved[provider.id] = { ...config, enabled: false };
+      }
+    }
+    await writeProviders(saved, path);
+    configs = saved;
     return {
       provider: publicProviders(configs).find((provider) => provider.id === id) as PublicProvider,
     };
@@ -796,6 +926,29 @@ export const createProviderService = async (
   return {
     public: () => publicProviders(configs),
     secrets: () => Object.values(configs).map((config) => config.apiKey),
+    // Resolved per call, so a new key or another relay applies to the next judgment. This is the
+    // only place a tool reaches a decision provider, and it never falls back to another one.
+    decision: {
+      ask: async (request, signal) => {
+        const definition = selectedProvider(configs, "decision");
+        if (definition === undefined) {
+          throw new Error("请先在服务中选择一个已保存 Key 的决策服务商。");
+        }
+        const config = configs[definition.id];
+        return systemOne(
+          {
+            baseUrl: config?.baseUrl ?? definition.baseUrl,
+            model: config?.model ?? definition.model,
+            apiKey: config?.apiKey ?? "",
+          },
+          request,
+          {
+            ...(signal === undefined ? {} : { signal }),
+            ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+          },
+        );
+      },
+    } satisfies DecisionClient,
     save(id, input) {
       const result = queue.then(() => save(id, input));
       queue = result.then(
@@ -806,8 +959,22 @@ export const createProviderService = async (
     },
     async test(id) {
       const definition = providerDefinition(id);
-      if (definition === undefined || !configs[id]?.apiKey.trim()) {
+      if (definition === undefined) {
+        return { ok: false, message: `未知的服务：${id}`, latencyMs: 0 };
+      }
+      const config = configs[id];
+      if (definition.keyRequired && !config?.apiKey.trim()) {
         return { ok: false, message: "还没有保存这个服务的 API Key", latencyMs: 0 };
+      }
+      if (definition.kind === "systemone") {
+        return probeDecision(
+          {
+            baseUrl: config?.baseUrl ?? definition.baseUrl,
+            model: config?.model ?? definition.model,
+            apiKey: config?.apiKey ?? "",
+          },
+          options.fetch === undefined ? {} : { fetch: options.fetch },
+        );
       }
       const started = performance.now();
       try {

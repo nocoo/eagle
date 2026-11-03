@@ -106,12 +106,16 @@ version, the instance id, the pid and a bot count, never bot content.
 | `PATCH` | `/v1/groups/:id` | `{ "title" }` | `{ "group": BotGroup }` |
 | `PUT` | `/v1/groups/order` | `{ "ids": [string] }` — every group once, in display order | `{ "groups": [BotGroup] }` |
 | `DELETE` | `/v1/groups/:id` | — | `204`, or `409` while a bot is filed under it |
-| `GET` | `/v1/providers` | — | `{ "providers": [Provider] }` |
-| `PUT` | `/v1/providers/:id` | `{ "apiKey"?, "enabled"? }` | `{ "provider": Provider }` |
-| `POST` | `/v1/providers/:id/test` | — | `{ "result": { "ok", "message", "latencyMs", "results"? } }` |
+| `GET` | `/v1/providers` | — | `{ "providers": [Provider] }` — both services in one list |
+| `PUT` | `/v1/providers/:id` | `{ "apiKey"?, "enabled"?, "baseUrl"?, "model"? }` | `{ "provider": Provider }` |
+| `POST` | `/v1/providers/:id/test` | — | `{ "result": { "ok", "message", "latencyMs", "results"?, "model"?, "resolvedModel"? } }` |
 | `GET` | `/v1/usage?days=` | — | `{ "usage": UsageReport }` — statistics over the daemon's retained days |
 | `GET` | `/v1/models` | — | `{ "models": [string] }` — the gateway's ids, empty when it cannot be asked |
 | `POST` | `/v1/bots/:botId/answers` | `{ "entryId", "answers"?: [[label]], "skipped"?: true }` | `{ "submission": Submission }` |
+| `POST` | `/v1/bots/:botId/secrets` | `{ "entryId", "callIndex"?, "key", "value", "scope"?, "ttlMinutes"?: number \| null, "skipped"?: true }` | `{ "submission": Submission }` |
+| `GET` | `/v1/secrets` | — | `{ "secrets": [Secret] }` — metadata only, never a value |
+| `POST` | `/v1/secrets/reveal` | `{ "key", "scope", "botId"? }` | `{ "secret": { "key", "scope", "botId", "value" } }` — requires `admin` |
+| `DELETE` | `/v1/secrets/:scope/:key?botId=` | — | `204`, or `404` for an unknown record — requires `admin` |
 | `GET` | `/v1/settings` | — | `{ "settings": GatewaySettings, "machinePrompt": MachinePrompt \| null, "tools"?: [ToolGroup] }` |
 | `GET` | `/v1/clients` | — | `{ "clients": [Client] }` — requires `admin` |
 | `POST` | `/v1/clients` | `{ "name", "scopes" }` — fields follow `CLI.md` rules | `201 { "client": Client, "token" }` — requires `admin`, the token is answered once |
@@ -393,28 +397,57 @@ revision and ignore it under I8.
 
 ## Providers
 
-Third-party services a bot's tools may call. The catalogue is code (`id`, `title`,
-`kind`, `baseUrl`, `docsUrl`, `keyLabel`); the first entry is `deepseek-search`, whose
-search and fetch APIs back the `web_search`/`web_fetch` tools. The search section
-also offers `tavily-search`. Each provider stores one independent key; the user
-selects at most one provider to serve both operations.
+Third-party services a bot's tools may call, in two services that are chosen apart.
+
+| Service | Serves | Providers (`id`) |
+| --- | --- | --- |
+| `search` | `web_search` / `web_fetch` | `deepseek-search`, `tavily-search` |
+| `decision` | System One questions (`POST /v1/systemone`) | `typesafe`, `falcon`, `falcon-relay`, `jev-relay`, `raven` |
+
+The catalogue is code (`id`, `title`, `service`, `kind`, `baseUrl`, `model`, `docsUrl`,
+`keyLabel`, `keyRequired`). Every decision provider speaks the same TypeSafe System One
+protocol, so only its address, model name and key rule differ:
+
+| `id` | Address | Model | Key |
+| --- | --- | --- | --- |
+| `typesafe` | `https://api.typesafe.ai` | `jev-latest` | TypeSafe API key |
+| `falcon` | `http://127.0.0.1:19823` | `jev-latest` | Falcon source key |
+| `falcon-relay` | `https://falcon.hexly.ai` | `jev-latest` | relay Bearer token |
+| `jev-relay` | `http://127.0.0.1:3425` | `typesafe/jev-latest` | optional: the relay may carry its own |
+| `raven` | `http://127.0.0.1:7024` | `microsoft-decision-1` | Raven API key |
+
+`baseUrl` is the API root: the daemon appends `/v1/systemone`. A typed root ending in `/v1`
+or `/v1/systemone` collapses to the same root, so the field accepts the address a person
+already uses for the model gateway. Credentials (`user:pass@`), a query and a fragment are
+refused: the public shape echoes the address back, and the appended path cannot survive one
+that already carries them.
 
 ```json
-{ "id": "deepseek-search", "title": "DeepSeek 搜索", "kind": "deepseek-search",
-  "baseUrl": "https://api.deepseek.com",
-  "docsUrl": "https://api-docs.deepseek.com/guides/search/",
-  "keyLabel": "DeepSeek API Key", "hasApiKey": true, "enabled": true }
+{ "id": "jev-relay", "title": "Jev 中转站", "service": "decision", "kind": "systemone",
+  "baseUrl": "http://127.0.0.1:3425", "model": "typesafe/jev-latest",
+  "docsUrl": "", "keyLabel": "中转站 API Key（可留空）", "keyRequired": false,
+  "hasApiKey": false, "enabled": true,
+  "defaults": { "baseUrl": "http://127.0.0.1:3425", "model": "typesafe/jev-latest" } }
 ```
 
 - **The key is write-only and lives in the user's config**, not in the daemon root or a
   bot's directory: `<XDG_CONFIG_HOME or ~/.config>/eagle-bots/providers.json`, mode 0600. A
-  `PUT` with an omitted key keeps the stored one; an empty key is a `400` and writes nothing.
-  The public shape only says whether a key is set.
-- **Selection is exclusive.** `PUT` with `enabled: true` requires a saved or supplied
-  nonblank key and atomically deselects the other search providers without deleting
-  their keys. Saving only a key never changes selection. `enabled: false` deselects
-  that provider. Concurrent saves serialize; failed writes change neither keys nor
-  the active route. Ambiguous persisted selections do not pick a provider by order.
+  `PUT` with an omitted key keeps the stored one; an empty key for a provider whose
+  `keyRequired` is true is a `400` and writes nothing, while an empty key for a provider
+  that does not need one clears it. The public shape only says whether a key is set.
+- **Selection is exclusive within a service and independent across them.** `PUT` with
+  `enabled: true` requires a saved or supplied nonblank key when `keyRequired` is true, and
+  atomically deselects the other providers of the same service without deleting their keys.
+  Choosing a decision provider never changes the search choice, and the reverse holds.
+  Saving only a key never changes selection; `enabled: false` deselects that provider.
+  Concurrent saves serialize; failed writes change neither keys nor the active route.
+  Ambiguous persisted selections do not pick a provider by order.
+- **`baseUrl` and `model` are overridable per provider.** A `PUT` that sends them stores an
+  override only while it differs from the catalogue value, so an address or a model name can
+  move without a release; an empty string reverts to the catalogue value. `defaults` always
+  reports what the catalogue says, and the public `baseUrl`/`model` are the values in use.
+  An address must be an absolute `http`/`https` URL; a search provider has neither field and
+  refuses them with a `400`.
 - **The Bot API is provider-independent.** `web_search(query, count?, needContent?)`
   and `web_fetch(url)` keep identical schemas, results and usage accounting. The
   daemon installs its routing client even before a provider is selected; the optional
@@ -422,9 +455,69 @@ selects at most one provider to serve both operations.
   returns a configuration error and sends no external request. Selection/key changes
   apply at the next invocation, including existing conversations. In-flight requests
   retain their original client. Failures never fall back to another provider.
-- **`test` spends one search**: it asks the provider for a single result and reports
-  reachability, the message and the latency. It saves nothing.
+- **`test` spends one real call.** A search provider is asked for a single result. A
+  decision provider is asked one minimal `choice` question with two criteria, because a
+  model listing cannot prove a relay: `jev-relay` answers `/v1/models` from a cache that
+  does not even list its Jev model. The result reports ok, a message, the latency, and
+  for a decision the model asked for (`model`) and the model named in the answer
+  (`resolvedModel`, absent when the answer names none: the requested alias is not evidence
+  of what answered). An answer is usable only when its winner is one of the criteria (own
+  keys, not prototype names), its probabilities are a distribution over exactly those
+  criteria within the same 0.02 rounding tolerance Falcon uses, and its confidence, when
+  present, is in `[0,1]`. Anything else, or a key the provider refuses, is a failed probe;
+  nothing is saved.
 - An unknown provider is a `400`; a refused key reads as "the provider refused the API key".
+- **A selected decision provider also backs the `decision` tool group** (`decide`, `classify`,
+  `assess`, `rate`, `judge`): each tool call is one `POST /v1/systemone`, the selection is read
+  per call, and a missing selection is a tool error rather than a silent fallback. The group is
+  off by default.
+
+## Secrets
+
+A Bot asks for a password on a card; the person types it; the daemon stores it out of the
+transcript and hands the value back only to the Bot that asked, or to every Bot when the person
+ticked 共享. The model never supplies a value on any path, and no response ever echoes one
+([EXTENSIONS-AND-TOOLS.md](EXTENSIONS-AND-TOOLS.md) §6.5 owns the tools, the card and the
+container).
+
+```json
+// Secret: the metadata a list returns. The value is never part of it.
+{ "key": "github-pat", "scope": "shared", "botId": "b_0190a1b0",
+  "purpose": "发布 Eagle 用", "createdAt": "2026-11-03T01:10:00.000Z",
+  "updatedAt": "2026-11-03T01:10:00.000Z", "expiresAt": "2026-11-03T02:10:00.000Z",
+  "lastUsedAt": "2026-11-03T01:20:00.000Z", "lastUsedBy": "bot" }
+```
+
+- **A record is identified by `(scope, key)` and, for a bot's own record, by its bot.** Two bots
+  may use the same name, so `reveal` and `DELETE` refuse a `bot` record without `botId` instead
+  of acting on whichever record came first; a `shared` record is one per key.
+- **The card answer is a submission, like an `ask_user` answer.** `entryId` is the transcript
+  entry carrying the `secret_request` call and `key` must be that call's key: a client cannot
+  rename a record or answer a card it did not see. `callIndex` names which card of that entry
+  when one answer asked for two passwords, and a card that was already answered is a `400`
+  rather than a second write. Answers are serialised per card, so two clients arriving at once
+  cannot both be admitted.
+- **A secret answer is namespaced.** Its hidden input carries `answersTo: "secret:<entryId>"`
+  (`"secret:<entryId>#<index>"` for a second card), never the bare entry id: one answer may hold
+  an `ask_user` call and a `secret_request` call, and the two answers must not close or spend
+  each other. The answer stores the value and the daemon
+  composes one hidden user input the Bot reads next (`hidden: true`, `answersTo: entryId`).
+- **The value is written, never read back, on this route.** The response carries the
+  `Submission` and nothing else; `value` is required and bounded to 8 KiB, and `skipped: true`
+  stores nothing and says so. `scope` narrows or widens what the Bot proposed (`bot` or
+  `shared`), and `ttlMinutes` (1–1440, or `null` for permanent) overrides the Bot's suggestion:
+  the person has the last word on both.
+- **Metadata is readable, values are not.** `GET /v1/secrets` answers every record with `read`
+  scope and no value. `POST /v1/secrets/reveal` is the only route that answers a value and it
+  requires `admin`; `DELETE` does too, because deleting a shared password is destructive.
+  `lastUsedAt`/`lastUsedBy` come from the audit ledger, so a client can show when a Bot last
+  used a record without reading the log.
+- **Expiry is lazy.** A record past `expiresAt` is deleted by the call that would have read it,
+  by a list, or by the daemon's startup sweep; it is never returned as a stale value. An expired
+  or unknown key speaks exactly like a missing one, which the tools report as a refusal.
+- **A corrupt or undecryptable store is a refusal.** `GET /v1/secrets` answers `503` with
+  `storage_failed` rather than an empty list, so a client never shows "no passwords" when it
+  means "cannot read them"; nothing is deleted or rewritten.
 
 ## Usage statistics
 
@@ -445,9 +538,11 @@ and on every write.
                { "source": "search", "totalTokens": 0, "calls": 40, "costUsd": 0 } ] } }
 ```
 
-- Sources: `model` spends tokens, `search` spends calls (one per search or fetch); `sources`
-  lists each one's share, busiest first, so a client shows where the work went. `model` and
-  `search` are today's set; the store keys on a string, so the next spender needs no migration.
+- Sources: `model` spends tokens, `search` spends calls (one per search or fetch), and
+  `decision` spends input tokens (one per judgment; Jev bills input only and output is free,
+  so a relay whose price is unknown is never given a made-up cost); `sources` lists each one's
+  share, busiest first, so a client shows where the work went. The store keys on a string, so
+  the next spender needs no migration.
 - The first schema counted tokens only; the daemon migrates that day table into the `model`
   source when it opens the store.
 - `days` is the requested window (1–90, default 30), oldest first, with a zero row for a day
@@ -504,7 +599,9 @@ The `usage` capability is `true`.
   "blocks": [ { "type": "text", "text": "巴黎。" } ],
   "requestId": "r_0190a1b3",             // user messages only; ties the entry to a send
   "hidden": true,                        // optional: the person's answer to ask_user
-  "answersTo": "e_12"                    // optional: the ask_user call this hidden input closes
+  "answersTo": "e_12"                    // optional: the card this hidden input closes. A
+                                         // secret card is "secret:e_12", and the second card of
+                                         // one answer "secret:e_12#1"
 }
 
 // Messages are never split or clipped. The bound is structural: assistant answers are

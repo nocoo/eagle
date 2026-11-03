@@ -1,5 +1,65 @@
 # 用户视角检查点
 
+## 2026-11-03 14:00 +08 — Merge acceptance and dev App restart
+
+- The foreground Eagle Dev and its daemon were restarted from the merged working tree; the
+  daemon listens on the original local port with the original device-policy binding. The
+  development CLI authenticated, and the dedicated acceptance Bot used `memory_read` and
+  `note_set` after the restart. Herdr collection and D1 were not exercised in this checkpoint;
+  the App was built and started, but its visible screen was not independently inspected.
+- The isolated-HOME acceptance suite passed all 20 cases, including reflection and the mocked
+  decision provider. A review found that the default eval configuration can otherwise resolve
+  the real user's secrets paths; do not run it without an isolated home until fixed.
+- The live daemon still reports `secrets` and `decision` disabled; the next broken hop is saving
+  the tool settings in the intended App and then testing the password card and decision. The
+  merge remains uncommitted; root dependency installation was blocked by the approved mirror.
+
+## 2026-11-03 13:10 +08 — `secrets` 三轮审查结束，门禁全绿
+
+- 第三轮复核 A–M：其中 6 条在上一轮已真正关闭（G/H/M/部分 I/K），其余按最小修法补齐：
+  卡片凭据落进容器内（`answers`，重启也不可重复消费）＋提交 id 由 (bot, 卡片) 派生而非随机；
+  锁先用 scratch 写全再用 link 发布，不会出现空锁；环境导出按真实导出结果回答 `secret_read`
+  （不再承诺一个没给的变量）、按 UTF-8 字节计算 64 KiB、按 newest 保留，并把每次导出记成
+  ledger 的 read；组开关在 refresh 后双向生效；卡片编号按所有 secret 调用计数。
+- 门禁：`apps/bots` check 966 通过（95.54 / 88.57 / 90.53）；根 check 官方 Node 26 全绿
+  （265）；`apps/macos` 419、`apps/bots-macos` 148 全过，两包 strict format 干净。顺带把
+  `BotsFeaturesTests` 里一个对两次并发发送顺序的断言改成契约本身（一次排队一次 steer），
+  那是既有 flake，不是本次引入。
+- 三轮上限已用完，不再开审查；未验证项仍是那三项：渲染 App 对活 daemon 手工作答、人工验收
+  卡片与「密码」页、Time Machine/整机备份边界（文档明确不防）。
+
+## 2026-11-03 12:05 +08 — `secrets` 第二轮审查后定稿
+
+- 第二轮只读审查复核了第一轮 18 条：11 条确实关闭、7 条只是"表面关闭"，另发现 4 条新的 P1
+  （A–D）与 9 条 P2（E–M），现在全部处理：卡片答案按卡串行化并加 `secret:` 命名空间（避免
+  同一 entry 里 ask_user 与密码卡互相顶掉）、环境导出改为锁内 fresh load 并跟随工具组开关、
+  锁改为 pid+token 所有权（不再按年龄抢活锁）、值含 NUL 或过短在存储前拒绝、审计读失败
+  与目录权限都按契约报错、trace 只按凭据长度脱敏（保住日志与审计的关联键）、卡片正文与
+  header 共用同一个取消状态、reveal 迟到响应按页面 generation 丢弃。
+- 门禁：`apps/bots` check 964 通过（95.55 / 88.56 / 90.64）；根 check 官方 Node 26 全绿
+  （265）；`apps/macos` 419、`apps/bots-macos` 148 全过，两个包 strict format 干净。
+- 仍未有：从渲染出的 App 对活 daemon 手工作答一次；人工验收卡片与「密码」页；Time
+  Machine/整机备份边界按文档明确不防。
+
+## 2026-11-03 10:20 +08 — `secrets` 组第一轮审查后修正并全绿
+
+- 第一轮只读审查（`group/reviewing` xhigh）提出 18 条，全部关闭。最重的一条：`secret_read`
+  原本把明文当 tool result 返回，而 tool result 是不可变地写进 transcript 的，等于密码永久
+  落在 bot 的 SQLite 里、任何有会话读权限的客户端都能拿到。现在值只以环境变量
+  `EAGLE_SECRET_<KEY>` 交给 Bash，`secret_read` 只回答「记录是什么 + 用哪个变量」；新增一个
+  sentinel 值班测试，断言该值在 events 与 history 里一次都不出现。
+- 其余：记录身份改为 `(scope, botId, key)`（两个 bot 同名不再串行）、卡片只能被回答一次
+  （重放被拒，不再重复写值/延长 TTL）、`secret_delete` 必须显式给 scope（重放不会掉进 shared）、
+  一张回答里两张卡的 `callIndex` 与 `answersTo: e_#n`、过期项不再遮蔽 shared、容器里非法
+  `expiresAt` 直接拒绝整库、keyfile 用 link 原子发布且拒绝 0644、目录不可被他人写、审计写失败
+  不再把已保存的密码报成失败、日志脱敏按 4 字符（更短的值在卡片阶段就拒绝）、跨 daemon 的
+  `secrets.lock`、隐藏消息用最终 TTL 而不是卡片建议、Swift 侧工具组词汇/共享值/跳过态。
+- 门禁：`apps/bots` check 957 通过（95.36 / 88.72 / 90.47）；根 check 用官方 Node 26 全绿
+  （265 测试 + typecheck + lint + build，Homebrew Node 会让 device-runtime 两例失败，这是
+  既有环境限制）；`apps/macos` 419、`apps/bots-macos` 148 全过，两个包 strict format 干净。
+- 未验证：仍没有从渲染出的 App 对活 daemon 真实作答一次；没有人工看过卡片与「密码」页；
+  Time Machine/整机备份这条边界仍是文档里写明的「不防」。
+
 ## 2026-11-03 10:17 +08 — reflection verified through an isolated CLI
 
 - The current implementation ran against a real local model through `eagle-dev` in an
@@ -50,7 +110,7 @@
 - The isolated `eagle-dev` conversation reached the local real model and showed three
   `note_set` calls as its topics moved from venue to invitations to cat food. Its notes
   followed those topics; this is evidence for an earlier local build, not the current tree.
-  Authentication used a temporary dev credential, not production credentials. Herdr
+  Authentication used a temporary development token, not production credentials. Herdr
   collection, Cloudflare authentication, D1 and installed-App rendering were not exercised.
 - `npm run check` stopped at one saved-gateway test expecting one model request, because
   the new reflection makes another. `npm run eval` failed multiple cases: the scripted model
@@ -75,6 +135,22 @@
 - Scripted runtime tests cover a reflection failure, an interrupted generation whose answer
   changes on reopen, and retrying a failed catalog write. The full Bots gate, model-usage
   accounting, final-code CLI replay and read-only review are still outstanding.
+
+## 2026-11-03 08:40 +08 — `secrets` 工具组：契约定稿，双 pane 实现中
+
+- 契约已写进三份文档并作为唯一来源：`EXTENSIONS-AND-TOOLS.md` §6.5（容器格式 v1、
+  keyfile 分离、两个 scope、卡片参数、四个工具、惰性过期、审计文件、refusal 清单）、
+  `PROTOCOL.md`「Secrets」+ 四条 HTTP 路由、`OBSERVABILITY.md` 的 `core.secret.*` 与两条
+  redaction 规则。
+- 哥拍板的七项：AES-256-GCM + 分离 keyfile（不是 Keychain）；bot 可读明文、共享与否由人在
+  卡片决定且 bot 可预置；密文/审计在 `~/.config/eagle-bots`；共享记录只有创建者可被 bot 删除；
+  `temporary` 默认 1 小时、bot 可按语义设 `ttlMinutes`、上限 24 小时；过期惰性 + 启动扫描；
+  不做生成密码按钮。审计另存 `secrets.audit.jsonl`，日志另存 `core.secret.*` 行为事件。
+- 两个受控 pane 并行：`w18:pF` 只写 `apps/bots/`（容器、keyfile、store、审计、四个工具、
+  卡片答案 HTTP、事件、测试），`w18:pG` 只写 `apps/macos` + `apps/bots-macos`（卡片 UI、
+  运输层、`密码` 设置页、测试）。主控保留根门禁、文档、commit。
+- 未验证：尚无任何实现落地，两个 pane 都未跑完各自门禁；`npm run check`（根）、
+  `test:browser`、真机 dev App 手工验收都还没做。
 
 ## 2026-11-03 07:01 +08 — macOS 0.17.0 asset published
 
@@ -3049,3 +3125,79 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 - Next: verify current-head CI and report the device pairing failure if it
   persists. Failed checks skipped automatic deployment; no live deployment was
   manually initiated.
+
+## 2026-11-03 05:53 +08 — Decision providers on the 服务 page
+
+- The daemon's provider catalogue now serves two services: `search` (unchanged) and
+  `decision` (`typesafe`, `falcon`, `falcon-relay`, `jev-relay`, `raven`). Selection is
+  exclusive within a service and independent across them; a decision provider stores an
+  optional address and model override; `test` sends one minimal `choice` question and
+  reports the resolved model. `apps/bots` `check` passed (coverage 95.13/88.49/90.45),
+  root `npm run check` passed with the official Node 26 build, and both Swift packages'
+  tests and strict formatting pass.
+- Verified by hand against the real endpoints before implementing: the official TypeSafe
+  root answers `/v1/systemone` and `/v1/models` with the owner's test key; `jev-relay` on
+  `127.0.0.1:3425` answers `typesafe/jev-latest` with the official answer shape and
+  ignores the client key; it answers `/v1/models` from a cache that omits that model, which
+  is why the probe is a real decision instead of a listing. Falcon's local port answered
+  401 without a source key; Raven was not running.
+- Two review rounds ran in a reviewing pane. The first found a credential-bearing address
+  that the page would echo, a `?`/`#` address that broke the appended path, a prototype-name
+  choice and a non-normalized distribution accepted as an answer, a fabricated
+  `resolvedModel`, no way to clear an optional relay key, a page-level read error attributed
+  to one card, and no test for the keyless relay in the UI. All are closed by `2129bce` and
+  the follow-up: the address rule moved beside the store so a stored value is re-checked
+  before publication, an answer must carry a distribution over the criteria, the row's
+  buttons come from tested predicates, and a failed read stays on the page. Rendered-tree
+  tests cover what the row shows; button *enablement* is asserted through those predicates
+  because this App has no XCTest target and SwiftUI does not publish an accessible enabled
+  state through this hosting path. Adding the `?`/`#` and distribution cases re-ran every
+  gate above, all green. A third round found the new layout test reading the machine's own
+  daemon: the fixture now answers that read from an injected URL stub, so the rows come from
+  the page's real load path and no fixture token leaves the process.
+- Not verified: the App's own page against a live daemon (the owner's dev App run is next),
+  Raven and Falcon with real credentials, authentication and D1 (unchanged by this work).
+
+## 2026-11-03 06:40 +08 — Decision providers, live through the App's daemon
+
+- The owner's daemon was restarted from the new build (the previous one predated the
+  catalogue, so its page could not decode the new rows). Against it, through the same
+  `PUT`/`POST` the settings page uses: `typesafe` saved with the owner's test key and
+  probed ok — `jev-1.14.0`, 495 ms; `jev-relay` probed ok with no key at all —
+  `jev-1.14.0`, 628 ms; `falcon` and `raven` refused in 0 ms because no key is stored,
+  which is the designed path and never reaches the network.
+- Still unverified: Falcon with a real source key, Raven (not running on 7024), the
+  Falcon relay with a real token, authentication and D1. The App's rendering of these
+  rows is covered by the rendered-tree suite and the owner's dev App, not by a live
+  screenshot.
+
+## 2026-11-03 07:20 +08 — The decision tool group
+
+- A new `decision` tool group (off by default) gives a bot five tools over the selected decision
+  provider: `decide` (choice), `classify` (single choice or per-label Noul fan-out in **one**
+  request), `assess` (Noul), `rate` (score) and `judge` (mixed questions in one request). The
+  System One transport moved into `tools/decision/` so its reply contract and the tools that
+  consume it live together; `server/` reaches exactly one file there, the address rule, which
+  the architecture allowlist now records.
+- `npm run check` in `apps/bots` passed (coverage 95.17/88.18/90.69; `systemone.ts`
+  100/89.7/100), root `npm run check` passed with the official Node 26 build, `apps/macos` and
+  `apps/bots-macos` tests pass with strict formatting, and the 工具 page snapshot shows the new
+  row. Not verified: a real bot run against the live provider (the acceptance is the owner's dev
+  App plus a `tests/eval` pass), the relay paths with real credentials, authentication and D1.
+- The first review round on the tool group found eight defects, all now closed with a test
+  each: two option sets with a comma inside a name compared equal; a `__proto__` label was
+  silently dropped; `allowNone` could overwrite a caller's own `none` label; judge accepted a
+  number as a criterion and dropped a noul's array criteria; a legal but huge label set could
+  arrive as a clipped "successful" answer; a failing usage write discarded a paid answer; a
+  zero-token answer booked nothing at all; and a blank `question` reached the provider. The
+  answer budget is now refused before the request, the booking never takes the answer down,
+  and a zero-token call is booked as one call. `apps/bots` check, both Swift packages, the root
+  check and both decision eval cases were re-run after the fixes.
+- A second round found the size budget still a lower bound in three ways: classify's printed
+  label ranking was not counted, a probability was projected as `0.5` instead of the longest
+  number a JSON float can take, and the choice winner was always the last option. The bound is
+  now measured from the request with worst-case values (longest escaped option as the winner,
+  longest JSON number per probability, the printed ranking as an extra) plus a per-answer line.
+  Round three's remaining findings are closed by that change; the review budget is spent, so
+  the last measurement was verified by its three new tests and the full gates, not a fourth
+  review round.

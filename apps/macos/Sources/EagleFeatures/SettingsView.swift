@@ -19,6 +19,10 @@ public struct SettingsView: View {
   private static let fieldWidth: CGFloat = 300
   /// Which tool groups are open; collapsed by default, the page reads as a list of switches.
   @State private var expandedToolGroups: Set<String> = []
+  /// Which decision provider shows its address and model fields.
+  @State private var expandedProviderDetails: Set<String> = []
+  /// The record a person is about to delete; nil while no confirmation is up.
+  @State private var removingSecret: Secret?
 
   public init(
     model: SettingsViewModel = SettingsViewModel(),
@@ -26,10 +30,12 @@ public struct SettingsView: View {
     daemon: BotsDaemonSupervisor? = nil,
     devices: DeviceSettingsViewModel = .shared,
     showsCloseButton: Bool = true,
-    expandsToolGroups: Set<String> = []
+    expandsToolGroups: Set<String> = [],
+    expandsProviderDetails: Set<String> = []
   ) {
     _model = StateObject(wrappedValue: model)
     _expandedToolGroups = State(initialValue: expandsToolGroups)
+    _expandedProviderDetails = State(initialValue: expandsProviderDetails)
     self.onClose = onClose
     self.daemon = daemon
     self.devices = devices
@@ -51,6 +57,8 @@ public struct SettingsView: View {
         prompts
       case .providers:
         providersPage
+      case .passwords:
+        passwords
       case .machines:
         DeviceSettingsView(model: devices)
       case .cli:
@@ -365,6 +373,10 @@ public struct SettingsView: View {
         group: SettingsViewModel.memoryToolGroup)
       Divider().overlay(Theme.Palette.line)
       toolGroupRow(
+        "secrets", "密码", detail: "Bot 需要密码时弹一张卡片要你填，值加密存放、不进对话记录；在“密码”页管理",
+        group: SettingsViewModel.secretsToolGroup)
+      Divider().overlay(Theme.Palette.line)
+      toolGroupRow(
         "herdr", "Herdr 终端协作", detail: "把终端工作区当作 Bot 的手脚：开、派发、读回",
         group: SettingsViewModel.herdrToolGroup)
       Divider().overlay(Theme.Palette.line)
@@ -375,6 +387,10 @@ public struct SettingsView: View {
       toolGroupRow(
         "search", "搜索", detail: "按需查网页并读正文；服务商在“服务”里配置",
         group: SettingsViewModel.searchToolGroup)
+      Divider().overlay(Theme.Palette.line)
+      toolGroupRow(
+        "decision", "决策", detail: "向决策模型要结构化判断：分类、是/否概率、评分，以及一次问多题；服务商在“服务”里配置",
+        group: SettingsViewModel.decisionToolGroup)
       Divider().overlay(Theme.Palette.line)
       toolGroupRow(
         "trigger", "触发器", detail: "让 Bot 自己安排定时任务与 Webhook；开关在侧栏",
@@ -538,44 +554,206 @@ public struct SettingsView: View {
   }
 
   private var providersPage: some View {
-    sectionCard(
-      "搜索", detail: "网页检索与正文提取，共用一个服务商"
-    ) {
+    VStack(alignment: .leading, spacing: 12) {
+      if let error = model.providerLoadError {
+        SettingsSectionNote(error, destructive: true)
+          .padding(.horizontal, 4)
+      }
+      providerSection(
+        ProviderSettings.searchService,
+        title: "搜索",
+        detail: "网页检索与正文提取，共用一个服务商",
+        offLabel: "不使用搜索服务"
+      )
+      providerSection(
+        ProviderSettings.decisionService,
+        title: "决策",
+        detail: "快速分类与判断；测试会真发一次最小决策，消耗少量 token",
+        offLabel: "不使用决策服务"
+      )
+    }
+    .task { await model.loadProviders() }
+  }
+
+  private func providerSection(
+    _ service: String,
+    title: String,
+    detail: String,
+    offLabel: String
+  ) -> some View {
+    let listed = model.providers(in: service)
+    return sectionCard(title, detail: detail) {
       HStack(spacing: 10) {
         if model.providerBusy { SpinnerArc(size: 12) }
-        searchProviderMenu
+        providerMenu(service: service, listed: listed, offLabel: offLabel)
       }
     } body: {
-      ForEach(Array(model.providers.enumerated()), id: \.element.id) { index, provider in
+      ForEach(Array(listed.enumerated()), id: \.element.id) { index, provider in
         if index > 0 { Divider().overlay(Theme.Palette.line) }
-        searchProviderRow(provider)
+        providerRow(provider)
       }
-      if let message = model.providerMessage {
+      if let message = model.providerMessage,
+        model.providerMessageService == nil || model.providerMessageService == service
+      {
         Divider().overlay(Theme.Palette.line)
         SettingsSectionNote(message)
           .padding(.top, 12)
       }
     }
-    .task { await model.loadProviders() }
   }
 
-  private var searchProviderMenu: some View {
-    Menu {
-      Button("不使用搜索服务") {
-        if let selected = model.selectedSearchProvider {
-          Task { await model.setProviderEnabled(selected.id, false) }
+  /// The 密码 page: the records the daemon stores, and the three things a person may do with
+  /// one of them. A value is read only when a person asks for it.
+  private var passwords: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      if let error = model.secretLoadError {
+        SettingsSectionNote(error, destructive: true)
+          .padding(.horizontal, 4)
+      }
+      secretSection(
+        title: "本机共享",
+        detail: "每个 Bot 都能读到这些密码",
+        empty: "还没有共享密码",
+        secrets: model.sharedSecrets,
+        showsRefresh: true
+      )
+      secretSection(
+        title: "各 Bot 专属",
+        detail: "只有创建它的那个 Bot 能读到",
+        empty: "还没有 Bot 专属密码",
+        secrets: model.botSecrets,
+        showsRefresh: false
+      )
+      if let message = model.secretMessage {
+        SettingsSectionNote(message)
+          .padding(.horizontal, 4)
+      }
+    }
+    .task { await model.loadSecrets() }
+    .onDisappear { model.leaveSecrets() }
+    .alert(
+      "删除这个密码？",
+      isPresented: Binding(
+        get: { removingSecret != nil }, set: { if !$0 { removingSecret = nil } }
+      )
+    ) {
+      Button("取消", role: .cancel) { removingSecret = nil }
+      Button("删除", role: .destructive) {
+        guard let secret = removingSecret else { return }
+        removingSecret = nil
+        Task { await model.deleteSecret(secret) }
+      }
+    } message: {
+      Text("删除后，\(removingSecret?.key ?? "这个密码") 不再能被任何 Bot 读到。")
+    }
+  }
+
+  /// One group of records: the shared ones, or the ones each Bot owns.
+  private func secretSection(
+    title: String,
+    detail: String,
+    empty: String,
+    secrets: [Secret],
+    showsRefresh: Bool
+  ) -> some View {
+    sectionCard(title, detail: detail) {
+      HStack(spacing: 10) {
+        if model.secretBusy { SpinnerArc(size: 12) }
+        if showsRefresh {
+          SettingsActionButton("刷新") {
+            Task { await model.loadSecrets() }
+          }
+          .disabled(model.secretBusy)
+        }
+      }
+    } body: {
+      if model.secretLoadError == nil && secrets.isEmpty {
+        SettingsSectionNote(empty)
+          .padding(.top, 14)
+      } else {
+        ForEach(Array(secrets.enumerated()), id: \.element.id) { index, secret in
+          if index > 0 { Divider().overlay(Theme.Palette.line) }
+          secretRow(secret)
+        }
+      }
+    }
+  }
+
+  /// One record: what it is, who made it and the three actions a person may take.
+  private func secretRow(_ secret: Secret) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .firstTextBaseline, spacing: 10) {
+        Text(secret.key)
+          .font(Theme.TypeScale.mono)
+          .foregroundStyle(Theme.Palette.textPrimary)
+        Spacer(minLength: 0)
+        SettingsActionButton("复制") {
+          Task { await model.copySecret(secret) }
+        }
+        .disabled(model.secretBusy)
+        .fixedSize()
+        SettingsActionButton(model.revealedSecrets[secret.id] == nil ? "显示" : "隐藏") {
+          Task { await model.revealSecret(secret) }
+        }
+        .disabled(model.secretBusy)
+        .fixedSize()
+        SettingsActionButton("删除") { removingSecret = secret }
+          .disabled(model.secretBusy)
+          .fixedSize()
+      }
+      if let purpose = secret.purpose, !purpose.isEmpty {
+        Text(purpose)
+          .font(.system(size: 12.5))
+          .foregroundStyle(Theme.Palette.textPrimary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Text(
+        [
+          "创建者 \(model.secretOwner(secret))",
+          model.secretCreated(secret),
+          model.secretValidity(secret),
+          model.secretLastUsed(secret),
+        ].joined(separator: " · ")
+      )
+      .font(Theme.TypeScale.note)
+      .foregroundStyle(Theme.Palette.textSecondary)
+      .fixedSize(horizontal: false, vertical: true)
+      if let value = model.revealedSecrets[secret.id] {
+        Text(value)
+          .font(Theme.TypeScale.mono)
+          .foregroundStyle(Theme.Palette.textPrimary)
+          .textSelection(.enabled)
+      }
+    }
+    .padding(.vertical, 16)
+  }
+
+  private func providerMenu(
+    service: String,
+    listed: [ProviderSettings],
+    offLabel: String
+  ) -> some View {
+    let selected = model.selectedProvider(in: service)
+    return Menu {
+      Button(offLabel) {
+        if let chosen = selected {
+          Task { await model.setProviderEnabled(chosen.id, false) }
         }
       }
       Divider()
-      ForEach(model.providers) { provider in
-        Button(provider.hasApiKey ? provider.title : "\(provider.title) · 请先保存 Key") {
+      ForEach(listed) { provider in
+        Button(
+          provider.hasApiKey || !provider.keyRequired
+            ? provider.title
+            : "\(provider.title) · 请先保存 Key"
+        ) {
           Task { await model.setProviderEnabled(provider.id, true) }
         }
-        .disabled(!provider.hasApiKey)
+        .disabled(provider.keyRequired && !provider.hasApiKey)
       }
     } label: {
       HStack(spacing: 6) {
-        Text(model.selectedSearchProvider.map { "使用 \($0.title)" } ?? "选择服务商")
+        Text(selected.map { "使用 \($0.title)" } ?? "选择服务商")
         Image(systemName: "chevron.down")
       }
       .font(Theme.TypeScale.note)
@@ -590,12 +768,12 @@ public struct SettingsView: View {
     .menuIndicator(.hidden)
     .fixedSize()
     .disabled(model.providerBusy)
-    .accessibilityLabel("当前搜索服务商")
+    .accessibilityLabel("当前\(service == ProviderSettings.decisionService ? "决策" : "搜索")服务商")
   }
 
-  private func searchProviderRow(_ provider: ProviderSettings) -> some View {
-    let hasDraft = !(model.providerKeys[provider.id] ?? "")
-      .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  private func providerRow(_ provider: ProviderSettings) -> some View {
+    let hasDraft = model.providerHasChanges(provider)
+    let expanded = expandedProviderDetails.contains(provider.id)
     return VStack(alignment: .leading, spacing: 10) {
       HStack(spacing: 8) {
         Text(provider.title)
@@ -605,7 +783,31 @@ public struct SettingsView: View {
           .font(Theme.TypeScale.note)
           .foregroundStyle(provider.enabled ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
         Spacer(minLength: 0)
-        if let url = URL(string: provider.docsUrl) {
+        if provider.isDecision {
+          Button {
+            withAnimation(.easeOut(duration: 0.16)) {
+              if expanded {
+                expandedProviderDetails.remove(provider.id)
+              } else {
+                expandedProviderDetails.insert(provider.id)
+              }
+            }
+          } label: {
+            HStack(spacing: 4) {
+              Image(systemName: "chevron.right")
+                .font(.system(size: 9, weight: .semibold))
+                .rotationEffect(.degrees(expanded ? 90 : 0))
+              Text("地址与模型")
+            }
+            .font(Theme.TypeScale.note)
+            .foregroundStyle(Theme.Palette.textSecondary)
+            .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("\(provider.title)的地址与模型")
+          .accessibilityValue(expanded ? "已展开" : "已折叠")
+        }
+        if !provider.docsUrl.isEmpty, let url = URL(string: provider.docsUrl) {
           Link(destination: url) { Label("文档", systemImage: "arrow.up.right") }
             .font(Theme.TypeScale.note)
             .foregroundStyle(Theme.Palette.textSecondary)
@@ -613,7 +815,7 @@ public struct SettingsView: View {
       }
       HStack(spacing: 8) {
         SettingsTextField(
-          provider.hasApiKey ? "已保存 · 输入新 Key 可替换" : provider.keyLabel,
+          providerKeyPlaceholder(provider),
           text: keyBinding(provider.id), secure: true
         )
         .disabled(model.providerBusy)
@@ -621,14 +823,30 @@ public struct SettingsView: View {
         SettingsActionButton("保存", prominent: hasDraft) {
           Task { await model.saveProvider(provider.id) }
         }
-        .disabled(model.providerBusy || !hasDraft)
+        .disabled(model.providerBusy || !model.canSaveProvider(provider))
         .fixedSize()
         SettingsActionButton("测试") {
           Task { await model.testProvider(provider.id) }
         }
-        .disabled(model.providerBusy || !provider.hasApiKey || hasDraft)
+        .disabled(model.providerBusy || !model.canTestProvider(provider))
         .fixedSize()
+        if !provider.keyRequired && provider.hasApiKey {
+          SettingsActionButton("清除 Key") {
+            Task { await model.clearProviderKey(provider.id) }
+          }
+          .disabled(model.providerBusy)
+          .fixedSize()
+        }
       }
+      if provider.isDecision {
+        Text("\(provider.baseUrl) · \(provider.model)")
+          .font(.system(size: 11.5, design: .monospaced))
+          .foregroundStyle(Theme.Palette.textMuted)
+          .lineLimit(1)
+          .truncationMode(.middle)
+          .textSelection(.enabled)
+      }
+      if expanded { providerAddressFields(provider) }
       if let probe = model.providerProbe[provider.id] {
         Label(
           "\(probe.message) · \(probe.latencyMs) ms",
@@ -641,10 +859,60 @@ public struct SettingsView: View {
     .padding(.vertical, 16)
   }
 
+  private func providerKeyPlaceholder(_ provider: ProviderSettings) -> String {
+    if provider.hasApiKey { return "已保存 · 输入新 Key 可替换" }
+    if provider.keyRequired { return provider.keyLabel }
+    return "可留空 · 中转站自带上游凭据"
+  }
+
+  /// A decision provider's address and model are overridable without a release: an empty field
+  /// asks the daemon for the catalogue value again.
+  private func providerAddressFields(_ provider: ProviderSettings) -> some View {
+    HStack(alignment: .bottom, spacing: 8) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("地址")
+          .font(Theme.TypeScale.note)
+          .foregroundStyle(Theme.Palette.textSecondary)
+        SettingsTextField(
+          "默认 \(provider.defaults.baseUrl)",
+          text: providerAddressBinding(provider.id)
+        )
+        .frame(width: 240)
+        .disabled(model.providerBusy)
+      }
+      VStack(alignment: .leading, spacing: 4) {
+        Text("模型")
+          .font(Theme.TypeScale.note)
+          .foregroundStyle(Theme.Palette.textSecondary)
+        SettingsTextField(
+          "默认 \(provider.defaults.model)",
+          text: providerModelBinding(provider.id)
+        )
+        .frame(width: 220)
+        .disabled(model.providerBusy)
+      }
+      Spacer(minLength: 0)
+    }
+  }
+
   private func keyBinding(_ id: String) -> Binding<String> {
     Binding(
       get: { model.providerKeys[id] ?? "" },
       set: { model.providerKeys[id] = $0 }
+    )
+  }
+
+  private func providerAddressBinding(_ id: String) -> Binding<String> {
+    Binding(
+      get: { model.providerAddresses[id] ?? "" },
+      set: { model.providerAddresses[id] = $0 }
+    )
+  }
+
+  private func providerModelBinding(_ id: String) -> Binding<String> {
+    Binding(
+      get: { model.providerModels[id] ?? "" },
+      set: { model.providerModels[id] = $0 }
     )
   }
 

@@ -1,5 +1,39 @@
 # Retrospective
 
+## 2026-11-03 — A running dev App was called latest after remote moved
+
+I described the dev App built from the in-progress merge as the latest source without checking
+whether `origin/main` had advanced since that merge began. The remote subsequently contained
+an integrated reflection commit and additional fixes not in this App. Before calling a running
+build latest, compare its actual worktree and merge target with a freshly checked remote tip;
+state explicitly when the process runs an uncommitted or older tree.
+
+## 2026-11-03 — A password-card answer started an unplanned command
+
+I asked the acceptance Bot to issue a synthetic password card and not run commands. Answering
+that card automatically started a new turn, and the Bot called `secret_read` and then Bash to
+check the test variable. The command completed without printing the test value or performing
+network or file operations, but its environment can contain every secret visible to the Bot,
+including shared records. I did not inspect whether any such records existed. A restriction
+in an earlier natural-language prompt is not a permission boundary for the automatic answer
+turn. Before another password-card test, constrain the executable tool surface or use an
+isolated daemon rather than assuming the Bot will not call Bash.
+
+## 2026-11-03 — A restart left two indistinguishable dev Apps running
+
+I started Eagle Dev from the merge worktree while a previous dev App from the main worktree
+was already running. I restarted only my own process, so both remained visible and the owner
+could not easily distinguish them. Before starting or restarting a dev App, inventory matching
+processes, explain which worktree each belongs to, and ask before stopping one owned elsewhere.
+
+## 2026-11-03 — Interrupting the dev App orphaned its daemon
+
+Restarting Eagle Dev with Ctrl-C stopped the foreground App without running its termination
+handler; its daemon remained on port 43117 with parent PID 1. I checked the daemon's exact PID
+and working directory, then stopped that owned process with SIGTERM before relaunching the App.
+A terminal interrupt is not proof that a GUI child's daemon stopped. Verify the owned listener
+and its identity before restarting; do not terminate a different App's process.
+
 ## 2026-11-03 — An empty local gateway key stopped acceptance before the model
 
 The first isolated CLI conversation failed with `model_error`: the gateway file carried an

@@ -429,16 +429,34 @@ final class DomainCoverageMoreTests: XCTestCase {
 
   func testProviderSettingsDecodeAndReportTheirConfiguredState() throws {
     let json = #"""
-      {"id":"deepseek-search","title":"DeepSeek 搜索","kind":"deepseek-search",
-       "baseUrl":"https://api.deepseek.com",
+      {"id":"deepseek-search","title":"DeepSeek 搜索","service":"search","kind":"deepseek-search",
+       "baseUrl":"https://api.deepseek.com","model":"",
        "docsUrl":"https://api-docs.deepseek.com/guides/search/",
-       "keyLabel":"DeepSeek API Key","hasApiKey":true,"enabled":true}
+       "keyLabel":"DeepSeek API Key","keyRequired":true,"hasApiKey":true,"enabled":true,
+       "defaults":{"baseUrl":"https://api.deepseek.com","model":""}}
       """#
     let provider = try JSONDecoder().decode(ProviderSettings.self, from: Data(json.utf8))
     XCTAssertEqual(provider.id, "deepseek-search")
     XCTAssertEqual(provider.hasApiKey, true)
     XCTAssertEqual(provider.enabled, true)
     XCTAssertEqual(provider.keyLabel, "DeepSeek API Key")
+    XCTAssertFalse(provider.isDecision)
+  }
+
+  func testDecisionProviderKeepsItsModelAndItsCatalogueDefaults() throws {
+    let json = #"""
+      {"id":"raven","title":"Raven","service":"decision","kind":"systemone",
+       "baseUrl":"http://127.0.0.1:7024","model":"microsoft-decision-1","docsUrl":"",
+       "keyLabel":"Raven API Key","keyRequired":true,"hasApiKey":false,"enabled":false,
+       "defaults":{"baseUrl":"http://127.0.0.1:7024","model":"microsoft-decision-1"}}
+      """#
+    let provider = try JSONDecoder().decode(ProviderSettings.self, from: Data(json.utf8))
+    XCTAssertTrue(provider.isDecision)
+    XCTAssertEqual(provider.model, "microsoft-decision-1")
+    XCTAssertEqual(
+      provider.defaults,
+      ProviderDefaults(baseUrl: "http://127.0.0.1:7024", model: "microsoft-decision-1"))
+    XCTAssertEqual(provider.keyRequired, true)
   }
 
   func testUsageReportReadsSourcesAndStaysReadableWithoutThem() throws {

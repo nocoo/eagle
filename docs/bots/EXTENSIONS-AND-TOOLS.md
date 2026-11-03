@@ -86,9 +86,11 @@ because extensions can capture Bot-specific services and directories.
 | `core` | `bots-tools` | Mandatory | `list`, `note_set`, `ask_user` |
 | `coding` | `coding-tools` (`CodingTools`), `bots-pulls` | Mandatory | `read`, `write`, `edit`, `bash`, `pr_register`, `pr_list` |
 | `memory` | `bots-memory` | Optional, **on by default** | All five memory tools, eager: no loader |
+| `secrets` | `bots-secrets` | Optional, **on by default** | All four secret tools, eager: no loader (§6.5) |
 | `agents` | `bots-agents` | Optional | All three child-agent tools when selected |
 | `herdr` | `bots-herdr`, `tool-search` | Optional | `tool_search`; the eight Herdr tools are deferred |
 | `search` | `bots-search`, `tool-search` | Optional, **off by default** | `tool_search` is offered; `web_search` and `web_fetch` are deferred |
+| `decision` | `bots-decision`, `tool-search` | Optional, **off by default** | `tool_search` is offered; `decide`, `classify`, `assess`, `rate` and `judge` are deferred |
 | `trigger` | `bots-trigger`, `tool-search` | Optional, **on by default** | `tool_search` is offered; the five `trigger_*` tools are deferred |
 
 `ask_user` is the person-interface tool: it takes one to five questions, each single or
@@ -100,10 +102,19 @@ client reports labels, the daemon checks them against the card and writes the te
 reads. Nothing waits on a human: the tool call is already complete when the card appears, and
 a person may ignore the card, which the bot is told in the same message.
 
-Current defaults select `persona`, `machine`, `core`, `coding`, `memory`, `herdr`, `agents` and
-`trigger`; `search` and `peers` stay off until a person turns them on. `memory` is a default
+`secret_request` is the same card carrying a password field instead of options, and it is the
+only recommended way a person hands sensitive text to a Bot (§6.5). A Bot that cannot ask for
+a password asks for it in the conversation, where the value stays in the transcript and is
+replayed into every later prompt of that conversation.
+
+Current defaults select `persona`, `machine`, `core`, `coding`, `memory`, `secrets`, `herdr`,
+`agents` and `trigger`; `search`, `decision` and `peers` stay off until a person turns them on.
+`search` and `decision` are opt-in for the same reason: each call leaves the machine and spends
+money. `memory` is a default
 because remembering is a habit rather than a discovered capability (§6.1), not because the
-group-name list happened to widen. `trigger` is on by default because a Bot that cannot
+group-name list happened to widen. `secrets` is a default for the reason §6.5 records: the
+card is the only way a password is supposed to reach a Bot, so a Bot that does not have the
+group is a Bot that will ask for the password in the chat. `trigger` is on by default because a Bot that cannot
 create its own schedule or webhook cannot answer "every morning, check this". Settings are daemon-wide and applied to
 existing/new Bots, not independently editable group policies for each sidebar
 Bot. `core` and `coding` are normalized back in even for an empty selection;
@@ -121,12 +132,12 @@ loader. The normal daemon installs search even before configuration: its tools
 can explain a missing selection without making an external request. A test/host
 that supplies no search client installs no search extension or loader for it.
 
-There are **36 tool names** with all current groups registered: five filesystem/coding tools,
+There are **41 tool names** with all current groups registered: five filesystem/coding tools,
 two pull-report tools, three child-agent tools, eight Herdr tools, two search tools, five
-trigger tools, three peer tools, five memory tools, three shared-device tools (only when the
-daemon supplies a device socket) and one SDK loader. With the default selection (no `search`,
-no `peers`) the eager tools are offered at once and the Herdr, trigger and device tools wait
-behind `tool_search`.
+decision tools, five trigger tools, three peer tools, five memory tools, three shared-device
+tools (only when the daemon supplies a device socket) and one SDK loader. With the default
+selection (no `search`, no `decision`, no `peers`) the eager tools are offered at once and the
+Herdr, decision, trigger and device tools wait behind `tool_search`.
 
 ### Filesystem and coding
 
@@ -152,6 +163,11 @@ Do not add custom paging, edit matching or process execution already provided by
 | --- | --- | --- | --- |
 | `search` / `web_search` | `query, count?, needContent?` | Ranked title, URL, snippet and summary; content on request, through the user's selected search provider | Unsafe |
 | `search` / `web_fetch` | `url` | One page as Markdown through the same provider, at most 50 KiB of model-facing text | Safe |
+| `decision` / `decide` | `state, question, options[{label, description?}], allowNone?` | One `choice` answer: the option, its full `probabilities` and `confidence`, plus the resolved model | Unsafe |
+| `decision` / `classify` | `state, labels, mode, allowNone?, threshold?` | `single` is one `choice` over the labels; `multi` sends one `noul` per label in a **single** request and returns every label's probability with the ones above `threshold` named | Unsafe |
+| `decision` / `assess` | `state, statement` | The probability that one yes/no statement is true; no fabricated confidence, and 0.3–0.7 is called out as unsure | Unsafe |
+| `decision` / `rate` | `state, question, levels[2..20]` | A position on the scale (`score`, possibly between levels), the `legend`, `probabilities` and `confidence` | Unsafe |
+| `decision` / `judge` | `state, questions[{id, type, instructions, criteria?}]` | Every answer keyed by its id, from one request; mixed `choice`/`noul`/`score` | Unsafe |
 
 Both are deferred. Settings -> Services -> Search stores independent DeepSeek and
 Tavily keys and explicitly selects one provider (`GET /v1/providers`, PROTOCOL.md
@@ -168,7 +184,20 @@ Native basic search/extraction is explicit, with no automatic paid depth upgrade
 Timeouts and cancellation reach both providers; raw provider fields are normalized
 inside their adapters, never by the Bot or its UI.
 Each performed call books one `search` call in the usage statistics, so the Settings page
-shows search next to model spend.
+shows search next to model spend. The decision tools book the request's own `input_tokens`
+under `decision`, and a missing count is booked as one call rather than as zero tokens: a
+relay's price is unknown, so no cost is invented.
+
+Every decision tool maps one call to one `POST /v1/systemone` with the configured provider and
+its model (docs/bots/PROTOCOL.md, "Providers"). The tools never retry: an answer may already
+have been paid for. `judge` exists because TypeSafe evaluates every question in a request in
+parallel, so asking five questions in one call is one round trip; the section text tells the
+model to prefer it over repeated single calls, to keep one atomic judgment per question, and
+not to act on an answer below `confidence` 0.5 (or a noul between 0.3 and 0.7) without
+confirming with the person. A reply that is not a valid answer for the questions asked — an
+option outside the criteria, a set of numbers that is not a distribution, a missing answer or
+an extra one — is refused by the transport, so a malformed relay becomes a tool error rather
+than a decision.
 
 ### Child conversations and terminal agents
 
@@ -212,8 +241,10 @@ Paths in this table are relative to `apps/bots/`.
 | Herdr CLI adapter | `test/tools/herdr-client.test.ts` | Executable fixture responses, argv/result handling, deadlines, cancellation, large/split output; not acceptance of every installed live agent kind |
 | Child agents | `test/tools/agents.test.ts` | Real Harness/SQLite spawn -> send -> answer with a deterministic model; dedicated stop, invalid-target, interrupted-send and one-level negative tests are still needed |
 | Search | `test/tools/search.test.ts`, `test/runtime/search-tools.test.ts`, `test/server/providers.test.ts`, `test/main.test.ts` | Documented request/response shape, refused key, deferred flags, one booked call per search, blank query refused; provider store is 0600, write-only and never returned; HTTP round trip behind the bearer |
+| Decision | `test/tools/decision.test.ts`, `test/tools/decision-transport.test.ts`, `test/server/provider-selection.test.ts`, `test/tools/catalog.test.ts`, `tests/eval/cases/decision-*.json` | One request per call (including `classify multi` and `judge`), options and levels mapped to the wire, malformed arguments refused before any request, a refused or malformed reply becoming a readable error, `input_tokens` booked under `decision`, the selection read per call and never fallen back from, and the group listed in the catalogue |
 | Deferred discovery | `test/runtime/deferred-tools.test.ts` | Model calls `tool_search`, then the discovered `herdr_list`; persistence across compaction is an SDK-source fact, not a separate regression established here |
 | Hot refresh | `test/runtime/tool-groups.test.ts`, `test/core/registry.test.ts`, `test/core/service.test.ts` | Warm enable/disable, cached switching, no interrupted answer, same-value retry, failed refresh and single failure identity |
+| Secrets | `test/secrets/*.test.ts` (container, keyfile, store, audit), `test/tools/secrets.test.ts`, `test/server/secrets.test.ts` | Container round trip, a wrong key or a corrupt body refusing every operation without rewriting the file, the keyfile created 0600 on first write only, scope shadowing, expiry on read/list plus the startup sweep, the card answer (key mismatch refused, value never echoed into the hidden message or any response), the four tools' own refusals, the audit file's shape and retention |
 | Wire round trip | `test/e2e/tools.test.ts` | Real socket tool rows and later snapshot, encoded-size clamp, A -> B -> A refresh without extra model calls/watches, `1011` reconnect recovery |
 
 Historical full-gate evidence is recorded in [PLAN.md](PLAN.md) and
@@ -289,16 +320,18 @@ uses the existing reconnect path; errors retain their single origin identity.
 
 ## 6. Planned optional groups
 
-Everything in this section except `memory` is **planned**: `peers` and `trigger` shipped (see
-above and §6.3/§6.4). A planned group never enters the mandatory pair, and it is never enabled
-for everyone by widening `DEFAULT_TOOL_GROUPS = [...TOOL_GROUP_NAMES]`. A group becomes an
-default only when that default is the product decision itself, written here with its reason:
-`memory` is one, because remembering is a habit the person turns off deliberately rather than
-an ability they have to discover.
+Everything in this section except `memory` and `secrets` is **planned**: `peers` and `trigger`
+shipped (see above and §6.3/§6.4). A planned group never enters the mandatory pair, and it is
+never enabled for everyone by widening `DEFAULT_TOOL_GROUPS = [...TOOL_GROUP_NAMES]`. A group
+becomes a default only when that default is the product decision itself, written here with its
+reason: `memory` is one, because remembering is a habit the person turns off deliberately
+rather than an ability they have to discover; `secrets` is the other, for the reason §6.5
+opens with.
 
 | Group | Extension | Planned tool names | Offering policy |
 | --- | --- | --- | --- |
 | `memory` | `bots-memory` | `memory_list`, `memory_search`, `memory_read`, `memory_write`, `memory_delete` | Eager, **on by default**; see §6.1 |
+| `secrets` | `bots-secrets` | `secret_request`, `secret_list`, `secret_read`, `secret_delete` | Eager, **on by default**; see §6.5 |
 | `trigger` | `bots-trigger` | `trigger_create`, `trigger_list`, `trigger_update`, `trigger_enable`, `trigger_delete` | Deferred; shipped and on by default |
 | `peers` | `bots-peers` | `peer_list`, `peer_send`, `peer_read` | Deferred; shipped behind a toggle |
 | Existing `agents` | `bots-agents` | Add `agent_list`; retain the existing three names/semantics | Eager when selected |
@@ -618,6 +651,210 @@ prevent an already-selected tool from being called. The wire flag stays false un
 the documented enable slice lands; tool selection and a future peer UI capability
 are separate, and any new sender/delivery wire field needs an additive protocol
 definition plus shared fixtures.
+
+### 6.5 Secrets: the one way a password reaches a Bot
+
+Status: **as built, 2026-11-03** — `src/secrets/` (container, keyfile, store, audit; the only
+module that knows the format), `src/tools/secrets/tools.ts` (the four tools), the port in
+`src/tools/types.ts`, the group wiring in `src/tools/registry.ts` and `src/core/domain.ts`, the
+card answer at `POST /v1/bots/:botId/secrets` and the settings routes in `src/server/http.ts`.
+
+Why the group is a default: the alternative is not "no secrets", it is a person pasting the
+password into the chat. There it sits in the transcript, in every later prompt of that
+conversation and in any snapshot a client renders, and nothing about it is revocable. A card
+that stores the value once, outside the transcript, with an expiry the person can set, is
+strictly better than that even though the store itself is only as private as the account.
+
+#### Where the value goes
+
+| Thing | Path | Mode |
+| --- | --- | --- |
+| Ciphertext | `<configHome>/eagle-bots/secrets.v1.enc` | 0600 in a 0700 directory |
+| Key | macOS: `~/Library/Application Support/ai.hexly.bots/secrets.key`; otherwise `$XDG_STATE_HOME/eagle-bots/secrets.key` (`~/.local/state/eagle-bots/secrets.key`) | 0600 |
+| Audit | `<configHome>/eagle-bots/secrets.audit.jsonl` | 0600 |
+
+`BOTS_SECRETS_DIR` moves the ciphertext and the audit file, `BOTS_SECRETS_KEY` names the
+keyfile; both exist for a test or a second machine. The key is 32 random bytes, base64url,
+written by the first store that needs it and never speculatively. Losing the key loses the
+values: a missing keyfile beside an existing ciphertext is a refusal, not a reset.
+
+AES-256-GCM with a fresh 12-byte nonce per write, and the container header as additional
+authenticated data. What that buys, stated plainly so nobody over-trusts it:
+
+- It protects the ciphertext on its own: a backup, a synced or shared config directory, a
+dotfiles repository or a `tar` of `~/.config` carries no readable password, and a flipped byte
+is a refusal instead of a silently wrong password.
+- It does not protect against a process running as the person, which can read both files. It
+does not protect against a whole-home backup (Time Machine copies the keyfile too), and it
+does nothing about a value that has already reached a transcript.
+- The settings page reveals a value on request; the daemon never mails it, logs it, or returns
+it in a list.
+
+#### Container format, v1
+
+```text
+"EGLS" (4 bytes) | version 0x01 (1 byte) | nonce (12 bytes) | AES-256-GCM(key, nonce, aad = header)
+```
+
+The plaintext is one JSON document, rewritten whole on every mutation and replaced atomically
+(exclusive 0600 scratch file, then `rename`):
+
+The document also carries the receipts of the cards this machine has already answered, so a
+restart, a lost response or an unknown admission cannot spend one twice:
+
+```json
+{ "version": 1, "answers": [ { "botId": "b_0190a1b0", "entry": "secret:e_12", "at": "…" } ],
+  "records": [
+  { "key": "github-pat", "scope": "shared", "botId": "b_0190a1b0",
+    "createdAt": "2026-11-03T01:10:00.000Z", "updatedAt": "2026-11-03T01:10:00.000Z",
+    "purpose": "发布 Eagle 用", "expiresAt": "2026-11-03T02:10:00.000Z",
+    "value": "ghp_example" } ] }
+```
+
+- `expiresAt` absent means permanent. `botId` is the Bot that answered the card and is never
+taken from the model.
+- A stored value is at least 4 characters, the length from which the daemon's log redaction can
+  recognise it as a secret rather than ordinary text; a shorter one is refused at the card.
+- A missing file is an empty store. A body that fails to decrypt, an unknown magic or version,
+or JSON that does not match the shape is a **refusal**: the file is never rewritten and never
+deleted, because a store that cannot be read is not a store that should be recreated.
+- `answers` keeps the newest 500 receipts and holds no value. A card is claimed before its value
+  is written and released again when nothing was stored and nothing was admitted, and its
+  submission id is derived from the card, so a repeated admission is answered from the
+  submission record instead of starting a second run.
+- The same key in the same scope is one record: a later write replaces it whole and keeps
+`createdAt`.
+
+#### Two scopes
+
+| Scope | Who reads it | How it is created |
+| --- | --- | --- |
+| `bot` (default) | the creating Bot only | a card answered for that Bot |
+| `shared` | every Bot on this machine | a card answered with 共享 ticked |
+
+Scope is a namespace, not a permission claim: native coding tools still read the filesystem.
+The model never names a `botId`; the host is bound to the caller. A tool call that omits
+`scope` resolves `bot` first and then `shared`, so a Bot's own record shadows a shared one with
+the same key; every row `secret_list` returns names its own scope.
+
+#### The card is the only write
+
+`secret_request` puts one password field in front of the person and returns at once. Everything
+else about the card comes from the call's own arguments, read back from the transcript, so a
+restart loses nothing:
+
+| Argument | Meaning |
+| --- | --- |
+| `key` | `^[a-z0-9][a-z0-9._-]{0,63}$`; the record's identity and what `secret_read` takes later. The person cannot rename it, so the name the Bot will use is the name on the card |
+| `purpose` | One line saying what the value is for, at most 240 characters; shown on the card and kept on the record |
+| `scope` | `bot` (default) or `shared`; the card preselects it and the person has the last word |
+| `ttlMinutes` | 1–1440. **Absent means the card shows no expiry control at all** and the record is permanent; present means the card shows the nearest preset selected and the person may change it or clear it. Presets: 5, 30, 60, 240, 480, 1440 minutes |
+
+The Bot decides from context whether to offer an expiry at all: a password for a one-off install
+asks for 1 hour, a long-lived token asks for nothing.
+
+A cancelled card is not a saved one: the hidden answer begins `The person skipped`, and the card
+shows 取消 rather than a check mark.
+
+Saving is `POST /v1/bots/:botId/secrets` ([PROTOCOL.md](PROTOCOL.md), "Secrets"). The daemon
+checks that the entry really carries a `secret_request` call and that the body's `key` is that
+call's key; anything else is a `400`. One answer may ask for two passwords: each call is its own
+card, `callIndex` names which one, and the hidden answer for a second card is written back with
+`answersTo: "<entry>#<index>"`. A card is answered once — a retry after a lost response is
+refused instead of storing the value again, recomputing its lifetime or starting a second run. The value never appears in the response, in the hidden
+user message or in the audit file: the person's card closes and the Bot reads
+`The person saved the secret "github-pat" (this bot only, expires in 1 hour) from e_12.`, then
+gets the value from `secret_read` when it needs it.
+
+#### Tools
+
+Extension `bots-secrets`, group `secrets`, four tools, all eager. `scope` is optional everywhere
+and means "this Bot's own record first, then the shared one".
+
+| Tool | Input | Result | Replay |
+| --- | --- | --- | --- |
+| `secret_request` | `key, purpose, scope?=bot, ttlMinutes?` | Text saying the card is on screen; the value arrives as the person's answer, never as an argument | Safe |
+| `secret_list` | `scope?, limit?` | `{items: [{key, scope, botId, purpose?, createdAt, updatedAt, expiresAt?}], truncated}`; never a value | Safe |
+| `secret_read` | `key, scope?` | The record's scope, size, lifetime and the environment variable it reaches a command by — **never the value**; a missing or expired record is an `isError` naming the scopes | Safe |
+| `secret_delete` | `key, scope` | `{key, scope, deleted}`; deleting an absent record is success with `deleted: false`. `scope` is required: a retry of a call that fell through to another scope would delete the wrong record | Safe by value |
+
+There is no `secret_write`: the model never holds the value, so a tool that accepted one as an
+argument would only ever let it invent or overwrite a password.
+
+#### How a command gets the value
+
+A tool result is committed to the transcript, so a value must never be one: `secret_read`
+answers a description, and the value reaches a command as environment instead. Every record the
+Bot may read is in the environment the Bash tool builds, under
+`EAGLE_SECRET_<KEY>` — the key upper-cased with every character outside `[A-Z0-9]` replaced by
+`_`. Two keys that normalise to one name are dropped from the environment rather than guessed,
+and `secret_read` reports the collision.
+
+```sh
+GIT_ASKPASS=true git -c credential.helper=false push https://x-access-token:$EAGLE_SECRET_GITHUB_PAT@github.com/…
+```
+
+The export is read fresh under the store's lock before every command, so a rotation, a deletion
+or a container that turned unreadable reaches the next command rather than the next restart;
+a store that cannot be read exports nothing and records the failure, because a broken password
+store must not break coding. Switching the `secrets` group off switches the export off too: the
+group's tools and the values a command sees are one decision. The export is bounded to 64 KiB of names and
+values counted in UTF-8 bytes, keeping the newest records and dropping the rest; `secret_read`
+answers a variable only when that variable is really in the export, so it never promises one the
+daemon chose not to hand over. A value that an environment cannot carry — anything holding a
+NUL — is refused when it is stored rather than failing the spawn that would echo it. Handing a
+value to a command is a use of the record and appends one `read` row per exported record, so the
+settings page's "last used" is not blind to the way a password is actually used.
+
+That keeps the value out of the model's context, the transcript, every snapshot and every
+client with conversation read. It does not stop a Bot that deliberately prints the variable —
+`echo $EAGLE_SECRET_GITHUB_PAT` lands in the transcript like any other output — so the prompt
+section forbids it, and the record can be deleted or given a short life. A command's environment
+is also readable by that command and by nothing else.
+
+#### Expiry
+
+Nothing runs on a timer. A record whose `expiresAt` has passed is deleted by the call that would
+have read it, by the list that would have shown it, and by one sweep at daemon start, so a
+daemon that was off for three hours still expires what it should. An expired record is never
+returned as a stale value: the read refuses exactly like a missing key.
+
+#### Audit
+
+`secrets.audit.jsonl` is an append-only ledger beside the ciphertext, one JSON object per line,
+the newest 2000 kept, and it never holds a value:
+
+```json
+{"ts":"2026-11-03T01:10:02.104Z","op":"read","scope":"shared","key":"github-pat",
+ "botId":"b_0190a1b0","by":"bot","trace":"tr_0190a1b2","ok":true}
+```
+
+`op` is `write`, `read`, `delete`, `reveal` or `expire`; a value handed to a command is a `read`;
+`by` is `bot` or `person` — a reveal
+from the settings page is the person reading a value and is recorded like any other read. The
+settings page shows each row's last use from this file. The diagnostic log gets the declared
+`core.secret.*` events instead ([OBSERVABILITY.md](OBSERVABILITY.md)), which carry the scope and
+never the key.
+
+#### Refusals
+
+A key outside the pattern, a key over 64 characters, a purpose over 240 characters, a value that
+is empty or over 8 KiB, a `ttlMinutes` outside 1–1440, an unknown scope, a card answer whose key
+is not the card's, and any unreadable container are refusals that name the rule. None of them
+writes anything.
+
+An unknown key is not an error to delete: `secret_delete` answers `deleted: false`. A Bot may
+delete the `shared` records it created itself and every `bot` record it owns; a `shared` record
+another Bot created is refused, and the person may delete anything from the settings page.
+
+Writing is the person's act, so a card answer replaces whatever record it names, including a
+`shared` record another Bot created: the person sees the name on the card and is the one who
+types the value. The tool path cannot do that, because it cannot write at all.
+
+The store refuses rather than guesses when the file it is asked to trust is not private: a key
+file another account can read, a directory another account can write, and a ledger another
+account can read are all refusals that say what to fix. `mkdir`'s mode is a request, not proof,
+so the mode that exists is what counts.
 
 ## 7. Development and acceptance recipe
 

@@ -1,7 +1,7 @@
 // Command routing for the daemon (docs/bots/PLAN.md, rows 17-22): a connection sees one
 // bot for its whole life, a subscription renders the first snapshot before it is live,
 // and a command either reaches the runtime or is refused before admission.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { declareEvent } from "../log/events.ts";
 import type { Log } from "../log/log.ts";
 import { type AnswerInput, answerText, questionsOf } from "./ask.ts";
@@ -14,11 +14,18 @@ import type {
   Failure,
   Message,
   PullSummary,
+  SecretsPort,
   Submission,
   TriggerSummary,
   Usage,
 } from "./domain.ts";
-import { ClassifiedFailure } from "./domain.ts";
+import {
+  ClassifiedFailure,
+  MAX_SECRET_TTL_MINUTES,
+  MAX_SECRET_VALUE_BYTES,
+  MIN_SECRET_VALUE_CHARS,
+  SecretsStorageError,
+} from "./domain.ts";
 import { EventHub, type HubSubscriber, type HubSubscription } from "./EventHub.ts";
 import { newFailure } from "./failures.ts";
 import {
@@ -29,6 +36,13 @@ import {
 } from "./Invocation.ts";
 import type { OriginStore } from "./OriginStore.ts";
 import type { RuntimeEvent, RuntimeHandle, RuntimeHistory, SubmitInput } from "./RuntimePort.ts";
+import {
+  type SecretAnswerInput,
+  secretAnswersTo,
+  secretAnswerText,
+  secretCardCount,
+  secretCardOf,
+} from "./secretCard.ts";
 import { reduceView, type SubmissionRanks, seedRanks, trimWindow } from "./view.ts";
 
 /** The closed origin set of the invocation port; `unknown` is a reconstruction only. */
@@ -118,6 +132,11 @@ export type ConversationServiceOptions = {
   readonly origins?: {
     readonly store: (botId: string) => Promise<OriginStore | undefined>;
   };
+  /**
+   * The secrets store (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5). Absent means the daemon
+   * has no secret storage, and a card answer is a refusal rather than a lost password.
+   */
+  readonly secrets?: SecretsPort;
 };
 
 /** Only `not_admitted` lets a client drop its outbox entry (docs/bots/PROTOCOL.md). */
@@ -187,6 +206,9 @@ export class ConversationService implements InvocationPort {
   readonly #origins: ConversationServiceOptions["origins"];
   readonly #triggersOf: ConversationServiceOptions["triggersOf"];
   readonly #pullsOf: ConversationServiceOptions["pullsOf"];
+  readonly #secrets: SecretsPort | undefined;
+  /** One answer at a time per card: the duplicate check must not have a window. */
+  readonly #answerChains = new Map<string, Promise<unknown>>();
   /** Resolved views by bot id, so `observe` can answer synchronously without opening. */
   readonly #current = new Map<string, Bot>();
   /** Invocation observers, keyed by bot id and bound to the value, not to one Bot object. */
@@ -223,6 +245,7 @@ export class ConversationService implements InvocationPort {
     this.#origins = options.origins;
     this.#triggersOf = options.triggersOf;
     this.#pullsOf = options.pullsOf;
+    this.#secrets = options.secrets;
     this.#hubOptions = {
       measure: options.measure,
       ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
@@ -396,6 +419,156 @@ export class ConversationService implements InvocationPort {
       },
       undefined,
     );
+  }
+
+  /**
+   * The person answered a secret card. The value goes into the store, never into the
+   * transcript: the bot is told that the record exists, and reads the value itself when it
+   * needs it. The card's own arguments are the only record of what was asked.
+   */
+  async answerSecret(botId: string, input: SecretAnswerInput, label?: string): Promise<Submission> {
+    const bot = await this.#bot(botId, input.trace ?? input.entryId);
+    const call = await bot.handle?.entryById?.(input.entryId);
+    const index = input.callIndex ?? 0;
+    if (call === undefined) {
+      throw new DirectoryError("invalid_answer", "no such secret_request call");
+    }
+    if (!Number.isInteger(index) || index < 0 || index >= secretCardCount(call)) {
+      throw new DirectoryError("invalid_answer", "no such secret_request call");
+    }
+    const card = secretCardOf(call, index);
+    if (card === undefined) {
+      throw new DirectoryError("invalid_answer", "no such secret_request call");
+    }
+    // A card is answered once: a retry after a lost response must not store the value again,
+    // recompute its lifetime or start a second run. The answer is serialised per card, so
+    // two clients arriving together cannot both pass this check.
+    const answersTo = secretAnswersTo(input.entryId, index);
+    const answered = `${botId}\u0000${answersTo}`;
+    const chain = this.#answerChains.get(answered) ?? Promise.resolve();
+    const run = chain.then(() => this.#answerSecretOnce(botId, bot, card, input, answersTo, label));
+    this.#answerChains.set(
+      answered,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return run;
+  }
+
+  /** The body of one card answer, inside that card's own serial section. */
+  async #answerSecretOnce(
+    botId: string,
+    bot: Bot,
+    card: ReturnType<typeof secretCardOf>,
+    input: SecretAnswerInput,
+    answersTo: string,
+    label?: string,
+  ): Promise<Submission> {
+    if (card === undefined) {
+      throw new DirectoryError("invalid_answer", "no such secret_request call");
+    }
+    // A client cannot rename a record: the key is the card's key.
+    if (input.key !== card.key) {
+      throw new DirectoryError("invalid_answer", "the key does not match the secret card");
+    }
+    if (bot.snapshot.messages.some((message) => message.answersTo === answersTo)) {
+      throw new DirectoryError("invalid_answer", "this secret card was already answered");
+    }
+    const scope = input.scope ?? card.scope;
+    if (scope !== "bot" && scope !== "shared") {
+      throw new DirectoryError(
+        "invalid_answer",
+        `scope must be "bot" or "shared"; it was "${input.scope}"`,
+      );
+    }
+    // The person has the last word on the lifetime: absent keeps the card's suggestion,
+    // null makes the record permanent.
+    const ttl =
+      input.ttlMinutes === undefined
+        ? card.ttlMinutes
+        : input.ttlMinutes === null
+          ? undefined
+          : input.ttlMinutes;
+    if (ttl !== undefined && (!Number.isInteger(ttl) || ttl < 1 || ttl > MAX_SECRET_TTL_MINUTES)) {
+      throw new DirectoryError(
+        "invalid_answer",
+        `ttlMinutes is 1-${MAX_SECRET_TTL_MINUTES}, or null for a permanent record`,
+      );
+    }
+    if (input.skipped !== true) {
+      if (typeof input.value !== "string" || input.value.length < MIN_SECRET_VALUE_CHARS) {
+        throw new DirectoryError(
+          "invalid_answer",
+          `a secret value is at least ${MIN_SECRET_VALUE_CHARS} characters, so the log can scrub it`,
+        );
+      }
+      if (Buffer.byteLength(input.value, "utf8") > MAX_SECRET_VALUE_BYTES) {
+        throw new DirectoryError(
+          "invalid_answer",
+          `a secret value is at most ${MAX_SECRET_VALUE_BYTES} bytes`,
+        );
+      }
+    }
+    const store = this.#secrets;
+    if (store === undefined) {
+      throw new SecretsStorageError("the daemon has no secrets store");
+    }
+    // The receipt outlives this process: a retry after a restart, a lost response or an
+    // unknown admission cannot store the value or start a run a second time.
+    const claimed = await store.claimAnswer({
+      botId,
+      entry: answersTo,
+      ...(input.trace === undefined ? {} : { trace: input.trace }),
+    });
+    if (!claimed) {
+      throw new DirectoryError("invalid_answer", "this secret card was already answered");
+    }
+    let text: string;
+    try {
+      if (input.skipped === true) {
+        text = secretAnswerText(card, { entryId: input.entryId, skipped: true });
+      } else {
+        await store.save({
+          botId,
+          key: card.key,
+          value: input.value,
+          scope,
+          ...(card.purpose.length === 0 ? {} : { purpose: card.purpose }),
+          ...(ttl === undefined ? {} : { ttlMinutes: ttl }),
+          ...(input.trace === undefined ? {} : { trace: input.trace }),
+        });
+        text = secretAnswerText(card, {
+          entryId: input.entryId,
+          scope,
+          ...(ttl === undefined ? {} : { ttlMinutes: ttl }),
+        });
+      }
+      return await this.#admitAndLog(
+        {
+          botId,
+          // One card, one submission id: a repeated admission answers from the record
+          // instead of starting the run again.
+          requestId: `secret_${createHash("sha256")
+            .update(`${botId}\u0000${answersTo}`)
+            .digest("hex")
+            .slice(0, 24)}`,
+          text,
+          whenBusy: "followUp",
+          trace: input.trace ?? input.entryId,
+          origin: label === undefined ? { kind: "human" } : { kind: "human", label },
+          hidden: true,
+          answersTo,
+        },
+        undefined,
+      );
+    } catch (error) {
+      // Nothing reached the bot, so the person may answer again: the card is only spent by an
+      // answer that was admitted.
+      await store.releaseAnswer({ botId, entry: answersTo }).catch(() => undefined);
+      throw error;
+    }
   }
 
   /**

@@ -95,3 +95,32 @@ test("the configured model endpoint becomes the daemon's one provider", async ()
   });
   assert.equal(await unconfigured.getAuth("stub"), undefined, "an empty key fails closed");
 });
+
+test("the secrets paths follow the documented places", () => {
+  const linux = readConfig({ argv: [], env: {}, home: "/home/tester", platform: "linux" });
+  assert.equal(linux.secretsDir, "/home/tester/.config/eagle-bots");
+  assert.equal(linux.secretsKeyPath, "/home/tester/.local/state/eagle-bots/secrets.key");
+
+  const mac = readConfig({ argv: [], env: {}, home: "/Users/tester", platform: "darwin" });
+  assert.equal(mac.secretsDir, "/Users/tester/.config/eagle-bots");
+  assert.equal(
+    mac.secretsKeyPath,
+    "/Users/tester/Library/Application Support/ai.hexly.bots/secrets.key",
+  );
+
+  const state = readConfig({
+    argv: [],
+    env: { XDG_STATE_HOME: "/state" },
+    home: "/home/tester",
+    platform: "linux",
+  });
+  assert.equal(state.secretsKeyPath, "/state/eagle-bots/secrets.key");
+
+  const explicit = readConfig({
+    argv: [],
+    env: { BOTS_SECRETS_DIR: "/tmp/secrets", BOTS_SECRETS_KEY: "/tmp/secrets.key" },
+    home: "/home/tester",
+  });
+  assert.equal(explicit.secretsDir, "/tmp/secrets");
+  assert.equal(explicit.secretsKeyPath, "/tmp/secrets.key");
+});

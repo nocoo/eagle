@@ -30,7 +30,9 @@ public struct GatewaySettings: Decodable, Sendable, Equatable {
     thinkingLevel = try container.decodeIfPresent(String.self, forKey: .thinkingLevel) ?? "medium"
     toolGroups =
       try container.decodeIfPresent([String].self, forKey: .toolGroups)
-      ?? ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"]
+      ?? [
+        "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "trigger",
+      ]
     corePrompt = try container.decodeIfPresent(String.self, forKey: .corePrompt) ?? ""
   }
 }
@@ -102,7 +104,7 @@ public struct GatewayProbe: Decodable, Sendable, Equatable {
 
 /// The catalog over HTTP (docs/bots/PROTOCOL.md, "HTTP endpoints"). Every call carries the
 /// bearer token; a 401 is an authentication failure, never a retry.
-public final class CatalogHTTPClient: CatalogPort, Sendable {
+public final class CatalogHTTPClient: CatalogPort, SecretPort, Sendable {
   private let baseURL: URL
   private let token: String
   private let session: URLSession
@@ -217,22 +219,27 @@ public final class CatalogHTTPClient: CatalogPort, Sendable {
       .providers
   }
 
-  /// Saves a provider's key or enable flag; nil fields are left alone.
+  /// Saves a provider's key, enable flag, or the address and model it overrides: a nil field is
+  /// left alone, an empty address or model returns that provider to its catalogue value.
   public func saveProvider(
     id: String,
     apiKey: String?,
-    enabled: Bool?
+    enabled: Bool?,
+    baseUrl: String? = nil,
+    model: String? = nil
   ) async throws -> ProviderSettings {
     struct Payload: Decodable { let provider: ProviderSettings }
     var body: [String: Any] = [:]
     if let apiKey { body["apiKey"] = apiKey }
     if let enabled { body["enabled"] = enabled }
+    if let baseUrl { body["baseUrl"] = baseUrl }
+    if let model { body["model"] = model }
     return try await request(
       path: "/v1/providers/\(id)", method: "PUT", body: body, as: Payload.self
     ).provider
   }
 
-  /// Probes one provider with a single search; nothing is saved.
+  /// Probes one provider: one search, or one minimal decision. Nothing is saved.
   public func testProvider(id: String) async throws -> ProviderProbe {
     struct Payload: Decodable { let result: ProviderProbe }
     return try await request(
@@ -351,6 +358,80 @@ public final class CatalogHTTPClient: CatalogPort, Sendable {
     AsyncStream { continuation in
       continuation.finish()
     }
+  }
+
+  // MARK: - Secrets
+
+  /// Every record's metadata. A store that cannot be read is a refusal, not an empty list, so
+  /// the caller never shows "no passwords" when it means "cannot read them".
+  public func secrets() async throws -> [Secret] {
+    struct Payload: Decodable { let secrets: [Secret] }
+    return try await request(path: "/v1/secrets", method: "GET", body: nil, as: Payload.self)
+      .secrets
+  }
+
+  /// One value, read on request: the daemon records the read and answers the value alone.
+  public func revealSecret(key: String, scope: SecretScope, botId: String?) async throws -> String {
+    struct Payload: Decodable {
+      struct Body: Decodable {
+        let key: String
+        let scope: String
+        let value: String
+      }
+      let secret: Body
+    }
+    var body: [String: Any] = ["key": key, "scope": scope.rawValue]
+    if let botId, !botId.isEmpty { body["botId"] = botId }
+    let payload = try await request(
+      path: "/v1/secrets/reveal",
+      method: "POST",
+      body: body,
+      as: Payload.self
+    )
+    return payload.secret.value
+  }
+
+  /// Removes one record. The daemon answers 204, or 404 for a record that is already gone.
+  public func deleteSecret(key: String, scope: SecretScope, botId: String?) async throws {
+    var query: [URLQueryItem] = []
+    if let botId, !botId.isEmpty { query.append(URLQueryItem(name: "botId", value: botId)) }
+    _ = try await raw(
+      path: "/v1/secrets/\(scope.rawValue)/\(key)", method: "DELETE", body: nil, query: query)
+  }
+
+  /// Answers a secret card. The value travels once: the response carries the submission and
+  /// nothing else. `ttlMinutes` is the person's last word, so it is always in the body — the
+  /// number they chose, or null for a record that never expires.
+  public func answerSecret(
+    botId: String,
+    entryId: String,
+    callIndex: Int,
+    key: String,
+    value: String,
+    scope: SecretScope,
+    ttlMinutes: SecretTTL,
+    skipped: Bool
+  ) async throws {
+    struct Payload: Decodable { let submission: Submission }
+    var body: [String: Any] = [
+      "entryId": entryId,
+      "callIndex": callIndex,
+      "key": key,
+      "value": value,
+      "scope": scope.rawValue,
+    ]
+    switch ttlMinutes {
+    case .inherit:
+      break
+    case .permanent:
+      body["ttlMinutes"] = NSNull()
+    case .minutes(let minutes):
+      body["ttlMinutes"] = minutes
+    }
+    if skipped { body["skipped"] = true }
+    _ = try await request(
+      path: "/v1/bots/\(botId)/secrets", method: "POST", body: body, as: Payload.self
+    )
   }
 
   private struct ErrorPayload: Decodable {

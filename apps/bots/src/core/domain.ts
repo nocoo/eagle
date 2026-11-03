@@ -141,6 +141,83 @@ export type Usage = {
   readonly costUsd?: number;
 };
 
+/** The two scopes a secret has: this Bot's own record, or every Bot's on this machine. */
+export type SecretScope = "bot" | "shared";
+
+/**
+ * The bounds the secrets contract promises (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5). They
+ * live here so the card answer and the tools refuse the same inputs.
+ */
+export const SECRET_KEY_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+export const MAX_SECRET_VALUE_BYTES = 8 * 1024;
+/** Shorter than the log's own redaction bound: a value it cannot scrub is not stored. */
+export const MIN_SECRET_VALUE_CHARS = 4;
+/** One command's environment has to fit in the kernel's own limit. */
+export const MAX_SECRET_ENV_BYTES = 64 * 1024;
+export const MAX_SECRET_PURPOSE_CHARS = 240;
+export const MIN_SECRET_TTL_MINUTES = 1;
+export const MAX_SECRET_TTL_MINUTES = 1440;
+export const MAX_SECRET_LIST_LIMIT = 100;
+export const DEFAULT_SECRET_LIST_LIMIT = 20;
+
+/** One secret's metadata; a value is never part of it (PROTOCOL.md, "Secrets"). */
+export type SecretMeta = {
+  readonly key: string;
+  readonly scope: SecretScope;
+  readonly botId: string;
+  readonly purpose?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly expiresAt?: string;
+  /** When the record was last used, and by whom; both come from the audit ledger. */
+  readonly lastUsedAt?: string;
+  readonly lastUsedBy?: "bot" | "person";
+};
+
+/** What the daemon stores when a person answers a secret card. */
+export type SecretSave = {
+  readonly botId: string;
+  readonly key: string;
+  readonly value: string;
+  readonly scope: SecretScope;
+  readonly purpose?: string;
+  /** Absent means the record is permanent. */
+  readonly ttlMinutes?: number;
+  readonly trace?: string;
+};
+
+/**
+ * The store behind the card answer (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5). The daemon
+ * owns it; the tools see a narrower port, and the model never holds a value.
+ */
+export type SecretsPort = {
+  readonly save: (input: SecretSave) => Promise<{
+    readonly scope: SecretScope;
+    readonly createdAt: string;
+    readonly updatedAt: string;
+    readonly expiresAt?: string;
+  }>;
+  /** Claims one card durably; `false` means it was already spent. */
+  readonly claimAnswer: (input: {
+    readonly botId: string;
+    readonly entry: string;
+    readonly trace?: string;
+  }) => Promise<boolean>;
+  /** Hands a claimed card back, because nothing was stored and nothing was admitted. */
+  readonly releaseAnswer: (input: {
+    readonly botId: string;
+    readonly entry: string;
+  }) => Promise<void>;
+};
+
+/** The secrets store could not be read or written; the route answers 503 (PROTOCOL.md). */
+export class SecretsStorageError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "SecretsStorageError";
+  }
+}
+
 /** One pull request a bot reported: a link, a title and a state (coding group). */
 export type PullSummary = {
   readonly url: string;
@@ -430,9 +507,11 @@ export const TOOL_GROUP_NAMES = [
   "core",
   "coding",
   "memory",
+  "secrets",
   "herdr",
   "agents",
   "search",
+  "decision",
   "trigger",
   "peers",
 ] as const;
@@ -448,6 +527,7 @@ export const DEFAULT_TOOL_GROUPS: readonly ToolGroup[] = [
   "core",
   "coding",
   "memory",
+  "secrets",
   "herdr",
   "agents",
   "trigger",

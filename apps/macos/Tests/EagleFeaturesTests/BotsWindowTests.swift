@@ -448,7 +448,9 @@ final class StubCatalog: CatalogPort {
 
   func loadProviders() async throws -> [ProviderSettings] { providers }
 
-  func saveProvider(id: String, apiKey: String?, enabled: Bool?) async throws -> ProviderSettings {
+  func saveProvider(
+    id: String, apiKey: String?, enabled: Bool?, baseUrl: String?, model: String?
+  ) async throws -> ProviderSettings {
     savedProviders.append((id, apiKey, enabled))
     throw ClientError("not used")
   }

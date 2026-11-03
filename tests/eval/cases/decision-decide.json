@@ -1,0 +1,70 @@
+{
+  "id": "decision-decide",
+  "title": "决策工具组真的发一次 System One 请求，并把答案交给模型",
+  "kind": "decision",
+  "notes": "The decision group is deferred and provider-backed: the model discovers it with tool_search, points at the case's own System One endpoint (a provider override), and gets a typed answer back. This is the only case where a decision answer exists end to end.",
+  "toolGroups": ["core", "coding", "decision"],
+  "systemone": {
+    "model": "jev-eval",
+    "answers": {
+      "next_step": {
+        "type": "choice",
+        "choice": "test",
+        "probabilities": { "test": 0.82, "merge": 0.18 },
+        "confidence": 0.64
+      }
+    },
+    "usage": { "input_tokens": 21, "output_tokens": 2 }
+  },
+  "model": {
+    "script": [
+      {
+        "toolCall": {
+          "name": "tool_search",
+          "args": { "query": "decision decide classify" }
+        }
+      },
+      {
+        "toolCall": {
+          "name": "decide",
+          "args": {
+            "state": "一个很小的改动还没有跑测试。",
+            "question": "下一步做什么？",
+            "options": [
+              { "label": "test", "description": "先跑聚焦的测试" },
+              { "label": "merge", "description": "不跑测试直接合并" }
+            ]
+          }
+        }
+      },
+      {
+        "text": "决策模型选了先跑测试（0.82），所以我先跑测试再合并。"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "http",
+      "method": "PUT",
+      "path": "/v1/providers/jev-relay",
+      "body": "{\"baseUrl\":\"{{model.url}}\",\"model\":\"typesafe/jev-latest\",\"enabled\":true}",
+      "expectStatus": 200
+    },
+    {
+      "kind": "chat",
+      "text": "这个改动还没跑测试，用决策模型定一下下一步"
+    }
+  ],
+  "expect": {
+    "messages": [
+      { "role": "user", "origin": "human", "contains": "用决策模型定一下" },
+      { "role": "tool", "contains": "decide" },
+      { "role": "tool", "contains": "\"choice\":\"test\"" },
+      { "role": "assistant", "contains": "先跑测试" }
+    ],
+    "messagesExcluded": [{ "role": "tool", "contains": "决策失败" }],
+    "toolsCalled": ["tool_search", "decide"],
+    "noErrors": true,
+    "modelRequests": { "max": 4 }
+  }
+}

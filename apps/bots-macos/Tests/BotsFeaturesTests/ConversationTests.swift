@@ -74,7 +74,10 @@ final class ConversationTests: XCTestCase {
     model.send(inserting: true)
     try await Task.sleep(for: .milliseconds(60))
 
-    XCTAssertEqual(fake.busyModes, [.followUp, .steer])
+    // Two sends started from one turn race each other on the wire; what the person asked for
+    // is that one queues and one steers, not which of them the socket wrote first.
+    XCTAssertEqual(
+      fake.busyModes.sorted { "\($0)" < "\($1)" }, [.followUp, .steer].sorted { "\($0)" < "\($1)" })
   }
 
   func testAnsweringACardSendsTheChosenLabelsAndNeverTheText() async throws {

@@ -107,9 +107,11 @@ public protocol CatalogPort: AnyObject {
   func moveBot(id: String, groupId: String?) async throws -> BotSummary
   /// The third-party providers and their saved state.
   func loadProviders() async throws -> [ProviderSettings]
-  /// Saves one provider's key or enable flag.
-  func saveProvider(id: String, apiKey: String?, enabled: Bool?) async throws -> ProviderSettings
-  /// Probes one provider with a single search.
+  /// Saves one provider's key, enable flag, or the address and model it overrides.
+  func saveProvider(
+    id: String, apiKey: String?, enabled: Bool?, baseUrl: String?, model: String?
+  ) async throws -> ProviderSettings
+  /// Probes one provider: one search, or one minimal decision.
   func testProvider(id: String) async throws -> ProviderProbe
   /// Usage statistics over the retained window.
   func loadUsage(days: Int) async throws -> UsageReport
@@ -267,4 +269,27 @@ public protocol TriggerPort: AnyObject, Sendable {
   func list(botId: String) async throws -> [TriggerDetail]
   /// Switching is the only mutation a person may perform.
   func setEnabled(botId: String, triggerId: String, enabled: Bool) async throws -> TriggerDetail
+}
+
+/// The daemon's secrets (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5). The card answer is the only
+/// write, and a value is only ever read back when a person asks for it.
+public protocol SecretPort: AnyObject {
+  /// Every record's metadata; the value is never part of it.
+  func secrets() async throws -> [Secret]
+  /// One value, read on request. The daemon records the read as the person's. A bot's own
+  /// record is identified by its bot too, because two bots may use one key.
+  func revealSecret(key: String, scope: SecretScope, botId: String?) async throws -> String
+  /// Removes one record. Deleting an absent record is a success.
+  func deleteSecret(key: String, scope: SecretScope, botId: String?) async throws
+  /// Answers a secret card: the value travels once and is never read back.
+  func answerSecret(
+    botId: String,
+    entryId: String,
+    callIndex: Int,
+    key: String,
+    value: String,
+    scope: SecretScope,
+    ttlMinutes: SecretTTL,
+    skipped: Bool
+  ) async throws
 }

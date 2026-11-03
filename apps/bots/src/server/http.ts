@@ -16,6 +16,9 @@ import {
   isThinkingLevel,
   MAX_BOT_NOTE_CHARS,
   normalizeBotNote,
+  type SecretMeta,
+  type SecretScope,
+  SecretsStorageError,
   type ToolGroupCatalog,
 } from "../core/domain.ts";
 import { declareEvent } from "../log/events.ts";
@@ -79,6 +82,8 @@ export type ServerOptions = {
   readonly triggers?: TriggerApi;
   /** The read side of bot-to-bot exchanges; absent in a build without a peer store. */
   readonly peers?: PeerApi;
+  /** The secrets store's settings surface; absent in a build without secret storage. */
+  readonly secrets?: SecretsApi;
   /** The inbound side: one webhook delivery, authenticated by its own trigger token. */
   readonly ingress?: TriggerIngress;
   readonly pid?: number;
@@ -336,6 +341,38 @@ const extras = (
   return result;
 };
 
+/**
+ * The secrets store's settings surface (docs/bots/PROTOCOL.md, "Secrets"). The list is
+ * metadata only, and the reveal is the one route that answers a value.
+ */
+export type SecretsApi = {
+  /** Every record, without a value. */
+  readonly list: (input?: { readonly trace?: string }) => Promise<readonly SecretMeta[]>;
+  /** The value of one record; undefined when it is missing or expired. */
+  readonly reveal: (input: {
+    readonly key: string;
+    readonly scope: SecretScope;
+    /** Required for a bot's own record: two bots may use the same key. */
+    readonly botId?: string;
+    readonly trace?: string;
+  }) => Promise<
+    | {
+        readonly key: string;
+        readonly scope: SecretScope;
+        readonly botId: string;
+        readonly value: string;
+      }
+    | undefined
+  >;
+  /** Removes one record; false when there was nothing to remove. */
+  readonly remove: (input: {
+    readonly key: string;
+    readonly scope: SecretScope;
+    readonly botId?: string;
+    readonly trace?: string;
+  }) => Promise<boolean>;
+};
+
 /** The app's only trigger surface: read detail, and switch one on or off. */
 /** What the app reads about an exchange between bots (docs/bots/TRIGGERS.md §10). */
 export type PeerApi = {
@@ -406,6 +443,8 @@ const requiredScope = (path: string, method: string): ClientScope => {
   if (path === "/v1/settings" || path === "/v1/settings/test") return "admin";
   // A provider probe spends a stored key, so it sits with the provider writes.
   if (path.startsWith("/v1/providers")) return "admin";
+  // Reading a value back is the settings page's one privileged act.
+  if (path === "/v1/secrets/reveal") return "admin";
   if (method === "DELETE") return "admin";
   return "write";
 };
@@ -694,25 +733,37 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
           const body = await readBody(request);
           if (
             !isObject(body) ||
-            Object.keys(body).some((key) => !["apiKey", "enabled"].includes(key))
+            Object.keys(body).some(
+              (key) => !["apiKey", "enabled", "baseUrl", "model"].includes(key),
+            )
           ) {
             json(response, 400, {
               error: {
                 kind: "invalid_command",
-                message: "send an apiKey, an enabled flag, or both",
+                message: "send an apiKey, an enabled flag, a baseUrl, a model, or any of them",
               },
             });
             return;
           }
-          const input: { apiKey?: string; enabled?: boolean } = {};
-          if (body.apiKey !== undefined) {
-            if (typeof body.apiKey !== "string") {
-              json(response, 400, {
-                error: { kind: "invalid_command", message: "apiKey must be a string" },
-              });
-              return;
+          const input: {
+            apiKey?: string;
+            enabled?: boolean;
+            baseUrl?: string;
+            model?: string;
+          } = {};
+          let malformed: string | undefined;
+          for (const field of ["apiKey", "baseUrl", "model"] as const) {
+            const value = body[field];
+            if (value === undefined) continue;
+            if (typeof value !== "string") {
+              malformed = `${field} must be a string`;
+              break;
             }
-            input.apiKey = body.apiKey;
+            input[field] = value;
+          }
+          if (malformed !== undefined) {
+            json(response, 400, { error: { kind: "invalid_command", message: malformed } });
+            return;
           }
           if (body.enabled !== undefined) {
             if (typeof body.enabled !== "boolean") {
@@ -922,6 +973,134 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         json(response, 200, { submission: record });
         return;
       }
+      const secretAnswerMatch = /^\/v1\/bots\/([A-Za-z0-9_-]+)\/secrets$/.exec(path);
+      if (secretAnswerMatch !== null && request.method === "POST") {
+        const botId = secretAnswerMatch[1] as string;
+        const body = await readBody(request);
+        const entryId = isObject(body) ? body.entryId : undefined;
+        const key = isObject(body) ? body.key : undefined;
+        const value = isObject(body) ? body.value : undefined;
+        const scope = isObject(body) ? body.scope : undefined;
+        const ttl = isObject(body) ? body.ttlMinutes : undefined;
+        const skipped = isObject(body) ? body.skipped : undefined;
+        const callIndex = isObject(body) ? body.callIndex : undefined;
+        const shaped =
+          typeof entryId === "string" &&
+          typeof key === "string" &&
+          (value === undefined || typeof value === "string") &&
+          (scope === undefined || scope === "bot" || scope === "shared") &&
+          (ttl === undefined ||
+            ttl === null ||
+            (typeof ttl === "number" && Number.isInteger(ttl))) &&
+          (skipped === undefined || skipped === true) &&
+          (callIndex === undefined ||
+            (typeof callIndex === "number" && Number.isInteger(callIndex) && callIndex >= 0));
+        if (!shaped || (value === undefined && skipped !== true)) {
+          json(response, 400, {
+            error: {
+              kind: "invalid_command",
+              message:
+                "send { entryId, key, value } and optionally { scope, ttlMinutes } or { skipped: true }",
+            },
+          });
+          return;
+        }
+        const record = await options.service.answerSecret(botId, {
+          entryId: entryId as string,
+          ...(callIndex === undefined ? {} : { callIndex: callIndex as number }),
+          key: key as string,
+          value: (value as string | undefined) ?? "",
+          ...(scope === undefined ? {} : { scope: scope as SecretScope }),
+          ...(ttl === undefined ? {} : { ttlMinutes: ttl as number | null }),
+          ...(skipped === true ? { skipped: true } : {}),
+          trace: `tr_http_${++sequence}`,
+        });
+        json(response, 200, { submission: record });
+        return;
+      }
+      if (path === "/v1/secrets" && request.method === "GET") {
+        if (options.secrets === undefined) {
+          json(response, 503, {
+            error: { kind: "storage_failed", message: "the secrets store is not available" },
+          });
+          return;
+        }
+        json(response, 200, {
+          secrets: await options.secrets.list({ trace: `tr_http_${++sequence}` }),
+        });
+        return;
+      }
+      if (path === "/v1/secrets/reveal" && request.method === "POST") {
+        if (options.secrets === undefined) {
+          json(response, 503, {
+            error: { kind: "storage_failed", message: "the secrets store is not available" },
+          });
+          return;
+        }
+        const body = await readBody(request);
+        const key = isObject(body) ? body.key : undefined;
+        const scope = isObject(body) ? body.scope : undefined;
+        const botId = isObject(body) ? body.botId : undefined;
+        // A bot's own record is identified by its bot too: two bots may use one key.
+        const owned =
+          scope === "bot"
+            ? typeof botId === "string" && botId.length > 0
+            : botId === undefined || typeof botId === "string";
+        if (typeof key !== "string" || (scope !== "bot" && scope !== "shared") || !owned) {
+          json(response, 400, {
+            error: {
+              kind: "invalid_command",
+              message: "send { key, scope } and, for a bot record, the botId that owns it",
+            },
+          });
+          return;
+        }
+        const secret = await options.secrets.reveal({
+          key,
+          scope: scope as SecretScope,
+          trace: `tr_http_${++sequence}`,
+          ...(typeof botId === "string" && botId.length > 0 ? { botId } : {}),
+        });
+        if (secret === undefined) {
+          json(response, 404, { error: { kind: "unknown_bot", message: "no such secret" } });
+          return;
+        }
+        json(response, 200, { secret });
+        return;
+      }
+      const secretMatch = /^\/v1\/secrets\/(bot|shared)\/([A-Za-z0-9._-]{1,64})$/.exec(path);
+      if (secretMatch !== null && request.method === "DELETE") {
+        if (options.secrets === undefined) {
+          json(response, 503, {
+            error: { kind: "storage_failed", message: "the secrets store is not available" },
+          });
+          return;
+        }
+        const scope = secretMatch[1] as SecretScope;
+        const key = secretMatch[2] as string;
+        const botId = new URL(request.url ?? "/", "http://127.0.0.1").searchParams.get("botId");
+        if (scope === "bot" && (botId === null || botId.length === 0)) {
+          json(response, 400, {
+            error: {
+              kind: "invalid_command",
+              message: "a bot record is identified by the bot that owns it: add ?botId=",
+            },
+          });
+          return;
+        }
+        const deleted = await options.secrets.remove({
+          key,
+          scope,
+          trace: `tr_http_${++sequence}`,
+          ...(botId === null || botId.length === 0 ? {} : { botId }),
+        });
+        if (!deleted) {
+          json(response, 404, { error: { kind: "unknown_bot", message: "no such secret" } });
+          return;
+        }
+        response.writeHead(204).end();
+        return;
+      }
       const taskMatch = /^\/v1\/bots\/([A-Za-z0-9_-]+)\/tasks\/(t_\d+)\/(retry|abort)$/.exec(path);
       if (taskMatch !== null && request.method === "POST") {
         const [, botId, taskId, action] = taskMatch as unknown as [string, string, string, string];
@@ -1004,6 +1183,14 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
       }
       json(response, 404, { error: { kind: "unknown_bot", message: "no such endpoint" } });
     } catch (error) {
+      if (error instanceof SecretsStorageError) {
+        // A store that cannot be read is a refusal, not an empty list: the client must
+        // never show "no passwords" when it means "cannot read them".
+        json(response, 503, {
+          error: { kind: "storage_failed", message: "the secrets store could not be read" },
+        });
+        return;
+      }
       if (error instanceof ClientError) {
         // An unknown id is a 404 like any other; a live credential is refused with its own
         // kind so the App can offer "revoke first" instead of a generic refusal.

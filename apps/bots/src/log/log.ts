@@ -44,13 +44,25 @@ const DETAIL_TYPES = {
   queued: "boolean",
   propagated: "boolean",
   path: "string",
+  scope: "string",
 } as const;
 
-const redact = (value: string, secrets: readonly string[] = []): string => {
-  let text = value;
-  for (const secret of [process.env.BOTS_API_KEY, process.env.AGENT_SIGNING_KEY, ...secrets]) {
-    if (secret && secret.length >= 8) text = text.split(secret).join("[redacted]");
+/** A credential has a shape; a stored password only has a length somebody chose. */
+const SECRET_MIN_CHARS = 4;
+
+const scrub = (text: string, values: readonly (string | undefined)[], minimum: number): string => {
+  let out = text;
+  for (const value of values) {
+    if (value !== undefined && value.length >= minimum) out = out.split(value).join("[redacted]");
   }
+  return out;
+};
+
+const redact = (value: string, secrets: readonly string[] = []): string => {
+  let text = scrub(value, [process.env.BOTS_API_KEY, process.env.AGENT_SIGNING_KEY], 8);
+  // A stored secret is scrubbed at its own length, not at a credential's: a password is
+  // never long enough to be safe from a length filter (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5).
+  text = scrub(text, secrets, SECRET_MIN_CHARS);
   text = text.replace(/[A-Za-z0-9_-]{0,2}sk-[A-Za-z0-9_-]{16,}/g, "[redacted]");
   const home = process.env.HOME;
   if (home && home.length > 1) text = text.split(home).join("~");
@@ -117,6 +129,13 @@ const DETAIL_SCHEMA: Readonly<Record<string, readonly string[]>> = {
   "pi.report": ["kind", "reason"],
   "transport.devtoken.ok": ["path"],
   "transport.devtoken.unsafe": ["path", "reason"],
+  // A secret event names the scope and nothing else: never a key, never a value.
+  "core.secret.write.ok": ["scope"],
+  "core.secret.read.ok": ["scope"],
+  "core.secret.delete.ok": ["scope"],
+  "core.secret.reveal.ok": ["scope"],
+  "core.secret.expire.ok": ["scope"],
+  "core.secret.fail": ["scope"],
 };
 const FRAMEWORK_DETAIL = new Set(["propagated"]);
 const COUNT_KEYS = new Set(["count", "bytes", "len"]);
@@ -237,6 +256,8 @@ export class Log {
       level,
       layer,
       evt,
+      // A trace carries every scrubbing rule a record does. A password that happens to look
+      // like a trace rewrites that one identifier, which is the price of never logging it.
       trace: redact(fields.trace, this.#secrets()),
       ...(fields.botId === undefined ? {} : { botId: redact(fields.botId, this.#secrets()) }),
       ...(fields.connId === undefined ? {} : { connId: redact(fields.connId, this.#secrets()) }),

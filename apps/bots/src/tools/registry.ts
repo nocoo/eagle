@@ -16,6 +16,12 @@ import {
 import type { Log } from "../log/log.ts";
 import { AGENTS_TOOLS_EXTENSION, agentsExtension } from "./agents/tools.ts";
 import { createAskTool } from "./ask.ts";
+import type { DecisionClient } from "./decision/client.ts";
+import {
+  type createDecisionTools,
+  DECISION_TOOLS_EXTENSION,
+  decisionExtension,
+} from "./decision/tools.ts";
 import { SocketDevicePort } from "./devices/port.ts";
 import {
   DEVICE_EXTENSION,
@@ -39,6 +45,7 @@ import { PERSONA_EXTENSION, personaExtension } from "./persona/tools.ts";
 import { PULLS_TOOLS_EXTENSION, pullsExtension } from "./pulls/tools.ts";
 import type { SearchClient } from "./search/client.ts";
 import { SEARCH_TOOLS_EXTENSION, searchExtension } from "./search/tools.ts";
+import { SECRETS_TOOLS_EXTENSION, secretsExtension } from "./secrets/tools.ts";
 import {
   type createTriggerTools,
   TRIGGER_TOOLS_EXTENSION,
@@ -50,6 +57,7 @@ import type {
   NoteToolHost,
   PeerToolHost,
   PullToolHost,
+  SecretsToolHost,
   TriggerToolHost,
 } from "./types.ts";
 
@@ -61,9 +69,11 @@ const GROUP_EXTENSIONS: Record<ToolGroup, readonly string[]> = {
   core: [BOTS_TOOLS_EXTENSION],
   coding: [CodingTools.name, PULLS_TOOLS_EXTENSION],
   memory: [MEMORY_TOOLS_EXTENSION],
+  secrets: [SECRETS_TOOLS_EXTENSION],
   herdr: [HERDR_TOOLS_EXTENSION, toolSearch.name],
   agents: [AGENTS_TOOLS_EXTENSION],
   search: [SEARCH_TOOLS_EXTENSION, toolSearch.name],
+  decision: [DECISION_TOOLS_EXTENSION, toolSearch.name],
   trigger: [TRIGGER_TOOLS_EXTENSION, toolSearch.name],
   peers: [PEERS_TOOLS_EXTENSION, toolSearch.name],
 };
@@ -133,6 +143,8 @@ const catalogSearch: SearchClient = {
   fetchPage: refuse,
 };
 
+const catalogDecision: DecisionClient = { ask: refuse };
+
 const catalogMemory: MemoryToolHost = {
   botId: "catalog",
   list: refuse,
@@ -140,6 +152,15 @@ const catalogMemory: MemoryToolHost = {
   read: refuse,
   write: refuse,
   remove: refuse,
+};
+
+const catalogSecrets: SecretsToolHost = {
+  botId: "catalog",
+  list: refuse,
+  read: refuse,
+  remove: refuse,
+  environment: refuse,
+  envNameFor: refuse,
 };
 
 /**
@@ -178,26 +199,31 @@ export const createCatalogRegistry = (): RegistryReader =>
       devices: { socketPath: "/nonexistent-catalogue.sock", botId: "catalog" },
       herdr: { client: createHerdrClient(), stateDir: "/", botId: "catalog" },
       search: { client: catalogSearch, botId: "catalog" },
+      decision: { client: catalogDecision, botId: "catalog" },
       trigger: catalogTrigger,
       peers: catalogPeers,
       memory: catalogMemory,
       pulls: catalogPulls,
       note: catalogNote,
+      secrets: catalogSecrets,
     },
   );
 
-const bash = createBashTool({
-  prepare(execution) {
-    execution.inheritEnv = false;
-    execution.env = {};
-    for (const name of ["PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "SHELL"]) {
-      const value = process.env[name];
-      if (value !== undefined) execution.env[name] = value;
-    }
-    execution.env.TERM = "dumb";
-    execution.env.PWD = execution.cwd;
-  },
-});
+/** The environment every bot command starts from: an allowlist, and nothing else. */
+const baseEnvironment = (execution: {
+  inheritEnv: boolean;
+  env: Record<string, string>;
+  cwd: string;
+}): void => {
+  execution.inheritEnv = false;
+  execution.env = {};
+  for (const name of ["PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "SHELL"]) {
+    const value = process.env[name];
+    if (value !== undefined) execution.env[name] = value;
+  }
+  execution.env.TERM = "dumb";
+  execution.env.PWD = execution.cwd;
+};
 
 export type ToolRegistryOptions = {
   /** The person's standing instruction, read on every request so an edit lands immediately. */
@@ -211,12 +237,18 @@ export type ToolRegistryOptions = {
   readonly search?: Omit<Parameters<typeof searchExtension>[0], "botId"> & {
     readonly botId: string;
   };
+  /** Typed judgments need a decision client; absent only where no provider store exists. */
+  readonly decision?: Omit<Parameters<typeof createDecisionTools>[0], "botId"> & {
+    readonly botId: string;
+  };
   /** Trigger tools act on this bot's own definitions; absent in a build without storage. */
   readonly trigger?: Parameters<typeof createTriggerTools>[0];
   /** Peer tools message other local bots; absent in a build without a daemon around them. */
   readonly peers?: Parameters<typeof peersExtension>[0];
   /** Memory tools act on this bot's two scopes; absent in a build without a memory directory. */
   readonly memory?: MemoryToolHost;
+  /** Secret tools read this bot's own records and the shared ones; absent without a store. */
+  readonly secrets?: SecretsToolHost;
   /** Pull-request reports belong to the coding group; absent without a store to keep them. */
   readonly pulls?: Parameters<typeof pullsExtension>[0];
   /** The bot's own sidebar note; absent only in a build with no catalog around it. */
@@ -239,6 +271,17 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
   const list = createListTool();
   const note = createNoteSetTool(options.note);
   const ask = createAskTool();
+  /**
+   * The secrets this bot may use reach a command as environment variables and nothing else:
+   * a tool result is persisted into the transcript, so a value must never be one.
+   */
+  const bash = createBashTool({
+    async prepare(execution) {
+      baseEnvironment(execution);
+      const secrets = (await options.secrets?.environment()) ?? {};
+      for (const [name, value] of Object.entries(secrets)) execution.env[name] = value;
+    },
+  });
   // The two core prompts are installed first so their sections lead the system prompt:
   // who this bot is comes before what it can do (docs/bots/PRODUCT.md, "Core prompts").
   if (options.persona !== undefined) registry.install(personaExtension(options.persona));
@@ -281,14 +324,17 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
   if (devices !== undefined) registry.install(deviceExtension(devices));
   registry.install(agentsExtension());
   if (options.search !== undefined) registry.install(searchExtension(options.search));
+  if (options.decision !== undefined) registry.install(decisionExtension(options.decision));
   if (options.trigger !== undefined) registry.install(triggerExtension(options.trigger));
   if (options.peers !== undefined) registry.install(peersExtension(options.peers));
   if (options.pulls !== undefined) registry.install(pullsExtension(options.pulls));
   if (options.memory !== undefined) registry.install(memoryExtension(options.memory));
+  if (options.secrets !== undefined) registry.install(secretsExtension(options.secrets));
   // Deferred tools need their loader; without one the model would never see them.
   if (
     herdr !== undefined ||
     options.search !== undefined ||
+    options.decision !== undefined ||
     options.trigger !== undefined ||
     options.peers !== undefined
   ) {

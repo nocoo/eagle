@@ -147,7 +147,9 @@ final class CatalogHTTPClientTests: XCTestCase {
     XCTAssertEqual(loaded.settings.thinkingLevel, "medium")
     XCTAssertEqual(
       loaded.settings.toolGroups,
-      ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"])
+      [
+        "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "trigger",
+      ])
     // An omitted key must not be sent, so the daemon keeps the stored one.
     let saved = try await client.saveGateway(
       baseURL: "http://x/v1", model: "m2", thinkingLevel: "xhigh", toolGroups: ["core", "coding"],
@@ -245,9 +247,11 @@ final class CatalogHTTPClientTests: XCTestCase {
     var savedBody: [String: Any] = [:]
     var probed = false
     let provider = """
-      {"id":"deepseek-search","title":"DeepSeek 搜索","kind":"deepseek-search",
-       "baseUrl":"https://api.deepseek.com","docsUrl":"https://api-docs.deepseek.com/guides/search/",
-       "keyLabel":"DeepSeek API Key","hasApiKey":true,"enabled":true}
+      {"id":"deepseek-search","title":"DeepSeek 搜索","service":"search","kind":"deepseek-search",
+       "baseUrl":"https://api.deepseek.com","model":"",
+       "docsUrl":"https://api-docs.deepseek.com/guides/search/",
+       "keyLabel":"DeepSeek API Key","keyRequired":true,"hasApiKey":true,"enabled":true,
+       "defaults":{"baseUrl":"https://api.deepseek.com","model":""}}
       """
     StubProtocol.handler = { request in
       switch (request.httpMethod, request.url?.path) {
@@ -285,6 +289,58 @@ final class CatalogHTTPClientTests: XCTestCase {
     XCTAssertTrue(probed)
     XCTAssertTrue(probe.ok)
     XCTAssertEqual(probe.results, 1)
+  }
+
+  /// A decision provider carries its own address, model and key rule, and an override travels
+  /// with the save (docs/bots/PROTOCOL.md, "Providers").
+  func testDecisionProviderLoadsAndSavesItsAddressAndModel() async throws {
+    var savedBody: [String: Any] = [:]
+    let provider = """
+      {"id":"falcon","title":"Falcon","service":"decision","kind":"systemone",
+       "baseUrl":"http://127.0.0.1:19999","model":"jev-preview",
+       "docsUrl":"https://github.com/nocoo/falcon/blob/main/docs/03-protocol.md",
+       "keyLabel":"Falcon Source Key","keyRequired":true,"hasApiKey":true,"enabled":true,
+       "defaults":{"baseUrl":"http://127.0.0.1:19823","model":"jev-latest"}}
+      """
+    StubProtocol.handler = { request in
+      switch (request.httpMethod, request.url?.path) {
+      case ("GET", "/v1/providers"):
+        return (200, Data("{\"providers\":[\(provider)]}".utf8))
+      case ("PUT", "/v1/providers/falcon"):
+        if let data = bodyData(request) {
+          savedBody = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        }
+        return (200, Data("{\"provider\":\(provider)}".utf8))
+      case ("POST", "/v1/providers/falcon/test"):
+        return (
+          200,
+          Data(
+            "{\"result\":{\"ok\":true,\"message\":\"连接成功 · jev-1.14.0 · test 0.62\",\"latencyMs\":9,\"model\":\"jev-preview\",\"resolvedModel\":\"jev-1.14.0\"}}"
+              .utf8)
+        )
+      default:
+        return (404, Data())
+      }
+    }
+    let listed = try await client.loadProviders()
+    XCTAssertEqual(listed.first?.service, "decision")
+    XCTAssertTrue(listed.first?.isDecision == true)
+    XCTAssertEqual(listed.first?.model, "jev-preview")
+    XCTAssertEqual(listed.first?.keyRequired, true)
+    XCTAssertEqual(listed.first?.defaults.baseUrl, "http://127.0.0.1:19823")
+    XCTAssertEqual(listed.first?.defaults.model, "jev-latest")
+
+    _ = try await client.saveProvider(
+      id: "falcon", apiKey: "falcon_key", enabled: nil,
+      baseUrl: "http://127.0.0.1:19999", model: "jev-preview")
+    XCTAssertEqual(savedBody["baseUrl"] as? String, "http://127.0.0.1:19999")
+    XCTAssertEqual(savedBody["model"] as? String, "jev-preview")
+    XCTAssertEqual(savedBody["apiKey"] as? String, "falcon_key")
+    XCTAssertNil(savedBody["enabled"])
+
+    let probe = try await client.testProvider(id: "falcon")
+    XCTAssertEqual(probe.resolvedModel, "jev-1.14.0")
+    XCTAssertEqual(probe.model, "jev-preview")
   }
 }
 

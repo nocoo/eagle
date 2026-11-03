@@ -14,21 +14,74 @@ struct SettingsTests {
     #expect(SettingsSection.general.rawValue == "通用")
   }
 
+  @Test("the tool page lists the decision group between search and triggers")
+  func decisionGroupIsListed() {
+    let groups = SettingsViewModel.toolGroups
+    let decision = try? #require(groups.firstIndex(of: SettingsViewModel.decisionToolGroup))
+    let search = try? #require(groups.firstIndex(of: SettingsViewModel.searchToolGroup))
+    let trigger = try? #require(groups.firstIndex(of: SettingsViewModel.triggerToolGroup))
+    #expect(decision != nil && search != nil && trigger != nil)
+    #expect(decision == search.map { $0 + 1 })
+    #expect(decision.map { $0 + 1 } == trigger)
+    #expect(
+      SettingsViewModel.defaultToolGroups.contains(SettingsViewModel.decisionToolGroup) == false,
+      "a judgment spends money per call, so it is opt-in")
+  }
+
   @Test("the two prompts own a tab of their own, right after 工具")
   func promptsSection() {
     #expect(SettingsSection.prompts.rawValue == "提示词")
     #expect(
       SettingsSection.allCases.map(\.rawValue)
-        == ["通用", "模型", "工具", "提示词", "服务", "设备", "CLI", "用量", "关于"])
+        == ["通用", "模型", "工具", "提示词", "服务", "密码", "设备", "CLI", "用量", "关于"])
+  }
+
+  @Test("the passwords own a tab of their own, right after 服务")
+  func passwordsSection() {
+    #expect(SettingsSection.passwords.rawValue == "密码")
+    let cases = SettingsSection.allCases.map(\.rawValue)
+    #expect(cases.firstIndex(of: "密码") == cases.firstIndex(of: "服务").map { $0 + 1 })
   }
 }
 
 /// The daemon fixture both settings pages read: one configured search provider.
 let settingsProviderJSON = #"""
-  {"id":"deepseek-search","title":"DeepSeek 搜索","kind":"deepseek-search",
-   "baseUrl":"https://api.deepseek.com","docsUrl":"https://api-docs.deepseek.com/guides/search/",
-   "keyLabel":"DeepSeek API Key","hasApiKey":true,"enabled":true}
+  {"id":"deepseek-search","title":"DeepSeek 搜索","service":"search","kind":"deepseek-search",
+   "baseUrl":"https://api.deepseek.com","model":"",
+   "docsUrl":"https://api-docs.deepseek.com/guides/search/",
+   "keyLabel":"DeepSeek API Key","keyRequired":true,"hasApiKey":true,"enabled":true,
+   "defaults":{"baseUrl":"https://api.deepseek.com","model":""}}
   """#
+
+/// One decision provider as the daemon reports it: Falcon's local root, a catalogue model and a
+/// key that is required.
+let settingsDecisionProviderJSON = #"""
+  {"id":"falcon","title":"Falcon","service":"decision","kind":"systemone",
+   "baseUrl":"http://127.0.0.1:19823","model":"jev-latest",
+   "docsUrl":"https://github.com/nocoo/falcon/blob/main/docs/03-protocol.md",
+   "keyLabel":"Falcon Source Key","keyRequired":true,"hasApiKey":true,"enabled":true,
+   "defaults":{"baseUrl":"http://127.0.0.1:19823","model":"jev-latest"}}
+  """#
+
+/// A provider row for a test, without spelling out the fields it does not care about.
+func settingsProvider(
+  id: String,
+  title: String,
+  service: String = ProviderSettings.searchService,
+  kind: String = "deepseek-search",
+  baseUrl: String = "https://api.deepseek.com",
+  model: String = "",
+  docsUrl: String = "",
+  keyLabel: String = "API Key",
+  keyRequired: Bool = true,
+  hasApiKey: Bool,
+  enabled: Bool
+) -> ProviderSettings {
+  ProviderSettings(
+    id: id, title: title, service: service, kind: kind, baseUrl: baseUrl, model: model,
+    docsUrl: docsUrl, keyLabel: keyLabel, keyRequired: keyRequired, hasApiKey: hasApiKey,
+    enabled: enabled, defaults: ProviderDefaults(baseUrl: baseUrl, model: model))
+}
 
 @Suite("Settings gateway", .serialized)
 @MainActor
@@ -98,7 +151,8 @@ struct SettingsGatewayTests {
 
     GatewayHTTPStub.handler = { _ in (401, Data()) }
     await model.loadProviders()
-    #expect(model.providerMessage != nil)
+    #expect(model.providerLoadError != nil, "a refused read is a page-level failure")
+    #expect(model.providerMessage == nil)
     GatewayHTTPStub.handler = nil
   }
 
@@ -115,10 +169,9 @@ struct SettingsGatewayTests {
     }
     let model = SettingsViewModel(botsSettings: settings, urlSession: session)
     model.providers = [
-      ProviderSettings(
-        id: "deepseek-search", title: "DeepSeek 搜索", kind: "deepseek-search",
-        baseUrl: "https://api.deepseek.com", docsUrl: "", keyLabel: "DeepSeek API Key",
-        hasApiKey: false, enabled: false)
+      settingsProvider(
+        id: "deepseek-search", title: "DeepSeek 搜索", baseUrl: "https://api.deepseek.com",
+        keyLabel: "DeepSeek API Key", hasApiKey: false, enabled: false)
     ]
     model.providerKeys["deepseek-search"] = "  sk-typed  "
     await model.saveProvider("deepseek-search")
@@ -136,10 +189,9 @@ struct SettingsGatewayTests {
     GatewayHTTPStub.handler = { _ in (200, Data(#"{"provider":\#(settingsProviderJSON)}"#.utf8)) }
     let model = SettingsViewModel(botsSettings: settings, urlSession: session)
     model.providers = [
-      ProviderSettings(
-        id: "deepseek-search", title: "DeepSeek 搜索", kind: "deepseek-search",
-        baseUrl: "https://api.deepseek.com", docsUrl: "", keyLabel: "DeepSeek API Key",
-        hasApiKey: true, enabled: false)
+      settingsProvider(
+        id: "deepseek-search", title: "DeepSeek 搜索", baseUrl: "https://api.deepseek.com",
+        keyLabel: "DeepSeek API Key", hasApiKey: true, enabled: false)
     ]
     await model.setProviderEnabled("deepseek-search", true)
     #expect(model.providers.first?.enabled == true, "the saved state is the server's answer")
@@ -160,14 +212,12 @@ struct SettingsGatewayTests {
     let (settings, session) = try settingsGatewayFixture()
     let model = SettingsViewModel(botsSettings: settings, urlSession: session)
     model.providers = [
-      ProviderSettings(
-        id: "deepseek-search", title: "DeepSeek", kind: "deepseek-search",
-        baseUrl: "https://api.deepseek.com", docsUrl: "", keyLabel: "API Key",
+      settingsProvider(
+        id: "deepseek-search", title: "DeepSeek", baseUrl: "https://api.deepseek.com",
         hasApiKey: true, enabled: true),
-      ProviderSettings(
+      settingsProvider(
         id: "tavily-search", title: "Tavily", kind: "tavily-search",
-        baseUrl: "https://api.tavily.com", docsUrl: "", keyLabel: "API Key",
-        hasApiKey: true, enabled: false),
+        baseUrl: "https://api.tavily.com", hasApiKey: true, enabled: false),
     ]
     GatewayHTTPStub.handler = { request in
       #expect(request.url?.path == "/v1/providers/tavily-search")
@@ -180,8 +230,9 @@ struct SettingsGatewayTests {
       return (
         200,
         Data(
-          #"{"provider":{"id":"tavily-search","title":"Tavily","kind":"tavily-search","baseUrl":"https://api.tavily.com","docsUrl":"","keyLabel":"API Key","hasApiKey":true,"enabled":true}}"#
-            .utf8)
+          Data(
+            #"{"provider":{"id":"tavily-search","title":"Tavily","service":"search","kind":"tavily-search","baseUrl":"https://api.tavily.com","model":"","docsUrl":"","keyLabel":"API Key","keyRequired":true,"hasApiKey":true,"enabled":true,"defaults":{"baseUrl":"https://api.tavily.com","model":""}}}"#
+              .utf8))
       )
     }
     await model.setProviderEnabled("tavily-search", true)
@@ -202,10 +253,9 @@ struct SettingsGatewayTests {
     let (settings, session) = try settingsGatewayFixture()
     let model = SettingsViewModel(botsSettings: settings, urlSession: session)
     model.providers = [
-      ProviderSettings(
+      settingsProvider(
         id: "tavily-search", title: "Tavily", kind: "tavily-search",
-        baseUrl: "https://api.tavily.com", docsUrl: "", keyLabel: "API Key",
-        hasApiKey: false, enabled: false)
+        baseUrl: "https://api.tavily.com", hasApiKey: false, enabled: false)
     ]
     #expect(model.selectedSearchProvider == nil)
     await model.setProviderEnabled("tavily-search", true)
@@ -250,6 +300,244 @@ struct SettingsGatewayTests {
     GatewayHTTPStub.handler = nil
   }
 
+  @Test("the two services are listed and chosen apart")
+  func decisionServiceListedApart() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    GatewayHTTPStub.handler = { request in
+      #expect(request.url?.path == "/v1/providers")
+      return (
+        200,
+        Data(
+          #"{"providers":[\#(settingsProviderJSON),\#(settingsDecisionProviderJSON)]}"#.utf8)
+      )
+    }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    await model.loadProviders()
+    #expect(model.searchProviders.map(\.id) == ["deepseek-search"])
+    #expect(model.decisionProviders.map(\.id) == ["falcon"])
+    #expect(model.selectedSearchProvider?.id == "deepseek-search")
+    #expect(model.selectedDecisionProvider?.id == "falcon")
+    #expect(
+      model.providerAddresses["falcon"] == "http://127.0.0.1:19823",
+      "the address draft starts from what the daemon uses")
+    #expect(model.providerModels["falcon"] == "jev-latest")
+    GatewayHTTPStub.handler = nil
+  }
+
+  @Test("a decision provider saves its key, address and model in one call")
+  func decisionSaveSendsEveryDraft() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    var body: [String: Any] = [:]
+    GatewayHTTPStub.handler = { request in
+      #expect(request.url?.path == "/v1/providers/falcon")
+      if let data = gatewayHTTPBody(request) {
+        body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+      }
+      return (
+        200,
+        Data(
+          #"{"provider":{"id":"falcon","title":"Falcon","service":"decision","kind":"systemone","baseUrl":"http://127.0.0.1:19999","model":"jev-preview","docsUrl":"","keyLabel":"Falcon Source Key","keyRequired":true,"hasApiKey":true,"enabled":false,"defaults":{"baseUrl":"http://127.0.0.1:19823","model":"jev-latest"}}}"#
+            .utf8)
+      )
+    }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    model.providers = [
+      settingsProvider(
+        id: "falcon", title: "Falcon", service: ProviderSettings.decisionService,
+        kind: "systemone", baseUrl: "http://127.0.0.1:19823", model: "jev-latest",
+        keyLabel: "Falcon Source Key", hasApiKey: false, enabled: false)
+    ]
+    #expect(model.providerHasChanges(model.providers[0]) == false, "nothing typed, nothing to save")
+    model.providerKeys["falcon"] = "  falcon_key  "
+    model.providerAddresses["falcon"] = "http://127.0.0.1:19999/v1"
+    model.providerModels["falcon"] = "jev-preview"
+    #expect(model.providerHasChanges(model.providers[0]))
+    await model.saveProvider("falcon")
+    #expect(body["apiKey"] as? String == "falcon_key")
+    #expect(body["baseUrl"] as? String == "http://127.0.0.1:19999/v1")
+    #expect(body["model"] as? String == "jev-preview")
+    #expect(body["enabled"] == nil, "saving the fields leaves the selection alone")
+    #expect(model.providerKeys["falcon"] == "")
+    #expect(
+      model.providerAddresses["falcon"] == "http://127.0.0.1:19999",
+      "the drafts take the daemon's normalized answer")
+    #expect(model.providerMessage == "已保存")
+    #expect(model.providerMessageService == ProviderSettings.decisionService)
+    GatewayHTTPStub.handler = nil
+  }
+
+  @Test("clearing the address and model asks the daemon for the catalogue value again")
+  func decisionAddressReverts() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    var body: [String: Any] = [:]
+    GatewayHTTPStub.handler = { request in
+      if let data = gatewayHTTPBody(request) {
+        body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+      }
+      return (200, Data(#"{"provider":\#(settingsDecisionProviderJSON)}"#.utf8))
+    }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    model.providers = [
+      settingsProvider(
+        id: "falcon", title: "Falcon", service: ProviderSettings.decisionService,
+        kind: "systemone", baseUrl: "http://127.0.0.1:19999", model: "jev-preview",
+        hasApiKey: true, enabled: true)
+    ]
+    model.providerAddresses["falcon"] = ""
+    model.providerModels["falcon"] = ""
+    await model.saveProvider("falcon")
+    #expect(body["baseUrl"] as? String == "")
+    #expect(body["model"] as? String == "")
+    #expect(body["apiKey"] == nil, "an empty key field keeps the stored key")
+    #expect(model.providerAddresses["falcon"] == "http://127.0.0.1:19823")
+    #expect(model.providerModels["falcon"] == "jev-latest")
+    GatewayHTTPStub.handler = nil
+  }
+
+  @Test("a relay that needs no key can be chosen and probed")
+  func keylessDecisionProvider() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    GatewayHTTPStub.handler = { request in
+      switch request.url?.path {
+      case "/v1/providers/jev-relay":
+        return (
+          200,
+          Data(
+            #"{"provider":{"id":"jev-relay","title":"Jev 中转站","service":"decision","kind":"systemone","baseUrl":"http://127.0.0.1:3425","model":"typesafe/jev-latest","docsUrl":"","keyLabel":"中转站 API Key","keyRequired":false,"hasApiKey":false,"enabled":true,"defaults":{"baseUrl":"http://127.0.0.1:3425","model":"typesafe/jev-latest"}}}"#
+              .utf8)
+        )
+      case "/v1/providers/jev-relay/test":
+        return (
+          200,
+          Data(
+            #"{"result":{"ok":true,"message":"连接成功 · jev-1.14.0 · test 0.62","latencyMs":9,"model":"typesafe/jev-latest","resolvedModel":"jev-1.14.0"}}"#
+              .utf8)
+        )
+      default:
+        return (404, Data())
+      }
+    }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    model.providers = [
+      settingsProvider(
+        id: "jev-relay", title: "Jev 中转站", service: ProviderSettings.decisionService,
+        kind: "systemone", baseUrl: "http://127.0.0.1:3425", model: "typesafe/jev-latest",
+        keyLabel: "中转站 API Key", keyRequired: false, hasApiKey: false, enabled: false)
+    ]
+    await model.setProviderEnabled("jev-relay", true)
+    #expect(model.selectedDecisionProvider?.id == "jev-relay")
+    await model.testProvider("jev-relay")
+    #expect(model.providerProbe["jev-relay"]?.ok == true)
+    #expect(model.providerProbe["jev-relay"]?.resolvedModel == "jev-1.14.0")
+    #expect(model.providerMessage == nil)
+    GatewayHTTPStub.handler = nil
+  }
+
+  @Test("a relay's optional key can be cleared again")
+  func clearOptionalKey() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    var body: [String: Any] = [:]
+    GatewayHTTPStub.handler = { request in
+      #expect(request.url?.path == "/v1/providers/jev-relay")
+      if let data = gatewayHTTPBody(request) {
+        body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+      }
+      return (
+        200,
+        Data(
+          #"{"provider":{"id":"jev-relay","title":"Jev 中转站","service":"decision","kind":"systemone","baseUrl":"http://127.0.0.1:3425","model":"typesafe/jev-latest","docsUrl":"","keyLabel":"中转站 API Key","keyRequired":false,"hasApiKey":false,"enabled":true,"defaults":{"baseUrl":"http://127.0.0.1:3425","model":"typesafe/jev-latest"}}}"#
+            .utf8)
+      )
+    }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    model.providers = [
+      settingsProvider(
+        id: "jev-relay", title: "Jev 中转站", service: ProviderSettings.decisionService,
+        kind: "systemone", baseUrl: "http://127.0.0.1:3425", model: "typesafe/jev-latest",
+        keyRequired: false, hasApiKey: true, enabled: true)
+    ]
+    await model.clearProviderKey("jev-relay")
+    #expect(body["apiKey"] as? String == "", "an empty key is the way back to no key")
+    #expect(model.providers.first?.hasApiKey == false)
+    #expect(model.providerMessage == "已清除 Key")
+    await model.clearProviderKey("unknown")
+    GatewayHTTPStub.handler = nil
+  }
+
+  @Test("a failed read belongs to the page rather than to the last card that acted")
+  func providerLoadErrorIsPageLevel() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    GatewayHTTPStub.handler = { _ in
+      (200, Data(#"{"provider":\#(settingsDecisionProviderJSON)}"#.utf8))
+    }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    model.providers = [
+      settingsProvider(
+        id: "falcon", title: "Falcon", service: ProviderSettings.decisionService,
+        kind: "systemone", baseUrl: "http://127.0.0.1:19823", model: "jev-latest",
+        hasApiKey: true, enabled: true)
+    ]
+    model.providerKeys["falcon"] = "falcon_key"
+    await model.saveProvider("falcon")
+    #expect(model.providerMessageService == ProviderSettings.decisionService)
+
+    GatewayHTTPStub.handler = { _ in (401, Data()) }
+    await model.loadProviders()
+    #expect(model.providerLoadError != nil)
+    #expect(model.providerMessage == nil, "a read is not an action result")
+    #expect(model.providerMessageService == nil, "the read belongs to neither card")
+    GatewayHTTPStub.handler = nil
+  }
+
+  @Test("the row's buttons follow the key rule and the draft")
+  func providerButtonPredicates() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    let keyless = settingsProvider(
+      id: "jev-relay", title: "Jev 中转站", service: ProviderSettings.decisionService,
+      kind: "systemone", baseUrl: "http://127.0.0.1:3425", model: "typesafe/jev-latest",
+      keyRequired: false, hasApiKey: false, enabled: true)
+    let demanding = settingsProvider(
+      id: "raven", title: "Raven", service: ProviderSettings.decisionService,
+      kind: "systemone", baseUrl: "http://127.0.0.1:7024", model: "microsoft-decision-1",
+      hasApiKey: false, enabled: false)
+    model.providers = [keyless, demanding]
+    #expect(model.canTestProvider(keyless), "a relay with no key is testable")
+    #expect(model.canTestProvider(demanding) == false, "a missing required key is not")
+    #expect(model.canSaveProvider(keyless) == false, "nothing typed, nothing to save")
+    model.providerModels["jev-relay"] = "typesafe/jev-preview"
+    #expect(model.canSaveProvider(model.providers[0]))
+    #expect(model.canTestProvider(model.providers[0]) == false, "a draft is saved before probing")
+  }
+
+  @Test("choosing a decision provider leaves the search choice alone")
+  func decisionSelectionIsIndependent() async throws {
+    let (settings, session) = try settingsGatewayFixture()
+    GatewayHTTPStub.handler = { _ in
+      (
+        200,
+        Data(
+          #"{"provider":{"id":"falcon","title":"Falcon","service":"decision","kind":"systemone","baseUrl":"http://127.0.0.1:19823","model":"jev-latest","docsUrl":"","keyLabel":"Falcon Source Key","keyRequired":true,"hasApiKey":true,"enabled":true,"defaults":{"baseUrl":"http://127.0.0.1:19823","model":"jev-latest"}}}"#
+            .utf8)
+      )
+    }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    model.providers = [
+      settingsProvider(
+        id: "tavily-search", title: "Tavily", kind: "tavily-search",
+        baseUrl: "https://api.tavily.com", hasApiKey: true, enabled: true),
+      settingsProvider(
+        id: "falcon", title: "Falcon", service: ProviderSettings.decisionService,
+        kind: "systemone", baseUrl: "http://127.0.0.1:19823", model: "jev-latest",
+        hasApiKey: true, enabled: false),
+    ]
+    await model.setProviderEnabled("falcon", true)
+    #expect(model.providers.filter(\.enabled).map(\.id) == ["tavily-search", "falcon"])
+    #expect(model.selectedSearchProvider?.id == "tavily-search")
+    #expect(model.selectedDecisionProvider?.id == "falcon")
+    GatewayHTTPStub.handler = nil
+  }
+
   @Test("loadGateway does not overwrite fields the user already typed")
   func loadGatewayPreservesDraft() async throws {
     let (settings, session) = try settingsGatewayFixture()
@@ -270,7 +558,7 @@ struct SettingsGatewayTests {
     #expect(model.gatewayModel == "typed-model")
     #expect(
       model.gatewayToolGroups
-        == ["persona", "machine", "core", "coding", "memory", "agents", "trigger"])
+        == ["persona", "machine", "core", "coding", "memory", "secrets", "agents", "trigger"])
     GatewayHTTPStub.handler = nil
   }
 
@@ -358,10 +646,14 @@ struct SettingsGatewayTests {
     await model.loadGateway()
     #expect(
       model.gateway?.toolGroups
-        == ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"])
+        == [
+          "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "trigger",
+        ])
     #expect(
       model.gatewayToolGroups
-        == ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"])
+        == [
+          "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "trigger",
+        ])
     GatewayHTTPStub.handler = nil
   }
 
@@ -378,7 +670,9 @@ struct SettingsGatewayTests {
     model.setToolGroup("herdr", isOn: true)
     #expect(
       model.gatewayToolGroups
-        == ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"])
+        == [
+          "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "trigger",
+        ])
   }
 
   @Test("loadGatewayIfNeeded fetches only once")
@@ -527,7 +821,10 @@ struct SettingsGatewayTests {
       let parsed = try JSONSerialization.jsonObject(with: try #require(body)) as? [String: Any]
       #expect(
         parsed?["toolGroups"] as? [String]
-          == ["persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger"])
+          == [
+            "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents",
+            "trigger",
+          ])
       return (
         200,
         Data(
@@ -551,7 +848,7 @@ struct SettingsGatewayTests {
       let parsed = try JSONSerialization.jsonObject(with: try #require(body)) as? [String: Any]
       #expect(
         parsed?["toolGroups"] as? [String]
-          == ["persona", "machine", "core", "coding", "memory", "agents", "trigger"])
+          == ["persona", "machine", "core", "coding", "memory", "secrets", "agents", "trigger"])
       return (
         200,
         Data(
@@ -593,8 +890,8 @@ struct SettingsGatewayTests {
     #expect(
       saved
         == [
-          "persona", "machine", "core", "coding", "memory", "herdr", "agents", "search",
-          "trigger",
+          "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents",
+          "search", "trigger",
         ])
 
     GatewayHTTPStub.handler = { request in
@@ -620,7 +917,7 @@ struct SettingsGatewayTests {
     #expect(model.isToolGroupEnabled("memory") == false)
     #expect(
       model.gatewayToolGroups
-        == ["persona", "machine", "core", "coding", "herdr", "agents", "trigger"])
+        == ["persona", "machine", "core", "coding", "secrets", "herdr", "agents", "trigger"])
   }
 
   @Test("saveGateway surfaces daemon errors")
@@ -734,7 +1031,7 @@ struct SettingsGatewayTests {
     await model.savePrompts()
     #expect(
       body?["toolGroups"] as? [String]
-        == ["persona", "core", "coding", "memory", "herdr", "agents", "search"],
+        == ["persona", "core", "coding", "memory", "secrets", "herdr", "agents", "search"],
       "only the two prompt groups changed, and the order is the daemon's")
     GatewayHTTPStub.handler = nil
   }

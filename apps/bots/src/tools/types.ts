@@ -1,4 +1,17 @@
-import type { SubmissionStatus } from "../core/domain.ts";
+import type { SecretMeta, SecretScope, SubmissionStatus } from "../core/domain.ts";
+
+export type { SecretMeta, SecretScope } from "../core/domain.ts";
+export {
+  DEFAULT_SECRET_LIST_LIMIT,
+  MAX_SECRET_ENV_BYTES,
+  MAX_SECRET_LIST_LIMIT,
+  MAX_SECRET_PURPOSE_CHARS,
+  MAX_SECRET_TTL_MINUTES,
+  MAX_SECRET_VALUE_BYTES,
+  MIN_SECRET_TTL_MINUTES,
+  MIN_SECRET_VALUE_CHARS,
+  SECRET_KEY_PATTERN,
+} from "../core/domain.ts";
 
 // The shape every bot tool speaks (docs/bots/RUNTIME.md, "Tools"): a handler receives the
 // workspace and validated arguments and returns what the model should see. Failures are
@@ -65,6 +78,41 @@ export type MemoryToolHost = {
     readonly created: boolean;
   }>;
   remove(input: { scope: MemoryScope; key: string }): Promise<{ readonly deleted: boolean }>;
+};
+
+/**
+ * What the secret tools may do (docs/bots/EXTENSIONS-AND-TOOLS.md §6.5). The port is the
+ * whole storage contract: the container, the key file and the ledger stay behind it, and a
+ * value reaches a command as environment, never a tool result the transcript keeps.
+ */
+export type SecretsToolHost = {
+  readonly botId: string;
+  /** The records this Bot may see; every row names its own scope. */
+  list(input: {
+    readonly scope?: SecretScope;
+    readonly limit: number;
+  }): Promise<{ readonly items: readonly SecretMeta[]; readonly truncated: boolean }>;
+  /** The value, or undefined when the record is missing or expired. */
+  read(input: {
+    readonly key: string;
+    readonly scope?: SecretScope;
+  }): Promise<
+    { readonly key: string; readonly scope: SecretScope; readonly value: string } | undefined
+  >;
+  /** Removes one record; `scope` is required, so a retry cannot fall through to another one. */
+  remove(input: {
+    readonly key: string;
+    readonly scope: SecretScope;
+  }): Promise<{ readonly key: string; readonly scope: SecretScope; readonly deleted: boolean }>;
+  /** Every value this Bot may hand to a command, keyed by its environment variable. */
+  environment(): Promise<Record<string, string>>;
+  /** The variable a record really reaches a command by, or undefined when it reaches none. */
+  envNameFor(key: string): string | undefined;
+  /**
+   * Whether the group is on for this Bot right now. A person who switches 密码 off turns off
+   * the values a command sees as well, without reopening the Bot.
+   */
+  setEnabled?(enabled: boolean): void;
 };
 
 /** What one Bot may write about itself: the sidebar line the daemon stores in its catalog. */

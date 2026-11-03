@@ -24,6 +24,8 @@ public final class AppViewModel: ObservableObject {
   private let peers: PeerPort?
   /// The trigger detail and switch; nil in a test that never opens the surface.
   private let triggers: TriggerPort?
+  /// The daemon's secrets; nil in a test that never answers a card.
+  private let secrets: SecretPort?
   private var outbox: OutboxStore
 
   public init(
@@ -31,12 +33,14 @@ public final class AppViewModel: ObservableObject {
     conversation: ConversationViewModel,
     outbox: OutboxStore,
     triggers: TriggerPort? = nil,
-    peers: PeerPort? = nil
+    peers: PeerPort? = nil,
+    secrets: SecretPort? = nil
   ) {
     self.catalog = catalog
     self.conversation = conversation
     self.triggers = triggers
     self.peers = peers
+    self.secrets = secrets
     self.outbox = outbox
     conversation.onCatalog = { [weak self] catalog in
       self?.apply(catalog)
@@ -320,5 +324,21 @@ extension AppViewModel {
   ) async throws -> TriggerDetail? {
     guard let triggers else { return nil }
     return try await triggers.setEnabled(botId: botId, triggerId: triggerId, enabled: enabled)
+  }
+
+  /// Answers a secret card: the value crosses the wire once and the daemon keeps it out of
+  /// the transcript.
+  public func answerSecret(botId: String, answer: SecretAnswer) async throws {
+    guard let secrets else { throw ClientError("这个客户端不能保存密码") }
+    try await secrets.answerSecret(
+      botId: botId,
+      entryId: answer.entryId,
+      callIndex: answer.callIndex,
+      key: answer.key,
+      value: answer.value,
+      scope: answer.scope,
+      ttlMinutes: answer.ttlMinutes,
+      skipped: answer.skipped
+    )
   }
 }

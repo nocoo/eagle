@@ -1,3 +1,4 @@
+import AppKit
 import BotsCore
 import BotsTransport
 import Combine
@@ -13,15 +14,37 @@ extension Notification.Name {
 @MainActor
 public final class SettingsViewModel: ObservableObject {
   @Published public var selection: SettingsSection = .bots
-  /// Third-party providers (search today), loaded when the 服务 tab opens.
+  /// Third-party providers for the two services (search and decision), loaded when the
+  /// 服务 tab opens.
   @Published public var providers: [ProviderSettings] = []
   @Published public var providerKeys: [String: String] = [:]
+  /// Address and model drafts for a decision provider: the daemon stores them only when they
+  /// differ from the catalogue, and an empty field asks for the catalogue value again.
+  @Published public var providerAddresses: [String: String] = [:]
+  @Published public var providerModels: [String: String] = [:]
   @Published public var providerBusy = false
   @Published public var providerProbe: [String: ProviderProbe] = [:]
   @Published public var providerMessage: String?
+  /// Which card the last result line belongs to, so one card's action never reports in the other.
+  @Published public var providerMessageService: String?
+  /// A failed read of the whole list, which belongs to neither card.
+  @Published public var providerLoadError: String?
   /// The daemon's usage statistics; nil until the 用量 tab is opened.
   @Published public var usageReport: UsageReport?
   @Published public var usageBusy = false
+  /// The daemon's password records. The value is never in this state: only the metadata.
+  @Published public var secrets: [Secret] = []
+  /// A refused read belongs to the page: it says so instead of showing "no passwords".
+  @Published public var secretLoadError: String?
+  /// What the last action on a record said.
+  @Published public var secretMessage: String?
+  @Published public var secretBusy = false
+  /// The values a person asked to see; a second click hides them again.
+  @Published public var revealedSecrets: [String: String] = [:]
+  /// A page visit: a reveal that lands after the page was left must not fill it back in.
+  private var secretsGeneration = 0
+  /// The bot names behind a record's creator.
+  @Published public var secretBotTitles: [String: String] = [:]
   @Published public var launchAtLogin = true
   @Published public var showUnfocusedSpaces = true
   @Published public var updateState: UpdateState = .idle
@@ -56,21 +79,23 @@ public final class SettingsViewModel: ObservableObject {
   /// Every group the daemon knows, in display order; the daemon owns which are installed.
   /// The two core prompts lead, because they are the first sections of the system prompt.
   public static let toolGroups = [
-    "persona", "machine", "core", "coding", "memory", "herdr", "agents", "search", "trigger",
-    "peers",
+    "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "search",
+    "decision", "trigger", "peers",
   ]
   /// What a daemon that predates a new group is assumed to run: both core prompts are on,
   /// memory is on because remembering is a habit, and the rest is opt-in.
   public static let defaultToolGroups = [
-    "persona", "machine", "core", "coding", "memory", "herdr", "agents", "trigger",
+    "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "trigger",
   ]
   public static let mandatoryToolGroups: Set<String> = ["core", "coding"]
   public static let personaToolGroup = "persona"
   public static let machineToolGroup = "machine"
   public static let memoryToolGroup = "memory"
+  public static let secretsToolGroup = "secrets"
   public static let herdrToolGroup = "herdr"
   public static let agentsToolGroup = "agents"
   public static let searchToolGroup = "search"
+  public static let decisionToolGroup = "decision"
   public static let triggerToolGroup = "trigger"
   public static let peersToolGroup = "peers"
   private var gatewayThinkingLevelChosen = false
@@ -244,72 +269,306 @@ public final class SettingsViewModel: ObservableObject {
     return CatalogHTTPClient(baseURL: botsSettings.baseURL, token: token, session: urlSession)
   }
 
+  // MARK: - Secrets
+
+  /// Reads the daemon's password records. A store that cannot be read is a refusal, so the
+  /// page reports it instead of showing an empty list that reads as "there are none".
+  public func loadSecrets() async {
+    guard !secretBusy else { return }
+    secretBusy = true
+    defer { secretBusy = false }
+    secretsGeneration += 1
+    secretLoadError = nil
+    // A revealed value lives for one look at this page, never across a reload.
+    revealedSecrets.removeAll()
+    do {
+      secrets = try await client().secrets()
+      await loadSecretBotTitles()
+    } catch {
+      secrets = []
+      secretLoadError = (error as? ClientError)?.message ?? error.localizedDescription
+    }
+  }
+
+  /// Leaving the page forgets every revealed value and every message it produced.
+  public func leaveSecrets() {
+    secretsGeneration += 1
+    revealedSecrets.removeAll()
+    secretMessage = nil
+  }
+
+  /// The records every Bot on this machine reads.
+  public var sharedSecrets: [Secret] { secrets.filter { $0.scope == .shared } }
+
+  /// The records one Bot reads.
+  public var botSecrets: [Secret] { secrets.filter { $0.scope == .bot } }
+
+  /// Reveals one value, or hides it again: a value is only ever read when a person asks.
+  public func revealSecret(_ secret: Secret) async {
+    guard !secretBusy else { return }
+    if revealedSecrets[secret.id] != nil {
+      revealedSecrets.removeValue(forKey: secret.id)
+      return
+    }
+    secretBusy = true
+    defer { secretBusy = false }
+    let generation = secretsGeneration
+    do {
+      let value = try await client().revealSecret(
+        key: secret.key, scope: secret.scope, botId: secret.botId)
+      // The page may have been left while this was in flight: a late value must not appear.
+      guard generation == secretsGeneration else { return }
+      revealedSecrets[secret.id] = value
+      secretMessage = nil
+    } catch {
+      secretMessage = (error as? ClientError)?.message ?? error.localizedDescription
+    }
+  }
+
+  /// Copies one value to the clipboard. The click is the only thing that writes it there.
+  public func copySecret(_ secret: Secret) async {
+    guard !secretBusy else { return }
+    secretBusy = true
+    defer { secretBusy = false }
+    do {
+      let value = try await client().revealSecret(
+        key: secret.key, scope: secret.scope, botId: secret.botId)
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(value, forType: .string)
+      secretMessage = "已复制 \(secret.key)"
+    } catch {
+      secretMessage = (error as? ClientError)?.message ?? error.localizedDescription
+    }
+  }
+
+  /// Removes one record; the daemon answers 204 and the row goes with it.
+  public func deleteSecret(_ secret: Secret) async {
+    guard !secretBusy else { return }
+    secretBusy = true
+    defer { secretBusy = false }
+    do {
+      try await client().deleteSecret(
+        key: secret.key, scope: secret.scope, botId: secret.botId)
+      revealedSecrets.removeValue(forKey: secret.id)
+      secrets.removeAll { $0.id == secret.id }
+      secretMessage = "已删除 \(secret.key)"
+    } catch {
+      secretMessage = (error as? ClientError)?.message ?? error.localizedDescription
+    }
+  }
+
+  /// The bot that answered the card, by name when the catalog knows it.
+  public func secretOwner(_ secret: Secret) -> String {
+    guard let botId = secret.botId else { return "未知 Bot" }
+    return secretBotTitles[botId] ?? botId
+  }
+
+  /// When the record was made.
+  public func secretCreated(_ secret: Secret) -> String {
+    guard let date = Self.secretDate(secret.createdAt) else { return secret.createdAt }
+    return Self.secretMoment(date)
+  }
+
+  /// How long the record lives: a permanent one says so, the others count down.
+  public func secretValidity(_ secret: Secret) -> String {
+    guard let expiresAt = secret.expiresAt, let date = Self.secretDate(expiresAt) else {
+      return "永久"
+    }
+    let minutes = Int(ceil(date.timeIntervalSinceNow / 60))
+    guard minutes > 0 else { return "已过期" }
+    if minutes < 60 { return "剩余 \(minutes) 分钟" }
+    return "剩余 \(Int(ceil(Double(minutes) / 60))) 小时"
+  }
+
+  /// When the record was read last, and by whom.
+  public func secretLastUsed(_ secret: Secret) -> String {
+    guard let at = secret.lastUsedAt, let date = Self.secretDate(at) else { return "最近使用：无" }
+    let who = secret.lastUsedBy == "person" ? "人" : "Bot"
+    return "最近使用：\(Self.secretMoment(date))（\(who)）"
+  }
+
+  /// The bots behind the records, so a row names a bot instead of an id.
+  private func loadSecretBotTitles() async {
+    guard let catalog = try? await client().load() else { return }
+    secretBotTitles = Dictionary(
+      catalog.bots.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+  }
+
+  private static func secretDate(_ iso: String) -> Date? {
+    let parser = ISO8601DateFormatter()
+    parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return parser.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+  }
+
+  private static func secretMoment(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd HH:mm"
+    return formatter.string(from: date)
+  }
+
   // MARK: - Providers
 
   public func loadProviders() async {
     guard !providerBusy else { return }
     providerBusy = true
     defer { providerBusy = false }
+    // A read replaces whatever the last action said, and it belongs to neither card.
+    providerLoadError = nil
+    providerMessage = nil
+    providerMessageService = nil
     do {
       providers = try await client().loadProviders()
-      providerMessage = nil
+      for provider in providers where provider.isDecision {
+        if providerAddresses[provider.id] == nil {
+          providerAddresses[provider.id] = provider.baseUrl
+        }
+        if providerModels[provider.id] == nil { providerModels[provider.id] = provider.model }
+      }
     } catch {
-      providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
+      providerLoadError = (error as? ClientError)?.message ?? error.localizedDescription
     }
   }
 
-  /// A typed key is a draft: an empty field keeps the stored one.
-  public func saveProvider(_ id: String) async {
-    guard !providerBusy else { return }
-    providerBusy = true
-    providerMessage = nil
-    defer { providerBusy = false }
-    let typed = providerKeys[id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    do {
-      let saved = try await client().saveProvider(
-        id: id, apiKey: typed.isEmpty ? nil : typed, enabled: nil)
-      providers = providers.map { $0.id == id ? saved : $0 }
-      if providerKeys[id]?.trimmingCharacters(in: .whitespacesAndNewlines) == typed {
-        providerKeys[id] = ""
-      }
-      providerProbe[id] = nil
-      providerMessage = "已保存"
-    } catch {
-      providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
-    }
+  public func providers(in service: String) -> [ProviderSettings] {
+    providers.filter { $0.service == service }
+  }
+
+  public var searchProviders: [ProviderSettings] { providers(in: ProviderSettings.searchService) }
+
+  public var decisionProviders: [ProviderSettings] {
+    providers(in: ProviderSettings.decisionService)
+  }
+
+  /// The one provider of a service in use, or nothing: the daemon enforces the same rule, and a
+  /// page shows a selection this app cannot see as "no choice".
+  public func selectedProvider(in service: String) -> ProviderSettings? {
+    let chosen = providers.filter { $0.enabled && $0.service == service }
+    return chosen.count == 1 ? chosen.first : nil
   }
 
   public var selectedSearchProvider: ProviderSettings? {
-    let selected = providers.filter { $0.enabled && $0.hasApiKey }
-    return selected.count == 1 ? selected.first : nil
+    selectedProvider(in: ProviderSettings.searchService)
+  }
+
+  public var selectedDecisionProvider: ProviderSettings? {
+    selectedProvider(in: ProviderSettings.decisionService)
+  }
+
+  /// What the row's own buttons may offer right now: a draft must be saved before a probe, and a
+  /// provider that requires a key is not testable until one is stored.
+  public func canSaveProvider(_ provider: ProviderSettings) -> Bool {
+    providerHasChanges(provider)
+  }
+
+  public func canTestProvider(_ provider: ProviderSettings) -> Bool {
+    guard !providerHasChanges(provider) else { return false }
+    return provider.hasApiKey || !provider.keyRequired
+  }
+
+  /// A typed key is a draft; for a decision provider the address and model are drafts too.
+  public func providerHasChanges(_ provider: ProviderSettings) -> Bool {
+    let typed = (providerKeys[provider.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    if !typed.isEmpty { return true }
+    guard provider.isDecision else { return false }
+    let address = (providerAddresses[provider.id] ?? provider.baseUrl)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let model = (providerModels[provider.id] ?? provider.model)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return address != provider.baseUrl || model != provider.model
+  }
+
+  /// Saves every draft of one provider at once: the key when one was typed, and for a decision
+  /// provider the address and model, where an empty field asks for the catalogue value.
+  public func saveProvider(_ id: String) async {
+    guard !providerBusy else { return }
+    guard let provider = providers.first(where: { $0.id == id }) else { return }
+    providerBusy = true
+    providerMessage = nil
+    defer { providerBusy = false }
+    let typed = (providerKeys[id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let address =
+      provider.isDecision
+      ? (providerAddresses[id] ?? provider.baseUrl).trimmingCharacters(in: .whitespacesAndNewlines)
+      : nil
+    let model =
+      provider.isDecision
+      ? (providerModels[id] ?? provider.model).trimmingCharacters(in: .whitespacesAndNewlines)
+      : nil
+    do {
+      let saved = try await client().saveProvider(
+        id: id, apiKey: typed.isEmpty ? nil : typed, enabled: nil, baseUrl: address, model: model)
+      providers = providers.map { $0.id == id ? saved : $0 }
+      providerKeys[id] = ""
+      if provider.isDecision {
+        providerAddresses[id] = saved.baseUrl
+        providerModels[id] = saved.model
+      }
+      providerProbe[id] = nil
+      providerMessageService = provider.service
+      providerMessage = "已保存"
+    } catch {
+      providerMessageService = provider.service
+      providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
+    }
+  }
+
+  /// Clears a key the provider does not need: a relay can go back to carrying its own credential.
+  public func clearProviderKey(_ id: String) async {
+    guard !providerBusy else { return }
+    guard let provider = providers.first(where: { $0.id == id }), !provider.keyRequired else {
+      return
+    }
+    providerBusy = true
+    providerMessage = nil
+    defer { providerBusy = false }
+    do {
+      let saved = try await client().saveProvider(
+        id: id, apiKey: "", enabled: nil, baseUrl: nil, model: nil)
+      providers = providers.map { $0.id == id ? saved : $0 }
+      providerKeys[id] = ""
+      providerProbe[id] = nil
+      providerMessageService = provider.service
+      providerMessage = "已清除 Key"
+    } catch {
+      providerMessageService = provider.service
+      providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
+    }
   }
 
   public func setProviderEnabled(_ id: String, _ enabled: Bool) async {
     guard !providerBusy else { return }
-    guard let index = providers.firstIndex(where: { $0.id == id }) else { return }
-    if enabled && !providers[index].hasApiKey {
+    guard let provider = providers.first(where: { $0.id == id }) else { return }
+    if enabled && provider.keyRequired && !provider.hasApiKey {
+      providerMessageService = provider.service
       providerMessage = "请先保存这个服务商的 API Key"
       return
     }
-    guard enabled ? selectedSearchProvider?.id != id : providers[index].enabled else { return }
+    guard enabled ? selectedProvider(in: provider.service)?.id != id : provider.enabled else {
+      return
+    }
     providerBusy = true
     defer { providerBusy = false }
     do {
-      let saved = try await client().saveProvider(id: id, apiKey: nil, enabled: enabled)
-      providers = providers.map { provider in
-        if provider.id == id { return saved }
-        var other = provider
-        if saved.enabled { other.enabled = false }
-        return other
+      let saved = try await client().saveProvider(
+        id: id, apiKey: nil, enabled: enabled, baseUrl: nil, model: nil)
+      providers = providers.map { other in
+        if other.id == id { return saved }
+        var updated = other
+        // Only the same service is exclusive; the other service keeps its own choice.
+        if saved.enabled && other.service == provider.service { updated.enabled = false }
+        return updated
       }
       providerMessage = nil
     } catch {
+      providerMessageService = provider.service
       providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
     }
   }
 
   public func testProvider(_ id: String) async {
     guard !providerBusy else { return }
+    let service = providers.first(where: { $0.id == id })?.service
     providerBusy = true
     providerMessage = nil
     providerProbe[id] = nil
@@ -317,6 +576,7 @@ public final class SettingsViewModel: ObservableObject {
     do {
       providerProbe[id] = try await client().testProvider(id: id)
     } catch {
+      providerMessageService = service
       providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
     }
   }
