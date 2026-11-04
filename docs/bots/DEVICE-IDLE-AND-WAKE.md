@@ -1,9 +1,10 @@
 # Bots — shared-device idle and wake design
 
-Status: **in progress**. Local-first startup, local admission and relay-origin
-binding have landed; dynamic remote tool selection and target hibernation have
-not. The pre-change source observations below are retained as a baseline, not a
-claim about the current implementation. Existing wire and behaviour are governed
+Status: **in progress**. Local-first startup, relay-origin binding, bounded
+command timeouts and same-socket session renewal have landed. Remote tool refresh
+is partial; target WebSocket hibernation and its idle savings have not landed.
+The pre-change observations below are retained as a baseline, not a claim about
+the current implementation. Existing wire and behaviour are governed
 by [DEVICES.md](../DEVICES.md), [RUNTIME.md](RUNTIME.md) and
 [PROTOCOL.md](PROTOCOL.md); [PLAN.md](PLAN.md) tracks delivery. A complete local
 Bot is the baseline; remote discovery, execution and cloud connectivity are
@@ -35,13 +36,46 @@ cutover, stop or drain existing operations; never automatically replay an
 uncertain old operation just because its old journal is unavailable. Within the
 new system, operation identity and recovery remain durable across restarts.
 
-## Current path and evidence
+## Implementation status
 
-A packaged App injects a shared local device socket into the Bots daemon. Existing
-and new Bots use the same host service; the separate Bots package does not import
-Eagle implementation code. Once the service is running, its local readiness does
-not wait for cloud connectivity. However, the current packaged App does not start
-that service at all when its remote address is unconfigured.
+Source snapshot: `757e7be` on `opt-do`, reviewed on 2026-11-05. These are source
+and local-test facts, not claims about the installed App or deployed Workers.
+
+| Area | Source status | Remaining boundary |
+| --- | --- | --- |
+| Local-first baseline | Implemented: an empty relay starts the helper and local service without a cloud client; native Bot tools read local identity/policy and use admission, approval and the journal. Fresh local policy defaults to `always-ask`. | An enabled but unavailable protection service fails closed. A packaged fresh install and an arbitrary real model's choice of local tools have not been accepted end to end. |
+| Remote tools | Partial: root selection refreshes on open, subscription and new input; app-managed children refresh at spawn/send, preserving local tools and the ban on delegation. Stale loaded calls recheck local configuration. | No configuration push before every already-running model request, no separate remote-disable control, and no complete child/nested restart-recovery proof. The settings toggle stops the local service, not just remote access. |
+| Directory and panel | Implemented: discarded source-side `run/get/cancel` directory reads are gone. Bot discovery and fresh approval policy reads remain. Workspace observation reads local health; visible device views share directory observation. | No measured production request or billing reduction. |
+| Remote identity and uncertainty | Implemented: operation, policy and pairing IDs are bound to their target and relay origin. Changing relay keeps local leases; post-forwarding authorization loss withholds output and returns `unknown`. A `sent` operation is not automatically re-executed or retargeted. | Cross-relay, restart and revoke behaviour is tested locally; no physical two-Mac acceptance. Unaccepted `busy`/`denied` runs may still be explicitly retried. |
+| Sessions and renewal | Implemented: Registry stores session hashes and checks a target reference against expiry, device, credential generation and membership. The Worker and Agent renew on the same socket after key proof; in-flight work keeps its connection. | This reference is currently in memory, not a hibernation attachment. Renewal is preparation for hibernation, not hibernation itself. |
+| Idle/wake | Not implemented: the target uses ordinary `socket.accept()`, a 10-second application heartbeat, a 30-second in-memory lease and in-memory pending maps. Heartbeats still wake Execution, check Registry and write Execution observation state. | Add hibernatable target sockets, bounded auto-ping liveness, safe wake/eviction and in-flight correlation handling. No idle latency or cost saving has been measured. |
+| Long commands | Implemented: Bot-to-service command timeout is requested duration plus 95 seconds, 125 seconds by default and 395 seconds at the 300-second maximum. Timeout preserves an `unknown` original-ID receipt. | The long-duration socket test advances a simulated clock; a complete 300-second cross-machine run has not been verified. |
+
+### Recorded verification
+
+- Root `npm run check`: 309 tests passed for the Agent-renewal source; Bots
+  `npm run check`: 1,022 tests plus coverage passed for the child-turn source.
+- `npm run test:devices`: 11 passed. Three isolated scripted CLI eval rounds each
+  passed 24 cases. The script proves tool/transport wiring, not a real provider's
+  decisions. See [process tests](../../tests/device-integration/device-bots.test.ts),
+  [root recovery tests](../../apps/bots/test/runtime/device-recovery.test.ts),
+  [child tests](../../apps/bots/test/tools/agents.test.ts), and
+  [session tests](../../tests/device-api.test.ts).
+- Swift package runs reported 299, 52, 60 and 36 tests passed; the logic coverage
+  gate reported 92.3%. The browser gate reported 191 passed and 11 existing
+  desktop/mobile conditional skips. These are recorded executions, not a new run
+  performed while preparing this snapshot.
+- No production deployment, installed-App fresh-start acceptance, real-model
+  evaluation, physical dual-Mac verification, Cloudflare hibernation measurement,
+  live latency distribution or billing comparison has been completed here.
+
+## Historical baseline (`25606ec`)
+
+At that baseline, a packaged App injected a shared local device socket into the
+Bots daemon. Existing and new Bots used the same host service; the separate Bots
+package did not import Eagle implementation code. Once running, its local readiness
+did not wait for cloud connectivity. The baseline App did not start that service
+when its remote address was unconfigured; the current source has since changed.
 
 ```text
 Bot on A -> local device socket -> device service on A
@@ -63,7 +97,7 @@ or moved to another machine.
 The following observations describe source at `25606ec`, not a claim that every
 installed client or live Worker runs that revision:
 
-| Current path | Consequence |
+| Baseline path | Consequence |
 | --- | --- |
 | Packaged Bots receive a device socket even with an empty remote address; the App and helper do not start the service without that address | The socket is unavailable, so both remote tools and guarded local tools can return `device_unavailable`. The Node service also currently requires a URL and constructs `DeviceCloud` during initialization. |
 | A socket path causes the runtime to install and always select the shared-device extension, whose prompt says the Bot can use a shared device group | Registration follows injected configuration rather than actual remote setup; the prompt can claim a capability that has never been configured. `core` and `coding` remain mandatory local groups. |
@@ -220,8 +254,8 @@ before the result does not prove that the target did nothing. Withhold the outpu
 return `unknown` bound to the original target and operation ID, and never mark
 that run retryable. If authorization no longer permits a result query, report that
 fact without disclosing the result or resubmitting the run; an authorized query
-can only use the original ID. The current relay's post-forwarding `denied` and the
-source journal's retryable treatment must change together.
+can only use the original ID. The source journal must not mark that run retryable;
+this post-forwarding change is already implemented, as noted in the status table.
 
 The device panel refreshes on opening and after user mutations, and only while
 its data is being displayed. Local helper health and recovery are independent of

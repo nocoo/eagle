@@ -14,21 +14,19 @@ discovery. Those additions are not implemented or enabled by this plan update.
 
 ## Shared-device idle and wake (in progress)
 
-[DEVICE-IDLE-AND-WAKE.md](DEVICE-IDLE-AND-WAKE.md) records the pre-change path,
-fresh-cutover target and verification slices. Local-only helper startup and Bot
-admission work without a configured relay; live relay changes preserve local
-leases and bind remote IDs to their original relay. Remote dispatch no longer
-performs a discarded directory read; relay/target authorization remains enforced.
-The workspace monitors local health without polling the cloud directory; visible
-device views share directory observation. Root conversations select remote tools
-from local configuration on open and before each new input; app-managed children
-refresh before spawn/send. Automatic in-flight change propagation remains open.
-The Registry and target relay now use a
-tested internal session reference; the Worker and Agent renew on the same socket.
-Target hibernation remains open.
-No live savings, installed-App acceptance or physical two-Mac verification is claimed.
+[DEVICE-IDLE-AND-WAKE.md](DEVICE-IDLE-AND-WAKE.md) owns the target design, current
+implementation matrix, recorded verification and the pre-change baseline.
+Local-first startup, relay-bound recovery, panel-scoped directory reads and
+same-socket renewal are implemented in source. Root and child tool refresh occurs
+on open, subscription, new input and child spawn/send. A remote-only disable control,
+automatic in-flight propagation and target hibernation remain open; the 10-second
+heartbeat still reaches the Registry. No live savings, installed-App acceptance
+or physical two-Mac verification is claimed.
 
 ## 共享设备与配对重构（2026-10-29）
+
+Historical request below; the current source default for a fresh local device is
+`always-ask`, as documented in [DEVICES.md](../DEVICES.md).
 
 用户最新要求替代旧 M0–M1 的“手填部署信息、每 Bot 机器授权”产品流程：
 安装并首次启动 Eagle 后本机环境自动就绪、默认 All approve；设备由整个 App 共享，
