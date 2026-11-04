@@ -3602,3 +3602,15 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 - Target WebSocket hibernation, auto-ping and wake remain unimplemented. No
   deployment or real-model, installed-App, Herdr collection, viewer auth, D1,
   physical two-Mac, Cloudflare hibernation or billing verification was performed.
+
+## 2026-11-05 07:22 +08 — Child-turn acceptance
+
+- After the child-turn and long-command slices, three separate full CLI eval
+  rounds each passed all 24 cases, with explicit real-time process watchdogs.
+  The scripted cases do not exercise every child-device change or a real model.
+- Root check previously passed 309 tests, Bots check passed 1,022 tests with
+  coverage, and the real device-process suite passed 11. These do not establish
+  the remaining target hibernation or automatic in-flight refresh.
+- Only the steering pane remains. No dev App or daemon is running from this task;
+  no deployment, live Herdr collection, viewer auth, D1, installed-App or
+  physical two-Mac verification was performed.
