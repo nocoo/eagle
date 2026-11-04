@@ -3614,3 +3614,19 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 - Only the steering pane remains. No dev App or daemon is running from this task;
   no deployment, live Herdr collection, viewer auth, D1, installed-App or
   physical two-Mac verification was performed.
+
+## 2026-11-05 07:26 +08 — Current acceptance and remaining work
+
+- The browser release gate passed 191 tests with 11 existing conditional skips;
+  the current device process suite passed 11. Three isolated scripted CLI eval
+  rounds passed 24 cases each. Root check passed 309 tests and Bots check passed
+  1,022 tests with coverage. The worktree is clean after the committed slices.
+- The primary idle-cost target is still open: target Agent sockets still use
+  ordinary `accept()` and periodic heartbeat, not hibernation/auto-response. Root
+  and child remote tools refresh at explicit input/spawn/send boundaries, but
+  configuration changes are not pushed into an already-running generation. The
+  existing settings do not yet provide a distinct remote-disable control that
+  leaves the local service running. These are not completed by the passing gates.
+- No production deployment or live Cloudflare/billing test was performed. Real
+  model selection, installed-App first run, Herdr collection, viewer auth, D1 and
+  physical two-Mac acceptance remain unverified. Only the steering pane remains.
