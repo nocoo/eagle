@@ -3534,3 +3534,16 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 - The Node Agent does not yet initiate renewal, and target hibernation is not
   implemented. The isolated foreground source App has no device socket; real model,
   installed App, Herdr collection, viewer auth, D1 and Cloudflare were not verified.
+
+## 2026-11-04 19:43 +08 — Same-socket renewal client
+
+- The Worker-side same-socket renewal is committed (`4a9ea90`); root check passed
+  299 tests. It rejects expiry downgrade and rechecks authorization when renewal
+  races a dispatch. It does not yet hibernate target sockets.
+- The uncommitted Node client schedules key-proved renewal and keeps a successful
+  operation on the same socket. Local fake-relay tests pass for success, rejection,
+  mismatched ACK and lost ACK; a real Miniflare/DeviceCloud test also completed
+  an in-flight write once across renewal. Independent review and full gates remain.
+- The foreground source App remains isolated and has no device socket. Real-model,
+  installed-App, Herdr collection, viewer auth, D1, Cloudflare hibernation and
+  billing remain unverified. Child/in-flight tool refresh remains open.
