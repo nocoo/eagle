@@ -3521,3 +3521,16 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 - The isolated foreground source App still has no device socket. No real model,
   installed App, Herdr collection, viewer authentication, D1, Cloudflare
   hibernation or billing was verified. Same-socket renewal and hibernation remain open.
+
+## 2026-11-04 19:25 +08 — Worker-side session renewal
+
+- Target reference authorization is committed (`9573456`); root `npm run check`
+  passed 294 tests, and the 11-case device process suite included a source journal
+  retaining `sent` after an actual remote side effect and revocation.
+- The uncommitted Worker accepts same-socket session renewal with a later Registry
+  expiry. Red/green Miniflare tests cover in-flight work, old-token expiry,
+  generation revocation, downgrade rejection and concurrent operation/policy
+  authorization. Independent incremental review and full gates are still pending.
+- The Node Agent does not yet initiate renewal, and target hibernation is not
+  implemented. The isolated foreground source App has no device socket; real model,
+  installed App, Herdr collection, viewer auth, D1 and Cloudflare were not verified.
