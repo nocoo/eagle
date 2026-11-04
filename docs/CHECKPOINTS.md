@@ -3352,6 +3352,20 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   was exercised. The Swift suite's temporary ACL tests and a foreground dev App
   potentially sharing the owner's Bots daemon/data remain unauthorized and unrun.
 
+## 2026-11-04 14:58 +08 — App local startup and remote cutover
+
+- Swift helper/App startup now accepts an empty relay, and unconfigured pairing
+  cannot strand a new request (`bd9492d`, `95a02e3`, `2bdd0bc`). Full Swift tests
+  passed and the logic coverage gate reported 91.5%. A real installed App and a
+  real model have not been used to verify this path.
+- A retired target connection cannot admit a late operation (`06b8f77`); real
+  local WebSocket/SQLite tests passed. A new Node red test currently shows that
+  remote configuration cannot yet change without interrupting local leases.
+  Cross-origin operation provenance and safe credential redaction are prerequisites
+  for implementing that control path; it is not complete.
+- Herdr collection, viewer authentication, D1 and live rendering were not tested.
+  The foreground dev App has not yet been started for this revision.
+
 ## 2026-11-04 15:21 +08 — Remote origin safety in progress
 
 - Local helper/App startup and unconfigured UI tests passed, including the
@@ -3368,16 +3382,14 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 - No real Herdr collection, viewer authentication, D1 or installed App rendering
   was exercised in this slice.
 
-## 2026-11-04 14:58 +08 — App local startup and remote cutover
+## 2026-11-04 16:04 +08 — Device port and hot configuration in progress
 
-- Swift helper/App startup now accepts an empty relay, and unconfigured pairing
-  cannot strand a new request (`bd9492d`, `95a02e3`, `2bdd0bc`). Full Swift tests
-  passed and the logic coverage gate reported 91.5%. A real installed App and a
-  real model have not been used to verify this path.
-- A retired target connection cannot admit a late operation (`06b8f77`); real
-  local WebSocket/SQLite tests passed. A new Node red test currently shows that
-  remote configuration cannot yet change without interrupting local leases.
-  Cross-origin operation provenance and safe credential redaction are prerequisites
-  for implementing that control path; it is not complete.
-- Herdr collection, viewer authentication, D1 and live rendering were not tested.
+- Local helper/App startup, local policy and the unconfigured settings view have
+  isolated green tests; no installed App or real-model acceptance is claimed.
+- The uncommitted v2 local port rejects older envelopes. Remote operation intent,
+  approval and policy IDs are being bound to a relay origin; Node's hot-config
+  test preserves a real local lease and a retired-token redaction test passed.
+  A Swift regression remains red because pending pairing does not yet retain its
+  original relay. Remote tool registration and hibernation are still open.
+- Herdr collection, viewer authentication, D1 and live rendering were not exercised.
   The foreground dev App has not yet been started for this revision.
