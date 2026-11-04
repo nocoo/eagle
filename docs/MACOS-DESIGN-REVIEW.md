@@ -1,7 +1,9 @@
 # macOS design review and proposed refinement plan
 
-Status: **review proposal; no implementation approved or performed**.
+Status: **read-only audit; no implementation performed**.
 Reviewed on 2026-11-05 (local time), against source revision `580b9e6`.
+The current execution order and design-system proposal are maintained in
+[MACOS-DESIGN-PLAN.md](MACOS-DESIGN-PLAN.md), following the owner's subsequent direction.
 
 ## 1. Scope and evidence
 
@@ -310,125 +312,23 @@ when stale, but its visible dot still uses the previous `online` value; settings
 map stale to unknown. This should have a deterministic state test and a separate small
 fix if approved. Do not let a visual cleanup certify a stale device as online.
 
-## 6. Proposed design direction — decisions required
+## 6. Execution plan
 
-- **Product:** a local multi-Bot workbench for reading conversations and supervising work.
-- **Character:** quiet, precise, compact.
-- **Visual world:** a native reading workspace, not a dashboard of floating cards.
-- **Color moments:** Bot faces and one purposeful conversation/action accent.
-- **Signature:** the Bot face plus truthful, restrained state feedback.
+The owner subsequently specified this order:
 
-### A. Neutral foundation (recommended)
+1. Consolidate scattered styles into standard controls and tokens, with automated
+   assertions and proven rejection of future violations.
+2. Optimize the centralized tokens: eight iPhone 5C-inspired candy hues, deterministic
+   hash assignment, white-on-solid and dark-on-pale pairs, dark variants, grid-based
+   spacing and aligned guide lines.
+3. Apply the reference's layout and color hierarchy through the shared system.
+4. Fine-tune individual controls one at a time.
 
-| Semantic role | Proposed light candidate | Reason |
-| --- | --- | --- |
-| sidebar/canvas | `#F5F5F5` | Matches reference neutral hierarchy |
-| main surface | `#FCFCFC` | Separates white cards without heavier borders |
-| card | `#FFFFFF` | Reserved for actual controls/cards |
-| selection | `#E4E4E4` | Quiet selected-row surface |
-| assistant bubble | `#F0F0F0` or `#F1F1F1` | Flat neutral approximation; compare before choosing |
-| border / subtle separator | `#E4E4E4` / `#EAEAEA` | Two real roles, not ten grays |
-| primary text | `#1C1C1C` | Reference-like primary ink |
-| secondary text | `#626262` | About 5.59:1 on proposed sidebar |
-| tertiary readable text | `#707070` | About 4.83:1 on proposed surface |
-
-Decorative disabled/guide colors may be lighter; meaningful summaries and statuses may
-not. Dark colors require their own measured palette and snapshots; the three references
-are light-only and provide no dark-theme specification.
-
-### B. Accent choice (not silently decided)
-
-1. **Keep Eagle green, retain white text — recommended:** deepen readable action/bubble
-   fill, for example `#18833C` (white contrast approximately 4.83:1). Keep bright Bot
-   faces and small status dots separate. Final shade requires screenshot approval.
-2. **Move to reference-like blue:** for example `#1374D4` (white approximately 4.69:1).
-   This is a visible identity choice, not a correctness fix.
-3. **Per-Bot tint:** reference-like visual possibility, but not proven by these images.
-   It needs readable on-colors for all twelve Bot tints and is a larger behavior/design
-   decision. Defer unless explicitly wanted.
-
-An alternative is keeping the bright green and using dark text (about 6.82:1 with
-current primary ink), but this changes the familiar white-on-color conversation look.
-Do not conflate an action fill, a link color, success text and decorative identity color.
-
-### C. Geometry candidates (not final measured specification)
-
-| Role | Proposed first comparison |
-| --- | --- |
-| Sidebar / inspector defaults | 320 / 300; keep resizing, protect center width |
-| Conversation horizontal inset | 16 instead of 24 |
-| Sidebar row / face | Retain approximately 58 / 34; tune local gap only if measurement requires |
-| Toolbar circle / gap | Keep 35 / 9; lighten shadow and align shape |
-| Main header | Compare 60–64 total; preserve native traffic-light clearance |
-| Inspector portrait | 64 instead of 76 |
-| Message padding | Compare 12 horizontal / 8–10 vertical; measure Chinese multiline text |
-| Message spacing | 4–8 continuation; 16–20 new turn; 24 only for stronger separation |
-| Bubble width | Explicit readable max near 560; responsive within available column, no hidden subtraction |
-| Composer | 44–48 minimum, 16 horizontal outer inset, 12–16 bottom inset |
-| Waiting indicator | Compact stable slot or integrated state, never a jumping layout |
-| Settings envelope | Approximately 900–960 wide, at most 700 high, further clamped to available space |
-| Settings rail / row | 200 wide; 32–36 high rows with 2–4 gaps |
-| Settings content / card inset | 32 / 16 |
-| Settings row density | Single-line roughly 40–44; multiline roughly 52–56 or intrinsic growth |
-| Settings control height | 32 default, justified compact variants only |
-| Radii | Small controls 8; list selection 10–12; cards 12–14; dialog 16; pills half-height |
-| Separator thickness | One physical pixel, scale-aware; keep focus/control stroke independently legible |
-
-Use a 4 pt base rhythm and a 2 pt compact step, not a dogmatic replacement of every
-odd/fractional number. Keep measured optical exceptions such as 35 pt toolbar circles,
-font sizes, native traffic-light offsets and pixel-aligned strokes. Do not turn every
-literal into a named token: centralize repeated semantic decisions, not zeros or one-off
-shape geometry.
-
-## 7. Implementation plan after approval
-
-Each phase must leave a runnable App. No part is started by this document.
-
-| Phase | Change boundary | Acceptance |
-| --- | --- | --- |
-| 0. Approve baseline | Decide accent, density, native/custom switches and unavailable actions; replace obsolete design guidance | One authoritative light/dark role table; agreed screenshots and viewports |
-| 1. Correctness first | Contrast roles; settings size bounds; invisible peer names; separately test stale-state issue | Failing tests first, readable text pairs, all modal edges/actions reachable at 1280 × 760 |
-| 2. Shell geometry | Side-column allocation, center floor, lighter chrome, neutral surfaces/selection | Matched-scale redlines for two/three columns; resize and keyboard focus still work |
-| 3. Conversation | Explicit bubble widths/radii, grouped rhythm, Markdown/code/table scale, compact stable composer status | Short/long Chinese and English, code/table overflow, copy, streaming, steer, abort and follow-scroll remain correct |
-| 4. Inspector and settings | Smaller identity block, calmer empty states, shared control family, actual switch path | All existing capabilities remain reachable; long titles/errors and saved/disabled states fit |
-| 5. Pixel and accessibility pass | Optical alignment, physical hairlines, hover/focus/selected/disabled/error states, dark mode and reduced motion | Approved paired crops and evidence checklist; no new speculative components |
-
-Reuse `Theme`, `SettingsCard`, `SettingsSectionRow`, `SettingsTextField`,
-`SettingsActionButton`, `IconButton`, existing Markdown renderer and MVVM boundaries.
-No new UI library, copied private font or generalized theme-generation system is needed.
-
-### Validation contract
-
-- Compare at 1280 × 800, the supported 1280 × 760 minimum, the current tall window,
-  and the default 1728 × 1082. The reference-sized 1280 × 1410 can use deterministic
-  offscreen rendering if the display cannot accommodate it; label that as fixture evidence.
-- Use the existing SnapshotRenderer and synthetic data for repeatability; real-App
-  captures remain required. Do not replace real product evidence with gallery screenshots.
-- Cover light and dark, one/two/three-column states, long Bot names, empty/busy/error/
-  disconnected states, and selected/hover/focus/disabled controls.
-- Contrast gates: normal meaningful text ≥4.5:1, large text ≥3:1, essential non-text
-  controls/focus indicators ≥3:1. Decorative separators are not text.
-- Pixel acceptance is local: aligned edges/baselines within 1 pt at agreed scale, no
-  clipping or unexplained gutter, flat colors matching approved tokens. Different fonts
-  and different conversation content must not be hidden behind a fabricated global score.
-- Preserve keyboard operation, names and focus visibility. Verify active/inactive-window
-  native controls and Reduce Motion rather than relying on a static light screenshot.
-- Add behavior/layout/contrast tests before fixes. Update obsolete literal-value tests
-  to the approved values without weakening thresholds. Run affected Swift tests, strict
-  format and coverage gates; repeat CLI chat acceptance for conversation-path changes.
-- Preserve scrolling performance tests and actual user-scrolling/streaming behavior;
-  never add per-frame observable state solely to accomplish a cosmetic transition.
-- Every implementation phase ends with an inspectable foreground development App and
-  its own atomic commit. Full release gates remain required for a release.
-
-## 8. Review checklist for the owner
-
-1. Adopt the neutral surface hierarchy while retaining Eagle identity?
-2. Keep green with accessible white-on-dark-green, or deliberately switch to blue?
-3. Approve 320 / flexible / 300 as the first shell comparison, keeping 15 pt body text?
-4. Prefer a compact responsive settings dialog around 900–960 × ≤700?
-5. Keep native switches, or make the existing custom switch the real shared path?
-6. Disable/hide currently unavailable actions instead of inventing new features in this pass?
+[MACOS-DESIGN-PLAN.md](MACOS-DESIGN-PLAN.md) is the authoritative implementation plan,
+including phase exit gates and pending identity/manual-color decisions. The earlier
+single-accent alternatives and correctness-first sequence have been replaced, not
+retained as a competing roadmap. Findings above remain current-state evidence;
+their priority labels describe severity, not the implementation order.
 
 ## Verification limits
 
