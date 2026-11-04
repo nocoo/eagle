@@ -3587,3 +3587,18 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   and target WebSocket hibernation remain unimplemented. No deployment, installed
   App, real-model, Herdr collection, viewer auth, D1, Cloudflare hibernation or
   billing verification was performed.
+
+## 2026-11-05 07:05 +08 — Long commands and child turns
+
+- Agent renewal was completed earlier (`caed7ac`), and long remote command socket
+  budgets now cover the requested duration plus bounded authentication/relay time
+  (`9ad4053`). Timeout recovery retains the original ID. Bots check passed 1,019
+  tests after one independently investigated trace-fixture cleanup failure.
+- App-managed children now refresh remote tools at spawn/send (`66a9bcc`), preserve
+  local tools and prohibit further delegation. Three review rounds found and drove
+  fixes for parallel sends, stop/cancellation and a marker-validation race; Bots
+  check passed all 1,022 tests including coverage. This is not automatic refresh of
+  an already-running generation or exhaustive child restart recovery.
+- Target WebSocket hibernation, auto-ping and wake remain unimplemented. No
+  deployment or real-model, installed-App, Herdr collection, viewer auth, D1,
+  physical two-Mac, Cloudflare hibernation or billing verification was performed.
