@@ -1263,7 +1263,18 @@ before writing another multi-resource cleanup, not only after the gate fails.
 The Bots gate then found an unsorted new import: `biome format` does not run
 import organization. A later recovery fixture repeated the same mistake; both were
 caught by check-only lint, not by format. Run the package lint immediately after
-adding files, before the expensive gate.
+adding files, before the expensive gate. The renewal test also left an existing
+worker fixture unformatted; check-only lint caught it before behavioral testing.
+The growing device API suite later exhausted its shared synthetic registration-IP
+budget, making a final authentication test fail for the wrong reason. My first
+reset targeted `registration:local`, but Miniflare uses `registration:127.0.0.1`;
+a new isolation assertion exposed that mistake. The isolated fixture now clears
+registration rate rows between cases and separately verifies all 120 allowed
+registrations and the 121st rejection; the production limit is unchanged. Review of
+same-socket renewal also found that concurrent authorization could retain an old
+reference; barrier tests now force renewal and expiry during both operation and
+policy checks. The renewal-expiry test explicitly gives the replacement a later
+expiry so downgrade rejection cannot masquerade as proof of old-session validation.
 A new Swift red test initially referenced nonexistent fixture names and failed to
 compile; correcting the test precedes collecting behavioral red evidence.
 The root remote-tool selection was initially changed before its contract was

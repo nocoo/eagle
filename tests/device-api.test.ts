@@ -13,7 +13,7 @@ import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { after, before, test } from "node:test";
+import { after, before, beforeEach, test } from "node:test";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import NativeWebSocket from "ws";
 import type { OperationRequest } from "../packages/contracts/src/devices.ts";
@@ -150,6 +150,15 @@ export default worker;
     unsafeInspectDurableObjects: true,
   });
   await mf.ready;
+  await mf.dispatchFetch(`${base}/directory`);
+});
+beforeEach(async () => {
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "DeviceRegistry",
+    { name: "registry" },
+  );
+  await storage.exec("DELETE FROM rates WHERE key LIKE 'registration:%'");
 });
 after(async () => {
   await mf?.dispose();
@@ -946,6 +955,42 @@ test("session reference authorization observes revocation while source hashing i
     await pending?.catch(() => undefined);
     await storage.exec("DROP TABLE test_reference_digest");
   }
+});
+
+test("registration rate budget remains enforced within each isolated test", async () => {
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "DeviceRegistry",
+    { name: "registry" },
+  );
+  const rates = await storage.exec(
+    "SELECT key,count FROM rates WHERE key LIKE 'registration:%'",
+  );
+  assert.deepEqual(
+    rates,
+    [],
+    "registration budget must be isolated before the case",
+  );
+  const keys = generateKeyPairSync("ed25519");
+  const registration = {
+    deviceId: randomUUID(),
+    publicKey: keys.publicKey
+      .export({ type: "spki", format: "der" })
+      .toString("base64url"),
+    name: "registration-budget",
+    platform: "darwin",
+    arch: "arm64",
+  };
+  for (let index = 0; index < 120; index++) {
+    assert.equal(
+      (await call("/register/challenge", undefined, registration)).status,
+      200,
+    );
+  }
+  assert.equal(
+    (await call("/register/challenge", undefined, registration)).status,
+    429,
+  );
 });
 
 test("registration proves the key, consumes challenges and rejects identity replacement", async () => {
@@ -2251,6 +2296,583 @@ test("reference authorization failure does not invalidate either valid credentia
   }
 });
 
+test("target session renews in place without interrupting an in-flight operation", async () => {
+  const { canonicalDeviceJSON, deviceDigest } = await import(
+    "../packages/contracts/src/devices.ts"
+  );
+  const [a, b] = await Promise.all([identity("renew-a"), identity("renew-b")]);
+  await pair(a.token, await code(b.token));
+  const challenge = await call("/register/challenge", undefined, {
+    deviceId: b.deviceId,
+    publicKey: b.publicKey,
+    name: "renew-b",
+    platform: "darwin",
+    arch: "arm64",
+  });
+  assert.equal(challenge.status, 200);
+  const refreshed = await call("/register/complete", undefined, {
+    challengeId: challenge.body.challengeId,
+    signature: sign(
+      null,
+      Buffer.from(challenge.body.payload),
+      b.keys.privateKey,
+    ).toString("base64url"),
+  });
+  assert.equal(refreshed.status, 200);
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "DeviceRegistry",
+    { name: "registry" },
+  );
+  const oldHash = createHash("sha256").update(b.token).digest("hex");
+  const newHash = createHash("sha256")
+    .update(refreshed.body.sessionToken)
+    .digest("hex");
+  const rows = await storage.exec(
+    "SELECT expires FROM sessions WHERE hash=?",
+    newHash,
+  );
+  const newExpiry = Number(rows[0]?.expires);
+  const oldExpiry = newExpiry - 1000;
+  assert.equal(oldExpiry > Date.now(), true);
+  await storage.exec(
+    "UPDATE sessions SET expires=? WHERE hash=?",
+    oldExpiry,
+    oldHash,
+  );
+  const agent = await rawSocket(b.deviceId, "agent");
+  let caller: NativeWebSocket | undefined;
+  let secondCaller: NativeWebSocket | undefined;
+  let response:
+    | Promise<{ result: { status: string; output?: string } }>
+    | undefined;
+  let secondResponse: Promise<{ result: { status: string } }> | undefined;
+  try {
+    const ready = frame<{ type: string; expiresAt: number }>(agent);
+    agent.send(JSON.stringify(authentication(b.token)));
+    const initial = await ready;
+    assert.equal(initial.type, "ready");
+    assert.equal(initial.expiresAt, oldExpiry);
+    const rejectedId = randomUUID();
+    const rejected = frame<{ type: string; requestId: string; error: string }>(
+      agent,
+    );
+    agent.send(
+      JSON.stringify({
+        type: "session.renew",
+        requestId: rejectedId,
+        sessionToken: "not-a-session",
+      }),
+    );
+    assert.deepEqual(await rejected, {
+      type: "session.renewed",
+      requestId: rejectedId,
+      error: "session_renewal_failed",
+    });
+    caller = await rawSocket(b.deviceId, "request");
+    const operation = { kind: "command" as const, command: "fixture" };
+    const request = {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: b.deviceId,
+      action: "run" as const,
+      operation,
+      digest: await deviceDigest(canonicalDeviceJSON(operation)),
+    };
+    const forwarded = frame<{ request: OperationRequest }>(agent);
+    response = frame<{ result: { status: string; output?: string } }>(caller);
+    caller.send(
+      JSON.stringify({ type: "request", sessionToken: a.token, request }),
+    );
+    const accepted = await forwarded;
+    const renewalId = randomUUID();
+    const acknowledged = frame<{
+      type: string;
+      requestId: string;
+      expiresAt: number;
+    }>(agent);
+    agent.send(
+      JSON.stringify({
+        type: "session.renew",
+        requestId: renewalId,
+        sessionToken: refreshed.body.sessionToken,
+      }),
+    );
+    const renewed = await acknowledged;
+    assert.equal(renewed.type, "session.renewed");
+    assert.equal(renewed.requestId, renewalId);
+    assert.equal(renewed.expiresAt, newExpiry);
+    assert.deepEqual(Object.keys(renewed).sort(), [
+      "expiresAt",
+      "requestId",
+      "type",
+    ]);
+    const olderId = randomUUID();
+    const older = frame<{ type: string; requestId: string; error: string }>(
+      agent,
+    );
+    agent.send(
+      JSON.stringify({
+        type: "session.renew",
+        requestId: olderId,
+        sessionToken: b.token,
+      }),
+    );
+    assert.deepEqual(await older, {
+      type: "session.renewed",
+      requestId: olderId,
+      error: "session_renewal_failed",
+    });
+    await storage.exec(
+      "UPDATE sessions SET expires=? WHERE hash=?",
+      Date.now() - 1,
+      oldHash,
+    );
+    agent.send(
+      JSON.stringify({
+        type: "result",
+        requestId: accepted.request.requestId,
+        operationId: request.operationId,
+        targetDeviceId: b.deviceId,
+        result: { status: "completed", output: "fixture-result" },
+      }),
+    );
+    const result = await response;
+    assert.equal(result.result.status, "completed");
+    assert.equal(result.result.output, "fixture-result");
+    assert.equal(agent.readyState, NativeWebSocket.OPEN);
+    secondCaller = await rawSocket(b.deviceId, "request");
+    const second = {
+      ...request,
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+    };
+    const secondForwarded = frame<{ request: OperationRequest }>(agent);
+    secondResponse = frame<{ result: { status: string } }>(secondCaller);
+    secondCaller.send(
+      JSON.stringify({
+        type: "request",
+        sessionToken: a.token,
+        request: second,
+      }),
+    );
+    const acceptedAgain = await secondForwarded;
+    agent.send(
+      JSON.stringify({
+        type: "result",
+        requestId: acceptedAgain.request.requestId,
+        operationId: second.operationId,
+        targetDeviceId: b.deviceId,
+        result: { status: "completed" },
+      }),
+    );
+    assert.equal((await secondResponse).result.status, "completed");
+  } finally {
+    caller?.terminate();
+    secondCaller?.terminate();
+    agent.terminate();
+    await Promise.allSettled([response, secondResponse]);
+  }
+});
+
+test("dispatch and policy authorization follow a concurrent target renewal", async () => {
+  const { canonicalDeviceJSON, deviceDigest } = await import(
+    "../packages/contracts/src/devices.ts"
+  );
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "DeviceRegistry",
+    { name: "registry" },
+  );
+  for (const mode of ["operation", "policy"] as const) {
+    const [a, b] = await Promise.all([
+      identity(`renew-race-a-${mode}`),
+      identity(`renew-race-b-${mode}`),
+    ]);
+    await pair(a.token, await code(b.token));
+    const challenge = await call("/register/challenge", undefined, {
+      deviceId: b.deviceId,
+      publicKey: b.publicKey,
+      name: `renew-race-b-${mode}`,
+      platform: "darwin",
+      arch: "arm64",
+    });
+    assert.equal(challenge.status, 200);
+    const renewedToken = await call("/register/complete", undefined, {
+      challengeId: challenge.body.challengeId,
+      signature: sign(
+        null,
+        Buffer.from(challenge.body.payload),
+        b.keys.privateKey,
+      ).toString("base64url"),
+    });
+    assert.equal(renewedToken.status, 200);
+    const oldHash = createHash("sha256").update(b.token).digest("hex");
+    const newHash = createHash("sha256")
+      .update(renewedToken.body.sessionToken)
+      .digest("hex");
+    const rows = await storage.exec(
+      "SELECT expires FROM sessions WHERE hash=?",
+      newHash,
+    );
+    await storage.exec(
+      "UPDATE sessions SET expires=? WHERE hash=?",
+      Number(rows[0]?.expires) - 1000,
+      oldHash,
+    );
+    const agent = await rawSocket(b.deviceId, "agent");
+    let caller: NativeWebSocket | undefined;
+    let pending: Promise<unknown> | undefined;
+    try {
+      const ready = frame<{ type: string }>(agent);
+      agent.send(
+        JSON.stringify({
+          ...authentication(b.token),
+          capabilities: ["command", "policy.manage"],
+        }),
+      );
+      assert.equal((await ready).type, "ready");
+      await storage.exec(
+        "CREATE TABLE test_reference_digest(hash TEXT PRIMARY KEY,started INTEGER NOT NULL DEFAULT 0,released INTEGER NOT NULL DEFAULT 0)",
+      );
+      const sourceHash = createHash("sha256").update(a.token).digest("hex");
+      await storage.exec(
+        "INSERT INTO test_reference_digest(hash) VALUES(?)",
+        sourceHash,
+      );
+      const operation = { kind: "command" as const, command: "fixture" };
+      const operationRequest = {
+        requestId: randomUUID(),
+        operationId: randomUUID(),
+        targetDeviceId: b.deviceId,
+        action: "run" as const,
+        operation,
+        digest: await deviceDigest(canonicalDeviceJSON(operation)),
+      };
+      const policyRequest = {
+        requestId: randomUUID(),
+        deviceId: b.deviceId,
+        mode: "paused",
+      };
+      if (mode === "operation") {
+        caller = await rawSocket(b.deviceId, "request");
+        pending = frame(caller);
+        caller.send(
+          JSON.stringify({
+            type: "request",
+            sessionToken: a.token,
+            request: operationRequest,
+          }),
+        );
+      } else {
+        pending = call("/policy", a.token, policyRequest);
+      }
+      const deadline = Date.now() + 2000;
+      let started = false;
+      while (Date.now() < deadline) {
+        const gate = await storage.exec(
+          "SELECT started FROM test_reference_digest WHERE hash=?",
+          sourceHash,
+        );
+        if (gate[0]?.started === 1) {
+          started = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.equal(
+        started,
+        true,
+        "source digest gate must be reached before renewal",
+      );
+      const renewalId = randomUUID();
+      const ack = frame<{ type: string; requestId: string; expiresAt: number }>(
+        agent,
+      );
+      agent.send(
+        JSON.stringify({
+          type: "session.renew",
+          requestId: renewalId,
+          sessionToken: renewedToken.body.sessionToken,
+        }),
+      );
+      const renewal = await ack;
+      assert.equal(renewal.type, "session.renewed");
+      assert.equal(renewal.requestId, renewalId);
+      assert.equal(renewal.expiresAt > Date.now(), true);
+      await storage.exec(
+        "UPDATE sessions SET expires=? WHERE hash=?",
+        Date.now() - 1,
+        oldHash,
+      );
+      const forwarded = frame<{
+        type: string;
+        relayId?: string;
+        request: OperationRequest | { requestId: string };
+      }>(agent);
+      await storage.exec(
+        "UPDATE test_reference_digest SET released=1 WHERE hash=?",
+        sourceHash,
+      );
+      const decision = await Promise.race([
+        forwarded.then((value) => ({ kind: "forwarded" as const, value })),
+        pending.then((value) => ({ kind: "settled" as const, value })),
+      ]);
+      assert.equal(
+        decision.kind,
+        "forwarded",
+        "a successful renewal must not deny the request",
+      );
+      if (decision.kind !== "forwarded")
+        throw new Error("request settled before forwarding");
+      const dispatched = decision.value;
+      if (mode === "operation") {
+        assert.equal(dispatched.type, "operation");
+        agent.send(
+          JSON.stringify({
+            type: "result",
+            requestId: dispatched.request.requestId,
+            operationId: operationRequest.operationId,
+            targetDeviceId: b.deviceId,
+            result: { status: "completed" },
+          }),
+        );
+        assert.equal(
+          ((await pending) as { result: { status: string } }).result.status,
+          "completed",
+        );
+      } else {
+        assert.equal(dispatched.type, "policy.set");
+        agent.send(
+          JSON.stringify({
+            type: "policy.result",
+            relayId: dispatched.relayId,
+            requestId: policyRequest.requestId,
+            deviceId: b.deviceId,
+            policy: { mode: "paused", version: 2 },
+          }),
+        );
+        assert.equal(((await pending) as { status: number }).status, 200);
+      }
+    } finally {
+      await storage
+        .exec("UPDATE test_reference_digest SET released=1")
+        .catch(() => undefined);
+      caller?.terminate();
+      agent.terminate();
+      await pending?.catch(() => undefined);
+      await storage.exec("DROP TABLE IF EXISTS test_reference_digest");
+    }
+  }
+});
+
+test("renewal cannot extend a session that expires during its proof check", async () => {
+  const b = await identity("renew-digest-race");
+  const challenge = await call("/register/challenge", undefined, {
+    deviceId: b.deviceId,
+    publicKey: b.publicKey,
+    name: "renew-digest-race",
+    platform: "darwin",
+    arch: "arm64",
+  });
+  assert.equal(challenge.status, 200);
+  const refreshed = await call("/register/complete", undefined, {
+    challengeId: challenge.body.challengeId,
+    signature: sign(
+      null,
+      Buffer.from(challenge.body.payload),
+      b.keys.privateKey,
+    ).toString("base64url"),
+  });
+  assert.equal(refreshed.status, 200);
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "DeviceRegistry",
+    { name: "registry" },
+  );
+  const oldHash = createHash("sha256").update(b.token).digest("hex");
+  const newHash = createHash("sha256")
+    .update(refreshed.body.sessionToken)
+    .digest("hex");
+  const expiry = await storage.exec(
+    "SELECT expires FROM sessions WHERE hash=?",
+    newHash,
+  );
+  const oldExpiry = Number(expiry[0]?.expires) - 1000;
+  assert.equal(oldExpiry > Date.now(), true);
+  await storage.exec(
+    "UPDATE sessions SET expires=? WHERE hash=?",
+    oldExpiry,
+    oldHash,
+  );
+  const agent = await rawSocket(b.deviceId, "agent");
+  let response:
+    | Promise<{ type: string; requestId: string; error: string }>
+    | undefined;
+  try {
+    const ready = frame<{ type: string }>(agent);
+    agent.send(JSON.stringify(authentication(b.token)));
+    assert.equal((await ready).type, "ready");
+    await storage.exec(
+      "CREATE TABLE test_reference_digest(hash TEXT PRIMARY KEY,started INTEGER NOT NULL DEFAULT 0,released INTEGER NOT NULL DEFAULT 0)",
+    );
+    await storage.exec(
+      "INSERT INTO test_reference_digest(hash) VALUES(?)",
+      newHash,
+    );
+    const requestId = randomUUID();
+    response = frame(agent);
+    agent.send(
+      JSON.stringify({
+        type: "session.renew",
+        requestId,
+        sessionToken: refreshed.body.sessionToken,
+      }),
+    );
+    const deadline = Date.now() + 2000;
+    let started = false;
+    while (Date.now() < deadline) {
+      const rows = await storage.exec(
+        "SELECT started FROM test_reference_digest WHERE hash=?",
+        newHash,
+      );
+      if (rows[0]?.started === 1) {
+        started = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(started, true, "renewal digest barrier was not reached");
+    await storage.exec(
+      "UPDATE sessions SET expires=? WHERE hash=?",
+      Date.now() - 1,
+      oldHash,
+    );
+    await storage.exec(
+      "UPDATE test_reference_digest SET released=1 WHERE hash=?",
+      newHash,
+    );
+    assert.deepEqual(await response, {
+      type: "session.renewed",
+      requestId,
+      error: "session_renewal_failed",
+    });
+    const namespace = (await mf.getDurableObjectNamespace(
+      "DEVICE_REGISTRY",
+      "eagle",
+    )) as unknown as DurableObjectNamespace;
+    const registry = namespace.get(
+      namespace.idFromName("registry"),
+    ) as unknown as {
+      bindTargetSession(
+        token: string,
+        target: string,
+      ): Promise<{ ok: boolean }>;
+    };
+    assert.equal(
+      (
+        await registry.bindTargetSession(
+          refreshed.body.sessionToken,
+          b.deviceId,
+        )
+      ).ok,
+      true,
+    );
+  } finally {
+    await storage
+      .exec("UPDATE test_reference_digest SET released=1 WHERE hash=?", newHash)
+      .catch(() => undefined);
+    agent.terminate();
+    await response?.catch(() => undefined);
+    await storage.exec("DROP TABLE IF EXISTS test_reference_digest");
+  }
+});
+
+test("renewal cannot revive an expired or revoked target connection", async () => {
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "DeviceRegistry",
+    { name: "registry" },
+  );
+  for (const kind of ["expired", "rejoined"] as const) {
+    const [a, b] = await Promise.all([
+      identity(`renew-invalid-a-${kind}`),
+      identity(`renew-invalid-b-${kind}`),
+    ]);
+    await pair(a.token, await code(b.token));
+    const freshToken = async () => {
+      const challenge = await call("/register/challenge", undefined, {
+        deviceId: b.deviceId,
+        publicKey: b.publicKey,
+        name: `renew-invalid-b-${kind}`,
+        platform: "darwin",
+        arch: "arm64",
+      });
+      assert.equal(challenge.status, 200);
+      const result = await call("/register/complete", undefined, {
+        challengeId: challenge.body.challengeId,
+        signature: sign(
+          null,
+          Buffer.from(challenge.body.payload),
+          b.keys.privateKey,
+        ).toString("base64url"),
+      });
+      assert.equal(result.status, 200);
+      return result.body.sessionToken;
+    };
+    const agent = await rawSocket(b.deviceId, "agent");
+    try {
+      const ready = frame<{ type: string }>(agent);
+      agent.send(JSON.stringify(authentication(b.token)));
+      assert.equal((await ready).type, "ready");
+      let replacement: string;
+      if (kind === "expired") {
+        replacement = await freshToken();
+        await storage.exec(
+          "UPDATE sessions SET expires=? WHERE hash=?",
+          Date.now() - 1,
+          createHash("sha256").update(b.token).digest("hex"),
+        );
+      } else {
+        assert.equal(
+          (await call("/members/remove", a.token, { deviceId: b.deviceId }))
+            .status,
+          200,
+        );
+        replacement = await freshToken();
+        assert.equal(
+          (await pair(replacement, await code(a.token))).status,
+          200,
+        );
+      }
+      const closed = new Promise<{ code: number; reason: string }>(
+        (resolve, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("renewal close timeout")),
+            2000,
+          );
+          agent.once("close", (code, reason) => {
+            clearTimeout(timer);
+            resolve({ code, reason: reason.toString() });
+          });
+        },
+      );
+      agent.send(
+        JSON.stringify({
+          type: "session.renew",
+          requestId: randomUUID(),
+          sessionToken: replacement,
+        }),
+      );
+      const result = await closed;
+      assert.equal(result.code, 1008);
+      assert.equal(result.reason, "revoked_agent");
+    } finally {
+      agent.terminate();
+    }
+  }
+});
+
 test("target relay retains an internal session reference instead of the bearer", async () => {
   const target = await identity("reference-target");
   const socket = await rawSocket(target.deviceId, "agent");
@@ -2576,7 +3198,12 @@ test("caller authentication closure refreshes the cached session without an HTTP
       "UPDATE sessions SET expires=0 WHERE deviceId=?",
       device.deviceId,
     );
-    assert.equal((await cloud.execute(request)).status, "denied");
+    const expired = await cloud.execute(request);
+    assert.equal(
+      expired.status,
+      "denied",
+      `expired caller result: ${expired.error ?? "none"}`,
+    );
     // Let the received close frame finish; a denied result never retries the run.
     await new Promise((resolve) => setTimeout(resolve, 30));
     const refreshed = await cloud.execute({

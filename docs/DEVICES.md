@@ -161,7 +161,16 @@ consumption. Invitation issuance epoch must still match. Results retain 7 days.
 ## Execution
 
 Agent opens one outbound WSS `/execution/<targetDeviceId>/agent` and sends
-`{type:"authenticate",sessionToken}`; server returns `{type:"ready"}`. Caller
+`{type:"authenticate",sessionToken}`; server returns `{type:"ready",expiresAt}`
+with the Registry-authoritative session expiry. On that same socket, the agent can
+send `{type:"session.renew",requestId,sessionToken}`. The relay validates the old
+and new sessions for the same device/generation, requires a later expiry, atomically
+swaps the reference and answers `{type:"session.renewed",requestId,expiresAt}`.
+A rejected new session while the old one remains valid returns
+`{type:"session.renewed",requestId,error:"session_renewal_failed"}` and never
+extends the previous session; an expired or revoked old session closes the connection.
+Renewal does not replace the connection, cancel an
+in-flight operation or reveal a session hash. Caller
 opens one WSS `/execution/<targetDeviceId>/request`, sends
 `{type:"request",sessionToken,request:<OperationRequest>}` and receives exactly
 one `{type:"response",requestId,operationId,targetDeviceId,result}` then closes.
