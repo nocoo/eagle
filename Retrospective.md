@@ -1257,3 +1257,12 @@ fixture now attempts every cleanup, retains failures and bounds both Swift comma
 The first fix threw from `finally` and the staged Biome hook rejected it; error
 aggregation now happens after cleanup, and the check runs before committing.
 Cleanup fault injection is not yet tested.
+
+## 2026-11-04 — Keep time-dependent secret tests deterministic
+
+The full Swift red run also exposed an unrelated secret-validity fixture whose
+fixed expiry had passed in real time. The assertion now supplies a fixed clock
+and checks both the remaining and expired boundaries; the test passed while the
+new device-startup regressions remained red. A failing host assertion initially
+printed the synthetic identity object's debug structure, though no key bytes;
+the test now compares extracted status values instead of rendering the host.

@@ -370,11 +370,11 @@ public final class SettingsViewModel: ObservableObject {
   }
 
   /// How long the record lives: a permanent one says so, the others count down.
-  public func secretValidity(_ secret: Secret) -> String {
+  public func secretValidity(_ secret: Secret, now: Date = Date()) -> String {
     guard let expiresAt = secret.expiresAt, let date = Self.secretDate(expiresAt) else {
       return "永久"
     }
-    let minutes = Int(ceil(date.timeIntervalSinceNow / 60))
+    let minutes = Int(ceil(date.timeIntervalSince(now) / 60))
     guard minutes > 0 else { return "已过期" }
     if minutes < 60 { return "剩余 \(minutes) 分钟" }
     return "剩余 \(Int(ceil(Double(minutes) / 60))) 小时"
