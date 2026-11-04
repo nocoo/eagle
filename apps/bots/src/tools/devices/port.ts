@@ -112,8 +112,13 @@ export class SocketDevicePort implements SharedDevicePort {
     this.#path = path;
   }
 
-  async #call(method: string, params?: unknown, signal?: AbortSignal): Promise<unknown> {
-    const channel = new DeviceChannel(this.#path);
+  async #call(
+    method: string,
+    params?: unknown,
+    signal?: AbortSignal,
+    timeoutMs?: number,
+  ): Promise<unknown> {
+    const channel = new DeviceChannel(this.#path, timeoutMs);
     try {
       return await channel.call(method, params, signal);
     } finally {
@@ -122,7 +127,7 @@ export class SocketDevicePort implements SharedDevicePort {
   }
 
   async status(signal?: AbortSignal): Promise<DeviceLocalStatus> {
-    return localStatusSchema.parse(await this.#call("status", undefined, signal));
+    return localStatusSchema.parse(await this.#call("status", undefined, signal, 2000));
   }
   async directory(signal?: AbortSignal): Promise<DeviceDirectory> {
     return directorySchema.parse(await this.#call("directory", undefined, signal));

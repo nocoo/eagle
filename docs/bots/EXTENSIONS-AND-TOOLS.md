@@ -135,9 +135,11 @@ that supplies no search client installs no search extension or loader for it.
 There are **41 tool names** with all current groups registered: five filesystem/coding tools,
 two pull-report tools, three child-agent tools, eight Herdr tools, two search tools, five
 decision tools, five trigger tools, three peer tools, five memory tools, three shared-device
-tools (only when the daemon supplies a device socket) and one SDK loader. With the default
-selection (no `search`, no `decision`, no `peers`) the eager tools, including selected
-device tools, are offered at once. Herdr, decision and trigger tools wait behind `tool_search`.
+tools (installed when the daemon supplies a device socket) and one SDK loader. A root
+conversation selects those three eagerly only when local status says remote is configured;
+local coding tools remain available under local policy. With the default selection (no
+`search`, no `decision`, no `peers`) eager selected tools are offered at once. Herdr,
+decision and trigger tools wait behind `tool_search`.
 
 ### Filesystem and coding
 

@@ -531,6 +531,11 @@ None of them may change v1 semantics for existing fields.
 
 Shared device access uses `remote_status`, `remote_execute(deviceId, operation)`
 and `remote_operation(deviceId, operationId, action)` from the injected v2 device port.
+At root open and before each new input, local status decides whether those eager tools
+are selected: configured-but-offline remains configured; unconfigured or unavailable
+is not selected. Already loaded remote calls check current local status before dispatch.
+This root-input refresh does not yet update existing child conversations or a request
+already in flight; those remain open work in [DEVICE-IDLE-AND-WAKE.md](DEVICE-IDLE-AND-WAKE.md).
 The model reads current names, online evidence and capabilities before choosing
 a remote target; local coding tools keep the local execution environment. A
 durable tool memo records the target, full operation, digest, operation ID and
@@ -538,6 +543,15 @@ validated relay origin before transmission. The local service binds the operatio
 and origin atomically; an operation cannot be claimed by another relay. Retries
 query the original ID at its original relay; they never resend unknown effects or
 substitute a local target. A busy response is unaccepted and creates no queue.
+If a root tool was interrupted and remote access is unconfigured or the local service
+unavailable at reopen, the adapter validates the saved binding against the SDK's final
+execution arguments and preserves an `unknown` receipt before scheduling resumes. It
+uses the pinned SDK's public `LiveDoc` progress and lets the SDK settle the interrupted
+task; it sends no recovery request and does not invent an outcome. The wire
+`toolResult.text` remains JSON and includes the SDK's diagnostic in `diagnostics`;
+the model transcript retains that diagnostic as a separate block. This path is tested
+with real Harness/SIGKILL restarts, including a second crash before resume. It does not
+establish child or nested-call recovery after a configuration change.
 All native coding tools and `list` cross the same local policy/admission seam
 when a device port is configured. They obtain the local device ID and policy from
 the local status method, without reading the remote directory or waiting for the

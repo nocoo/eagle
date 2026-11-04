@@ -316,7 +316,9 @@ export default {
   }
 }
 
-type ModelStep = { name: string; args: JSONRecord } | { text: string };
+type ModelStep = ({ name: string; args: JSONRecord } | { text: string }) & {
+  remote?: boolean;
+};
 async function modelFixture(key: string) {
   const steps: ModelStep[] = [];
   const failures: string[] = [];
@@ -355,6 +357,18 @@ async function modelFixture(key: string) {
       assert(step, "unexpected root model request");
       if (kind === "reflection") reflectionRequests++;
       else requests++;
+      if ("remote" in step && step.remote !== undefined) {
+        const offered = input.tools
+          .filter((tool) => tool.name.startsWith("remote_"))
+          .map((tool) => tool.name)
+          .sort();
+        assert.deepEqual(
+          offered,
+          step.remote
+            ? ["remote_execute", "remote_operation", "remote_status"]
+            : [],
+        );
+      }
       const id = `resp_${requests + reflectionRequests}`;
       const event = (type: string, fields: object) =>
         `event: ${type}\ndata: ${JSON.stringify({ type, ...fields })}\n\n`;
@@ -437,8 +451,11 @@ async function modelFixture(key: string) {
     server,
     baseUrl: `http://127.0.0.1:${address.port}/v1`,
     failures,
-    script(name: string, args: JSONRecord) {
-      steps.push({ name, args }, { text: "done" });
+    script(name: string, args: JSONRecord, remote?: boolean) {
+      steps.push(
+        { name, args, ...(remote === undefined ? {} : { remote }) },
+        { text: "done", ...(remote === undefined ? {} : { remote }) },
+      );
     },
     verify(expectedReflections = 9) {
       assert.deepEqual(failures, []);
@@ -714,7 +731,11 @@ test("CLI drives local Bot tools without a configured remote", {
       ),
     ) as { bot: { id: string } };
     const deniedPath = join(root, "denied");
-    model.script("bash", { command: `printf forbidden > '${deniedPath}'` });
+    model.script(
+      "bash",
+      { command: `printf forbidden > '${deniedPath}'` },
+      false,
+    );
     const denied = await runCli(
       cli,
       [
@@ -734,7 +755,11 @@ test("CLI drives local Bot tools without a configured remote", {
     assert.equal(existsSync(deniedPath), false);
     await device.manage("policy.set", { mode: "all-approve" });
     const resultPath = join(root, "local-result");
-    model.script("bash", { command: `printf local-ok > '${resultPath}'` });
+    model.script(
+      "bash",
+      { command: `printf local-ok > '${resultPath}'` },
+      false,
+    );
     const accepted = await runCli(
       cli,
       [
@@ -752,7 +777,31 @@ test("CLI drives local Bot tools without a configured remote", {
     );
     assert.match(accepted, /"name":"bash"/);
     assert.equal(readFileSync(resultPath, "utf8"), "local-ok");
-    model.verify(2);
+    for (const [baseUrl, offered] of [
+      ["http://127.0.0.1:1", true],
+      ["", false],
+    ] as const) {
+      await device.manage("remote.configure", { baseUrl });
+      const marker = join(root, offered ? "configured" : "disabled");
+      model.script("bash", { command: `printf local > '${marker}'` }, offered);
+      await runCli(
+        cli,
+        [
+          "chat",
+          "send",
+          created.bot.id,
+          "--text",
+          "Check this computer",
+          "--wait",
+          "--json",
+        ],
+        root,
+        daemon.origin,
+        daemon.token,
+      );
+      assert.equal(readFileSync(marker, "utf8"), "local");
+    }
+    model.verify(4);
   } catch (error) {
     failure = error;
   }
@@ -770,6 +819,7 @@ test("CLI drives local Bot tools without a configured remote", {
     errors.push(error);
   }
   if (failure !== undefined) errors.unshift(failure);
+  if (model?.failures.length) errors.push(new Error(model.failures.join("; ")));
   if (errors.length)
     throw new AggregateError(errors, "device CLI acceptance failed");
 });

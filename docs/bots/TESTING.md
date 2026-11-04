@@ -21,7 +21,10 @@ The macOS CI job prepares these two independent installs, runs the integration
 suite, and retains its Swift build/format/coverage gates. Local candidate acceptance
 also runs the Bots and Bots-macOS gates; no default root test silently opts into
 cross-product tests. Process tests are not evidence of physical multi-Mac operation
-or distribution signing.
+or distribution signing. `test/runtime/device-recovery.test.ts` uses a real
+Harness, SQLite and killed fixture processes to check original IDs, valid receipt
+JSON and no new remote request across disabled/unavailable restart and repeated
+crash. It does not establish child/nested recovery or a real provider's choices.
 
 ## The loop
 

@@ -44,9 +44,14 @@ import type {
 import { type DeclaredEvent, declareEvent } from "../../log/events.ts";
 import type { Log } from "../../log/log.ts";
 import type { DecisionClient } from "../../tools/decision/client.ts";
+import { SocketDevicePort } from "../../tools/devices/port.ts";
 import { createHerdrClient } from "../../tools/herdr/client.ts";
 import type { MachinePrompt } from "../../tools/machine/tools.ts";
-import { createToolRegistry, selectToolExtensions } from "../../tools/registry.ts";
+import {
+  createToolRegistry,
+  type RemoteCapability,
+  selectToolExtensions,
+} from "../../tools/registry.ts";
 import type { SearchClient } from "../../tools/search/client.ts";
 import type {
   MemoryToolHost,
@@ -60,6 +65,7 @@ import type { UsageMeter } from "../../tools/usage.ts";
 import { openWorkspace } from "../../tools/workspace.ts";
 import { FailureClassifier, type Minted } from "./classify.ts";
 import { entryMessageId } from "./convert.ts";
+import { retainInterruptedDeviceReceipts } from "./device-recovery.ts";
 import { convertSubmission, EventMapper } from "./mapEvents.ts";
 import {
   answerHash,
@@ -194,6 +200,17 @@ export type PiRuntimeOptions = {
   readonly machinePrompt?: () => MachinePrompt | undefined;
 };
 
+async function remoteCapability(path: string | undefined): Promise<RemoteCapability> {
+  if (path === undefined) return "unconfigured";
+  try {
+    const status = await new SocketDevicePort(path).status();
+    if (!status.localReady) return "unavailable";
+    return status.cloudStatus === "unconfigured" ? "unconfigured" : "configured";
+  } catch {
+    return "unavailable";
+  }
+}
+
 export class PiDurableRuntime implements RuntimePort {
   readonly #options: PiRuntimeOptions;
 
@@ -246,6 +263,7 @@ export class PiDurableRuntime implements RuntimePort {
                 return written;
               },
             };
+      const deviceCapability = { current: await remoteCapability(this.#options.deviceSocket) };
       const registry = createToolRegistry(workspace, {
         ...(this.#options.corePrompt === undefined ? {} : { persona: this.#options.corePrompt }),
         ...(this.#options.machinePrompt === undefined
@@ -254,7 +272,12 @@ export class PiDurableRuntime implements RuntimePort {
         ...(this.#options.deviceSocket === undefined
           ? {}
           : {
-              devices: { socketPath: this.#options.deviceSocket, botId: spec.id, log },
+              devices: {
+                socketPath: this.#options.deviceSocket,
+                botId: spec.id,
+                log,
+                remoteCapability: () => deviceCapability.current,
+              },
             }),
         herdr: { client: createHerdrClient(), stateDir: spec.dir, botId: spec.id },
         ...(search === undefined
@@ -283,7 +306,11 @@ export class PiDurableRuntime implements RuntimePort {
         ...(noteTools === undefined ? {} : { note: noteTools }),
         ...(this.#options.now === undefined ? {} : { now: this.#options.now }),
       });
-      const installed = selectToolExtensions(registry, groups);
+      const installed = selectToolExtensions(
+        registry,
+        groups,
+        deviceCapability.current === "configured",
+      );
       const harness = await HarnessFactory.open(
         storage,
         {
@@ -327,6 +354,7 @@ export class PiDurableRuntime implements RuntimePort {
         installed.push(reflection);
       }
       await root.configure({ extensions: installed }, BACKGROUND_CONTEXT);
+      await retainInterruptedDeviceReceipts(harness, root.id, spec.id, deviceCapability.current);
       const reflectionUsage =
         note === undefined || this.#options.usage === undefined
           ? undefined
@@ -352,6 +380,7 @@ export class PiDurableRuntime implements RuntimePort {
         options: this.#options,
         registry,
         runNote,
+        deviceCapability,
         ...(note === undefined ? {} : { note }),
         ...(secrets === undefined ? {} : { secrets }),
         ...(reflectionUsage === undefined ? {} : { reflectionUsage }),
@@ -407,6 +436,7 @@ type HandleOptions = {
   readonly classifier: FailureClassifier;
   readonly options: PiRuntimeOptions;
   readonly registry: Registry;
+  readonly deviceCapability: { current: RemoteCapability };
   /** The catalog line this bot owns; absent in a build with no catalog around it. */
   readonly note?: NoteToolHost;
   /** What the run in flight gave note_set, so its settlement writes that and nothing else. */
@@ -419,6 +449,9 @@ type HandleOptions = {
 class PiRuntimeHandle implements RuntimeHandle {
   readonly #registry: Registry;
   #toolGroups: readonly string[];
+  readonly #deviceCapability: { current: RemoteCapability };
+  #selectedRemote: boolean;
+  #toolsSync: Promise<void> = Promise.resolve();
   /** The secrets host this Bot was opened with, so a live switch reaches the environment. */
   readonly #secretsHost: SecretsToolHost | undefined;
 
@@ -477,6 +510,8 @@ class PiRuntimeHandle implements RuntimeHandle {
     this.#classifier = options.classifier;
     this.#options = options.options;
     this.#registry = options.registry;
+    this.#deviceCapability = options.deviceCapability;
+    this.#selectedRemote = options.deviceCapability.current === "configured";
     this.#note = options.note;
     this.#runNote = options.runNote;
     this.#secretsHost = options.secrets;
@@ -587,6 +622,7 @@ class PiRuntimeHandle implements RuntimeHandle {
       reqId: input.requestId,
     });
     try {
+      if (this.#options.deviceSocket !== undefined) await this.#syncTools(input.trace, false);
       const root = await this.#harness.root(BACKGROUND_CONTEXT);
       const admitted = await root.submit(
         {
@@ -903,28 +939,41 @@ class PiRuntimeHandle implements RuntimeHandle {
   }
 
   async refreshTools(trace: string): Promise<void> {
-    try {
-      const extensions = selectToolExtensions(this.#registry, this.#toolGroups);
-      const reflection = this.#registry.snapshot().extension(REFLECTION_EXTENSION);
-      if (reflection !== undefined) extensions.push(reflection);
-      const root = await this.#harness.root(BACKGROUND_CONTEXT);
-      await root.configure({ extensions }, BACKGROUND_CONTEXT);
-      this.#secretsHost?.setEnabled?.(this.#toolGroups.includes("secrets"));
-      this.#options.log.emit("info", "runtime", Events.toolsRefreshOk, {
-        trace,
-        botId: this.#spec.id,
-      });
-    } catch (cause) {
-      const minted =
-        this.#classifier.sessionEpisode() ?? this.#classifier.operationFailed("tools", cause);
-      this.#logFailure(minted, trace, Events.toolsRefreshFail, "runtime");
-      throw new ClassifiedFailure(
-        minted.classification.failure,
-        "runtime",
-        minted.classification.message,
-        { cause },
-      );
-    }
+    await this.#syncTools(trace, true);
+  }
+
+  async #syncTools(trace: string, force: boolean): Promise<void> {
+    const next = this.#toolsSync.then(async () => {
+      try {
+        const capability = await remoteCapability(this.#options.deviceSocket);
+        this.#deviceCapability.current = capability;
+        const selected = capability === "configured";
+        if (!force && selected === this.#selectedRemote) return;
+        const extensions = selectToolExtensions(this.#registry, this.#toolGroups, selected);
+        const reflection = this.#registry.snapshot().extension(REFLECTION_EXTENSION);
+        if (reflection !== undefined) extensions.push(reflection);
+        const root = await this.#harness.root(BACKGROUND_CONTEXT);
+        await root.configure({ extensions }, BACKGROUND_CONTEXT);
+        this.#selectedRemote = selected;
+        this.#secretsHost?.setEnabled?.(this.#toolGroups.includes("secrets"));
+        this.#options.log.emit("info", "runtime", Events.toolsRefreshOk, {
+          trace,
+          botId: this.#spec.id,
+        });
+      } catch (cause) {
+        const minted =
+          this.#classifier.sessionEpisode() ?? this.#classifier.operationFailed("tools", cause);
+        this.#logFailure(minted, trace, Events.toolsRefreshFail, "runtime");
+        throw new ClassifiedFailure(
+          minted.classification.failure,
+          "runtime",
+          minted.classification.message,
+          { cause },
+        );
+      }
+    });
+    this.#toolsSync = next.catch(() => undefined);
+    await next;
   }
 
   /** Settings changed the reasoning level: the conversation follows without a reopen. */

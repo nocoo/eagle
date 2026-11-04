@@ -1261,9 +1261,15 @@ reintroduced the same `finally` throw and the root lint caught it again. It now
 uses the existing post-cleanup aggregation pattern; check the established fixture
 before writing another multi-resource cleanup, not only after the gate fails.
 The Bots gate then found an unsorted new import: `biome format` does not run
-import organization. Run the package's check-only lint before the expensive gate.
+import organization. A later recovery fixture repeated the same mistake; both were
+caught by check-only lint, not by format. Run the package lint immediately after
+adding files, before the expensive gate.
 A new Swift red test initially referenced nonexistent fixture names and failed to
 compile; correcting the test precedes collecting behavioral red evidence.
+The root remote-tool selection was initially changed before its contract was
+updated, and review found it could erase an interrupted operation receipt. Write
+and review the recovery contract first; prove reopen with a killed real Harness,
+not only a direct tool invocation.
 
 ## 2026-11-04 — Keep time-dependent secret tests deterministic
 

@@ -241,6 +241,55 @@ test("existing and new Bot adapters read the same changing four-member directory
   assert.equal(body(await bench.invoke("remote_status", {})).error, "cloud_unavailable");
 });
 
+test("stale loaded remote tools fail closed when remote access is disabled", async () => {
+  const bench = fixture();
+  let directories = 0;
+  bench.port.status = async () => ({
+    deviceId: required(ids[0]),
+    localReady: true,
+    cloudStatus: "unconfigured",
+    policy: { mode: "all-approve", version: 1 },
+  });
+  bench.port.directory = async () => {
+    directories++;
+    return bench.view;
+  };
+  const status = await bench.invoke("remote_status", {});
+  assert.equal(body(status).error, "remote_not_configured");
+  const operation = { kind: "command", command: "pwd" };
+  const first = await bench.invoke("remote_execute", { deviceId: ids[1], operation });
+  assert.equal(body(first).error, "remote_not_configured");
+  const { api, memos } = memoApi();
+  const original = {
+    requestId: randomUUID(),
+    operationId: randomUUID(),
+    targetDeviceId: ids[1],
+    sourceBotId: "bot-existing",
+    relayOrigin: "https://devices.example",
+    action: "run",
+    operation,
+    digest: operationDigest(operation),
+  };
+  memos.set("device.operation.v1", original);
+  memos.set("device.transmitted.v1", true);
+  const recovered = body(
+    await bench.invoke("remote_execute", { deviceId: ids[1], operation }, api),
+  );
+  assert.equal(recovered.error, "remote_not_configured");
+  assert.equal(recovered.operationId, original.operationId);
+  const query = body(
+    await bench.invoke("remote_operation", {
+      deviceId: ids[1],
+      operationId: original.operationId,
+      action: "get",
+    }),
+  );
+  assert.equal(query.error, "remote_not_configured");
+  assert.equal(query.operationId, original.operationId);
+  assert.equal(directories, 0);
+  assert.equal(bench.calls.length, 0);
+});
+
 test("transmission is memoed first; lost replies and replay query the original target and ID", async () => {
   const bench = fixture();
   const { api, memos } = memoApi();

@@ -78,7 +78,13 @@ const GROUP_EXTENSIONS: Record<ToolGroup, readonly string[]> = {
   peers: [PEERS_TOOLS_EXTENSION, toolSearch.name],
 };
 
-export const selectToolExtensions = (registry: RegistryReader, groups: readonly string[]) => {
+export type RemoteCapability = "configured" | "unconfigured" | "unavailable";
+
+export const selectToolExtensions = (
+  registry: RegistryReader,
+  groups: readonly string[],
+  remoteConfigured = false,
+) => {
   const installed = new Set(
     registry
       .snapshot()
@@ -86,7 +92,7 @@ export const selectToolExtensions = (registry: RegistryReader, groups: readonly 
       .map((extension) => extension.name),
   );
   const names = new Set<string>();
-  if (installed.has(DEVICE_EXTENSION)) names.add(DEVICE_EXTENSION);
+  if (remoteConfigured && installed.has(DEVICE_EXTENSION)) names.add(DEVICE_EXTENSION);
   for (const group of resolveToolGroups(groups)) {
     const [owner, ...rest] = GROUP_EXTENSIONS[group];
     // A group whose own tools are not installed contributes nothing, not even its loader:
@@ -230,7 +236,12 @@ export type ToolRegistryOptions = {
   readonly persona?: () => string | undefined;
   /** The machine's own instructions file, read on every request for the same reason. */
   readonly machine?: () => MachinePrompt | undefined;
-  readonly devices?: { readonly socketPath: string; readonly botId: string; readonly log?: Log };
+  readonly devices?: {
+    readonly socketPath: string;
+    readonly botId: string;
+    readonly log?: Log;
+    readonly remoteCapability?: () => RemoteCapability;
+  };
   /** Herdr tools need the CLI client and this bot's state directory. */
   readonly herdr?: Omit<HerdrToolOptions, "workspace">;
   /** Web search needs a provider client; absent when no key is configured. */
@@ -313,8 +324,15 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
               ? []
               : [noteLine(options.note.current(), (options.now ?? Date.now)())]),
             devices === undefined
-              ? "Tool calls run without asking the user first."
+              ? "Tool calls run without asking the user first. Remote access is not configured."
               : "Local tools follow the shared device policy.",
+            devices === undefined
+              ? ""
+              : options.devices?.remoteCapability?.() === "unavailable"
+                ? "The local device protection service is unavailable. Local work must not bypass it; do not blame remote configuration for a local service failure."
+                : options.devices?.remoteCapability?.() === "configured"
+                  ? "Local tools operate on this computer by default. Remote targets require a separate explicit choice."
+                  : "Local tools operate on this computer by default. Remote access is not configured or enabled; explain this if another computer is requested.",
           ].join("\n"),
         ),
       ],

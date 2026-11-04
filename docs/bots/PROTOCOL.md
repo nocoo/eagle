@@ -1038,3 +1038,7 @@ before attaching it to the same operation; it never treats transport success as
 human confirmation.
 The helper canonicalizes all approval UUID fields to lowercase at decoding, so
 the displayed operation, signed bytes and service verification use the same IDs.
+For a root remote operation interrupted before reopen while remote access is
+unavailable, `toolResult.text` contains a JSON device receipt with the original
+IDs, `status: "unknown"` and a `diagnostics` array carrying the SDK interruption
+message. This does not add a conversation wire field or prove a remote outcome.
