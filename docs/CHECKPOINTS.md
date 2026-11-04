@@ -3450,3 +3450,19 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   input, and guards stale loaded tools. CLI/scripted-model and focused tests are
   green. Existing child conversations, in-flight refresh and hibernation remain open.
   Herdr collection, viewer authentication, D1 and live rendering were not exercised.
+
+## 2026-11-04 17:50 +08 — Root tool selection and restart recovery
+
+- Root tool selection is still uncommitted. The CLI/scripted model now verifies
+  unconfigured, configured-but-offline and disabled selection without changing
+  local policy. Review found that hiding remote tools could lose an interrupted
+  operation ID during SDK recovery. Real Harness/SIGKILL tests reproduced it.
+- A candidate adapter preserves validated original IDs before SDK settlement;
+  red/green tests cover absent and unconfigured service, repeated crash, get,
+  cancel, coerced arguments and valid JSON diagnostics. This depends on the
+  pinned SDK's exposed `LiveDoc` behaviour and needs final independent review
+  and full gates. It is not evidence that child/nested recovery is solved.
+- The isolated source App remains foreground (PID 87255); its isolated daemon
+  answers on 43286 but reports no device socket. No real model, installed App,
+  Herdr collection, viewer authentication, D1, Cloudflare hibernation or billing
+  was verified. Dynamic child refresh and in-flight propagation remain open.
