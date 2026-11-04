@@ -241,6 +241,7 @@ export type ToolRegistryOptions = {
     readonly botId: string;
     readonly log?: Log;
     readonly remoteCapability?: () => RemoteCapability;
+    readonly setRemoteCapability?: (value: RemoteCapability) => void;
   };
   /** Herdr tools need the CLI client and this bot's state directory. */
   readonly herdr?: Omit<HerdrToolOptions, "workspace">;
@@ -339,8 +340,21 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
     }),
   );
   registry.install(CodingTools);
-  if (devices !== undefined) registry.install(deviceExtension(devices));
-  registry.install(agentsExtension());
+  const remote = devices === undefined ? undefined : deviceExtension(devices);
+  if (remote !== undefined) registry.install(remote);
+  registry.install(
+    agentsExtension(
+      devices === undefined || remote === undefined
+        ? undefined
+        : {
+            port: devices.port,
+            extension: remote,
+            ...(options.devices?.setRemoteCapability === undefined
+              ? {}
+              : { setCapability: options.devices.setRemoteCapability }),
+          },
+    ),
+  );
   if (options.search !== undefined) registry.install(searchExtension(options.search));
   if (options.decision !== undefined) registry.install(decisionExtension(options.decision));
   if (options.trigger !== undefined) registry.install(triggerExtension(options.trigger));

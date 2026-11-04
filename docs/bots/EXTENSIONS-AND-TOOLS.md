@@ -223,11 +223,11 @@ and planned `peer_*` addresses independent catalog Bots. These identities and
 lifecycles are not interchangeable. `herdr_send` is not a screen read;
 `herdr_wait` is not a verdict that a task succeeded.
 
-Current child-target validation only parses an ID and looks up the conversation
-in this Harness. `agent_send`/`agent_stop` do not yet verify that its `bots.agent`
-marker names the caller as parent. The send request ID also includes `api.now()`;
-do not describe it as proven replay deduplication. The one-level configuration
-and happy-path test are not evidence for stronger targeting/recovery guarantees.
+`agent_send` verifies the `bots.agent` marker names its caller as direct parent;
+`agent_stop` still only parses an ID and looks up the conversation. The send request
+ID includes `api.now()`; do not describe it as proven replay deduplication. The
+one-level configuration and happy-path test are not evidence for stronger targeting
+or recovery guarantees.
 
 ### Existing test evidence
 

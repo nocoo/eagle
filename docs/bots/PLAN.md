@@ -21,8 +21,9 @@ leases and bind remote IDs to their original relay. Remote dispatch no longer
 performs a discarded directory read; relay/target authorization remains enforced.
 The workspace monitors local health without polling the cloud directory; visible
 device views share directory observation. Root conversations select remote tools
-from local configuration on open and before each new input; child refresh and
-in-flight change propagation remain open. The Registry and target relay now use a
+from local configuration on open and before each new input; app-managed children
+refresh before spawn/send. Automatic in-flight change propagation remains open.
+The Registry and target relay now use a
 tested internal session reference; the Worker and Agent renew on the same socket.
 Target hibernation remains open.
 No live savings, installed-App acceptance or physical two-Mac verification is claimed.

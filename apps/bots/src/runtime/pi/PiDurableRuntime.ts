@@ -277,6 +277,9 @@ export class PiDurableRuntime implements RuntimePort {
                 botId: spec.id,
                 log,
                 remoteCapability: () => deviceCapability.current,
+                setRemoteCapability: (value) => {
+                  deviceCapability.current = value;
+                },
               },
             }),
         herdr: { client: createHerdrClient(), stateDir: spec.dir, botId: spec.id },
