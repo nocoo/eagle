@@ -1235,3 +1235,13 @@ Publishing the 0.17.0 draft succeeded, but the immediately chained verification
 asked `gh release view` for the unsupported `isLatest` field. The error was in the
 read, not publication; checking the release and latest endpoint separately proved
 the asset was already published and avoided repeating the mutation.
+
+## 2026-11-04 — Separate unconfigured from disconnected device service
+
+The first idle-device proposal treated an unreachable configured relay as the
+local-first case. The owner reported that an unconfigured installation could
+instead return `device_unavailable` for a local task. Source inspection found
+that the packaged Bot receives the device socket while App/helper startup is
+blocked by an empty remote address; the run itself was not reproduced here.
+Check first-install and configured-but-offline startup independently, from App
+bootstrap through the real Bot tool, before claiming local independence.

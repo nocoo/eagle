@@ -12,6 +12,12 @@ in [Extensions and tools](EXTENSIONS-AND-TOOLS.md). That guide also
 specifies planned optional `memory`, `search` and `peers` groups and child-agent
 discovery. Those additions are not implemented or enabled by this plan update.
 
+## Shared-device idle and wake (proposed)
+
+[DEVICE-IDLE-AND-WAKE.md](DEVICE-IDLE-AND-WAKE.md) records the current Bot-to-device
+path, the fresh-cutover target and verification slices. No implementation or live
+savings are claimed; the existing device contracts apply until matching changes land.
+
 ## 共享设备与配对重构（2026-10-29）
 
 用户最新要求替代旧 M0–M1 的“手填部署信息、每 Bot 机器授权”产品流程：
