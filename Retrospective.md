@@ -1329,7 +1329,10 @@ line was restored. A bounded rerun then passed six of seven cases but exposed a
 Node mock-timer/Undici `runAt` failure in the following case. The tests remain
 unfixed and uncommitted; use independent clocks or real-time process watchdogs,
 and verify that asynchronous network resources are closed before resetting timers.
-No test limit was widened or failure suppressed.
+No test limit was widened or failure suppressed. The later fix isolated the two
+fake-clock network cases in separate Node test processes, used captured real-time
+watchdogs and added a no-ready cleanup regression. The complete root check then
+passed all 309 tests.
 
 Stopping the isolated foreground source App with Ctrl-C left its own Bots daemon
 orphaned. Its PID and isolated root were verified before sending it SIGTERM; both

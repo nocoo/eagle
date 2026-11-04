@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { z } from "zod";
 import {
@@ -13,6 +14,20 @@ import {
 } from "../contracts/src/devices.ts";
 import type { DeviceRuntime } from "./device-runtime.ts";
 
+const readyFrame = z.strictObject({
+  type: z.literal("ready"),
+  expiresAt: z.number().int().positive(),
+});
+const renewedFrame = z
+  .strictObject({
+    type: z.literal("session.renewed"),
+    requestId: z.uuid(),
+    expiresAt: z.number().int().positive().optional(),
+    error: z.literal("session_renewal_failed").optional(),
+  })
+  .refine(
+    (value) => (value.expiresAt === undefined) !== (value.error === undefined),
+  );
 const operationFrame = z.strictObject({
   type: z.literal("operation"),
   sourceDeviceId: z.uuid(),
@@ -41,6 +56,8 @@ export class DeviceCloud {
   private session?: Promise<string>;
   private agent?: WebSocket;
   private heartbeat?: ReturnType<typeof setInterval>;
+  private renewalTimer?: ReturnType<typeof setTimeout>;
+  private renewalDeadline?: ReturnType<typeof setTimeout>;
   private reconnect?: ReturnType<typeof setTimeout>;
   private connecting?: Promise<void>;
   private retryDelay = 1000;
@@ -121,7 +138,12 @@ export class DeviceCloud {
     const result = (await response.json()) as Record<string, unknown>;
     if (this.stopped) throw new Error("device_cloud_stopped");
     if (!response.ok) {
-      if (response.status === 401) this.expires = 0;
+      if (
+        response.status === 401 &&
+        token !== undefined &&
+        this.token === token
+      )
+        this.expires = 0;
       throw new Error(
         typeof result.error === "string"
           ? result.error
@@ -130,9 +152,10 @@ export class DeviceCloud {
     }
     return result;
   }
-  private async authenticate(): Promise<string> {
+  private async authenticate(force = false): Promise<string> {
     if (this.stopped) throw new Error("device_cloud_stopped");
-    if (this.token && this.expires > Date.now() + 30000) return this.token;
+    if (!force && this.token && this.expires > Date.now() + 30000)
+      return this.token;
     if (this.session) return this.session;
     this.session = (async () => {
       const { deviceId, publicKey, name, platform, arch } = this.device;
@@ -243,6 +266,96 @@ export class DeviceCloud {
       this.agent = socket;
       const connection = new AbortController();
       let ready = false;
+      let socketToken = token;
+      let socketExpires = 0;
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
+      let renewalTimer: ReturnType<typeof setTimeout> | undefined;
+      let renewalDeadline: ReturnType<typeof setTimeout> | undefined;
+      let pendingRenewal:
+        | { requestId: string; token: string; expiresAt: number }
+        | undefined;
+      const queueRenewal = (delay: number) => {
+        clearTimeout(renewalTimer);
+        const timer = setTimeout(() => {
+          if (this.renewalTimer === timer) this.renewalTimer = undefined;
+          renewalTimer = undefined;
+          void renew();
+        }, delay);
+        renewalTimer = timer;
+        this.renewalTimer = timer;
+      };
+      const scheduleRenewal = () => {
+        const remaining = socketExpires - Date.now();
+        if (remaining <= 0) {
+          socket.terminate();
+          return;
+        }
+        const lead = Math.min(60000, Math.max(100, Math.floor(remaining / 3)));
+        queueRenewal(Math.max(0, remaining - lead));
+      };
+      const renew = async () => {
+        if (
+          this.stopped ||
+          this.agent !== socket ||
+          socket.readyState !== WebSocket.OPEN ||
+          pendingRenewal
+        )
+          return;
+        if (socketExpires <= Date.now()) {
+          socket.terminate();
+          return;
+        }
+        try {
+          const candidate =
+            this.token !== socketToken && this.expires > socketExpires
+              ? this.token
+              : await this.authenticate(true);
+          if (
+            this.stopped ||
+            this.agent !== socket ||
+            socket.readyState !== WebSocket.OPEN
+          )
+            return;
+          const expiresAt = this.expires;
+          if (candidate !== this.token || expiresAt <= socketExpires)
+            throw new Error("session_renewal_failed");
+          const remaining = socketExpires - Date.now();
+          if (remaining <= 0) {
+            socket.terminate();
+            return;
+          }
+          const requestId = randomUUID();
+          pendingRenewal = { requestId, token: candidate, expiresAt };
+          const timer = setTimeout(
+            () => socket.terminate(),
+            Math.min(10000, remaining),
+          );
+          renewalDeadline = timer;
+          this.renewalDeadline = timer;
+          socket.send(
+            JSON.stringify({
+              type: "session.renew",
+              requestId,
+              sessionToken: candidate,
+            }),
+          );
+        } catch {
+          clearTimeout(renewalDeadline);
+          if (this.renewalDeadline === renewalDeadline)
+            this.renewalDeadline = undefined;
+          renewalDeadline = undefined;
+          pendingRenewal = undefined;
+          if (
+            this.stopped ||
+            this.agent !== socket ||
+            socket.readyState !== WebSocket.OPEN
+          )
+            return;
+          const remaining = socketExpires - Date.now();
+          if (remaining <= 1000) socket.terminate();
+          else queueRenewal(Math.min(5000, remaining - 1000));
+        }
+      };
       const deadline = setTimeout(() => {
         socket.terminate();
         reject(new Error("agent_connection_timeout"));
@@ -267,20 +380,15 @@ export class DeviceCloud {
             return;
           const frame: unknown = JSON.parse(data.toString());
           if (!ready) {
-            if (
-              !(
-                frame &&
-                typeof frame === "object" &&
-                "type" in frame &&
-                frame.type === "ready"
-              )
-            )
+            const authenticated = readyFrame.parse(frame);
+            if (authenticated.expiresAt <= Date.now())
               throw new Error("agent_authentication_failed");
+            socketExpires = authenticated.expiresAt;
             ready = true;
             clearTimeout(deadline);
             this.state("online");
             this.retryDelay = 1000;
-            this.heartbeat = setInterval(() => {
+            heartbeat = setInterval(() => {
               if (socket.readyState === WebSocket.OPEN)
                 socket.send(
                   JSON.stringify({
@@ -290,7 +398,33 @@ export class DeviceCloud {
                   }),
                 );
             }, 10000);
+            this.heartbeat = heartbeat;
+            scheduleRenewal();
             resolve();
+            return;
+          }
+          const renewal = renewedFrame.safeParse(frame);
+          if (renewal.success) {
+            const pending = pendingRenewal;
+            if (!pending || renewal.data.requestId !== pending.requestId)
+              throw new Error("invalid_renewal_response");
+            clearTimeout(renewalDeadline);
+            if (this.renewalDeadline === renewalDeadline)
+              this.renewalDeadline = undefined;
+            renewalDeadline = undefined;
+            pendingRenewal = undefined;
+            if (
+              renewal.data.error ||
+              renewal.data.expiresAt !== pending.expiresAt ||
+              pending.expiresAt <= socketExpires ||
+              pending.expiresAt <= Date.now()
+            ) {
+              socket.terminate();
+              return;
+            }
+            socketToken = pending.token;
+            socketExpires = pending.expiresAt;
+            scheduleRenewal();
             return;
           }
           const policy = PolicySetFrame.safeParse(frame);
@@ -364,9 +498,15 @@ export class DeviceCloud {
       });
       const ended = (closeCode: number, reason: Buffer) => {
         connection.abort();
-        this.closedSession(token, closeCode, reason);
+        this.closedSession(socketToken, closeCode, reason);
         clearTimeout(deadline);
-        clearInterval(this.heartbeat);
+        clearInterval(heartbeat);
+        clearTimeout(renewalTimer);
+        clearTimeout(renewalDeadline);
+        if (this.heartbeat === heartbeat) this.heartbeat = undefined;
+        if (this.renewalTimer === renewalTimer) this.renewalTimer = undefined;
+        if (this.renewalDeadline === renewalDeadline)
+          this.renewalDeadline = undefined;
         if (this.agent === socket) {
           this.agent = undefined;
           this.state("offline");
@@ -485,6 +625,8 @@ export class DeviceCloud {
     this.shutdown.abort();
     clearTimeout(this.reconnect);
     clearInterval(this.heartbeat);
+    clearTimeout(this.renewalTimer);
+    clearTimeout(this.renewalDeadline);
     this.agent?.terminate();
     for (const caller of this.callers) caller.terminate();
     this.token = "";

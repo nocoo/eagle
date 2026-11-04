@@ -23,8 +23,8 @@ The workspace monitors local health without polling the cloud directory; visible
 device views share directory observation. Root conversations select remote tools
 from local configuration on open and before each new input; child refresh and
 in-flight change propagation remain open. The Registry and target relay now use a
-tested internal session reference; the Worker accepts same-socket renewal, but the
-Agent renewal client and target hibernation remain open.
+tested internal session reference; the Worker and Agent renew on the same socket.
+Target hibernation remains open.
 No live savings, installed-App acceptance or physical two-Mac verification is claimed.
 
 ## 共享设备与配对重构（2026-10-29）

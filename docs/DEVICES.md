@@ -170,7 +170,11 @@ A rejected new session while the old one remains valid returns
 `{type:"session.renewed",requestId,error:"session_renewal_failed"}` and never
 extends the previous session; an expired or revoked old session closes the connection.
 Renewal does not replace the connection, cancel an
-in-flight operation or reveal a session hash. Caller
+in-flight operation or reveal a session hash. The target client obtains a fresh
+key-proved session before the socket's current session expires, waits for the
+matching acknowledgement and keeps the original operation correlation. A failed
+or lost acknowledgement cannot extend authorization or cause an operation replay.
+Caller
 opens one WSS `/execution/<targetDeviceId>/request`, sends
 `{type:"request",sessionToken,request:<OperationRequest>}` and receives exactly
 one `{type:"response",requestId,operationId,targetDeviceId,result}` then closes.
@@ -182,8 +186,8 @@ Authentication/revocation closes use code 1008 with reason `unauthorized_agent`,
 `revoked_agent` or `unauthorized_caller`. Only those reasons invalidate the
 matching cached session and require fresh helper identity proof on the next connection.
 Transport failures, lease expiry and Agent replacement retain a valid session.
-An old socket's rejection cannot invalidate a newer session. Reauthentication
-never resends an operation; an uncertain result still requires querying its ID.
+An old socket or HTTP rejection cannot invalidate a newer cached session.
+Reauthentication never resends an operation; an uncertain result still requires querying its ID.
 
 OperationRequest: `{requestId,operationId,targetDeviceId,action:"run"|"get"|"cancel",
 sourceBotId?:string,operation?:{kind:"command",command,cwd?,timeoutMs?}|{kind:"file.read",path}|

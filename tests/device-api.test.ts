@@ -38,6 +38,10 @@ before(async () => {
     entry,
     `import worker,{DeviceRegistry as Registry,DeviceExecution as Execution} from "../../apps/web/src/worker/device-service.ts";
 export class DeviceExecution extends Execution {
+ send(socket,value){
+  if(this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_target_events'").toArray().length&&(value.type==='ready'||value.type==='session.renewed'))this.ctx.storage.sql.exec("INSERT INTO test_target_events(type) VALUES(?)",value.type);
+  return super.send(socket,value);
+ }
  fetch(request){const url=new URL(request.url);if(url.pathname==='/test-close'){this.agent?.socket.close(Number(url.searchParams.get('code')),url.searchParams.get('reason'));return new Response('closed');}if(url.pathname==='/test-agent-state')return Response.json({hasToken:typeof this.agent?.token==='string',hasReference:typeof this.agent?.reference?.sessionHash==='string'});return super.fetch(request);}
  observation(){const observation=super.observation();
   if(this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_observation_delay'").toArray().length){this.ctx.storage.sql.exec("UPDATE test_observation_delay SET started=1");return new Promise(resolve=>setTimeout(()=>resolve(observation),500));}
@@ -45,6 +49,20 @@ export class DeviceExecution extends Execution {
  }
 }
 export class DeviceRegistry extends Registry {
+ async fetch(request){
+  const response=await super.fetch(request);
+  if(response.ok&&new URL(request.url).pathname.endsWith('/register/complete')&&this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_session_ttl'").toArray().length){
+   const value=await response.json();
+   const row=this.ctx.storage.sql.exec("SELECT issued FROM test_session_ttl WHERE deviceId=?",value.device.deviceId).toArray()[0];
+   if(row){const issued=Number(row.issued)+1;const expiresAt=Date.now()+(issued===1?1500:900000);const hash=await super.sessionDigest(value.sessionToken);
+    this.ctx.storage.sql.exec("UPDATE sessions SET expires=? WHERE hash=?",expiresAt,hash);
+    this.ctx.storage.sql.exec("UPDATE test_session_ttl SET issued=?,firstExpiry=CASE WHEN ?=1 THEN ? ELSE firstExpiry END WHERE deviceId=?",issued,issued,expiresAt,value.device.deviceId);
+    value.expiresAt=expiresAt;
+   }
+   return Response.json(value,{status:response.status,headers:response.headers});
+  }
+  return response;
+ }
  async operationGate(sourceId,targetId){
   if(!this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_operation_confirmation'").toArray().length)return false;
   const row=this.ctx.storage.sql.exec("SELECT sourceId FROM test_operation_confirmation WHERE sourceId=? AND targetId=?",sourceId,targetId??'').toArray()[0];
@@ -2473,6 +2491,172 @@ test("target session renews in place without interrupting an in-flight operation
     agent.terminate();
     await Promise.allSettled([response, secondResponse]);
   }
+});
+
+test("real device clients renew against the Worker during an in-flight operation", {
+  timeout: 15000,
+}, async () => {
+  const { DeviceCloud } = await import("../packages/agent/device-cloud.ts");
+  const { DeviceRuntime } = await import("../packages/agent/device-runtime.ts");
+  const { canonicalDeviceJSON, deviceDigest } = await import(
+    "../packages/contracts/src/devices.ts"
+  );
+  const [a, b] = await Promise.all([
+    identity("renew-real-a"),
+    identity("renew-real-b"),
+  ]);
+  await pair(a.token, await code(b.token));
+  const stateA = join(root, `renew-real-a-${randomUUID()}`);
+  const stateB = join(root, `renew-real-b-${randomUUID()}`);
+  mkdirSync(stateA, { mode: 0o700 });
+  mkdirSync(stateB, { mode: 0o700 });
+  const deviceA = {
+    deviceId: a.deviceId,
+    publicKey: a.publicKey,
+    name: "renew-real-a",
+    platform: "darwin",
+    arch: "arm64",
+    groupId: null,
+    membershipEpoch: 0,
+    credentialVersion: 1,
+  };
+  const deviceB = {
+    ...deviceA,
+    deviceId: b.deviceId,
+    publicKey: b.publicKey,
+    name: "renew-real-b",
+  };
+  const runtimeA = new DeviceRuntime(deviceA, join(stateA, "journal.sqlite"));
+  const runtimeB = new DeviceRuntime(deviceB, join(stateB, "journal.sqlite"));
+  runtimeA.setPolicy("all-approve");
+  runtimeB.setPolicy("all-approve");
+  let entered!: () => void;
+  let release!: () => void;
+  let executions = 0;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const original = runtimeB.handle.bind(runtimeB);
+  runtimeB.handle = async (...args) => {
+    executions++;
+    const result = await original(...args);
+    entered();
+    await hold;
+    return result;
+  };
+  const origin = (await mf.ready).origin;
+  const cloudA = new DeviceCloud(origin, deviceA, runtimeA, async (payload) =>
+    sign(null, Buffer.from(payload), a.keys.privateKey).toString("base64url"),
+  );
+  const cloudB = new DeviceCloud(origin, deviceB, runtimeB, async (payload) =>
+    sign(null, Buffer.from(payload), b.keys.privateKey).toString("base64url"),
+  );
+  const registry = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "DeviceRegistry",
+    { name: "registry" },
+  );
+  const execution = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "DeviceExecution",
+    { name: b.deviceId },
+  );
+  let pending: Promise<{ status: string }> | undefined;
+  let failure: unknown;
+  try {
+    await registry.exec(
+      "CREATE TABLE test_session_ttl(deviceId TEXT PRIMARY KEY,issued INTEGER NOT NULL DEFAULT 0,firstExpiry INTEGER)",
+    );
+    await registry.exec(
+      "INSERT INTO test_session_ttl(deviceId) VALUES(?)",
+      b.deviceId,
+    );
+    await execution.exec("CREATE TABLE test_target_events(type TEXT)");
+    await cloudB.start();
+    const operation = {
+      kind: "file.write" as const,
+      path: join(stateB, "proof"),
+      content: "once",
+    };
+    pending = cloudA.execute({
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: b.deviceId,
+      action: "run",
+      operation,
+      digest: await deviceDigest(canonicalDeviceJSON(operation)),
+    });
+    await Promise.race([
+      started,
+      pending.then(() => {
+        throw new Error("operation ended before target admission");
+      }),
+    ]);
+    assert.equal(readFileSync(operation.path, "utf8"), "once");
+    const deadline = Date.now() + 5000;
+    let acknowledged = false;
+    while (Date.now() < deadline) {
+      const events = await execution.exec(
+        "SELECT count(*) n FROM test_target_events WHERE type='session.renewed'",
+      );
+      if (Number(events[0]?.n) === 1) {
+        acknowledged = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(acknowledged, true, "the real Agent must renew before expiry");
+    const observations = await execution.exec(
+      "SELECT count(*) n FROM test_target_events WHERE type='ready'",
+    );
+    assert.equal(
+      Number(observations[0]?.n),
+      1,
+      "renewal must keep the original socket",
+    );
+    const issued = await registry.exec(
+      "SELECT issued,firstExpiry FROM test_session_ttl WHERE deviceId=?",
+      b.deviceId,
+    );
+    assert.equal(Number(issued[0]?.issued), 2);
+    await registry.exec(
+      "UPDATE sessions SET expires=? WHERE deviceId=? AND expires=?",
+      Date.now() - 1,
+      b.deviceId,
+      Number(issued[0]?.firstExpiry),
+    );
+    release();
+    assert.equal((await pending).status, "completed");
+    assert.equal(executions, 1);
+    assert.equal(readFileSync(operation.path, "utf8"), "once");
+  } catch (error) {
+    failure = error;
+  }
+  release();
+  const closed = await Promise.allSettled([cloudA.close(), cloudB.close()]);
+  await pending?.catch(() => undefined);
+  const cleaned = await Promise.allSettled([
+    runtimeA.close(),
+    runtimeB.close(),
+    registry.exec("DROP TABLE IF EXISTS test_session_ttl"),
+    execution.exec("DROP TABLE IF EXISTS test_target_events"),
+  ]);
+  const errors = [...closed, ...cleaned].flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  for (const path of [stateA, stateB]) {
+    try {
+      rmSync(path, { recursive: true, force: true });
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (failure !== undefined) errors.unshift(failure);
+  if (errors.length)
+    throw new AggregateError(errors, "real device renewal test failed");
 });
 
 test("dispatch and policy authorization follow a concurrent target renewal", async () => {
