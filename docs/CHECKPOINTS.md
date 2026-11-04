@@ -3480,3 +3480,15 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 - The isolated App remains foreground with no injected device socket. Installed App,
   real model, Herdr collection, viewer authentication, D1, Cloudflare hibernation
   and billing remain unverified. Child refresh and in-flight propagation remain open.
+
+## 2026-11-04 18:30 +08 — Isolated CLI eval restored
+
+- The eval allocator now avoids occupied singleton ports and existing directories
+  (`d5a8ac4`), with deterministic collision and isolation tests. After that fix,
+  three separate full CLI eval rounds each passed all 24 cases; the earlier failed
+  round remains recorded above. Bots `npm run check` passed 1,017 tests and coverage.
+- The foreground source App still uses an isolated daemon without a device socket.
+  This is scripted-model and process evidence, not installed-App, physical two-Mac
+  or real-model acceptance. Herdr collection, viewer authentication, D1 and live
+  rendering were not exercised. Child/in-flight tool refresh and target hibernation
+  remain open; no Cloudflare deployment or billing measurement was performed.
