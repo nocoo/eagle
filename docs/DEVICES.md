@@ -255,7 +255,8 @@ query or credentials) and the helper reads it at start, so changing it restarts 
 service with the new relay. Before an address exists the App starts the local helper and
 agent without a cloud client; local policy and tools remain available and no remote service
 is contacted. Settings labels the remote as unconfigured and disables pairing actions while
-keeping the local policy available.
+keeping the local policy available. A first redemption rejected as unconfigured was never sent
+and clears its pending ID; a previously uncertain request retains its original binding.
 
 `EAGLE_DEVICE_SERVICE_URL` remains an optional build input for a bundle that must name an
 origin up front (a candidate pointing at a local service, or a deployment that deliberately

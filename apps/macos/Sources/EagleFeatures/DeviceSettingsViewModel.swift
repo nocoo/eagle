@@ -570,7 +570,7 @@ private struct DeviceServiceState: Decodable {
             && [
               "group_conflict", "pairing_unavailable", "pairing_consumed", "pairing_result_expired",
               "request_conflict", "rate_limited", "invalid_request", "invalid_session",
-              "revoked_session", "unknown_device",
+              "revoked_session", "unknown_device", "remote_not_configured",
             ].contains(port.code))
       {
         clearPendingRedemption()

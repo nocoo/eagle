@@ -247,7 +247,7 @@ struct DeviceSettingsRecoveryTests {
 
   @Test(
     "rate and session retry uncertainty retain the original binding",
-    arguments: ["rate_limited", "invalid_session", "revoked_session"])
+    arguments: ["rate_limited", "invalid_session", "revoked_session", "remote_not_configured"])
   func retryUncertain(error: String) async throws {
     let (model, control, defaults) = deviceSettingsFixture()
     defer { defaults.removePersistentDomain(forName: control.domain) }
@@ -278,6 +278,32 @@ struct DeviceSettingsRecoveryTests {
     #expect(model.errorCode == "invalid_configuration")
     #expect(model.errorMessage?.contains("安装") == true)
     #expect(model.errorMessage?.contains("源码") == true)
+  }
+
+  @Test("an unconfigured first attempt cannot strand a pairing request")
+  func unconfiguredFirstAttempt() async throws {
+    let (model, control, defaults) = deviceSettingsFixture(requiresServiceAddress: true)
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    await model.startIfNeeded()
+    let firstCode = String(repeating: "a", count: 43)
+    let nextCode = String(repeating: "b", count: 43)
+    control.handler = { method, params in
+      guard method == "pairing.redeem" else { return nil }
+      if params?["code"]?.string == firstCode { throw DevicePortError("remote_not_configured") }
+      return .object([
+        "requestId": params?["requestId"] ?? .null, "directory": control.directory,
+      ])
+    }
+    await model.redeem(code: firstCode)
+    #expect(model.errorCode == "remote_not_configured")
+    #expect(model.pendingRedeemRequestId == nil)
+    #expect(defaults.object(forKey: DeviceSettingsViewModel.pendingRedeemKey) == nil)
+    model.serviceAddressDraft = "https://devices.example.com"
+    await model.saveServiceAddress()
+    await model.redeem(code: nextCode)
+    #expect(model.errorCode == nil)
+    #expect(model.pendingRedeemRequestId == nil)
+    #expect(control.calls.filter { $0.0 == "pairing.redeem" }.count == 2)
   }
 
   @Test("self_pairing is a definitive rejection and does not strand a pending request")
