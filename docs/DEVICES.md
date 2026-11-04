@@ -181,8 +181,10 @@ Relay sends `{type:"operation",sourceDeviceId,sourcePublicKey,request}`;
 agent responds `{type:"result",requestId,operationId,targetDeviceId,result}`.
 Result: `{status:"running"|"completed"|"failed"|"cancelled"|"unknown"|"busy"|
 "denied",output?,error?,exitCode?}`. busy means unaccepted, never queued.
-A lost response means query the same ID; never automatically run again or switch
-target. Journal admission precedes side effects; interrupted running entries
+If source authorization changes after forwarding, the relay withholds the output
+and returns `unknown` with `membership_changed_query_original_id`; it never marks a
+possibly executed run as denied or retryable. A lost response means query the same ID;
+never automatically run again or switch target. Journal admission precedes side effects; interrupted running entries
 recover as unknown, never rerun. get/cancel remain usable during a running job.
 A target's local operations use the same journal and policy, without cloud.
 When a device identity changes, its private journal and fixed socket stay in place.

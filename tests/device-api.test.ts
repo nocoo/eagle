@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -1085,6 +1086,105 @@ for (const mode of ["shutdown", "closing"] as const) {
     }
   });
 }
+
+test("revocation after a target side effect returns unknown without exposing output", {
+  timeout: 60000,
+}, async () => {
+  const { DeviceCloud } = await import("../packages/agent/device-cloud.ts");
+  const { DeviceRuntime } = await import("../packages/agent/device-runtime.ts");
+  const { canonicalDeviceJSON, deviceDigest } = await import(
+    "../packages/contracts/src/devices.ts"
+  );
+  const [a, b] = await Promise.all([
+    identity("result-a"),
+    identity("result-b"),
+  ]);
+  await pair(a.token, await code(b.token));
+  const stateA = join(root, `result-a-${randomUUID()}`);
+  const stateB = join(root, `result-b-${randomUUID()}`);
+  mkdirSync(stateA, { mode: 0o700 });
+  mkdirSync(stateB, { mode: 0o700 });
+  const deviceA = {
+    deviceId: a.deviceId,
+    publicKey: a.publicKey,
+    name: "result-a",
+    platform: "darwin",
+    arch: "arm64",
+    groupId: null,
+    membershipEpoch: 0,
+    credentialVersion: 1,
+  };
+  const deviceB = {
+    ...deviceA,
+    deviceId: b.deviceId,
+    publicKey: b.publicKey,
+    name: "result-b",
+  };
+  const runtimeA = new DeviceRuntime(deviceA, join(stateA, "journal.sqlite"));
+  const runtimeB = new DeviceRuntime(deviceB, join(stateB, "journal.sqlite"));
+  runtimeA.setPolicy("all-approve");
+  runtimeB.setPolicy("all-approve");
+  let enter: () => void;
+  let release: (() => void) | undefined;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const handle = runtimeB.handle.bind(runtimeB);
+  runtimeB.handle = async (...args) => {
+    const result = await handle(...args);
+    enter();
+    await blocked;
+    return result;
+  };
+  const origin = (await mf.ready).origin;
+  const cloudA = new DeviceCloud(origin, deviceA, runtimeA, async (payload) =>
+    sign(null, Buffer.from(payload), a.keys.privateKey).toString("base64url"),
+  );
+  const cloudB = new DeviceCloud(origin, deviceB, runtimeB, async (payload) =>
+    sign(null, Buffer.from(payload), b.keys.privateKey).toString("base64url"),
+  );
+  try {
+    await Promise.all([cloudA.start(), cloudB.start()]);
+    const path = join(stateB, "side-effect");
+    const operation = {
+      kind: "command" as const,
+      command: `printf x >> '${path}'; printf private-output`,
+    };
+    const pending = cloudA.execute({
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: b.deviceId,
+      action: "run",
+      operation,
+      digest: await deviceDigest(canonicalDeviceJSON(operation)),
+    });
+    const reached = await Promise.race([
+      entered.then(() => true),
+      pending.then(() => false),
+    ]);
+    assert.equal(reached, true, "the target must complete before revocation");
+    assert.equal(readFileSync(path, "utf8"), "x");
+    assert.equal(
+      (await call("/members/remove", b.token, { deviceId: a.deviceId })).status,
+      200,
+    );
+    release?.();
+    const result = await pending;
+    assert.equal(result.status, "unknown");
+    assert.equal(result.error, "membership_changed_query_original_id");
+    assert.equal(result.output, undefined);
+    assert.equal(readFileSync(path, "utf8"), "x");
+  } finally {
+    release?.();
+    await Promise.all([cloudA.close(), cloudB.close()]);
+    await Promise.all([runtimeA.close(), runtimeB.close()]);
+    rmSync(stateA, { recursive: true, force: true });
+    rmSync(stateB, { recursive: true, force: true });
+  }
+});
 
 test("slow management body cannot outlive session revocation or expiry", async () => {
   for (const expire of [false, true]) {

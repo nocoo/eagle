@@ -350,7 +350,10 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
               pending.request,
               fresh.ok
                 ? message.result
-                : { status: "denied", error: "membership_changed" },
+                : {
+                    status: "unknown",
+                    error: "membership_changed_query_original_id",
+                  },
             );
             return;
           }
