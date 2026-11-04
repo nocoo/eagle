@@ -390,6 +390,57 @@ test("local always-ask policy still requires a bound approval", async () => {
   assert.equal(bench.calls[0]?.approval?.policyVersion, 3);
 });
 
+test("a refused local approval never begins the native tool", async () => {
+  const bench = fixture();
+  required(bench.view.devices[0]).policy = { mode: "always-ask", version: 3 };
+  bench.port.approve = async () => {
+    throw new Error("approval_denied");
+  };
+  let runs = 0;
+  const native = defineTool({
+    name: "write",
+    description: "test native implementation",
+    parameters: Type.Object({}),
+    async execute() {
+      runs++;
+      return { output: [{ type: "text" as const, text: "written" }] };
+    },
+  });
+  const result = await guardNativeTool(native, { botId: "local-bot", port: bench.port }).execute(
+    {},
+    memoApi().api,
+    BACKGROUND_CONTEXT,
+  );
+  assert.equal(result.isError, true);
+  assert.equal(body(result).error, "approval_denied");
+  assert.equal(runs, 0);
+  assert.equal(bench.calls.length, 0);
+});
+
+test("a paused local policy permits original-ID recovery without another execution", async () => {
+  const bench = fixture();
+  let runs = 0;
+  const native = defineTool({
+    name: "write",
+    description: "test native implementation",
+    parameters: Type.Object({}),
+    async execute() {
+      runs++;
+      return { output: [{ type: "text" as const, text: "written" }] };
+    },
+  });
+  const guarded = guardNativeTool(native, { botId: "local-bot", port: bench.port });
+  const { api } = memoApi();
+  const first = body(await guarded.execute({}, api, BACKGROUND_CONTEXT));
+  required(bench.view.devices[0]).policy = { mode: "paused", version: 2 };
+  const recovered = body(await guarded.execute({}, api, BACKGROUND_CONTEXT));
+  assert.equal(runs, 1);
+  assert.equal(bench.approvals.length, 0);
+  assert.equal(recovered.operationId, first.operationId);
+  assert.equal(bench.calls[1]?.action, "get");
+  assert.equal(bench.calls[1]?.targetDeviceId, bench.view.localDeviceId);
+});
+
 test("local status and policy failures never bypass native admission", async () => {
   for (const state of ["unavailable", "paused", "disconnected"]) {
     const bench = fixture();
