@@ -646,12 +646,14 @@ test("CLI drives local Bot tools without a configured remote", {
     env: swiftEnv,
     stdio: "pipe",
     timeout: 60000,
+    killSignal: "SIGKILL",
   });
   const bin = execFileSync("swift", ["build", "--show-bin-path"], {
     cwd: macos,
     env: swiftEnv,
     encoding: "utf8",
     timeout: 10000,
+    killSignal: "SIGKILL",
   }).trim();
   const cli = join(bin, "eagle-cli");
   const root = mkdtempSync("/tmp/eagle-device-cli-");
