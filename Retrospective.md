@@ -1265,6 +1265,8 @@ import organization. A later recovery fixture repeated the same mistake; both we
 caught by check-only lint, not by format. Run the package lint immediately after
 adding files, before the expensive gate. The renewal test also left an existing
 worker fixture unformatted; check-only lint caught it before behavioral testing.
+A new Agent renewal test again had unsorted imports; the immediate lint caught
+it before the gate, but checking import order while writing remains necessary.
 The growing device API suite later exhausted its shared synthetic registration-IP
 budget, making a final authentication test fail for the wrong reason. My first
 reset targeted `registration:local`, but Miniflare uses `registration:127.0.0.1`;
@@ -1275,6 +1277,9 @@ same-socket renewal also found that concurrent authorization could retain an old
 reference; barrier tests now force renewal and expiry during both operation and
 policy checks. The renewal-expiry test explicitly gives the replacement a later
 expiry so downgrade rejection cannot masquerade as proof of old-session validation.
+Client renewal also exposed a stale HTTP 401 clearing a newer cached credential;
+a fake-clock overlap now verifies only the credential that received the 401 is
+invalidated, without logging either value.
 A new Swift red test initially referenced nonexistent fixture names and failed to
 compile; correcting the test precedes collecting behavioral red evidence.
 The root remote-tool selection was initially changed before its contract was
@@ -1315,3 +1320,18 @@ process tests looked for `scripts/serve.ts` in the wrong directory. Running the
 same four complete test files from `apps/bots` passed all 44 tests and typecheck.
 Run package-owned process tests from their package root; do not treat a cwd error
 as a product failure.
+
+## 2026-11-05 — Fake-timer isolation and foreground cleanup
+
+A negative renewal test disabled the ACK deadline cancellation to prove the
+expiry boundary; its fake-clock path timed out rather than failing promptly. The
+line was restored. A bounded rerun then passed six of seven cases but exposed a
+Node mock-timer/Undici `runAt` failure in the following case. The tests remain
+unfixed and uncommitted; use independent clocks or real-time process watchdogs,
+and verify that asynchronous network resources are closed before resetting timers.
+No test limit was widened or failure suppressed.
+
+Stopping the isolated foreground source App with Ctrl-C left its own Bots daemon
+orphaned. Its PID and isolated root were verified before sending it SIGTERM; both
+processes exited, and all controlled panes were closed. Other spaces and daemons
+were not changed. Future cleanup must verify child processes after stopping the App.

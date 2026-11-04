@@ -3547,3 +3547,28 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 - The foreground source App remains isolated and has no device socket. Real-model,
   installed-App, Herdr collection, viewer auth, D1, Cloudflare hibernation and
   billing remain unverified. Child/in-flight tool refresh remains open.
+
+## 2026-11-05 05:56 +08 — Paused work and pane cleanup
+
+- At the owner's request, the controlled review pane and isolated foreground App
+  pane were closed. The App's orphaned daemon was identified by its isolated root
+  and stopped; only the steering pane remains. No other spaces or daemons were
+  touched. The isolated `.local/manual-app-20261104-1714` data was not deleted.
+- Node Agent renewal remains uncommitted in `packages/agent/device-cloud.ts`,
+  `tests/device-cloud-renewal.test.ts`, `tests/device-api.test.ts`, `docs/DEVICES.md`
+  and `Retrospective.md`. A temporary red-test change to ACK deadline cancellation
+  was restored. Root check-only lint and TypeScript pass. A bounded rerun of the
+  seven-case Agent test passed six and failed the last with Node mock timers /
+  Undici `Cannot read properties of undefined (reading 'runAt')`; the fake-clock
+  fixture and subsequent full gates require repair. Earlier Worker and real
+  Miniflare renewal tests passed, but do not validate this latest worktree.
+- Remaining design: propagate remote configuration to existing root/child and
+  in-flight conversations without widening child/reflection scope; finish and
+  review the Node renewal client; implement target WebSocket hibernation, bounded
+  auto-ping liveness, safe wake and timeout budgets. Test authorization, unknown
+  original-ID recovery and no replay across these boundaries.
+- No deployment was performed. Real-model choice, installed-App first run,
+  physical two-Mac behaviour, Herdr collection, viewer auth, D1, Cloudflare
+  hibernation, live latency and billing remain unverified. Three isolated scripted
+  CLI eval rounds and earlier root/Bots/Swift gates passed as recorded above;
+  they are not final evidence for the uncommitted Agent slice.
