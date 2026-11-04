@@ -3352,6 +3352,22 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   was exercised. The Swift suite's temporary ACL tests and a foreground dev App
   potentially sharing the owner's Bots daemon/data remain unauthorized and unrun.
 
+## 2026-11-04 15:21 +08 — Remote origin safety in progress
+
+- Local helper/App startup and unconfigured UI tests passed, including the
+  91.5% Swift logic-coverage gate. These are isolated tests, not evidence from a
+  packaged App or a real model. The owner's foreground dev App is still pending.
+- Remote authorization after a target side effect now returns unknown without
+  exposing output (`81cfeb0`). A closing target connection is checked again at
+  admission (`cbf7890`); the affected real WebSocket/SQLite tests passed.
+- Work in progress binds source operation IDs to a relay origin and keeps local
+  leases alive across remote changes. Its origin test is green, but the new
+  `remote.configure` process test remains red; the full change is uncommitted and
+  cannot be treated as a finished feature. Policy/pairing provenance, tool refresh
+  and hibernation remain open.
+- No real Herdr collection, viewer authentication, D1 or installed App rendering
+  was exercised in this slice.
+
 ## 2026-11-04 14:58 +08 — App local startup and remote cutover
 
 - Swift helper/App startup now accepts an empty relay, and unconfigured pairing
