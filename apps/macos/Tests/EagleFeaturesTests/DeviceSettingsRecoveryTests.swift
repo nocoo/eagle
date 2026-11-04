@@ -258,7 +258,9 @@ struct DeviceSettingsRecoveryTests {
       return nil
     }
     await model.redeem(code: code)
-    let original = model.pendingRedeemRequestId
+    let original = try #require(model.pendingRedeemRequestId)
+    let saved = try #require(defaults.dictionary(forKey: DeviceSettingsViewModel.pendingRedeemKey))
+    let hash = try #require(saved["codeHash"] as? String)
     control.handler = { method, _ in
       if method == "pairing.result" { throw DevicePortError("result_not_found") }
       if method == "pairing.redeem" { throw DevicePortError(error) }
@@ -266,6 +268,10 @@ struct DeviceSettingsRecoveryTests {
     }
     await model.redeem(code: code)
     #expect(model.pendingRedeemRequestId == original)
+    let retained = try #require(
+      defaults.dictionary(forKey: DeviceSettingsViewModel.pendingRedeemKey))
+    #expect(retained["requestId"] as? String == original)
+    #expect(retained["codeHash"] as? String == hash)
     #expect(model.errorCode == error)
   }
 
