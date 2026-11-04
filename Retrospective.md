@@ -1245,3 +1245,8 @@ that the packaged Bot receives the device socket while App/helper startup is
 blocked by an empty remote address; the run itself was not reproduced here.
 Check first-install and configured-but-offline startup independently, from App
 bootstrap through the real Bot tool, before claiming local independence.
+
+The first service-suite run after the local-only change overlapped an editing
+formatter on its test file. It was rerun after formatting completed: all nine
+service tests and the check-only Biome run passed. Never run a test concurrently
+with an edit to its inputs; wait for formatting before collecting green evidence.

@@ -413,7 +413,7 @@ export class OperationJournal {
         .all() as { id: string }[]
     ).map((row) => row.id);
   }
-  prepareOutgoing(request: OperationRequest): OperationRequest {
+  private outgoing(request: OperationRequest) {
     const row = this.database
       .prepare(
         "SELECT target,digest,source_bot,state FROM outgoing_requests WHERE id=?",
@@ -426,14 +426,22 @@ export class OperationJournal {
           state: "sent" | "retryable";
         }
       | undefined;
-    if (row) {
-      if (
-        row.target !== request.targetDeviceId ||
+    if (
+      row &&
+      (row.target !== request.targetDeviceId ||
         (request.digest !== undefined && row.digest !== request.digest) ||
         (request.action === "run" &&
-          row.source_bot !== (request.sourceBotId ?? null))
-      )
-        throw new OperationAdmissionError("operation_binding_conflict");
+          row.source_bot !== (request.sourceBotId ?? null)))
+    )
+      throw new OperationAdmissionError("operation_binding_conflict");
+    return row;
+  }
+  outgoingState(request: OperationRequest): "sent" | "retryable" | undefined {
+    return this.outgoing(request)?.state;
+  }
+  prepareOutgoing(request: OperationRequest): OperationRequest {
+    const row = this.outgoing(request);
+    if (row) {
       const action =
         request.action === "run" && row.state !== "retryable"
           ? "get"

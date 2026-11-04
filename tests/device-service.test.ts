@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
+import { OperationJournal } from "../packages/agent/device-journal.ts";
 import {
   approvalPayload,
   canonicalDeviceJSON,
@@ -524,6 +525,438 @@ async function portCall(socketPath: string, method: string, params?: unknown) {
     socket.destroy();
   }
 }
+
+function deviceSession(socketPath: string) {
+  const socket = connect(socketPath);
+  const lines = createInterface({ input: socket });
+  const reader = lines[Symbol.asyncIterator]();
+  return {
+    async call(method: string, params: unknown) {
+      const requestId = randomUUID();
+      socket.write(`${JSON.stringify({ requestId, method, params })}\n`);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const response = await Promise.race([
+        reader.next(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("native port timeout")),
+            3000,
+          );
+        }),
+      ]).finally(() => clearTimeout(timer));
+      assert.equal(response.done, false);
+      const value = JSON.parse(response.value) as Record<string, unknown>;
+      assert.equal(value.requestId, requestId);
+      return value;
+    },
+    close() {
+      lines.close();
+      socket.destroy();
+    },
+  };
+}
+
+test("an unconfigured relay starts local tools without changing policy", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-local-only-"));
+  const configuration = { ...serviceConfiguration(root), baseUrl: "" };
+  const service = serviceProcess();
+  try {
+    service.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await service.message("ready");
+    assert.equal((await service.message("cloud")).status, "unconfigured");
+    const status = (await portCall(configuration.socketPath, "status"))
+      .result as {
+      localReady: boolean;
+      cloudStatus: string;
+      policy: { mode: string };
+    };
+    assert.equal(status.localReady, true);
+    assert.equal(status.cloudStatus, "unconfigured");
+    assert.equal(status.policy.mode, "all-approve");
+    const directory = (await portCall(configuration.socketPath, "directory"))
+      .result as { cloudStatus: string; devices: { deviceId: string }[] };
+    assert.equal(directory.cloudStatus, "unconfigured");
+    assert.deepEqual(
+      directory.devices.map((device) => device.deviceId),
+      [configuration.deviceId],
+    );
+    const operation = { kind: "command", command: "printf local-only" };
+    const request = {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: configuration.deviceId,
+      action: "run",
+      operation,
+      digest: await deviceDigest(canonicalDeviceJSON(operation)),
+    };
+    const result = (
+      await portCall(configuration.socketPath, "execute", request)
+    ).result as { status: string; output?: string };
+    assert.equal(result.status, "completed");
+    assert.equal(result.output, "local-only");
+    const remoteId = randomUUID();
+    const remote = (
+      await portCall(configuration.socketPath, "execute", {
+        ...request,
+        operationId: remoteId,
+        targetDeviceId: randomUUID(),
+      })
+    ).result as { status: string; error: string };
+    assert.equal(remote.status, "denied");
+    assert.equal(remote.error, "remote_not_configured");
+    const policyRequest = randomUUID();
+    service.child.stdin.write(
+      `${JSON.stringify({ type: "manage", requestId: policyRequest, method: "policy.set", params: { mode: "paused" } })}\n`,
+    );
+    const managed = await service.message("managed");
+    assert.equal(managed.requestId, policyRequest);
+    assert.equal((managed.result as { mode: string }).mode, "paused");
+    const paused = (
+      await portCall(configuration.socketPath, "execute", {
+        ...request,
+        operationId: randomUUID(),
+      })
+    ).result as { status: string; error: string };
+    assert.equal(paused.status, "denied");
+    assert.equal(paused.error, "policy_confirmation_required");
+    await service.stop();
+    const database = new DatabaseSync(join(root, "operations.sqlite"), {
+      readOnly: true,
+    });
+    try {
+      assert.equal(
+        (
+          database
+            .prepare("SELECT count(*) AS n FROM outgoing_requests WHERE id=?")
+            .get(remoteId) as { n: number }
+        ).n,
+        0,
+      );
+    } finally {
+      database.close();
+    }
+  } finally {
+    await service.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unconfigured relay does not bypass a fresh local approval policy", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-local-policy-"));
+  const configuration = { ...serviceConfiguration(root), baseUrl: "" };
+  rmSync(join(root, "policy.json"));
+  const service = serviceProcess();
+  try {
+    service.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await service.message("ready");
+    const status = (await portCall(configuration.socketPath, "status"))
+      .result as { policy: { mode: string } };
+    assert.equal(status.policy.mode, "always-ask");
+    const operation = { kind: "command", command: "printf must-not-run" };
+    const result = (
+      await portCall(configuration.socketPath, "execute", {
+        requestId: randomUUID(),
+        operationId: randomUUID(),
+        targetDeviceId: configuration.deviceId,
+        action: "run",
+        operation,
+        digest: await deviceDigest(canonicalDeviceJSON(operation)),
+      })
+    ).result as { status: string; error: string };
+    assert.equal(result.status, "denied");
+    assert.equal(result.error, "policy_confirmation_required");
+    const pairingRequest = randomUUID();
+    service.child.stdin.write(
+      `${JSON.stringify({ type: "manage", requestId: pairingRequest, method: "pairing.create", params: {} })}\n`,
+    );
+    const pairing = await service.message("managed");
+    assert.equal(pairing.requestId, pairingRequest);
+    assert.equal(pairing.error, "remote_not_configured");
+  } finally {
+    await service.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unconfigured relay retains socket-bound native admission", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-local-native-"));
+  const configuration = { ...serviceConfiguration(root), baseUrl: "" };
+  const service = serviceProcess();
+  try {
+    service.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await service.message("ready");
+    const session = deviceSession(configuration.socketPath);
+    const operation = {
+      kind: "native",
+      tool: "bash",
+      args: { command: "printf local" },
+    };
+    const request = {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: configuration.deviceId,
+      action: "run",
+      operation,
+      digest: await deviceDigest(canonicalDeviceJSON(operation)),
+    };
+    try {
+      const first = (await session.call("local.begin", request)).result as {
+        accepted: boolean;
+        leaseId: string;
+      };
+      assert.equal(first.accepted, true);
+      assert.equal(
+        (
+          (await session.call("local.begin", request)).result as {
+            accepted: boolean;
+          }
+        ).accepted,
+        false,
+      );
+      const heartbeat = await session.call("local.heartbeat", {
+        operationId: request.operationId,
+        leaseId: first.leaseId,
+      });
+      assert.equal(
+        typeof (heartbeat.result as { expiresAt: number }).expiresAt,
+        "number",
+      );
+      const completion = {
+        operationId: request.operationId,
+        leaseId: first.leaseId,
+        result: { status: "completed", output: "local" },
+      };
+      assert.equal(
+        (await portCall(configuration.socketPath, "local.complete", completion))
+          .error,
+        "native_lease_mismatch",
+      );
+      assert.equal(
+        (
+          (await session.call("local.complete", completion)).result as {
+            status: string;
+          }
+        ).status,
+        "completed",
+      );
+      assert.equal(
+        (
+          (
+            await portCall(configuration.socketPath, "operation.get", {
+              ...request,
+              action: "get",
+            })
+          ).result as { output: string }
+        ).output,
+        "local",
+      );
+    } finally {
+      session.close();
+    }
+  } finally {
+    await service.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("local-only native approval remains bound to the operation and socket", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-local-approval-"));
+  const key = generateKeyPairSync("ed25519");
+  const configuration = {
+    ...serviceConfiguration(root),
+    baseUrl: "",
+    publicKey: key.publicKey
+      .export({ type: "spki", format: "der" })
+      .toString("base64url"),
+  };
+  rmSync(join(root, "policy.json"));
+  const service = serviceProcess();
+  try {
+    service.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await service.message("ready");
+    const operation = {
+      kind: "native",
+      tool: "write",
+      args: { content: "local" },
+    };
+    const request = {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: configuration.deviceId,
+      action: "run",
+      operation,
+      digest: await deviceDigest(canonicalDeviceJSON(operation)),
+    };
+    const pending = portCall(configuration.socketPath, "approval.request", {
+      request,
+      policyVersion: 1,
+      expiresAt: Date.now() + 60000,
+    });
+    const prompt = await service.message("approve");
+    assert.deepEqual(prompt.operation, operation);
+    const envelope = {
+      operationId: request.operationId,
+      sourceDeviceId: configuration.deviceId,
+      targetDeviceId: configuration.deviceId,
+      digest: request.digest,
+      policyVersion: 1,
+      expiresAt: prompt.expiresAt as number,
+    };
+    const approval = {
+      ...envelope,
+      signature: sign(
+        null,
+        Buffer.from(approvalPayload(envelope)),
+        key.privateKey,
+      ).toString("base64url"),
+    };
+    service.child.stdin.write(
+      `${JSON.stringify({ type: "approval", requestId: prompt.requestId, approval })}\n`,
+    );
+    assert.deepEqual((await pending).result, { approval });
+    const invalid = (
+      await portCall(configuration.socketPath, "local.begin", {
+        ...request,
+        approval: { ...approval, signature: "AAAA" },
+      })
+    ).result as { accepted: boolean; result: { status: string } };
+    assert.equal(invalid.accepted, false);
+    assert.equal(invalid.result.status, "denied");
+    const session = deviceSession(configuration.socketPath);
+    try {
+      const accepted = (
+        await session.call("local.begin", { ...request, approval })
+      ).result as {
+        accepted: boolean;
+        leaseId: string;
+      };
+      assert.equal(accepted.accepted, true);
+      const completed = (
+        await session.call("local.complete", {
+          operationId: request.operationId,
+          leaseId: accepted.leaseId,
+          result: { status: "completed", output: "local" },
+        })
+      ).result as { status: string; output: string };
+      assert.equal(completed.status, "completed");
+      assert.equal(completed.output, "local");
+    } finally {
+      session.close();
+    }
+  } finally {
+    await service.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("removing remote configuration preserves uncertain original operations", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-local-recovery-"));
+  const configuration = serviceConfiguration(root);
+  const configured = serviceProcess();
+  const local = serviceProcess();
+  const operation = { kind: "command" as const, command: "printf original" };
+  const request = {
+    requestId: randomUUID(),
+    operationId: randomUUID(),
+    targetDeviceId: randomUUID(),
+    sourceBotId: "bot-one",
+    action: "run" as const,
+    operation,
+    digest: await deviceDigest(canonicalDeviceJSON(operation)),
+  };
+  try {
+    configured.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await configured.message("ready");
+    const first = (await portCall(configuration.socketPath, "execute", request))
+      .result as { status: string };
+    assert.equal(first.status, "unknown");
+    await configured.stop();
+    local.child.stdin.write(
+      `${JSON.stringify({ ...configuration, baseUrl: "" })}\n`,
+    );
+    await local.message("ready");
+    for (const [method, action] of [
+      ["execute", "run"],
+      ["operation.get", "get"],
+      ["operation.cancel", "cancel"],
+    ] as const) {
+      const answer = (
+        await portCall(configuration.socketPath, method, {
+          ...request,
+          requestId: randomUUID(),
+          action,
+        })
+      ).result as { status: string; error: string };
+      assert.equal(answer.status, "unknown", action);
+      assert.equal(
+        answer.error,
+        "remote_not_configured_query_original_id",
+        action,
+      );
+    }
+    const conflict = (
+      await portCall(configuration.socketPath, "execute", {
+        ...request,
+        targetDeviceId: randomUUID(),
+      })
+    ).result as { status: string; error: string };
+    assert.equal(conflict.status, "denied");
+    assert.equal(conflict.error, "operation_binding_conflict");
+    await local.stop();
+    const journal = new OperationJournal(join(root, "operations.sqlite"));
+    try {
+      assert.equal(journal.prepareOutgoing(request).action, "get");
+    } finally {
+      journal.close();
+    }
+  } finally {
+    await Promise.all([configured.stop(), local.stop()]);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unconfigured relay retains a known unaccepted remote operation", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-local-retryable-"));
+  const configuration = { ...serviceConfiguration(root), baseUrl: "" };
+  const operation = { kind: "command" as const, command: "printf original" };
+  const request = {
+    requestId: randomUUID(),
+    operationId: randomUUID(),
+    targetDeviceId: randomUUID(),
+    action: "run" as const,
+    operation,
+    digest: await deviceDigest(canonicalDeviceJSON(operation)),
+  };
+  const journal = new OperationJournal(join(root, "operations.sqlite"));
+  journal.prepareOutgoing(request);
+  journal.completeOutgoing(request, { status: "denied" });
+  journal.close();
+  const service = serviceProcess();
+  try {
+    service.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await service.message("ready");
+    const result = (
+      await portCall(configuration.socketPath, "execute", request)
+    ).result as { status: string; error: string };
+    assert.equal(result.status, "denied");
+    assert.equal(result.error, "remote_not_configured");
+    await service.stop();
+    const database = new DatabaseSync(join(root, "operations.sqlite"), {
+      readOnly: true,
+    });
+    try {
+      const row = database
+        .prepare("SELECT state FROM outgoing_requests WHERE id=?")
+        .get(request.operationId) as { state: string };
+      assert.equal(row.state, "retryable");
+    } finally {
+      database.close();
+    }
+  } finally {
+    await service.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("failed second service never unlinks the first process's live socket", async () => {
   const root = mkdtempSync(join(tmpdir(), "device-owner-"));

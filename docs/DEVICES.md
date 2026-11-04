@@ -191,8 +191,9 @@ existing trusted boot/completion rules can release them. No old row is moved,
 retargeted or deleted when adopting a new file-vault identity.
 
 Policy `{mode:"all-approve"|"always-ask"|"paused",version:positive integer}` is
-persisted by target. Default all-approve. Always ask is confirmed in the initiating
-App. Approval envelope `{operationId,sourceDeviceId,targetDeviceId,digest,
+persisted by target. A fresh device with no saved policy defaults to `always-ask`;
+a saved policy is preserved. Always ask is confirmed in the initiating App.
+Approval envelope `{operationId,sourceDeviceId,targetDeviceId,digest,
 policyVersion,expiresAt,signature}` signs exact UTF-8
 `eagle-device-approval-v1\n<operationId>\n<sourceDeviceId>\n<targetDeviceId>\n<digest>\n<policyVersion>\n<expiresAt>`.
 Expiry is Unix milliseconds, at most 5 minutes ahead. Registry relay and target
@@ -213,8 +214,16 @@ Node requests identity signatures through stdout
 `{type:"signature",requestId,signature}` or `{type:"signature",requestId,error}`.
 Only exact requested payloads are signed; helper validates identity/purpose.
 Node emits `{type:"ready",socketPath,deviceId}` after local tools/port are ready,
-and `{type:"cloud",status:"online"|"offline",error?}` separately. Cloud failure
-does not prevent local readiness. The independent identity helper owns the Node lifecycle (SMAppService);
+and `{type:"cloud",status:"online"|"offline"|"unconfigured",error?}` separately.
+An empty `baseUrl` starts the Node service without a cloud client or network access;
+local `status` and `directory` report `cloudStatus: "unconfigured"`. Local policy,
+identity, journal and admission still apply. A new remote operation is denied with
+`remote_not_configured` without recording it as sent. An existing `sent` operation
+returns `unknown` with `remote_not_configured_query_original_id`; its original
+binding remains unchanged and cannot become an unaccepted retry. A previously
+unaccepted operation is denied as unconfigured. Remote management also returns
+`remote_not_configured`. Cloud failure does not prevent local readiness. The
+independent identity helper owns the Node lifecycle (SMAppService);
 closing the App window does not end this pipe. Helper EOF stops the child cleanly.
 The App attempts registration for both `notRegistered` and the first-install
 `notFound` state, then requires `enabled` before opening XPC. A background approval
