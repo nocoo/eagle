@@ -3421,3 +3421,17 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   incremental review and commit of this slice remain pending.
 - No installed App, real model, Herdr collection, viewer authentication, D1 or
   live rendering was exercised. Tool refresh and target hibernation are open.
+
+## 2026-11-04 17:00 +08 — Dispatch and panel lifecycle
+
+- Remote `run/get/cancel` no longer perform a discarded directory fetch
+  (`e26f586`); ten device integration cases passed, including live membership
+  revocation and a counted real Miniflare directory endpoint. Root check passed
+  288 tests. No Cloudflare deployment or billing measurement was performed.
+- The uncommitted panel slice avoids periodic cloud reads from the workspace.
+  Review found late local readiness, a panel joining an in-flight health read,
+  and cancellation before startup completes need further fixes; the slice is not
+  complete. The last full Swift run passed before those review findings were fixed.
+- Installed App, real-model tool choice, Herdr collection, authentication, D1
+  and live rendering remain unverified. Dynamic remote tools and target
+  hibernation remain open.
