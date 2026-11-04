@@ -79,6 +79,30 @@ type Challenge = {
   registration: string;
   expires: number;
 };
+export type DeviceSessionReference = {
+  sessionHash: string;
+  deviceId: string;
+  credentialVersion: number;
+  expiresAt: number;
+};
+const sessionReferenceSchema = z.strictObject({
+  sessionHash: z.string().regex(/^[a-f0-9]{64}$/),
+  deviceId: DeviceId,
+  credentialVersion: z.number().int().positive(),
+  expiresAt: z.number().int().positive(),
+});
+function sessionFailure(error: unknown): {
+  ok: false;
+  status: number;
+  error: string;
+} {
+  return {
+    ok: false,
+    status: error instanceof DeviceHttpError ? error.status : 401,
+    error: error instanceof DeviceHttpError ? error.message : "invalid_session",
+  };
+}
+
 type Pairing = {
   hash: string;
   issuer: string;
@@ -149,7 +173,10 @@ export class DeviceRegistry extends DurableObject<DeviceServiceEnv> {
     if (token.length > 200) throw new DeviceHttpError(401, "invalid_session");
     return this.sessionDevice(await deviceDigest(token));
   }
-  private sessionDevice(hash: string): DeviceRow {
+  private sessionRecord(hash: string): {
+    device: DeviceRow;
+    expiresAt: number;
+  } {
     const session = this.one<{
       deviceId: string;
       version: number;
@@ -160,7 +187,93 @@ export class DeviceRegistry extends DurableObject<DeviceServiceEnv> {
     const device = this.device(session.deviceId);
     if (device.credentialVersion !== session.version)
       throw new DeviceHttpError(401, "revoked_session");
-    return device;
+    return { device, expiresAt: session.expires };
+  }
+  private sessionDevice(hash: string): DeviceRow {
+    return this.sessionRecord(hash).device;
+  }
+  protected sessionDigest(token: string): Promise<string> {
+    return deviceDigest(token);
+  }
+  private sessionReference(reference: DeviceSessionReference): DeviceRow {
+    const value = sessionReferenceSchema.parse(reference);
+    const session = this.sessionRecord(value.sessionHash);
+    if (
+      session.device.deviceId !== value.deviceId ||
+      session.device.credentialVersion !== value.credentialVersion ||
+      session.expiresAt !== value.expiresAt
+    )
+      throw new DeviceHttpError(401, "invalid_session");
+    return session.device;
+  }
+  async bindTargetSession(
+    token: string,
+    targetId: string,
+    previous?: DeviceSessionReference,
+  ): Promise<
+    | { ok: true; reference: DeviceSessionReference }
+    | { ok: false; status: number; error: string }
+  > {
+    try {
+      if (typeof token !== "string" || token.length === 0 || token.length > 200)
+        throw new DeviceHttpError(401, "invalid_session");
+      const target = DeviceId.parse(targetId);
+      const hash = await this.sessionDigest(token);
+      const current = this.sessionRecord(hash);
+      if (current.device.deviceId !== target)
+        throw new DeviceHttpError(401, "invalid_session");
+      if (previous !== undefined) {
+        const old = this.sessionReference(previous);
+        if (
+          old.deviceId !== target ||
+          old.credentialVersion !== current.device.credentialVersion
+        )
+          throw new DeviceHttpError(401, "invalid_session");
+      }
+      return {
+        ok: true,
+        reference: {
+          sessionHash: hash,
+          deviceId: target,
+          credentialVersion: current.device.credentialVersion,
+          expiresAt: current.expiresAt,
+        },
+      };
+    } catch (error) {
+      return sessionFailure(error);
+    }
+  }
+  async checkSessionReference(
+    reference: DeviceSessionReference,
+    sourceToken?: string,
+  ): Promise<
+    | { ok: true; source: Device; target: Device }
+    | { ok: false; status: number; error: string }
+  > {
+    try {
+      if (
+        sourceToken !== undefined &&
+        (typeof sourceToken !== "string" ||
+          sourceToken.length === 0 ||
+          sourceToken.length > 200)
+      )
+        throw new DeviceHttpError(401, "invalid_session");
+      const sourceHash =
+        sourceToken === undefined
+          ? undefined
+          : await this.sessionDigest(sourceToken);
+      const target = this.sessionReference(reference);
+      const source =
+        sourceHash === undefined ? target : this.sessionDevice(sourceHash);
+      if (
+        source.deviceId !== target.deviceId &&
+        (!source.groupId || source.groupId !== target.groupId)
+      )
+        throw new DeviceHttpError(403, "different_group");
+      return { ok: true, source, target };
+    } catch (error) {
+      return sessionFailure(error);
+    }
   }
   private sweep(): void {
     const now = Date.now();
@@ -202,12 +315,7 @@ export class DeviceRegistry extends DurableObject<DeviceServiceEnv> {
       if (!targetId) return { ok: true, source, target: source };
       return { ok: true, ...(await this.authorize(token, targetId)) };
     } catch (error) {
-      return {
-        ok: false,
-        status: error instanceof DeviceHttpError ? error.status : 401,
-        error:
-          error instanceof DeviceHttpError ? error.message : "invalid_session",
-      };
+      return sessionFailure(error);
     }
   }
   private async observedDirectory(id: string): Promise<DeviceDirectory> {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -45,6 +45,17 @@ export class DeviceExecution extends Execution {
  }
 }
 export class DeviceRegistry extends Registry {
+ async sessionDigest(token){
+  const hash=await super.sessionDigest(token);
+  if(this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_reference_digest'").toArray().length){
+   const row=this.ctx.storage.sql.exec("SELECT hash FROM test_reference_digest WHERE hash=?",hash).toArray()[0];
+   if(row){this.ctx.storage.sql.exec("UPDATE test_reference_digest SET started=1 WHERE hash=?",hash);
+    const deadline=Date.now()+5000;
+    while(!this.ctx.storage.sql.exec("SELECT released FROM test_reference_digest WHERE hash=?",hash).toArray()[0]?.released){if(Date.now()>deadline)throw new Error('test digest gate timeout');await new Promise(resolve=>setTimeout(resolve,10));}
+   }
+  }
+  return hash;
+ }
  async check(token,targetId){const result=await super.check(token,targetId);
   if(result.ok&&targetId&&result.source.deviceId!==targetId&&this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_revoke_after_check'").toArray().length){
    const row=this.ctx.storage.sql.exec("SELECT deviceId FROM test_revoke_after_check WHERE deviceId=?",result.source.deviceId).toArray()[0];
@@ -606,6 +617,297 @@ async function pair(
 ) {
   return call("/pairings/redeem", token, { requestId, code: invitation });
 }
+
+test("internal session references bind expiry, generation and live membership without becoming credentials", async () => {
+  type Reference = {
+    sessionHash: string;
+    deviceId: string;
+    credentialVersion: number;
+    expiresAt: number;
+  };
+  type Bound =
+    | { ok: true; reference: Reference }
+    | { ok: false; status: number; error: string };
+  type Checked =
+    | { ok: true; source: { deviceId: string }; target: { deviceId: string } }
+    | { ok: false; status: number; error: string };
+  const namespace = (await mf.getDurableObjectNamespace(
+    "DEVICE_REGISTRY",
+    "eagle",
+  )) as unknown as DurableObjectNamespace;
+  const registry = namespace.get(
+    namespace.idFromName("registry"),
+  ) as unknown as {
+    bindTargetSession(
+      token: string,
+      target: string,
+      previous?: Reference,
+    ): Promise<Bound>;
+    checkSessionReference(
+      reference: Reference,
+      sourceToken?: string,
+    ): Promise<Checked>;
+  };
+  const [a, b, outsider] = await Promise.all([
+    identity("ref-a"),
+    identity("ref-b"),
+    identity("ref-outsider"),
+  ]);
+  await pair(a.token, await code(b.token));
+  const renew = async (device: typeof a): Promise<string> => {
+    const challenge = await call("/register/challenge", undefined, {
+      deviceId: device.deviceId,
+      publicKey: device.publicKey,
+      name: "ref-renewed",
+      platform: "darwin",
+      arch: "arm64",
+    });
+    assert.equal(challenge.status, 200);
+    const result = await call("/register/complete", undefined, {
+      challengeId: challenge.body.challengeId,
+      signature: sign(
+        null,
+        Buffer.from(challenge.body.payload),
+        device.keys.privateKey,
+      ).toString("base64url"),
+    });
+    assert.equal(result.status, 200);
+    return result.body.sessionToken;
+  };
+  const first = await registry.bindTargetSession(b.token, b.deviceId);
+  assert.equal(first.ok, true);
+  if (!first.ok) throw new Error("target session binding failed");
+  const reference = first.reference;
+  assert.deepEqual(Object.keys(reference).sort(), [
+    "credentialVersion",
+    "deviceId",
+    "expiresAt",
+    "sessionHash",
+  ]);
+  assert.equal(reference.deviceId, b.deviceId);
+  assert.equal(/^[a-f0-9]{64}$/.test(reference.sessionHash), true);
+  assert.equal(reference.sessionHash === b.token, false);
+  assert.equal(reference.expiresAt > Date.now(), true);
+  const self = await registry.checkSessionReference(reference);
+  assert.equal(self.ok, true);
+  if (self.ok) assert.equal(self.source.deviceId, b.deviceId);
+  const authorized = await registry.checkSessionReference(reference, a.token);
+  assert.equal(authorized.ok, true);
+  if (authorized.ok) {
+    assert.equal(authorized.source.deviceId, a.deviceId);
+    assert.equal(authorized.target.deviceId, b.deviceId);
+  }
+  assert.equal(
+    (await registry.checkSessionReference(reference, outsider.token)).ok,
+    false,
+  );
+  assert.equal(
+    (
+      await registry.checkSessionReference(
+        { ...reference, deviceId: a.deviceId },
+        a.token,
+      )
+    ).ok,
+    false,
+  );
+  assert.equal(
+    (
+      await registry.checkSessionReference(
+        { ...reference, expiresAt: reference.expiresAt + 1 },
+        a.token,
+      )
+    ).ok,
+    false,
+  );
+  assert.equal(
+    (
+      await registry.checkSessionReference(
+        { ...reference, sessionHash: "0".repeat(64) },
+        a.token,
+      )
+    ).ok,
+    false,
+  );
+  assert.equal(
+    (await registry.bindTargetSession(b.token, a.deviceId)).ok,
+    false,
+  );
+  assert.equal(
+    (await registry.bindTargetSession(reference.sessionHash, b.deviceId)).ok,
+    false,
+  );
+  assert.equal(
+    (await registry.checkSessionReference(reference, reference.sessionHash)).ok,
+    false,
+  );
+  assert.equal(
+    (
+      await registry.checkSessionReference(
+        { ...reference, credentialVersion: reference.credentialVersion + 1 },
+        a.token,
+      )
+    ).ok,
+    false,
+  );
+  assert.equal((await call("/directory", reference.sessionHash)).status, 401);
+  assert.equal(
+    (await call("/sessions/check-reference", a.token, { reference })).status,
+    404,
+  );
+  const tokenB = await renew(b);
+  const renewed = await registry.bindTargetSession(
+    tokenB,
+    b.deviceId,
+    reference,
+  );
+  assert.equal(renewed.ok, true);
+  if (!renewed.ok) throw new Error("target session renewal failed");
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "DeviceRegistry",
+    { name: "registry" },
+  );
+  const expiredAt = Date.now() - 1;
+  await storage.exec(
+    "UPDATE sessions SET expires=? WHERE hash=?",
+    expiredAt,
+    reference.sessionHash,
+  );
+  const expired = { ...reference, expiresAt: expiredAt };
+  assert.equal(
+    (await registry.checkSessionReference(expired, a.token)).ok,
+    false,
+  );
+  assert.equal(
+    (await registry.bindTargetSession(tokenB, b.deviceId, expired)).ok,
+    false,
+  );
+  const tokenA = await renew(a);
+  const sourceHash = createHash("sha256").update(a.token).digest("hex");
+  await storage.exec(
+    "UPDATE sessions SET expires=? WHERE hash=?",
+    Date.now() - 1,
+    sourceHash,
+  );
+  assert.equal(
+    (await registry.checkSessionReference(renewed.reference, a.token)).ok,
+    false,
+  );
+  assert.equal(
+    (await registry.checkSessionReference(renewed.reference, tokenA)).ok,
+    true,
+  );
+  assert.equal(
+    (await call("/members/remove", tokenA, { deviceId: b.deviceId })).status,
+    200,
+  );
+  assert.equal(
+    (await registry.checkSessionReference(renewed.reference, tokenA)).ok,
+    false,
+  );
+  const newGeneration = await renew(b);
+  assert.equal(
+    (
+      await registry.bindTargetSession(
+        newGeneration,
+        b.deviceId,
+        renewed.reference,
+      )
+    ).ok,
+    false,
+  );
+  const rebound = await registry.bindTargetSession(newGeneration, b.deviceId);
+  assert.equal(rebound.ok, true);
+  if (rebound.ok)
+    assert.equal(
+      (await registry.checkSessionReference(rebound.reference, tokenA)).ok,
+      false,
+    );
+});
+
+test("session reference authorization observes revocation while source hashing is in flight", async () => {
+  type Reference = {
+    sessionHash: string;
+    deviceId: string;
+    credentialVersion: number;
+    expiresAt: number;
+  };
+  type Bound = { ok: true; reference: Reference } | { ok: false };
+  type Checked = { ok: true } | { ok: false; status: number; error: string };
+  const namespace = (await mf.getDurableObjectNamespace(
+    "DEVICE_REGISTRY",
+    "eagle",
+  )) as unknown as DurableObjectNamespace;
+  const registry = namespace.get(
+    namespace.idFromName("registry"),
+  ) as unknown as {
+    bindTargetSession(token: string, target: string): Promise<Bound>;
+    checkSessionReference(
+      reference: Reference,
+      sourceToken: string,
+    ): Promise<Checked>;
+  };
+  const [a, b] = await Promise.all([
+    identity("ref-race-a"),
+    identity("ref-race-b"),
+  ]);
+  await pair(a.token, await code(b.token));
+  const bound = await registry.bindTargetSession(b.token, b.deviceId);
+  assert.equal(bound.ok, true);
+  if (!bound.ok) throw new Error("target session binding failed");
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "DeviceRegistry",
+    { name: "registry" },
+  );
+  const hash = createHash("sha256").update(a.token).digest("hex");
+  await storage.exec(
+    "CREATE TABLE test_reference_digest(hash TEXT PRIMARY KEY,started INTEGER NOT NULL DEFAULT 0,released INTEGER NOT NULL DEFAULT 0)",
+  );
+  let pending: Promise<Checked> | undefined;
+  try {
+    await storage.exec(
+      "INSERT INTO test_reference_digest(hash) VALUES(?)",
+      hash,
+    );
+    pending = registry.checkSessionReference(bound.reference, a.token);
+    const deadline = Date.now() + 2000;
+    let started = false;
+    while (Date.now() < deadline) {
+      const rows = await storage.exec(
+        "SELECT started FROM test_reference_digest WHERE hash=?",
+        hash,
+      );
+      if (rows[0]?.started === 1) {
+        started = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(started, true, "reference digest barrier was not reached");
+    assert.equal(
+      (await call("/members/remove", a.token, { deviceId: b.deviceId })).status,
+      200,
+    );
+    await storage.exec(
+      "UPDATE test_reference_digest SET released=1 WHERE hash=?",
+      hash,
+    );
+    const result = await pending;
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 401);
+      assert.equal(result.error, "revoked_session");
+    }
+  } finally {
+    await storage.exec(
+      "UPDATE test_reference_digest SET released=1 WHERE hash=?",
+      hash,
+    );
+    await pending?.catch(() => undefined);
+    await storage.exec("DROP TABLE test_reference_digest");
+  }
+});
 
 test("registration proves the key, consumes challenges and rejects identity replacement", async () => {
   const a = await identity("identity");

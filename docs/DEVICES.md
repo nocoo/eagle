@@ -114,6 +114,13 @@ Signatures are base64url raw Ed25519. Node and Bots never receive the private ke
   and are single-use. Sessions expire in 15 minutes; only their hash is stored.
 - Other HTTPS calls use `Authorization: Bearer <sessionToken>`; credentials are
   memory only. Registration and redemption have bounded server rate limits.
+  Internal Registry RPC can bind a target session to a SHA-256 reference with its
+  authoritative expiry, device ID and credential generation; it can revalidate
+  that reference together with a source bearer and current membership. References
+  are sensitive internal state, never HTTP credentials, public responses or logs.
+  Renewal requires both old and new sessions to be current for the same device
+  and generation. Target sockets still use the existing heartbeat until the
+  separate hibernation cutover is implemented.
 - `GET /directory` returns `{localDeviceId,groupId,revision,observationRevision,devices}`.
   revision tracks durable membership/metadata only. observationRevision is an
   opaque SHA-256 of current device observations, including online lease expiry,

@@ -1269,7 +1269,15 @@ compile; correcting the test precedes collecting behavioral red evidence.
 The root remote-tool selection was initially changed before its contract was
 updated, and review found it could erase an interrupted operation receipt. Write
 and review the recovery contract first; prove reopen with a killed real Harness,
-not only a direct tool invocation.
+not only a direct tool invocation. The first Registry RPC regression also failed
+at TypeScript compilation because Miniflare's namespace declaration needed the
+same explicit cast as the existing RPC fixture; only the subsequent runtime
+failure counted as behavioral red evidence. The first root gate for this Registry
+slice failed an unrelated redaction scaling ratio (20.25 ms versus 115.83 ms);
+the complete performance file alone passed with 12.51 ms versus 24.22 ms. The
+machine was concurrently busy, but that does not prove the cause. No limit or
+test was changed; the later full gate passed all 290 tests with 13.38 ms versus
+31.26 ms for that case.
 
 The second full CLI eval round collided with the singleton lock port of this run's
 own isolated foreground App. The failure was real, not a product test pass; the
