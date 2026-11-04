@@ -1335,3 +1335,33 @@ Stopping the isolated foreground source App with Ctrl-C left its own Bots daemon
 orphaned. Its PID and isolated root were verified before sending it SIGTERM; both
 processes exited, and all controlled panes were closed. Other spaces and daemons
 were not changed. Future cleanup must verify child processes after stopping the App.
+
+## 2026-11-05 — Ten-hour blocked test from a timeout unit error
+
+After the owner asked for uninterrupted implementation at 14:25 on November 4,
+work continued until 19:53. The final Agent renewal negative test was reported
+failed after its 15-second test timeout, but its Node process did not exit. The
+shell tool call returned only when the owner interrupted it at 05:52 on November
+5: about 9 hours 58 minutes blocked on that one call, not productive work.
+
+The shell tool's `timeout` is in **seconds**. I passed `120000` as if it were
+milliseconds, granting 120,000 seconds instead of 120. That removed the intended
+outer safeguard. The test's own `deadline()` also used `setTimeout` while that API
+was mocked; an awaited event with no further fake-clock advancement could therefore
+remain pending. A later bounded rerun after restoring the temporary negative-test
+change exposed a separate Node mock-timer/Undici `runAt` failure; the exact shared
+root cause has not been established.
+
+Use the tool's documented units explicitly (`timeout: 120` for 120 seconds), and
+bound subprocesses independently of a mocked clock. On timeout, terminate only
+this run's process group, verify cleanup, and record the real failure. Keep the
+full suite and its thresholds intact. The Agent renewal slice is still uncommitted
+and its test fixture remains red.
+
+The productive interval also accumulated 38 full Swift test invocations and five
+full CLI eval invocations, including deliberate TDD reds and one actual lock-port
+collision. Related regressions should be grouped into coherent red/green slices,
+with affected checks first and the full acceptance rounds after the relevant slice
+stabilizes. Required security review remains mandatory; the repeated serialized
+waits and premature full-suite repetition were avoidable, not evidence that the
+underlying fix itself required ten hours.
