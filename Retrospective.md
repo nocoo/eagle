@@ -1250,3 +1250,10 @@ The first service-suite run after the local-only change overlapped an editing
 formatter on its test file. It was rerun after formatting completed: all nine
 service tests and the check-only Biome run passed. Never run a test concurrently
 with an edit to its inputs; wait for formatting before collecting green evidence.
+
+Review of the new CLI device fixture found that one cleanup error could prevent
+later resources from closing, and synchronous Swift builds had no timeout. The
+fixture now attempts every cleanup, retains failures and bounds both Swift commands.
+The first fix threw from `finally` and the staged Biome hook rejected it; error
+aggregation now happens after cleanup, and the check runs before committing.
+Cleanup fault injection is not yet tested.

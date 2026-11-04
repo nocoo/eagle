@@ -645,19 +645,23 @@ test("CLI drives local Bot tools without a configured remote", {
     cwd: macos,
     env: swiftEnv,
     stdio: "pipe",
+    timeout: 60000,
   });
   const bin = execFileSync("swift", ["build", "--show-bin-path"], {
     cwd: macos,
     env: swiftEnv,
     encoding: "utf8",
+    timeout: 10000,
   }).trim();
   const cli = join(bin, "eagle-cli");
   const root = mkdtempSync("/tmp/eagle-device-cli-");
   const key = randomBytes(32).toString("base64url");
-  const model = await modelFixture(key);
+  let model: Awaited<ReturnType<typeof modelFixture>> | undefined;
   let device: ReturnType<typeof deviceProcess> | undefined;
   let daemon: Awaited<ReturnType<typeof daemonProcess>> | undefined;
+  let failure: unknown;
   try {
+    model = await modelFixture(key);
     device = deviceProcess(join(root, "device"), "");
     await device.ready("unconfigured");
     await device.manage("policy.set", { mode: "paused" });
@@ -716,12 +720,25 @@ test("CLI drives local Bot tools without a configured remote", {
     assert.match(accepted, /"name":"bash"/);
     assert.equal(readFileSync(resultPath, "utf8"), "local-ok");
     model.verify(2);
-  } finally {
-    if (daemon) await daemon.stop();
-    if (device) await device.stop();
-    await closeServer(model.server);
-    rmSync(root, { recursive: true, force: true });
+  } catch (error) {
+    failure = error;
   }
+  const results = await Promise.allSettled([
+    daemon?.stop(),
+    device?.stop(),
+    model ? closeServer(model.server) : undefined,
+  ]);
+  const errors = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch (error) {
+    errors.push(error);
+  }
+  if (failure !== undefined) errors.unshift(failure);
+  if (errors.length)
+    throw new AggregateError(errors, "device CLI acceptance failed");
 });
 
 test("existing and new Bots share real paired devices, native tools and original remote operation IDs", {
