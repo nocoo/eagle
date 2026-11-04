@@ -64,6 +64,12 @@ const fixture = () => {
   const finishes: DeviceResult[] = [];
   const port: SharedDevicePort = {
     version: 1,
+    status: async () => ({
+      deviceId: view.localDeviceId,
+      localReady: true,
+      cloudStatus: "online",
+      policy: required(required(view.devices[0]).policy),
+    }),
     directory: async () => view,
     request: async (request) => {
       calls.push(structuredClone(request));
@@ -321,6 +327,100 @@ test("approval receives full immutable parameters and get/cancel never requests 
     ).error,
     "device_request_failed",
   );
+});
+
+test("local native tools use local policy without reading the remote directory", async () => {
+  const bench = fixture();
+  const root = await mkdtemp(join(tmpdir(), "native-local-only-"));
+  let directoryReads = 0;
+  bench.port.directory = async () => {
+    directoryReads++;
+    throw new Error("cloud_unavailable");
+  };
+  const port = bench.port;
+  port.status = async () => ({
+    deviceId: bench.view.localDeviceId,
+    localReady: true,
+    cloudStatus: "unconfigured",
+    policy: { mode: "all-approve", version: 1 },
+  });
+  const native = defineTool({
+    name: "write",
+    parameters: Type.Object({ content: Type.String() }),
+    description: "test native implementation",
+    async execute(args) {
+      await writeFile(join(root, "out"), args.content);
+      return { output: [{ type: "text" as const, text: "written" }] };
+    },
+  });
+  try {
+    const result = await guardNativeTool(native, { botId: "local-bot", port }).execute(
+      { content: "local-only" },
+      memoApi().api,
+      BACKGROUND_CONTEXT,
+    );
+    assert.equal(body(result).status, "completed");
+    assert.equal(await readFile(join(root, "out"), "utf8"), "local-only");
+    assert.equal(directoryReads, 0);
+    assert.equal(bench.calls[0]?.targetDeviceId, bench.view.localDeviceId);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("local always-ask policy still requires a bound approval", async () => {
+  const bench = fixture();
+  required(bench.view.devices[0]).policy = { mode: "always-ask", version: 3 };
+  const native = defineTool({
+    name: "write",
+    description: "test native implementation",
+    parameters: Type.Object({}),
+    async execute() {
+      return { output: [{ type: "text" as const, text: "written" }] };
+    },
+  });
+  const result = await guardNativeTool(native, { botId: "local-bot", port: bench.port }).execute(
+    {},
+    memoApi().api,
+    BACKGROUND_CONTEXT,
+  );
+  assert.equal(body(result).status, "completed");
+  assert.equal(bench.approvals.length, 1);
+  assert.equal(bench.approvals[0]?.targetDeviceId, bench.view.localDeviceId);
+  assert.equal(bench.calls[0]?.approval?.policyVersion, 3);
+});
+
+test("local status and policy failures never bypass native admission", async () => {
+  for (const state of ["unavailable", "paused", "disconnected"]) {
+    const bench = fixture();
+    let runs = 0;
+    const native = defineTool({
+      name: "write",
+      description: "test native implementation",
+      parameters: Type.Object({}),
+      async execute() {
+        runs++;
+        return { output: [{ type: "text" as const, text: "written" }] };
+      },
+    });
+    bench.port.status = async () => {
+      if (state === "disconnected") throw new Error("device_unavailable");
+      return {
+        deviceId: bench.view.localDeviceId,
+        localReady: state !== "unavailable",
+        cloudStatus: "unconfigured",
+        policy: { mode: state === "paused" ? "paused" : "all-approve", version: 1 },
+      };
+    };
+    const result = await guardNativeTool(native, { botId: "local-bot", port: bench.port }).execute(
+      {},
+      memoApi().api,
+      BACKGROUND_CONTEXT,
+    );
+    assert.equal(result.isError, true, state);
+    assert.equal(runs, 0, state);
+    assert.equal(bench.calls.length, 0, state);
+  }
 });
 
 test("native tools require admission before touching real files and replay never invokes them twice", async () => {

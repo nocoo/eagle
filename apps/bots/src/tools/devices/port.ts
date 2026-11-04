@@ -13,6 +13,12 @@ export const policySchema = z.object({
   mode: z.enum(["all-approve", "always-ask", "paused"]),
   version: z.number().int().positive(),
 });
+export const localStatusSchema = z.object({
+  deviceId: z.uuid(),
+  localReady: z.boolean(),
+  cloudStatus: z.enum(["online", "offline", "unconfigured"]),
+  policy: policySchema,
+});
 export const deviceSchema = z.object({
   deviceId: z.uuid(),
   name: z.string(),
@@ -45,6 +51,7 @@ export const approvalSchema = z.object({
   expiresAt: z.number().int().positive(),
   signature: z.string(),
 });
+export type DeviceLocalStatus = z.infer<typeof localStatusSchema>;
 export type DeviceDirectory = z.infer<typeof directorySchema>;
 export type DeviceResult = z.infer<typeof resultSchema>;
 export type DeviceApproval = z.infer<typeof approvalSchema>;
@@ -70,6 +77,7 @@ export type NativeAdmission =
     };
 export interface SharedDevicePort {
   readonly version: 1;
+  status(signal?: AbortSignal): Promise<DeviceLocalStatus>;
   directory(signal?: AbortSignal): Promise<DeviceDirectory>;
   request(request: DeviceRequest, signal?: AbortSignal): Promise<DeviceResult>;
   approve(
@@ -110,6 +118,9 @@ export class SocketDevicePort implements SharedDevicePort {
     }
   }
 
+  async status(signal?: AbortSignal): Promise<DeviceLocalStatus> {
+    return localStatusSchema.parse(await this.#call("status", undefined, signal));
+  }
   async directory(signal?: AbortSignal): Promise<DeviceDirectory> {
     return directorySchema.parse(await this.#call("directory", undefined, signal));
   }

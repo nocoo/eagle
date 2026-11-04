@@ -537,8 +537,10 @@ durable tool memo records the target, full operation, digest and operation ID
 before transmission. Retries query that ID; they never resend unknown effects or
 substitute a local target. A busy response is unaccepted and creates no queue.
 All native coding tools and `list` cross the same local policy/admission seam
-when a device port is configured. Approval requests carry the complete operation;
-only the initiating App can confirm them. No port credentials enter Bot storage.
+when a device port is configured. They obtain the local device ID and policy from
+the local status method, without reading the remote directory or waiting for the
+cloud. Approval requests carry the complete operation; only the initiating App
+can confirm them. No port credentials enter Bot storage.
 
 The shared adapter captures native `output`, `retainedOutput`, diagnostics and
 details in bounded memory. No raw progress is published to pi.live, and native

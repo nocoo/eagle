@@ -44,6 +44,30 @@ const fixture = async (handle: (socket: Socket, request: Record<string, unknown>
   };
 };
 
+test("local status validates the policy without querying the directory", async () => {
+  const status = {
+    deviceId: randomUUID(),
+    localReady: true,
+    cloudStatus: "unconfigured",
+    policy: { mode: "always-ask", version: 1 },
+  };
+  let invalid = false;
+  const bench = await fixture((socket, frame) => {
+    assert.equal(frame.method, "status");
+    socket.write(
+      `${JSON.stringify({ requestId: frame.requestId, result: invalid ? { ...status, policy: null } : status })}\n`,
+    );
+  });
+  try {
+    const port = new SocketDevicePort(bench.path);
+    assert.deepEqual(await port.status(), status);
+    invalid = true;
+    await assert.rejects(port.status());
+  } finally {
+    await bench.close();
+  }
+});
+
 test("typed approval decodes the host envelope and preserves its operation bindings", async () => {
   const operation = { kind: "command", command: "pwd" };
   const request: DeviceRequest = {

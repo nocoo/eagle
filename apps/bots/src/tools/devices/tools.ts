@@ -19,6 +19,7 @@ import {
 } from "./output.ts";
 import {
   type DeviceDirectory,
+  type DeviceLocalStatus,
   type DeviceOperation,
   type DeviceRequest,
   type JSONValue,
@@ -98,6 +99,22 @@ export async function bindDeviceOperation(
   return stored;
 }
 
+async function authorizePolicy(
+  options: DeviceToolsOptions,
+  policy: DeviceLocalStatus["policy"],
+  request: DeviceRequest,
+  context: Context,
+): Promise<DeviceRequest> {
+  if (policy.mode === "paused") throw new Error("device_access_paused");
+  if (policy.mode === "always-ask") {
+    return {
+      ...request,
+      approval: await options.port.approve(request, policy.version, context.abortSignal),
+    };
+  }
+  return request;
+}
+
 async function authorize(
   options: DeviceToolsOptions,
   directory: DeviceDirectory,
@@ -114,14 +131,7 @@ async function authorize(
   )
     throw new Error("target_capability_unavailable");
   if (target.policy === null) throw new Error("target_policy_unknown");
-  if (target.policy.mode === "paused") throw new Error("device_access_paused");
-  if (target.policy.mode === "always-ask") {
-    return {
-      ...request,
-      approval: await options.port.approve(request, target.policy.version, context.abortSignal),
-    };
-  }
-  return request;
+  return authorizePolicy(options, target.policy, request, context);
 }
 
 const operationParameters = Type.Union([
@@ -249,7 +259,8 @@ export const guardNativeTool = <T extends ToolRegistration>(
     let request: DeviceRequest | undefined;
     let admission: Awaited<ReturnType<SharedDevicePort["begin"]>> | undefined;
     try {
-      const directory = await options.port.directory(context.abortSignal);
+      const status = await options.port.status(context.abortSignal);
+      if (!status.localReady) throw new Error("device_service_unavailable");
       const agent = await api.agent(context);
       const operation: DeviceOperation = {
         kind: "native",
@@ -257,20 +268,14 @@ export const guardNativeTool = <T extends ToolRegistration>(
         args: args as JSONValue,
         ...(agent.cwd === undefined ? {} : { cwd: agent.cwd }),
       };
-      request = await bindDeviceOperation(
-        options,
-        directory.localDeviceId,
-        operation,
-        api,
-        context,
-      );
+      request = await bindDeviceOperation(options, status.deviceId, operation, api, context);
       if (await api.memo("device.transmitted.v1", context)) {
         return receipt(
           request,
           await options.port.request({ ...request, action: "get" }, context.abortSignal),
         );
       }
-      request = await authorize(options, directory, request, context);
+      request = await authorizePolicy(options, status.policy, request, context);
       await api.memo("device.transmitted.v1", true, context);
       admission = await options.port.begin(request, context.abortSignal);
       if (!admission.accepted) return receipt(request, admission.result);
