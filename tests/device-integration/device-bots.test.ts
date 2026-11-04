@@ -186,10 +186,11 @@ function deviceProcess(root: string, baseUrl: string) {
     root,
     deviceId,
     socketPath,
-    async ready() {
+    async ready(expectedCloud = "online") {
       await process.message((message) => message.type === "ready");
       await process.message(
-        (message) => message.type === "cloud" && message.status === "online",
+        (message) =>
+          message.type === "cloud" && message.status === expectedCloud,
       );
     },
     async manage(method: string, params?: unknown) {
@@ -408,12 +409,12 @@ async function modelFixture(key: string) {
     script(name: string, args: JSONRecord) {
       steps.push({ name, args }, { text: "done" });
     },
-    verify() {
+    verify(expectedReflections = 9) {
       assert.deepEqual(failures, []);
       assert.equal(steps.length, 0);
       assert.equal(
         reflectionRequests,
-        9,
+        expectedReflections,
         "each completed tool round reflects exactly once",
       );
       return requests;
@@ -590,6 +591,138 @@ async function closeServer(server: Server) {
     server.closeAllConnections();
   });
 }
+
+async function runCli(
+  executable: string,
+  args: string[],
+  root: string,
+  origin: string,
+  token: string,
+): Promise<string> {
+  const child = spawn(executable, args, {
+    cwd: root,
+    env: {
+      ...childEnv(root),
+      EAGLE_ROOT: root,
+      EAGLE_PORT: new URL(origin).port,
+      EAGLE_TOKEN: token,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  let error = "";
+  child.stdout
+    .setEncoding("utf8")
+    .on("data", (text: string) => (output += text));
+  child.stderr
+    .setEncoding("utf8")
+    .on("data", (text: string) => (error += text));
+  const exit = await new Promise<number | null>((done, reject) => {
+    const timer = setTimeout(() => child.kill("SIGKILL"), 30000);
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      done(code);
+    });
+  });
+  assert.equal(exit, 0, `CLI failed: ${error}`);
+  return output;
+}
+
+test("CLI drives local Bot tools without a configured remote", {
+  timeout: 90000,
+}, async () => {
+  const swiftEnv = {
+    ...process.env,
+    DEVELOPER_DIR:
+      process.env.DEVELOPER_DIR ?? "/Applications/Xcode.app/Contents/Developer",
+  };
+  const macos = resolve("apps/macos");
+  execFileSync("swift", ["build", "--product", "eagle-cli"], {
+    cwd: macos,
+    env: swiftEnv,
+    stdio: "pipe",
+  });
+  const bin = execFileSync("swift", ["build", "--show-bin-path"], {
+    cwd: macos,
+    env: swiftEnv,
+    encoding: "utf8",
+  }).trim();
+  const cli = join(bin, "eagle-cli");
+  const root = mkdtempSync("/tmp/eagle-device-cli-");
+  const key = randomBytes(32).toString("base64url");
+  const model = await modelFixture(key);
+  let device: ReturnType<typeof deviceProcess> | undefined;
+  let daemon: Awaited<ReturnType<typeof daemonProcess>> | undefined;
+  try {
+    device = deviceProcess(join(root, "device"), "");
+    await device.ready("unconfigured");
+    await device.manage("policy.set", { mode: "paused" });
+    daemon = await daemonProcess(
+      join(root, "bots"),
+      device.socketPath,
+      model.baseUrl,
+      key,
+    );
+    const created = JSON.parse(
+      await runCli(
+        cli,
+        ["bots", "create", "--title", "Local health", "--json"],
+        root,
+        daemon.origin,
+        daemon.token,
+      ),
+    ) as { bot: { id: string } };
+    const deniedPath = join(root, "denied");
+    model.script("bash", { command: `printf forbidden > '${deniedPath}'` });
+    const denied = await runCli(
+      cli,
+      [
+        "chat",
+        "send",
+        created.bot.id,
+        "--text",
+        "Check this computer",
+        "--wait",
+        "--json",
+      ],
+      root,
+      daemon.origin,
+      daemon.token,
+    );
+    assert.match(denied, /device_access_paused/);
+    assert.equal(existsSync(deniedPath), false);
+    await device.manage("policy.set", { mode: "all-approve" });
+    const resultPath = join(root, "local-result");
+    model.script("bash", { command: `printf local-ok > '${resultPath}'` });
+    const accepted = await runCli(
+      cli,
+      [
+        "chat",
+        "send",
+        created.bot.id,
+        "--text",
+        "Check this computer again",
+        "--wait",
+        "--json",
+      ],
+      root,
+      daemon.origin,
+      daemon.token,
+    );
+    assert.match(accepted, /"name":"bash"/);
+    assert.equal(readFileSync(resultPath, "utf8"), "local-ok");
+    model.verify(2);
+  } finally {
+    if (daemon) await daemon.stop();
+    if (device) await device.stop();
+    await closeServer(model.server);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("existing and new Bots share real paired devices, native tools and original remote operation IDs", {
   timeout: 90000,

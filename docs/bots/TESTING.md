@@ -13,7 +13,10 @@ App/device integration lives in `tests/device-integration/` and runs explicitly 
 `npm run test:devices` from the root, after root `npm ci`, independent
 `npm --prefix apps/bots ci`, and `npm --workspace @nocoo/eagle-agent run build`.
 Those tests cross real process/HTTP/socket ports; Bots product code never imports
-Eagle, Agent or Worker sources. Missing dependencies fail this explicit suite.
+Eagle, Agent or Worker sources. The local-only device acceptance builds and uses
+`eagle-dev` from the macOS CLI with an isolated daemon and device service; a
+scripted model does not prove a real model's tool selection. Missing dependencies
+fail this explicit suite.
 The macOS CI job prepares these two independent installs, runs the integration
 suite, and retains its Swift build/format/coverage gates. Local candidate acceptance
 also runs the Bots and Bots-macOS gates; no default root test silently opts into
