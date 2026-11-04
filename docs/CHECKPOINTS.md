@@ -3407,3 +3407,17 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 - No installed App, real model, Herdr collection, viewer authentication, D1 or
   live rendering was exercised. Remote tool refresh and hibernation remain open;
   this uncommitted slice still needs full gates and an independent review.
+
+## 2026-11-04 16:41 +08 — Reconciliation and stale-status races
+
+- Independent review found that a crash between saving relay B and applying it
+  could leave a live helper on A, and that stale helper status could restore A's
+  signing context after cutover. Red/green Swift tests now exercise startup
+  reconciliation, its fail-closed error path, and old status reads begun both
+  before and during configuration. Local policy remains available on failure.
+- The full Swift run passed (291, 52, 60 and 36 tests). Root `npm run check`
+  passed 288 tests and build; the independent Bots gate passed 1,003 tests and
+  coverage. Those Node gates preceded the latest Swift-only fixes. The final
+  incremental review and commit of this slice remain pending.
+- No installed App, real model, Herdr collection, viewer authentication, D1 or
+  live rendering was exercised. Tool refresh and target hibernation are open.
