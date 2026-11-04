@@ -3572,3 +3572,18 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   hibernation, live latency and billing remain unverified. Three isolated scripted
   CLI eval rounds and earlier root/Bots/Swift gates passed as recorded above;
   they are not final evidence for the uncommitted Agent slice.
+
+## 2026-11-05 06:40 +08 — Agent renewal and long-command deadline
+
+- Agent same-socket renewal is committed (`caed7ac`). Mock-clock network tests
+  now run in separate processes with real-time watchdogs and bounded cleanup;
+  root `npm run check` passed 309 tests and `npm run test:devices` passed 11.
+- The uncommitted Bot socket deadline now accounts for the requested command
+  duration and bounded authentication/relay overhead. Focused socket and
+  original-ID recovery tests passed; the latest full Bots coverage gate failed
+  during an unrelated trace fixture cleanup with `ENOTEMPTY`. Its cause is still
+  being investigated, not suppressed or treated as a pass.
+- Remote configuration propagation to existing child/in-flight conversations
+  and target WebSocket hibernation remain unimplemented. No deployment, installed
+  App, real-model, Herdr collection, viewer auth, D1, Cloudflare hibernation or
+  billing verification was performed.
