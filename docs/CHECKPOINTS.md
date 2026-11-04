@@ -3435,3 +3435,18 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 - Installed App, real-model tool choice, Herdr collection, authentication, D1
   and live rendering remain unverified. Dynamic remote tools and target
   hibernation remain open.
+
+## 2026-11-04 17:20 +08 — Visible observation and root-tool selection
+
+- Visible-panel observation is committed (`40fd998`). Three review rounds fixed
+  late local readiness and overlapping open/close/cancellation races. Full Swift
+  tests passed (299, 52, 60 and 36), with 92.3% logic coverage.
+- An isolated foreground source App is running with a separate Bots root and port;
+  its local health endpoint answered, but its source build has no injected device
+  socket. It is not evidence of installed-App or real-model acceptance. The build
+  emitted existing AppKit concurrency warnings.
+- An uncommitted root-runtime slice removes remote schemas when the local port is
+  unconfigured, restores them for a configured but offline relay on a later user
+  input, and guards stale loaded tools. CLI/scripted-model and focused tests are
+  green. Existing child conversations, in-flight refresh and hibernation remain open.
+  Herdr collection, viewer authentication, D1 and live rendering were not exercised.
