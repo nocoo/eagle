@@ -1,5 +1,14 @@
 # Retrospective
 
+## 2026-11-05 — A validity test expired with its fixture
+
+The full Swift gate failed during design consolidation because a password-metadata
+fixture expired on November 4 while its assertion always expected remaining time.
+The UI calculation read the wall clock directly. Accept an explicit observation
+instant (defaulting to the current time for the UI), and test remaining time, the
+exact expiry boundary and an expired record with fixed instants. Do not repair
+clock-dependent tests by pushing the fixture date into the future or skipping them.
+
 ## 2026-11-04 — A redaction scaling check varied across full runs
 
 The 0.18.0 publication-claim check failed the unchanged styled-redaction doubling

@@ -220,7 +220,12 @@ struct SecretSettingsTests {
     #expect(model.secretValidity(permanent) == "永久")
     #expect(model.secretLastUsed(permanent) == "最近使用：无")
     let expiring = try #require(model.sharedSecrets.first)
-    #expect(model.secretValidity(expiring).hasPrefix("剩余"))
+    let created = try Date("2026-11-03T01:10:00Z", strategy: .iso8601)
+    let expiry = try Date("2026-11-04T01:10:00Z", strategy: .iso8601)
+    #expect(model.secretValidity(expiring, now: created) == "剩余 24 小时")
+    #expect(model.secretValidity(expiring, now: expiry.addingTimeInterval(-60)) == "剩余 1 分钟")
+    #expect(model.secretValidity(expiring, now: expiry) == "已过期")
+    #expect(model.secretValidity(expiring, now: expiry.addingTimeInterval(60)) == "已过期")
     #expect(model.secretLastUsed(expiring).contains("Bot"))
     SecretHTTPStub.handler = nil
   }
