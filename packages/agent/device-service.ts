@@ -672,7 +672,6 @@ export async function runDeviceService(): Promise<void> {
         else {
           try {
             if (!remote) throw new Error("remote_not_configured");
-            await remote.directory();
             if (cloud !== remote)
               throw new Error("remote_configuration_changed");
             result = await remote.execute(request);

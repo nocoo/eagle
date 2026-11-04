@@ -281,6 +281,11 @@ Bot port read/execute methods: `status`, `directory`, `execute` (OperationReques
 request; the service strips it before the cloud wire, validates it against the current client,
 and atomically binds the operation ID and origin in the journal. `get`/`cancel` use that
 binding; an unknown or mismatched origin cannot be adopted, re-executed or sent elsewhere.
+Remote `run`, `get` and `cancel` do not issue a discarded directory read before dispatch.
+The relay still checks live source and target sessions and membership before forwarding
+and before releasing results. For a `run`, it also checks target policy at forwarding;
+the target checks policy again at admission. An `always-ask` approval still fetches current
+target policy separately before signing.
 It rejects all management writes, including `policy.set`,
 `pairing.create/revoke/redeem` and `member.remove`; 0600 alone does not distinguish
 same-UID Bots from the App. `pairing.result` is App management only as well.

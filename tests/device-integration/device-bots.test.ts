@@ -24,6 +24,7 @@ import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import WebSocket from "ws";
+import { canonicalDeviceJSON } from "../../packages/contracts/src/devices.ts";
 
 type JSONRecord = Record<string, unknown>;
 type Directory = {
@@ -222,7 +223,11 @@ function deviceProcess(root: string, baseUrl: string) {
   };
 }
 
-async function localCall(path: string, method: string): Promise<unknown> {
+async function localCall(
+  path: string,
+  method: string,
+  params?: unknown,
+): Promise<unknown> {
   const socket = connect(path);
   const reader = createInterface({ input: socket });
   try {
@@ -235,7 +240,7 @@ async function localCall(path: string, method: string): Promise<unknown> {
         else done(reply.result);
       });
       socket.write(
-        `${JSON.stringify({ version: 2, requestId: randomUUID(), method })}\n`,
+        `${JSON.stringify({ version: 2, requestId: randomUUID(), method, ...(params === undefined ? {} : { params }) })}\n`,
       );
     });
   } finally {
@@ -261,7 +266,15 @@ export class DeviceExecution extends Execution {
   return super.respond(socket,request,result,unauthorized);
  }
 }
-export default worker;
+let directoryReads = 0;
+export default {
+ fetch(request,env,ctx) {
+  const path = new URL(request.url).pathname;
+  if(path==='/__test/directory-count') return new Response(String(directoryReads));
+  if(path==='/api/devices/v1/directory') directoryReads++;
+  return worker.fetch(request,env,ctx);
+ }
+};
 `,
   );
   execFileSync(
@@ -759,6 +772,142 @@ test("CLI drives local Bot tools without a configured remote", {
   if (failure !== undefined) errors.unshift(failure);
   if (errors.length)
     throw new AggregateError(errors, "device CLI acceptance failed");
+});
+
+test("remote operations skip discarded directory reads but still enforce live membership", {
+  timeout: 90000,
+}, async () => {
+  mkdirSync(".local", { recursive: true });
+  const workerRoot = mkdtempSync(resolve(".local/device-dispatch-worker-"));
+  const root = mkdtempSync("/tmp/eagle-device-dispatch-");
+  let worker: Awaited<ReturnType<typeof workerFixture>> | undefined;
+  let a: ReturnType<typeof deviceProcess> | undefined;
+  let b: ReturnType<typeof deviceProcess> | undefined;
+  let failure: unknown;
+  try {
+    worker = await workerFixture(workerRoot);
+    a = deviceProcess(join(root, "a"), worker.origin);
+    b = deviceProcess(join(root, "b"), worker.origin);
+    await Promise.all([a.ready(), b.ready()]);
+    await b.manage("policy.set", { mode: "all-approve" });
+    const invitation = await a.manage("pairing.create", {});
+    await b.manage("pairing.redeem", {
+      requestId: randomUUID(),
+      code: invitation.code,
+    });
+    const source = a;
+    const target = b;
+    const relay = worker.origin;
+    await until(async () => {
+      const directory = (await localCall(
+        source.socketPath,
+        "directory",
+      )) as Directory;
+      const peer = directory.devices.find(
+        (device) => device.deviceId === target.deviceId,
+      );
+      return peer?.online && peer.policy?.mode === "all-approve"
+        ? true
+        : undefined;
+    }, "remote target observation");
+    const directoryReads = async () =>
+      Number(await (await fetch(`${relay}/__test/directory-count`)).text());
+    const before = await directoryReads();
+    assert(before > 0);
+    const operation = { kind: "command", command: "printf on-target" };
+    const request = {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: target.deviceId,
+      action: "run",
+      operation,
+      digest: createHash("sha256")
+        .update(canonicalDeviceJSON(operation))
+        .digest("hex"),
+      relayOrigin: relay,
+    };
+    const completed = (await localCall(
+      source.socketPath,
+      "execute",
+      request,
+    )) as Receipt;
+    assert.equal(completed.status, "completed");
+    assert.equal(completed.output, "on-target");
+    assert.equal(
+      await directoryReads(),
+      before,
+      "run fetched an unused directory",
+    );
+    const query = (await localCall(source.socketPath, "operation.get", {
+      requestId: randomUUID(),
+      operationId: request.operationId,
+      targetDeviceId: target.deviceId,
+      action: "get",
+    })) as Receipt;
+    assert.equal(query.status, "completed");
+    assert.equal(
+      await directoryReads(),
+      before,
+      "get fetched an unused directory",
+    );
+    const cancelled = (await localCall(source.socketPath, "operation.cancel", {
+      requestId: randomUUID(),
+      operationId: request.operationId,
+      targetDeviceId: target.deviceId,
+      action: "cancel",
+    })) as Receipt;
+    assert.equal(cancelled.status, "completed");
+    assert.equal(
+      await directoryReads(),
+      before,
+      "cancel fetched an unused directory",
+    );
+    await source.manage("member.remove", { deviceId: target.deviceId });
+    const marker = join(target.root, "revoked-write");
+    const forbidden = {
+      kind: "file.write",
+      path: marker,
+      content: "forbidden",
+    };
+    const denied = (await localCall(source.socketPath, "execute", {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: target.deviceId,
+      action: "run",
+      operation: forbidden,
+      relayOrigin: relay,
+      digest: createHash("sha256")
+        .update(canonicalDeviceJSON(forbidden))
+        .digest("hex"),
+    })) as Receipt;
+    assert.equal(denied.status, "denied");
+    assert.equal(existsSync(marker), false);
+    assert.equal(
+      await directoryReads(),
+      before,
+      "revoked run fetched an unused directory",
+    );
+  } catch (error) {
+    failure = error;
+  }
+  const cleaned = await Promise.allSettled([
+    a?.stop(),
+    b?.stop(),
+    worker?.mf.dispose(),
+  ]);
+  const errors = cleaned.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  for (const path of [workerRoot, root]) {
+    try {
+      rmSync(path, { recursive: true, force: true });
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (failure !== undefined) errors.unshift(failure);
+  if (errors.length)
+    throw new AggregateError(errors, "device dispatch test failed");
 });
 
 test("relay changes cannot move pairing or policy IDs to another service", {

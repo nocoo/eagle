@@ -17,9 +17,11 @@ discovery. Those additions are not implemented or enabled by this plan update.
 [DEVICE-IDLE-AND-WAKE.md](DEVICE-IDLE-AND-WAKE.md) records the pre-change path,
 fresh-cutover target and verification slices. Local-only helper startup and Bot
 admission work without a configured relay; live relay changes preserve local
-leases and bind remote IDs to their original relay. Dynamic remote tool selection,
-visible-panel polling and target hibernation remain open. No live savings,
-installed-App acceptance or physical two-Mac verification is claimed.
+leases and bind remote IDs to their original relay. Remote dispatch no longer
+performs a discarded directory read; relay/target authorization remains enforced.
+Dynamic remote tool selection, visible-panel polling and target hibernation remain
+open. No live savings, installed-App acceptance or physical two-Mac verification
+is claimed.
 
 ## 共享设备与配对重构（2026-10-29）
 
