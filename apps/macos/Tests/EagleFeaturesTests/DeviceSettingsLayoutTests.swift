@@ -73,6 +73,42 @@ struct DeviceSettingsLayoutTests {
     #expect(titles.contains("另一台设备的配对码"))
   }
 
+  @Test("an unconfigured relay leaves local policy available and disables pairing")
+  func unconfiguredRemote() async throws {
+    let (model, control, defaults) = deviceSettingsFixture(requiresServiceAddress: true)
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    control.handler = { method, _ in
+      if method == "service.status" {
+        return .object([
+          "deviceId": .string(deviceSettingsLocalID), "localReady": .bool(true),
+          "cloudStatus": .string("unconfigured"),
+        ])
+      }
+      if method == "directory", case .object(var value) = control.directory {
+        value["cloudStatus"] = .string("unconfigured")
+        return .object(value)
+      }
+      return nil
+    }
+    await model.startIfNeeded()
+    let (host, window) = makeHost(model)
+    defer {
+      window.orderOut(nil)
+      window.contentView = nil
+    }
+    try await Task.sleep(for: .milliseconds(50))
+    host.layoutSubtreeIfNeeded()
+    let nodes = entries(host)
+    #expect(nodes.compactMap(title).contains("远程未配置"))
+    let pairing = try #require(nodes.first { title($0) == "生成本机配对码" })
+    #expect(try !isEnabled(pairing))
+    let localPolicy = try #require(
+      nodes.first {
+        attribute($0, "AXIdentifier") as? String == "devices.policy.\(deviceSettingsLocalID)"
+      })
+    #expect(try isEnabled(localPolicy))
+  }
+
   @Test("an unresolved pairing stays visible without expanding the pairing section")
   func pendingPairingStaysVisible() async throws {
     let (_, control, defaults) = deviceSettingsFixture()

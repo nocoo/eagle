@@ -136,6 +136,9 @@ private struct DeviceServiceState: Decodable {
   public var needsBackgroundApproval: Bool { errorCode == "background_approval_required" }
   /// True when nothing may be contacted yet: no relay is baked in and none was chosen.
   public var needsServiceAddress: Bool { requiresServiceAddress && savedServiceAddress.isEmpty }
+  public var canUseRemote: Bool {
+    enabled && localReady && !needsServiceAddress && cloudStatus != "unconfigured"
+  }
   public var isRefreshing: Bool { refreshGeneration != nil }
   public var controlsBusy: Bool { isStarting || isBusy }
   public var canToggleService: Bool { !isBusy && (enabled || !controlsBusy) }
@@ -151,6 +154,8 @@ private struct DeviceServiceState: Decodable {
       return "请在系统设置中允许 Eagle 在后台运行，然后重试。"
     case "invalid_configuration":
       return "这个版本没有设备服务：设备服务由安装好的 App 提供，源码运行连不上 relay。"
+    case "remote_not_configured":
+      return "远程设备服务尚未配置；本机工具仍可用。"
     case "group_conflict": return "两台设备已属于不同设备群。请先退出原群，再配对。"
     case "pairing_unavailable", "pairing_not_found": return "配对码已过期、已作废或不存在。"
     case "pairing_consumed": return "这个配对码已被另一台设备使用。"

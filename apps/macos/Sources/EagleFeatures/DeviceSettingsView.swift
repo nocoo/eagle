@@ -70,7 +70,7 @@ public struct DeviceSettingsView: View {
           }
         }
         Divider().overlay(Theme.Palette.line)
-        SettingsSectionRow("本机", detail: "另一个设备向这台 Mac 发起执行时用它") {
+        SettingsSectionRow("本机", detail: "本机 Bot 与其他设备执行所用的本地服务") {
           statusLabel(
             model.localReady ? "本机可用" : "本机未就绪",
             systemImage: "desktopcomputer",
@@ -115,7 +115,7 @@ public struct DeviceSettingsView: View {
         SettingsSectionHeader(
           "服务地址",
           detail: model.needsServiceAddress
-            ? "这台 Mac 还没有可连接的设备服务地址。填写你自己部署的 relay 地址后才会连接；App 不自带任何默认地址。"
+            ? "本机工具仍可用。填写你自己部署的 relay 地址后才能连接远程设备；App 不自带默认地址。"
             : "设备服务地址由你配置，App 不内置默认值；修改后会重启本机服务。"
         ) {
           EmptyView()
@@ -168,6 +168,7 @@ public struct DeviceSettingsView: View {
     case "online": return "云端已连接"
     case "connecting": return "正在连接云端"
     case "offline": return "云端离线"
+    case "unconfigured": return "远程未配置"
     default: return "云端状态未知"
     }
   }
@@ -228,7 +229,7 @@ public struct DeviceSettingsView: View {
     .buttonStyle(.plain)
     .menuIndicator(.hidden)
     .fixedSize()
-    .disabled(model.controlsBusy || !model.localReady)
+    .disabled(model.controlsBusy || !model.canUseRemote)
     .accessibilityLabel("配对码有效期")
     .accessibilityIdentifier("devices.pairing.validity")
   }
@@ -265,7 +266,7 @@ public struct DeviceSettingsView: View {
               }
               .disabled(context.date >= expiry)
               SettingsActionButton("作废") { Task { await model.revokePairing() } }
-                .disabled(model.controlsBusy || !model.localReady)
+                .disabled(model.controlsBusy || !model.canUseRemote)
             }
           }
         }
@@ -276,7 +277,7 @@ public struct DeviceSettingsView: View {
           SettingsActionButton("生成本机配对码", prominent: true) {
             Task { await model.createPairing(ttlSeconds: ttlSeconds) }
           }
-          .disabled(model.controlsBusy || !model.localReady)
+          .disabled(model.controlsBusy || !model.canUseRemote)
         }
       }
       Divider().overlay(Theme.Palette.line)
@@ -295,7 +296,7 @@ public struct DeviceSettingsView: View {
         SettingsActionButton("查询配对结果", prominent: true) {
           Task { await model.recoverPairing() }
         }
-        .disabled(model.controlsBusy || !model.localReady)
+        .disabled(model.controlsBusy || !model.canUseRemote)
         HStack(spacing: 10) {
           SettingsTextField("重新输入原配对码", text: $pairingCode)
             .frame(maxWidth: .infinity)
@@ -303,7 +304,7 @@ public struct DeviceSettingsView: View {
             .onSubmit { redeem() }
           SettingsActionButton("用原请求重试", action: redeem)
             .disabled(
-              model.controlsBusy || !model.localReady
+              model.controlsBusy || !model.canUseRemote
                 || pairingCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
       } else {
@@ -314,7 +315,7 @@ public struct DeviceSettingsView: View {
             .onSubmit { redeem() }
           SettingsActionButton("添加设备", prominent: true, action: redeem)
             .disabled(
-              model.controlsBusy || !model.localReady
+              model.controlsBusy || !model.canUseRemote
                 || pairingCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
       }
@@ -322,7 +323,7 @@ public struct DeviceSettingsView: View {
   }
 
   private func redeem() {
-    guard !model.controlsBusy else { return }
+    guard !model.controlsBusy, model.canUseRemote else { return }
     let code = pairingCode
     pairingCode = ""
     Task { await model.redeem(code: code) }
