@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import {
+  createHash,
   generateKeyPairSync,
   randomBytes,
   randomUUID,
@@ -195,7 +196,22 @@ function deviceProcess(root: string, baseUrl: string) {
     },
     async manage(method: string, params?: unknown) {
       const requestId = randomUUID();
-      process.send({ type: "manage", requestId, method, params });
+      const remote =
+        method.startsWith("pairing.") ||
+        method === "member.remove" ||
+        (method === "policy.set" &&
+          params &&
+          typeof params === "object" &&
+          "deviceId" in params &&
+          params.deviceId !== deviceId);
+      const routed =
+        remote && baseUrl
+          ? {
+              ...(params as object | undefined),
+              relayOrigin: new URL(baseUrl).origin,
+            }
+          : params;
+      process.send({ type: "manage", requestId, method, params: routed });
       const reply = await process.message(
         (message) =>
           message.type === "managed" && message.requestId === requestId,
@@ -218,7 +234,9 @@ async function localCall(path: string, method: string): Promise<unknown> {
         if (reply.error) reject(new Error("local port rejected request"));
         else done(reply.result);
       });
-      socket.write(`${JSON.stringify({ requestId: randomUUID(), method })}\n`);
+      socket.write(
+        `${JSON.stringify({ version: 2, requestId: randomUUID(), method })}\n`,
+      );
     });
   } finally {
     reader.close();
@@ -743,6 +761,164 @@ test("CLI drives local Bot tools without a configured remote", {
     throw new AggregateError(errors, "device CLI acceptance failed");
 });
 
+test("relay changes cannot move pairing or policy IDs to another service", {
+  timeout: 90000,
+}, async () => {
+  mkdirSync(".local", { recursive: true });
+  const workerRoot = mkdtempSync(resolve(".local/device-origin-worker-"));
+  const root = mkdtempSync("/tmp/eagle-device-origin-");
+  let worker: Awaited<ReturnType<typeof workerFixture>> | undefined;
+  let a: ReturnType<typeof deviceProcess> | undefined;
+  let b: ReturnType<typeof deviceProcess> | undefined;
+  let challengeSeen = () => {};
+  const challenge = new Promise<void>((resolve) => {
+    challengeSeen = resolve;
+  });
+  let forbiddenRequests = 0;
+  let unexpectedAuthorization = false;
+  const other = createServer((request, response) => {
+    if (request.url?.includes("/register/challenge")) {
+      unexpectedAuthorization ||= request.headers.authorization !== undefined;
+      challengeSeen();
+    }
+    if (request.url?.includes("/pairings") || request.url?.endsWith("/policy"))
+      forbiddenRequests++;
+    response
+      .writeHead(503, { "content-type": "application/json" })
+      .end(JSON.stringify({ error: "offline" }));
+  });
+  let failure: unknown;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      other.once("error", reject);
+      other.listen(0, "127.0.0.1", () => {
+        other.off("error", reject);
+        resolve();
+      });
+    });
+    const address = other.address();
+    assert(address && typeof address !== "string");
+    const otherOrigin = `http://127.0.0.1:${address.port}`;
+    worker = await workerFixture(workerRoot);
+    a = deviceProcess(join(root, "a"), worker.origin);
+    b = deviceProcess(join(root, "b"), worker.origin);
+    await Promise.all([a.ready(), b.ready()]);
+    const invitation = await b.manage("pairing.create", {});
+    const pairingId = randomUUID();
+    const prepared = await a.manage("pairing.prepare", {
+      requestId: pairingId,
+      codeHash: createHash("sha256")
+        .update(String(invitation.code))
+        .digest("hex"),
+    });
+    assert.equal(prepared.prepared, true);
+    const lookupId = randomUUID();
+    a.send({
+      type: "manage",
+      requestId: lookupId,
+      method: "pairing.result",
+      params: { requestId: pairingId, relayOrigin: worker.origin },
+    });
+    const lookup: Record<string, unknown> = await a.message(
+      (message) => message.type === "managed" && message.requestId === lookupId,
+    );
+    assert.equal(lookup.error, "result_not_found");
+    await a.manage("pairing.redeem", {
+      requestId: pairingId,
+      code: invitation.code,
+    });
+    const policyId = randomUUID();
+    await a.manage("policy.set", {
+      deviceId: b.deviceId,
+      mode: "paused",
+      requestId: policyId,
+    });
+    await a.manage("remote.configure", { baseUrl: otherOrigin });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      challenge,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("other relay timeout")),
+          5000,
+        );
+      }),
+    ]).finally(() => clearTimeout(timer));
+    for (const [method, params, expected] of [
+      [
+        "pairing.result",
+        { requestId: pairingId, relayOrigin: worker.origin },
+        "remote_configuration_changed",
+      ],
+      [
+        "pairing.redeem",
+        {
+          requestId: pairingId,
+          code: invitation.code,
+          relayOrigin: otherOrigin,
+        },
+        "relay_origin_mismatch",
+      ],
+      [
+        "policy.set",
+        {
+          deviceId: b.deviceId,
+          mode: "paused",
+          requestId: policyId,
+          relayOrigin: otherOrigin,
+        },
+        "relay_origin_mismatch",
+      ],
+    ] as const) {
+      const requestId = randomUUID();
+      a.send({ type: "manage", requestId, method, params });
+      const result: Record<string, unknown> = await a.message(
+        (message) =>
+          message.type === "managed" && message.requestId === requestId,
+      );
+      assert.equal(result.error, expected, method);
+    }
+    assert.equal(forbiddenRequests, 0);
+    assert.equal(unexpectedAuthorization, false);
+    await a.manage("remote.configure", { baseUrl: worker.origin });
+    await until(async () => {
+      const status = (await localCall(a?.socketPath ?? "", "status")) as {
+        cloudStatus: string;
+      };
+      return status.cloudStatus === "online" ? true : undefined;
+    }, "original relay reconnection");
+    const recovered = await a.manage("pairing.result", {
+      requestId: pairingId,
+    });
+    assert.equal(recovered.requestId, pairingId);
+    assert.equal(
+      (recovered.directory as { relayOrigin: string }).relayOrigin,
+      worker.origin,
+    );
+  } catch (error) {
+    failure = error;
+  }
+  const cleaned = await Promise.allSettled([
+    a?.stop(),
+    b?.stop(),
+    worker?.mf.dispose(),
+    closeServer(other),
+  ]);
+  const errors = cleaned.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  for (const path of [workerRoot, root]) {
+    try {
+      rmSync(path, { recursive: true, force: true });
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (failure !== undefined) errors.unshift(failure);
+  if (errors.length)
+    throw new AggregateError(errors, "device origin test failed");
+});
+
 test("existing and new Bots share real paired devices, native tools and original remote operation IDs", {
   timeout: 90000,
 }, async () => {
@@ -778,7 +954,7 @@ test("existing and new Bots share real paired devices, native tools and original
     const health = (await fetch(`${daemon.origin}/v1/health`).then((response) =>
       response.json(),
     )) as { deviceAccess: { version: number } };
-    assert.equal(health.deviceAccess.version, 1);
+    assert.equal(health.deviceAccess.version, 2);
     const existingId = await daemon.createBot("Existing before pairing");
     const existing = await botConnection(
       daemon.origin,

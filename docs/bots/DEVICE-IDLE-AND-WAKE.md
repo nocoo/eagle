@@ -1,13 +1,14 @@
 # Bots — shared-device idle and wake design
 
-Status: **proposed; not implemented**. This document describes the current
-source and the intended change. The existing wire and behaviour remain governed
+Status: **in progress**. Local-first startup, local admission and relay-origin
+binding have landed; dynamic remote tool selection and target hibernation have
+not. The pre-change source observations below are retained as a baseline, not a
+claim about the current implementation. Existing wire and behaviour are governed
 by [DEVICES.md](../DEVICES.md), [RUNTIME.md](RUNTIME.md) and
-[PROTOCOL.md](PROTOCOL.md) until the matching implementation and contract changes
-land. [PLAN.md](PLAN.md) tracks delivery. A complete local Bot is the baseline;
-remote discovery, execution and cloud connectivity are optional enhancements,
-not prerequisites for local work. A visible device panel is not the definition of
-Bot activity.
+[PROTOCOL.md](PROTOCOL.md); [PLAN.md](PLAN.md) tracks delivery. A complete local
+Bot is the baseline; remote discovery, execution and cloud connectivity are
+optional enhancements, not prerequisites for local work. A visible device panel
+is not the definition of Bot activity.
 
 ## Goal and boundaries
 

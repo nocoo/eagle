@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { defineExtension } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
+import { DEVICE_EXTENSION } from "../../src/tools/devices/tools.ts";
 import type { HerdrClient } from "../../src/tools/herdr/client.ts";
 import { HERDR_TOOLS_EXTENSION } from "../../src/tools/herdr/tools.ts";
 import {
@@ -46,6 +47,7 @@ test("a shared device registry exposes no Herdr writes outside device policy", (
 });
 
 test("an injected shared device port is available to saved and new Bots without an opt-in group", () => {
+  assert.equal(DEVICE_EXTENSION, "bots-shared-devices-v1");
   const registry = createToolRegistry(
     { root: "/tmp" },
     {

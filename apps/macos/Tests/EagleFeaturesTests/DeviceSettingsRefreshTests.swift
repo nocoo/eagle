@@ -92,7 +92,7 @@ struct DeviceSettingsRefreshTests {
       if method == "service.status" {
         return .object([
           "deviceId": .string(deviceSettingsLocalID), "localReady": .bool(true),
-          "cloudStatus": .string("online"),
+          "cloudStatus": .string("online"), "relayOrigin": .string("https://devices.example"),
         ])
       }
       if method == "directory", case .object(var directory) = control.directory {
@@ -278,6 +278,7 @@ struct DeviceSettingsRefreshTests {
     let paired = DeviceJSON.object([
       "localDeviceId": .string(deviceSettingsLocalID), "groupId": .string(UUID().uuidString),
       "revision": .number(2), "observationRevision": .string("paired"),
+      "relayOrigin": .string("https://devices.example"),
       "devices": .array([
         .object([
           "deviceId": .string(deviceSettingsLocalID), "name": .string("This Mac"),

@@ -85,6 +85,7 @@ struct DeviceSettingsLayoutTests {
         ])
       }
       if method == "directory", case .object(var value) = control.directory {
+        value.removeValue(forKey: "relayOrigin")
         value["cloudStatus"] = .string("unconfigured")
         return .object(value)
       }
@@ -113,7 +114,11 @@ struct DeviceSettingsLayoutTests {
   func pendingPairingStaysVisible() async throws {
     let (_, control, defaults) = deviceSettingsFixture()
     defer { defaults.removePersistentDomain(forName: control.domain) }
-    defaults.set(UUID().uuidString.lowercased(), forKey: DeviceSettingsViewModel.pendingRedeemKey)
+    defaults.set(
+      [
+        "requestId": UUID().uuidString.lowercased(), "codeHash": String(repeating: "a", count: 64),
+        "relayOrigin": "https://devices.example",
+      ], forKey: DeviceSettingsViewModel.pendingRedeemKey)
     let model = DeviceSettingsViewModel(control: control, defaults: defaults)
     await model.startIfNeeded()
     #expect(model.pendingRedeemRequestId != nil)

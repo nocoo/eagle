@@ -146,6 +146,7 @@ async function policyService(
       waiters.delete(message.requestId);
     }
   });
+  const relayOrigin = (await mf.ready).origin;
   child.stdin.write(
     `${JSON.stringify({
       type: "configure",
@@ -157,7 +158,7 @@ async function policyService(
       arch: "arm64",
       stateDirectory,
       socketPath,
-      baseUrl: (await mf.ready).origin,
+      baseUrl: relayOrigin,
     })}\n`,
   );
   const stop = async () => {
@@ -194,8 +195,15 @@ async function policyService(
       const response = new Promise<Record<string, unknown>>((resolve) =>
         waiters.set(requestId, resolve),
       );
+      const remote =
+        method === "policy.set" &&
+        params &&
+        typeof params === "object" &&
+        "deviceId" in params &&
+        params.deviceId !== owner.deviceId;
+      const routed = remote ? { ...(params as object), relayOrigin } : params;
       child.stdin.write(
-        `${JSON.stringify({ type: "manage", requestId, method, params })}\n`,
+        `${JSON.stringify({ type: "manage", requestId, method, params: routed })}\n`,
       );
       return response;
     },
@@ -210,7 +218,7 @@ async function policyService(
           resolve(JSON.parse(line));
         });
         socket.write(
-          `${JSON.stringify({ requestId: randomUUID(), method, params })}\n`,
+          `${JSON.stringify({ version: 2, requestId: randomUUID(), method, params })}\n`,
         );
       });
     },

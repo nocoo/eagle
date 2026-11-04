@@ -30,7 +30,7 @@ test("a real SDK nested native bash call validates the sanitized structured devi
   const env = new NodeExecutionEnv({ cwd: directory });
   const deviceId = randomUUID();
   const port: SharedDevicePort = {
-    version: 1,
+    version: 2,
     status: async () => ({
       deviceId,
       localReady: true,

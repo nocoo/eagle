@@ -256,8 +256,9 @@ A **published App ships no relay address**: `Support/DeviceHost.release.json` ca
 `baseUrl`, and nothing in the Swift sources names a host. The person who runs the App names
 their own service in **设置 → 设备 → 服务地址**; the choice is stored in the app's defaults as
 `eagle.deviceServiceAddress` (an origin only: HTTPS, or `http` on loopback, with no path,
-query or credentials) and the helper reads it at start, so changing it restarts the local
-service with the new relay. Before an address exists the App starts the local helper and
+query or credentials) and the helper reads it at start. Changing the address configures
+the remote connection without restarting the local service or interrupting native leases.
+Before an address exists the App starts the local helper and
 agent without a cloud client; local policy and tools remain available and no remote service
 is contacted. Settings labels the remote as unconfigured and disables pairing actions while
 keeping the local policy available. A first redemption rejected as unconfigured was never sent
@@ -269,11 +270,18 @@ pins one). Omitted or empty keeps whatever the profile file says: `http://127.0.
 for a candidate, nothing for a release. The address is validated the same way either way, and
 a built-in address is never a requirement for publishing.
 
-Unix socket is JSONL request/response, one response per request:
-`{requestId,method,params?}` → `{requestId,result}` or `{requestId,error}`.
+Unix socket is device-port v2 JSONL request/response, one response per request:
+`{version:2,requestId,method,params?}` → `{version:2,requestId,result}` or
+`{version:2,requestId,error}`. Both peers validate the version; a different or
+missing version fails closed. This local version does not change the cloud v1 API.
 Bot port read/execute methods: `status`, `directory`, `execute` (OperationRequest),
 `operation.get`, `operation.cancel` (OperationRequest), `local.begin` and
-`local.complete` and `local.heartbeat`. It rejects all management writes, including `policy.set`,
+`local.complete` and `local.heartbeat`. A successful cloud directory includes its canonical
+`relayOrigin` as local control metadata. A remote run carries that same origin in the local
+request; the service strips it before the cloud wire, validates it against the current client,
+and atomically binds the operation ID and origin in the journal. `get`/`cancel` use that
+binding; an unknown or mismatched origin cannot be adopted, re-executed or sent elsewhere.
+It rejects all management writes, including `policy.set`,
 `pairing.create/revoke/redeem` and `member.remove`; 0600 alone does not distinguish
 same-UID Bots from the App. `pairing.result` is App management only as well.
 `local.begin` takes OperationRequest with `operation:{kind:"native",tool,args,cwd?}`
@@ -323,9 +331,20 @@ automatic recovery. No process supervisor or execution scheduler is involved.
 Management uses only the trusted helper's parent stdin:
 `{type:"manage",requestId,method,params?}` → stdout
 `{type:"managed",requestId,result}` or `{type:"managed",requestId,error}`.
-Methods: `pairing.create` (`ttlSeconds?`), `pairing.revoke` (`code`),
+Methods: `pairing.create` (`ttlSeconds?`), `pairing.prepare`
+(`requestId,codeHash,relayOrigin`), `pairing.revoke` (`code`),
 `pairing.redeem` (`requestId,code`), `pairing.result` (`requestId`),
-`member.remove` (`deviceId`), `policy.get`, `policy.set` (`mode`).
+`member.remove` (`deviceId`), `policy.get`, `policy.set` (`mode`) and
+`remote.configure` (`baseUrl`). Remote management carries the selected relay origin
+as local control metadata; the service checks it before sending and strips it from
+the cloud request. `remote.configure` accepts an empty string or a bare HTTPS origin
+(loopback HTTP for local development), validates it before changing the connection,
+and keeps the local service and native leases running.
+`pairing.prepare` binds the ID, code digest and relay locally without sending or storing
+the code. The App prepares before persisting its pending record and before redemption,
+so a crash after persistence can query the original relay without guessing it. An
+unbound or invalid pending record fails closed; it is not silently assigned to the
+current relay.
 `policy.set` also accepts exactly `{deviceId,mode,requestId}`. The original
 `{mode}` remains local and works offline. An explicit target uses a durable
 request-ID binding to that target and mode before sending; a reused ID with

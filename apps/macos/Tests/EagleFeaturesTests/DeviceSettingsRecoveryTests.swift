@@ -56,7 +56,11 @@ struct DeviceSettingsRecoveryTests {
     defer { defaults.removePersistentDomain(forName: control.domain) }
     if pendingPairing {
       defaults.set(
-        UUID().uuidString.lowercased(), forKey: DeviceSettingsViewModel.pendingRedeemKey)
+        [
+          "requestId": UUID().uuidString.lowercased(),
+          "codeHash": String(repeating: "a", count: 64),
+          "relayOrigin": "https://devices.example",
+        ], forKey: DeviceSettingsViewModel.pendingRedeemKey)
     }
     let model = DeviceSettingsViewModel(control: control, defaults: defaults)
     var release: CheckedContinuation<Void, Never>?
@@ -286,9 +290,122 @@ struct DeviceSettingsRecoveryTests {
     #expect(model.errorMessage?.contains("源码") == true)
   }
 
+  @Test("startup applies the saved relay before allowing remote pairing")
+  func reconcileSavedRelay() async throws {
+    let (_, control, defaults) = deviceSettingsFixture()
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    defaults.set("https://b.example", forKey: DeviceServiceAddress.defaultsKey)
+    let model = DeviceSettingsViewModel(
+      control: control, defaults: defaults, requiresServiceAddress: true)
+    await model.startIfNeeded()
+    let configure = try #require(control.calls.first { $0.0 == "remote.configure" }?.1)
+    #expect(configure["baseUrl"]?.string == "https://b.example")
+    #expect(model.localReady)
+    #expect(model.canUseRemote)
+    control.handler = { method, params in
+      if method == "pairing.redeem" {
+        #expect(params?["relayOrigin"]?.string == "https://b.example")
+        return .object([
+          "requestId": .string(try #require(params?["requestId"]?.string)),
+          "directory": control.directory,
+        ])
+      }
+      return nil
+    }
+    await model.redeem(code: String(repeating: "c", count: 43))
+    #expect(model.pendingRedeemRequestId == nil)
+  }
+
+  @Test("a failed saved-relay reconciliation leaves local tools ready and remote pairing blocked")
+  func failedRelayReconciliation() async throws {
+    let (_, control, defaults) = deviceSettingsFixture()
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    defaults.set("https://b.example", forKey: DeviceServiceAddress.defaultsKey)
+    control.handler = { method, _ in
+      if method == "remote.configure" { throw DeviceHostError.unavailable }
+      return nil
+    }
+    let model = DeviceSettingsViewModel(
+      control: control, defaults: defaults, requiresServiceAddress: true)
+    await model.startIfNeeded()
+    #expect(model.localReady)
+    #expect(!model.canUseRemote)
+    await model.redeem(code: String(repeating: "c", count: 43))
+    #expect(control.calls.allSatisfy { $0.0 != "pairing.prepare" && $0.0 != "pairing.redeem" })
+  }
+
+  @Test("an invalid pending pairing is never replaced or sent")
+  func invalidPairingBinding() async throws {
+    for value: Any in [
+      UUID().uuidString.lowercased(),
+      ["requestId": UUID().uuidString.lowercased(), "codeHash": String(repeating: "a", count: 64)],
+      [
+        "requestId": UUID().uuidString.lowercased(), "codeHash": String(repeating: "a", count: 64),
+        "relayOrigin": "https://example.com/path",
+      ],
+    ] {
+      let (_, control, defaults) = deviceSettingsFixture()
+      defer { defaults.removePersistentDomain(forName: control.domain) }
+      defaults.set(value, forKey: DeviceSettingsViewModel.pendingRedeemKey)
+      let restored = DeviceSettingsViewModel(control: control, defaults: defaults)
+      await restored.startIfNeeded()
+      await restored.redeem(code: String(repeating: "b", count: 43))
+      #expect(restored.errorCode == "pairing_binding_unavailable")
+      #expect(control.calls.allSatisfy { $0.0 != "pairing.redeem" && $0.0 != "pairing.result" })
+      #expect(defaults.object(forKey: DeviceSettingsViewModel.pendingRedeemKey) != nil)
+    }
+  }
+
+  @Test("an uncertain pairing stays bound to its relay across restart and switch")
+  func pendingPairingKeepsOrigin() async throws {
+    let (model, control, defaults) = deviceSettingsFixture()
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    var origin = "https://devices.example"
+    control.handler = { method, params in
+      if method == "service.status" {
+        return .object([
+          "deviceId": .string(deviceSettingsLocalID), "localReady": .bool(true),
+          "cloudStatus": .string("online"), "relayOrigin": .string(origin),
+        ])
+      }
+      if method == "directory", case .object(var directory) = control.directory {
+        directory["relayOrigin"] = .string(origin)
+        return .object(directory)
+      }
+      if method == "pairing.redeem" { throw DeviceHostError.timeout }
+      if method == "pairing.result", case .object(var directory) = control.directory {
+        directory["relayOrigin"] = .string(origin)
+        return .object([
+          "requestId": params?["requestId"] ?? .null, "directory": .object(directory),
+        ])
+      }
+      return nil
+    }
+    await model.startIfNeeded()
+    await model.redeem(code: String(repeating: "a", count: 43))
+    let original = try #require(model.pendingRedeemRequestId)
+    let saved = try #require(defaults.dictionary(forKey: DeviceSettingsViewModel.pendingRedeemKey))
+    #expect(saved["relayOrigin"] as? String == "https://devices.example")
+    origin = "https://other.example"
+    await model.refresh()
+    let before = control.calls.filter { $0.0 == "pairing.result" }.count
+    await model.recoverPairing()
+    #expect(model.pendingRedeemRequestId == original)
+    #expect(control.calls.filter { $0.0 == "pairing.result" }.count == before)
+    let restored = DeviceSettingsViewModel(control: control, defaults: defaults)
+    await restored.startIfNeeded()
+    #expect(restored.pendingRedeemRequestId == original)
+    #expect(control.calls.filter { $0.0 == "pairing.result" }.count == before)
+    origin = "https://devices.example"
+    await restored.refresh()
+    await restored.recoverPairing()
+    #expect(restored.pendingRedeemRequestId == nil)
+    #expect(control.calls.filter { $0.0 == "pairing.result" }.count == before + 1)
+  }
+
   @Test("an unconfigured first attempt cannot strand a pairing request")
   func unconfiguredFirstAttempt() async throws {
-    let (model, control, defaults) = deviceSettingsFixture(requiresServiceAddress: true)
+    let (model, control, defaults) = deviceSettingsFixture()
     defer { defaults.removePersistentDomain(forName: control.domain) }
     await model.startIfNeeded()
     let firstCode = String(repeating: "a", count: 43)

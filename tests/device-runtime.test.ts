@@ -859,17 +859,23 @@ test("caller pins survive restart and uncertain re-submission becomes a query of
       kind: "command",
       command: "printf original-target",
     });
-    assert.equal(f.runtime.journal.prepareOutgoing(input).action, "run");
+    const scope = {
+      kind: "remote",
+      origin: "https://devices.example",
+    } as const;
+    assert.equal(f.runtime.journal.prepareOutgoing(input, scope).action, "run");
     assert.equal(
-      f.runtime.journal.prepareOutgoing({ ...input, requestId: randomUUID() })
-        .action,
+      f.runtime.journal.prepareOutgoing(
+        { ...input, requestId: randomUUID() },
+        scope,
+      ).action,
       "get",
     );
     assert.throws(() =>
-      f.runtime.journal.prepareOutgoing({
-        ...input,
-        targetDeviceId: f.device.deviceId,
-      }),
+      f.runtime.journal.prepareOutgoing(
+        { ...input, targetDeviceId: f.device.deviceId },
+        scope,
+      ),
     );
     await f.runtime.close();
     const recovered = new DeviceRuntime(
@@ -877,20 +883,33 @@ test("caller pins survive restart and uncertain re-submission becomes a query of
       join(f.directory, "journal.sqlite"),
     );
     try {
-      assert.equal(recovered.journal.prepareOutgoing(input).action, "get");
+      assert.equal(
+        recovered.journal.prepareOutgoing(input, scope).action,
+        "get",
+      );
       const busy = {
         ...input,
         requestId: randomUUID(),
         operationId: randomUUID(),
       };
-      assert.equal(recovered.journal.prepareOutgoing(busy).action, "run");
-      recovered.journal.completeOutgoing(busy, { status: "busy" });
-      assert.equal(recovered.journal.prepareOutgoing(busy).action, "run");
+      assert.equal(
+        recovered.journal.prepareOutgoing(busy, scope).action,
+        "run",
+      );
+      recovered.journal.completeOutgoing(busy, { status: "busy" }, scope);
+      assert.equal(
+        recovered.journal.prepareOutgoing(busy, scope).action,
+        "run",
+      );
       recovered.journal.completeOutgoing(
         { ...busy, action: "get" },
         { status: "denied" },
+        scope,
       );
-      assert.equal(recovered.journal.prepareOutgoing(busy).action, "get");
+      assert.equal(
+        recovered.journal.prepareOutgoing(busy, scope).action,
+        "get",
+      );
     } finally {
       await recovered.close();
     }

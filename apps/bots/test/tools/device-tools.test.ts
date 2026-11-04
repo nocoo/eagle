@@ -32,6 +32,7 @@ const directory = (): DeviceDirectory => ({
   localDeviceId: required(ids[0]),
   groupId: "group-test",
   revision: 1,
+  relayOrigin: "https://devices.example",
   devices: ids.map((deviceId, index) => ({
     deviceId,
     name: `Mac ${index}`,
@@ -63,7 +64,7 @@ const fixture = () => {
   const approvals: DeviceRequest[] = [];
   const finishes: DeviceResult[] = [];
   const port: SharedDevicePort = {
-    version: 1,
+    version: 2,
     status: async () => ({
       deviceId: view.localDeviceId,
       localReady: true,
@@ -223,7 +224,9 @@ test("a maximal escaped output keeps a complete original-ID receipt after the SD
 
 test("existing and new Bot adapters read the same changing four-member directory", async () => {
   const bench = fixture();
-  assert.equal(body(await bench.invoke("remote_status", {})).devices.length, 4);
+  const initial = body(await bench.invoke("remote_status", {}));
+  assert.equal(initial.devices.length, 4);
+  assert.equal(initial.relayOrigin, undefined);
   required(bench.view.devices[1]).name = "Renamed B";
   bench.view.revision++;
   const tools = required(deviceExtension({ botId: "new-bot", port: bench.port }).tools);
@@ -250,6 +253,7 @@ test("transmission is memoed first; lost replies and replay query the original t
   const args = { deviceId: ids[1], operation: { kind: "command", command: "pwd" } };
   const first = body(await bench.invoke("remote_execute", args, api));
   assert.equal(first.status, "unknown");
+  bench.view.relayOrigin = "https://other.example";
   required(bench.view.devices[1]).online = false;
   const replay = body(await bench.invoke("remote_execute", args, api));
   assert.equal(replay.operationId, first.operationId);
@@ -263,10 +267,39 @@ test("transmission is memoed first; lost replies and replay query the original t
     true,
   );
   assert.equal(
+    bench.calls.every((call) => call.relayOrigin === "https://devices.example"),
+    true,
+  );
+  assert.equal(
     body(await bench.invoke("remote_execute", { ...args, deviceId: ids[2] }, api)).error,
     "operation_binding_changed",
   );
   assert.equal(bench.calls.length, 2);
+});
+
+test("an operation memo without its relay origin is never sent or recreated", async () => {
+  const bench = fixture();
+  const { api, memos } = memoApi();
+  const operation = { kind: "command", command: "pwd" };
+  const original = {
+    requestId: randomUUID(),
+    operationId: randomUUID(),
+    targetDeviceId: ids[1],
+    sourceBotId: "bot-existing",
+    action: "run",
+    operation,
+    digest: operationDigest(operation),
+  };
+  memos.set("device.operation.v1", original);
+  memos.set("device.transmitted.v1", true);
+  const result = await bench.invoke("remote_execute", { deviceId: ids[1], operation }, api);
+  assert.equal(result.isError, true);
+  assert.equal(body(result).error, "relay_origin_unknown");
+  assert.equal(body(result).operationId, original.operationId);
+  assert.equal(body(result).targetDeviceId, original.targetDeviceId);
+  assert.equal(body(result).digest, original.digest);
+  assert.deepEqual(result.structuredOutput, body(result));
+  assert.equal(bench.calls.length, 0);
 });
 
 test("offline, unknown, unsupported, paused and refused approval never execute or choose another device", async () => {

@@ -188,7 +188,7 @@ struct BotsDaemonSupervisorTests {
         from: settings.baseURL.appendingPathComponent("v1/health"))
       #expect((response as? HTTPURLResponse)?.statusCode == 200)
       let health = try JSONDecoder().decode(DeviceJSON.self, from: data)
-      #expect(health["deviceAccess"]?["version"]?.number == 1)
+      #expect(health["deviceAccess"]?["version"]?.number == 2)
       #expect(!String(decoding: data, as: UTF8.self).contains(configuration.socketPath))
       #expect(
         FileManager.default.fileExists(

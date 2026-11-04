@@ -54,6 +54,7 @@ export class DeviceCloud {
     privateRuntime: DeviceRuntime,
     signer: (payload: string) => Promise<string>,
     onStatus?: (status: "online" | "offline") => void,
+    rememberCredential?: (credential: string) => void,
   ) {
     this.device = device;
     const url = new URL(baseUrl);
@@ -69,10 +70,15 @@ export class DeviceCloud {
     this.runtime = privateRuntime;
     this.signer = signer;
     this.onStatus = onStatus;
+    this.rememberCredential = rememberCredential;
   }
   private runtime: DeviceRuntime;
   private signer: (payload: string) => Promise<string>;
   private onStatus?: (status: "online" | "offline") => void;
+  private rememberCredential?: (credential: string) => void;
+  get origin(): string {
+    return this.baseUrl;
+  }
   secrets(): string[] {
     return this.token ? [this.token] : [];
   }
@@ -99,6 +105,7 @@ export class DeviceCloud {
     body?: unknown,
     token?: string,
   ): Promise<Record<string, unknown>> {
+    if (this.stopped) throw new Error("device_cloud_stopped");
     const response = await fetch(`${this.baseUrl}${DEVICE_PREFIX}${path}`, {
       method: body === undefined ? "GET" : "POST",
       headers: {
@@ -112,6 +119,7 @@ export class DeviceCloud {
       ]),
     });
     const result = (await response.json()) as Record<string, unknown>;
+    if (this.stopped) throw new Error("device_cloud_stopped");
     if (!response.ok) {
       if (response.status === 401) this.expires = 0;
       throw new Error(
@@ -123,6 +131,7 @@ export class DeviceCloud {
     return result;
   }
   private async authenticate(): Promise<string> {
+    if (this.stopped) throw new Error("device_cloud_stopped");
     if (this.token && this.expires > Date.now() + 30000) return this.token;
     if (this.session) return this.session;
     this.session = (async () => {
@@ -155,6 +164,7 @@ export class DeviceCloud {
       )
         throw new Error("unbound_challenge");
       const signature = await this.signer(challenge.payload);
+      if (this.stopped) throw new Error("device_cloud_stopped");
       const complete = await this.http("/register/complete", {
         challengeId: challenge.challengeId,
         signature,
@@ -162,6 +172,8 @@ export class DeviceCloud {
       const session = z
         .object({ sessionToken: z.string().max(200), expiresAt: z.number() })
         .parse(complete);
+      this.rememberCredential?.(session.sessionToken);
+      if (this.stopped) throw new Error("device_cloud_stopped");
       this.token = session.sessionToken;
       this.expires = session.expiresAt;
       return this.token;
@@ -475,6 +487,8 @@ export class DeviceCloud {
     clearInterval(this.heartbeat);
     this.agent?.terminate();
     for (const caller of this.callers) caller.terminate();
+    this.token = "";
+    this.expires = 0;
     this.state("offline");
   }
 }

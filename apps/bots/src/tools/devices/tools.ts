@@ -71,6 +71,7 @@ export async function bindDeviceOperation(
   operation: DeviceOperation,
   api: ToolExecutionApi,
   context: Context,
+  relayOrigin?: string,
 ): Promise<DeviceRequest> {
   const digest = operationDigest(operation);
   const candidate = {
@@ -78,6 +79,7 @@ export async function bindDeviceOperation(
     operationId: randomUUID(),
     targetDeviceId: target,
     sourceBotId: options.botId,
+    ...(relayOrigin === undefined ? {} : { relayOrigin }),
     action: "run" as const,
     operation,
     digest,
@@ -91,6 +93,7 @@ export async function bindDeviceOperation(
     stored.targetDeviceId !== target ||
     stored.digest !== digest ||
     stored.sourceBotId !== options.botId ||
+    stored.relayOrigin !== relayOrigin ||
     stored.operation === undefined ||
     operationDigest(stored.operation) !== digest
   ) {
@@ -123,8 +126,8 @@ async function authorize(
 ): Promise<DeviceRequest> {
   const target = directory.devices.find((device) => device.deviceId === request.targetDeviceId);
   if (target === undefined) throw new Error("target_not_in_directory");
-  if (target.deviceId !== directory.localDeviceId && target.online !== true)
-    throw new Error("target_offline_or_unknown");
+  if (target.deviceId === directory.localDeviceId) throw new Error("local_target_use_native_tools");
+  if (target.online !== true) throw new Error("target_offline_or_unknown");
   if (
     request.operation?.kind !== "native" &&
     !target.capabilities?.includes(request.operation?.kind ?? "")
@@ -162,7 +165,10 @@ export const deviceExtension = (options: DeviceToolsOptions) =>
         replay: "safe",
         async execute(_args, _api, context) {
           try {
-            return textResult(await options.port.directory(context.abortSignal));
+            const { relayOrigin: _origin, ...directory } = await options.port.directory(
+              context.abortSignal,
+            );
+            return textResult(directory);
           } catch (error) {
             return textResult({ error: safeError(error) }, true);
           }
@@ -182,12 +188,32 @@ export const deviceExtension = (options: DeviceToolsOptions) =>
         async execute(args, api, context) {
           let request: DeviceRequest | undefined;
           try {
+            const previous = (await api.memo("device.operation.v1", context)) as
+              | DeviceRequest
+              | undefined;
+            let directory: DeviceDirectory | undefined;
+            if (previous && !previous.relayOrigin) {
+              if (
+                previous.targetDeviceId !== args.deviceId ||
+                previous.sourceBotId !== options.botId ||
+                previous.digest !== operationDigest(args.operation) ||
+                previous.operation === undefined ||
+                operationDigest(previous.operation) !== previous.digest
+              )
+                throw new Error("operation_binding_changed");
+              request = previous;
+              throw new Error("relay_origin_unknown");
+            }
+            if (!previous) directory = await options.port.directory(context.abortSignal);
+            const origin = previous?.relayOrigin ?? directory?.relayOrigin;
+            if (!origin) throw new Error("remote_directory_unavailable");
             request = await bindDeviceOperation(
               options,
               args.deviceId,
               args.operation,
               api,
               context,
+              origin,
             );
             if (await api.memo("device.transmitted.v1", context)) {
               return receipt(
@@ -195,7 +221,8 @@ export const deviceExtension = (options: DeviceToolsOptions) =>
                 await options.port.request({ ...request, action: "get" }, context.abortSignal),
               );
             }
-            const directory = await options.port.directory(context.abortSignal);
+            directory ??= await options.port.directory(context.abortSignal);
+            if (directory.relayOrigin !== origin) throw new Error("remote_configuration_changed");
             request = await authorize(options, directory, request, context);
             await api.memo("device.transmitted.v1", true, context);
             return receipt(request, await options.port.request(request, context.abortSignal));

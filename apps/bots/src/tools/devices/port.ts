@@ -34,6 +34,8 @@ export const directorySchema = z.object({
   groupId: z.string().nullable(),
   revision: z.number(),
   observationRevision: z.string().optional(),
+  cloudStatus: z.enum(["online", "offline", "unconfigured"]).optional(),
+  relayOrigin: z.url().optional(),
   devices: z.array(deviceSchema),
 });
 export const resultSchema = z.object({
@@ -61,6 +63,7 @@ export type DeviceRequest = {
   operationId: string;
   targetDeviceId: string;
   sourceBotId: string;
+  relayOrigin?: string;
   action: "run" | "get" | "cancel";
   operation?: DeviceOperation;
   digest?: string;
@@ -76,7 +79,7 @@ export type NativeAdmission =
       close(): void;
     };
 export interface SharedDevicePort {
-  readonly version: 1;
+  readonly version: 2;
   status(signal?: AbortSignal): Promise<DeviceLocalStatus>;
   directory(signal?: AbortSignal): Promise<DeviceDirectory>;
   request(request: DeviceRequest, signal?: AbortSignal): Promise<DeviceResult>;
@@ -103,7 +106,7 @@ export const operationDigest = (operation: DeviceOperation): string =>
   createHash("sha256").update(canonicalJSON(operation)).digest("hex");
 
 export class SocketDevicePort implements SharedDevicePort {
-  readonly version = 1;
+  readonly version = 2;
   readonly #path: string;
   constructor(path: string) {
     this.#path = path;

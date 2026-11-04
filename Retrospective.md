@@ -1256,7 +1256,14 @@ later resources from closing, and synchronous Swift builds had no timeout. The
 fixture now attempts every cleanup, retains failures and bounds both Swift commands.
 The first fix threw from `finally` and the staged Biome hook rejected it; error
 aggregation now happens after cleanup, and the check runs before committing.
-Cleanup fault injection is not yet tested.
+Cleanup fault injection is not yet tested. The later relay-origin integration test
+reintroduced the same `finally` throw and the root lint caught it again. It now
+uses the existing post-cleanup aggregation pattern; check the established fixture
+before writing another multi-resource cleanup, not only after the gate fails.
+The Bots gate then found an unsorted new import: `biome format` does not run
+import organization. Run the package's check-only lint before the expensive gate.
+A new Swift red test initially referenced nonexistent fixture names and failed to
+compile; correcting the test precedes collecting behavioral red evidence.
 
 ## 2026-11-04 — Keep time-dependent secret tests deterministic
 
@@ -1266,3 +1273,9 @@ and checks both the remaining and expired boundaries; the test passed while the
 new device-startup regressions remained red. A failing host assertion initially
 printed the synthetic identity object's debug structure, though no key bytes;
 the test now compares extracted status values instead of rendering the host.
+
+The first targeted Bots run was invoked from the repository root, so two
+process tests looked for `scripts/serve.ts` in the wrong directory. Running the
+same four complete test files from `apps/bots` passed all 44 tests and typecheck.
+Run package-owned process tests from their package root; do not treat a cwd error
+as a product failure.

@@ -233,7 +233,7 @@ public final class BotsDaemonSupervisor: ObservableObject {
     guard let deviceSocketPath else { return !packaged }
     let binding = SHA256.hash(data: Data(deviceSocketPath.utf8))
       .map { String(format: "%02x", $0) }.joined()
-    return health.deviceAccess?.version == 1 && health.deviceAccess?.binding == binding
+    return health.deviceAccess?.version == 2 && health.deviceAccess?.binding == binding
   }
 
   private func probe() async -> Health? {

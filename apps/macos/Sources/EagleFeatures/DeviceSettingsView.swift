@@ -116,7 +116,7 @@ public struct DeviceSettingsView: View {
           "服务地址",
           detail: model.needsServiceAddress
             ? "本机工具仍可用。填写你自己部署的 relay 地址后才能连接远程设备；App 不自带默认地址。"
-            : "设备服务地址由你配置，App 不内置默认值；修改后会重启本机服务。"
+            : "设备服务地址由你配置，App 不内置默认值；修改地址不会停止本机工具。"
         ) {
           EmptyView()
         }

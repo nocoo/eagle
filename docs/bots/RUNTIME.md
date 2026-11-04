@@ -530,11 +530,13 @@ None of them may change v1 semantics for existing fields.
 ## Recovery semantics
 
 Shared device access uses `remote_status`, `remote_execute(deviceId, operation)`
-and `remote_operation(deviceId, operationId, action)` from the injected v1 port.
+and `remote_operation(deviceId, operationId, action)` from the injected v2 device port.
 The model reads current names, online evidence and capabilities before choosing
 a remote target; local coding tools keep the local execution environment. A
-durable tool memo records the target, full operation, digest and operation ID
-before transmission. Retries query that ID; they never resend unknown effects or
+durable tool memo records the target, full operation, digest, operation ID and
+validated relay origin before transmission. The local service binds the operation
+and origin atomically; an operation cannot be claimed by another relay. Retries
+query the original ID at its original relay; they never resend unknown effects or
 substitute a local target. A busy response is unaccepted and creates no queue.
 All native coding tools and `list` cross the same local policy/admission seam
 when a device port is configured. They obtain the local device ID and policy from

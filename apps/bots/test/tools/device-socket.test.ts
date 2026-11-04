@@ -44,6 +44,26 @@ const fixture = async (handle: (socket: Socket, request: Record<string, unknown>
   };
 };
 
+test("device port rejects a response from an older protocol version", async () => {
+  const status = {
+    deviceId: randomUUID(),
+    localReady: true,
+    cloudStatus: "unconfigured",
+    policy: { mode: "always-ask", version: 1 },
+  };
+  let requestedVersion: unknown;
+  const bench = await fixture((socket, frame) => {
+    requestedVersion = frame.version;
+    socket.write(`${JSON.stringify({ version: 1, requestId: frame.requestId, result: status })}\n`);
+  });
+  try {
+    await assert.rejects(new SocketDevicePort(bench.path).status(), /invalid_device_response/);
+    assert.equal(requestedVersion, 2);
+  } finally {
+    await bench.close();
+  }
+});
+
 test("local status validates the policy without querying the directory", async () => {
   const status = {
     deviceId: randomUUID(),
@@ -55,7 +75,7 @@ test("local status validates the policy without querying the directory", async (
   const bench = await fixture((socket, frame) => {
     assert.equal(frame.method, "status");
     socket.write(
-      `${JSON.stringify({ requestId: frame.requestId, result: invalid ? { ...status, policy: null } : status })}\n`,
+      `${JSON.stringify({ version: 2, requestId: frame.requestId, result: invalid ? { ...status, policy: null } : status })}\n`,
     );
   });
   try {
@@ -91,7 +111,9 @@ test("typed approval decodes the host envelope and preserves its operation bindi
   const bench = await fixture((socket, frame) => {
     assert.equal(frame.method, "approval.request");
     assert.deepEqual((frame.params as { request: unknown }).request, request);
-    socket.write(`${JSON.stringify({ requestId: frame.requestId, result: { approval } })}\n`);
+    socket.write(
+      `${JSON.stringify({ version: 2, requestId: frame.requestId, result: { approval } })}\n`,
+    );
   });
   try {
     assert.deepEqual(await new SocketDevicePort(bench.path).approve(request, 2), approval);
@@ -100,14 +122,14 @@ test("typed approval decodes the host envelope and preserves its operation bindi
   }
 });
 
-test("device v1 JSONL keeps split Unicode and correlates out-of-order replies", async () => {
+test("device v2 JSONL keeps split Unicode and correlates out-of-order replies", async () => {
   const requests: Record<string, unknown>[] = [];
   const bench = await fixture((socket, request) => {
     requests.push(request);
     if (requests.length === 2) {
       for (const value of [...requests].reverse()) {
         const frame = Buffer.from(
-          `${JSON.stringify({ requestId: value.requestId, result: { name: "书房 Mac", method: value.method } })}\n`,
+          `${JSON.stringify({ version: 2, requestId: value.requestId, result: { name: "书房 Mac", method: value.method } })}\n`,
         );
         const split = frame.indexOf(Buffer.from("书")) + 1;
         socket.write(frame.subarray(0, split));
@@ -134,7 +156,7 @@ test("device v1 JSONL keeps split Unicode and correlates out-of-order replies", 
 
 test("device channel refuses wrong IDs, oversized frames and management methods", async () => {
   for (const response of [
-    `${JSON.stringify({ requestId: randomUUID(), result: {} })}\n`,
+    `${JSON.stringify({ version: 2, requestId: randomUUID(), result: {} })}\n`,
     "x".repeat(524289),
     "not-json\n",
   ]) {
@@ -190,7 +212,7 @@ test("device port fails closed on cancellation, EOF, timeout and broad socket pe
 test("device errors are stable codes without copying arbitrary server content", async () => {
   const bench = await fixture((socket, request) =>
     socket.write(
-      `${JSON.stringify({ requestId: request.requestId, error: "private command or secret" })}\n`,
+      `${JSON.stringify({ version: 2, requestId: request.requestId, error: "private command or secret" })}\n`,
     ),
   );
   const channel = new DeviceChannel(bench.path);

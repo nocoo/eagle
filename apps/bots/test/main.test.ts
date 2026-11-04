@@ -539,7 +539,7 @@ test("health identifies the configured shared device port even while that servic
     const response = await fetch(`http://127.0.0.1:${daemon.port}/v1/health`);
     const health = (await response.json()) as { deviceAccess?: unknown };
     assert.deepEqual(health.deviceAccess, {
-      version: 1,
+      version: 2,
       binding: createHash("sha256").update(socket).digest("hex"),
     });
     assert.ok(!JSON.stringify(health).includes(socket));
