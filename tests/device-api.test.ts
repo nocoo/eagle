@@ -38,15 +38,53 @@ before(async () => {
     entry,
     `import worker,{DeviceRegistry as Registry,DeviceExecution as Execution} from "../../apps/web/src/worker/device-service.ts";
 export class DeviceExecution extends Execution {
- fetch(request){const url=new URL(request.url);if(url.pathname==='/test-close'){this.agent?.socket.close(Number(url.searchParams.get('code')),url.searchParams.get('reason'));return new Response('closed');}return super.fetch(request);}
+ fetch(request){const url=new URL(request.url);if(url.pathname==='/test-close'){this.agent?.socket.close(Number(url.searchParams.get('code')),url.searchParams.get('reason'));return new Response('closed');}if(url.pathname==='/test-agent-state')return Response.json({hasToken:typeof this.agent?.token==='string',hasReference:typeof this.agent?.reference?.sessionHash==='string'});return super.fetch(request);}
  observation(){const observation=super.observation();
   if(this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_observation_delay'").toArray().length){this.ctx.storage.sql.exec("UPDATE test_observation_delay SET started=1");return new Promise(resolve=>setTimeout(()=>resolve(observation),500));}
   return observation;
  }
 }
 export class DeviceRegistry extends Registry {
+ async operationGate(sourceId,targetId){
+  if(!this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_operation_confirmation'").toArray().length)return false;
+  const row=this.ctx.storage.sql.exec("SELECT sourceId FROM test_operation_confirmation WHERE sourceId=? AND targetId=?",sourceId,targetId??'').toArray()[0];
+  if(!row)return false;
+  this.ctx.storage.sql.exec("UPDATE test_operation_confirmation SET started=1 WHERE sourceId=?",sourceId);
+  const deadline=Date.now()+5000;
+  while(!this.ctx.storage.sql.exec("SELECT released FROM test_operation_confirmation WHERE sourceId=?",sourceId).toArray()[0]?.released){if(Date.now()>deadline)throw new Error('test operation gate timeout');await new Promise(resolve=>setTimeout(resolve,10));}
+  return true;
+ }
+ async bindTargetSession(token,targetId,previous){
+  const result=await super.bindTargetSession(token,targetId,previous);
+  if(result.ok&&this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_check_delay'").toArray().length){
+   const delayed=this.ctx.storage.sql.exec("SELECT deviceId FROM test_check_delay WHERE deviceId=?",result.reference.deviceId).toArray()[0];
+   if(delayed){this.ctx.storage.sql.exec("UPDATE test_check_delay SET started=1 WHERE deviceId=?",delayed.deviceId);await new Promise(resolve=>setTimeout(resolve,500));}
+  }
+  return result;
+ }
+ async checkSessionReference(reference,token){
+  const result=await super.checkSessionReference(reference,token);
+  if(result.ok&&token===undefined&&this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_reference_precheck'").toArray().length){
+   const row=this.ctx.storage.sql.exec("SELECT targetId FROM test_reference_precheck WHERE targetId=?",result.target.deviceId).toArray()[0];
+   if(row){this.ctx.storage.sql.exec("UPDATE test_reference_precheck SET started=1 WHERE targetId=?",row.targetId);
+    const deadline=Date.now()+5000;
+    while(!this.ctx.storage.sql.exec("SELECT released FROM test_reference_precheck WHERE targetId=?",row.targetId).toArray()[0]?.released){if(Date.now()>deadline)throw new Error('test precheck gate timeout');await new Promise(resolve=>setTimeout(resolve,10));}
+   }
+  }
+  if(result.ok&&token&&await this.operationGate(result.source.deviceId,result.target.deviceId))return super.checkSessionReference(reference,token);
+  if(result.ok&&token&&this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_policy_confirmation'").toArray().length){
+   const delayed=this.ctx.storage.sql.exec("SELECT sourceId FROM test_policy_confirmation WHERE sourceId=? AND targetId=?",result.source.deviceId,result.target.deviceId).toArray()[0];
+   if(delayed){this.ctx.storage.sql.exec("UPDATE test_policy_confirmation SET started=1 WHERE sourceId=?",delayed.sourceId);
+    const deadline=Date.now()+5000;
+    while(!this.ctx.storage.sql.exec("SELECT released FROM test_policy_confirmation WHERE sourceId=?",delayed.sourceId).toArray()[0]?.released){if(Date.now()>deadline)throw new Error('test confirmation gate timeout');await new Promise(resolve=>setTimeout(resolve,10));}
+    return super.checkSessionReference(reference,token);
+   }
+  }
+  return result;
+ }
  async sessionDigest(token){
   const hash=await super.sessionDigest(token);
+  if(this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_digest_failure'").toArray().length&&this.ctx.storage.sql.exec("SELECT hash FROM test_digest_failure WHERE hash=?",hash).toArray().length)throw new Error('test digest failure');
   if(this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_reference_digest'").toArray().length){
    const row=this.ctx.storage.sql.exec("SELECT hash FROM test_reference_digest WHERE hash=?",hash).toArray()[0];
    if(row){this.ctx.storage.sql.exec("UPDATE test_reference_digest SET started=1 WHERE hash=?",hash);
@@ -57,6 +95,7 @@ export class DeviceRegistry extends Registry {
   return hash;
  }
  async check(token,targetId){const result=await super.check(token,targetId);
+  if(result.ok&&targetId&&await this.operationGate(result.source.deviceId,targetId))return super.check(token,targetId);
   if(result.ok&&targetId&&result.source.deviceId!==targetId&&this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_revoke_after_check'").toArray().length){
    const row=this.ctx.storage.sql.exec("SELECT deviceId FROM test_revoke_after_check WHERE deviceId=?",result.source.deviceId).toArray()[0];
    if(row)this.ctx.storage.transactionSync(()=>{this.ctx.storage.sql.exec("DELETE FROM test_revoke_after_check WHERE deviceId=?",row.deviceId);this.ctx.storage.sql.exec("UPDATE devices SET groupId=NULL,membershipEpoch=membershipEpoch+1,credentialVersion=credentialVersion+1 WHERE deviceId=?",row.deviceId);});
@@ -560,7 +599,7 @@ test("remote policy confirmation rejects a target removed and rejoined during so
     await storage.exec("UPDATE test_policy_confirmation SET released=1");
     const result = await response;
     assert.equal(result.result, undefined, "revoked target cannot confirm");
-    assert.equal(result.error, "revoked_agent");
+    assert.equal(result.error, "policy_result_unknown_refresh_target");
     assert.equal(
       (await source.call("policy.set", input)).error,
       "policy_request_already_sent_refresh_target",
@@ -1496,6 +1535,131 @@ test("revocation after a target side effect returns unknown without exposing out
   }
 });
 
+test("a target rejoining during result authorization cannot expose the old result", {
+  timeout: 60000,
+}, async () => {
+  const { canonicalDeviceJSON, deviceDigest } = await import(
+    "../packages/contracts/src/devices.ts"
+  );
+  const [a, b] = await Promise.all([
+    identity("result-rejoin-a"),
+    identity("result-rejoin-b"),
+  ]);
+  await pair(a.token, await code(b.token));
+  const agent = await rawSocket(b.deviceId, "agent");
+  let caller: NativeWebSocket | undefined;
+  let response:
+    | Promise<{ result: { status: string; error?: string; output?: string } }>
+    | undefined;
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "DeviceRegistry",
+    { name: "registry" },
+  );
+  const marker = join(root, `result-rejoin-${randomUUID()}`);
+  try {
+    const ready = frame<{ type: string }>(agent);
+    agent.send(JSON.stringify(authentication(b.token)));
+    assert.equal((await ready).type, "ready");
+    caller = await rawSocket(b.deviceId, "request");
+    const operation = { kind: "command" as const, command: "fixture" };
+    const request = {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: b.deviceId,
+      action: "run" as const,
+      operation,
+      digest: await deviceDigest(canonicalDeviceJSON(operation)),
+    };
+    const forwarded = frame<{ request: OperationRequest }>(agent);
+    response = frame<{
+      result: { status: string; error?: string; output?: string };
+    }>(caller);
+    caller.send(
+      JSON.stringify({ type: "request", sessionToken: a.token, request }),
+    );
+    const accepted = await forwarded;
+    writeFileSync(marker, "one side effect");
+    await storage.exec(
+      "CREATE TABLE test_operation_confirmation(sourceId TEXT PRIMARY KEY,targetId TEXT,started INTEGER DEFAULT 0,released INTEGER DEFAULT 0)",
+    );
+    await storage.exec(
+      "INSERT INTO test_operation_confirmation(sourceId,targetId) VALUES(?,?)",
+      a.deviceId,
+      b.deviceId,
+    );
+    agent.send(
+      JSON.stringify({
+        type: "result",
+        requestId: accepted.request.requestId,
+        operationId: request.operationId,
+        targetDeviceId: b.deviceId,
+        result: { status: "completed", output: "fixture-private" },
+      }),
+    );
+    const deadline = Date.now() + 2000;
+    let started = false;
+    while (Date.now() < deadline) {
+      const rows = await storage.exec(
+        "SELECT started FROM test_operation_confirmation WHERE sourceId=?",
+        a.deviceId,
+      );
+      if (rows[0]?.started === 1) {
+        started = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(started, true, "result authorization must reach the gate");
+    assert.equal(
+      (await call("/members/remove", a.token, { deviceId: b.deviceId })).status,
+      200,
+    );
+    const challenge = await call("/register/challenge", undefined, {
+      deviceId: b.deviceId,
+      publicKey: b.publicKey,
+      name: "result-rejoin-b",
+      platform: "darwin",
+      arch: "arm64",
+    });
+    assert.equal(challenge.status, 200);
+    const refreshed = await call("/register/complete", undefined, {
+      challengeId: challenge.body.challengeId,
+      signature: sign(
+        null,
+        Buffer.from(challenge.body.payload),
+        b.keys.privateKey,
+      ).toString("base64url"),
+    });
+    assert.equal(refreshed.status, 200);
+    assert.equal(
+      (await pair(refreshed.body.sessionToken, await code(a.token))).status,
+      200,
+    );
+    await storage.exec(
+      "UPDATE test_operation_confirmation SET released=1 WHERE sourceId=?",
+      a.deviceId,
+    );
+    const result = await response;
+    assert.equal(result.result.status, "unknown");
+    assert.equal(result.result.error, "membership_changed_query_original_id");
+    assert.equal(result.result.output, undefined);
+    assert.equal(readFileSync(marker, "utf8"), "one side effect");
+  } finally {
+    await storage
+      .exec(
+        "UPDATE test_operation_confirmation SET released=1 WHERE sourceId=?",
+        a.deviceId,
+      )
+      .catch(() => undefined);
+    await response?.catch(() => undefined);
+    await storage.exec("DROP TABLE IF EXISTS test_operation_confirmation");
+    caller?.terminate();
+    agent.terminate();
+    rmSync(marker, { force: true });
+  }
+});
+
 test("slow management body cannot outlive session revocation or expiry", async () => {
   for (const expire of [false, true]) {
     const [a, b] = await Promise.all([
@@ -1895,6 +2059,218 @@ test("failed redemption attempts persist their rate budget without changing memb
     )[0].n,
     0,
   );
+});
+
+test("target expiry during final authorization does not invalidate the source session", async () => {
+  const { canonicalDeviceJSON, deviceDigest } = await import(
+    "../packages/contracts/src/devices.ts"
+  );
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "DeviceRegistry",
+    { name: "registry" },
+  );
+  for (const mode of ["operation", "policy"] as const) {
+    const [a, b] = await Promise.all([
+      identity(`target-expiry-a-${mode}`),
+      identity(`target-expiry-b-${mode}`),
+    ]);
+    await pair(a.token, await code(b.token));
+    const agent = await rawSocket(b.deviceId, "agent");
+    let caller: NativeWebSocket | undefined;
+    let pending: Promise<unknown> | undefined;
+    let closed: Promise<{ code: number; reason: string }> | undefined;
+    try {
+      const ready = frame<{ type: string }>(agent);
+      agent.send(
+        JSON.stringify({
+          ...authentication(b.token),
+          capabilities: ["command", "policy.manage"],
+        }),
+      );
+      assert.equal((await ready).type, "ready");
+      await storage.exec(
+        "CREATE TABLE test_reference_precheck(targetId TEXT PRIMARY KEY,started INTEGER DEFAULT 0,released INTEGER DEFAULT 0)",
+      );
+      await storage.exec(
+        "INSERT INTO test_reference_precheck(targetId) VALUES(?)",
+        b.deviceId,
+      );
+      if (mode === "operation") {
+        caller = await rawSocket(b.deviceId, "request");
+        closed = new Promise((resolve) =>
+          caller?.once("close", (code, reason) =>
+            resolve({ code, reason: reason.toString() }),
+          ),
+        );
+        const operation = { kind: "command" as const, command: "fixture" };
+        pending = frame(caller);
+        caller.send(
+          JSON.stringify({
+            type: "request",
+            sessionToken: a.token,
+            request: {
+              requestId: randomUUID(),
+              operationId: randomUUID(),
+              targetDeviceId: b.deviceId,
+              action: "run",
+              operation,
+              digest: await deviceDigest(canonicalDeviceJSON(operation)),
+            },
+          }),
+        );
+      } else {
+        pending = call("/policy", a.token, {
+          deviceId: b.deviceId,
+          mode: "paused",
+          requestId: randomUUID(),
+        });
+      }
+      const deadline = Date.now() + 2000;
+      let started = false;
+      while (Date.now() < deadline) {
+        const rows = await storage.exec(
+          "SELECT started FROM test_reference_precheck WHERE targetId=?",
+          b.deviceId,
+        );
+        if (rows[0]?.started === 1) {
+          started = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.equal(started, true, "target precheck barrier was not reached");
+      const targetHash = createHash("sha256").update(b.token).digest("hex");
+      await storage.exec(
+        "UPDATE sessions SET expires=? WHERE hash=?",
+        Date.now() - 1,
+        targetHash,
+      );
+      await storage.exec(
+        "UPDATE test_reference_precheck SET released=1 WHERE targetId=?",
+        b.deviceId,
+      );
+      const outcome = await pending;
+      if (mode === "operation") {
+        assert.equal(
+          (outcome as { result: { status: string } }).result.status,
+          "denied",
+        );
+        const closure = await closed;
+        assert.equal(closure?.code, 1000);
+        assert.notEqual(closure?.reason, "unauthorized_caller");
+      } else {
+        assert.equal((outcome as { status: number }).status, 403);
+      }
+      assert.equal((await call("/directory", a.token)).status, 200);
+    } finally {
+      await storage
+        .exec(
+          "UPDATE test_reference_precheck SET released=1 WHERE targetId=?",
+          b.deviceId,
+        )
+        .catch(() => undefined);
+      await pending?.catch(() => undefined);
+      await storage.exec("DROP TABLE IF EXISTS test_reference_precheck");
+      caller?.terminate();
+      agent.terminate();
+    }
+  }
+});
+
+test("reference authorization failure does not invalidate either valid credential", async () => {
+  const { canonicalDeviceJSON, deviceDigest } = await import(
+    "../packages/contracts/src/devices.ts"
+  );
+  const [a, b] = await Promise.all([
+    identity("ref-failure-a"),
+    identity("ref-failure-b"),
+  ]);
+  await pair(a.token, await code(b.token));
+  const agent = await rawSocket(b.deviceId, "agent");
+  let caller: NativeWebSocket | undefined;
+  const storage = await mf.unsafeGetDurableObjectStorage(
+    "eagle",
+    "DeviceRegistry",
+    { name: "registry" },
+  );
+  try {
+    const ready = frame<{ type: string }>(agent);
+    agent.send(
+      JSON.stringify({
+        ...authentication(b.token),
+        capabilities: ["command", "policy.manage"],
+      }),
+    );
+    assert.equal((await ready).type, "ready");
+    await storage.exec(
+      "CREATE TABLE test_digest_failure(hash TEXT PRIMARY KEY)",
+    );
+    await storage.exec(
+      "INSERT INTO test_digest_failure(hash) VALUES(?)",
+      createHash("sha256").update(a.token).digest("hex"),
+    );
+    caller = await rawSocket(b.deviceId, "request");
+    const closed = new Promise<{ code: number }>((resolve) =>
+      caller?.once("close", (code) => resolve({ code })),
+    );
+    const response = frame<{ result: { status: string } }>(caller);
+    const operation = { kind: "command" as const, command: "fixture" };
+    caller.send(
+      JSON.stringify({
+        type: "request",
+        sessionToken: a.token,
+        request: {
+          requestId: randomUUID(),
+          operationId: randomUUID(),
+          targetDeviceId: b.deviceId,
+          action: "run",
+          operation,
+          digest: await deviceDigest(canonicalDeviceJSON(operation)),
+        },
+      }),
+    );
+    assert.equal((await response).result.status, "denied");
+    assert.equal((await closed).code, 1000);
+    assert.equal(
+      (
+        await call("/policy", a.token, {
+          deviceId: b.deviceId,
+          mode: "paused",
+          requestId: randomUUID(),
+        })
+      ).status,
+      503,
+    );
+    assert.equal((await call("/directory", a.token)).status, 200);
+    assert.equal((await call("/directory", b.token)).status, 200);
+  } finally {
+    await storage.exec("DROP TABLE IF EXISTS test_digest_failure");
+    caller?.terminate();
+    agent.terminate();
+  }
+});
+
+test("target relay retains an internal session reference instead of the bearer", async () => {
+  const target = await identity("reference-target");
+  const socket = await rawSocket(target.deviceId, "agent");
+  try {
+    const ready = frame<{ type: string }>(socket);
+    socket.send(JSON.stringify(authentication(target.token)));
+    assert.equal((await ready).type, "ready");
+    const namespace = (await mf.getDurableObjectNamespace(
+      "DEVICE_EXECUTION",
+      "eagle",
+    )) as unknown as DurableObjectNamespace;
+    const execution = namespace.get(namespace.idFromName(target.deviceId));
+    const response = await execution.fetch("https://test/test-agent-state");
+    assert.deepEqual(await response.json(), {
+      hasToken: false,
+      hasReference: true,
+    });
+  } finally {
+    socket.terminate();
+  }
 });
 
 test("accepted uppercase UUIDs use canonical identity and the execution route", async () => {

@@ -13,7 +13,7 @@ import {
   type PolicySetResult,
   verifyApproval,
 } from "../../../../packages/contracts/src/devices.ts";
-import { deviceJSON } from "./device-registry.ts";
+import { type DeviceSessionReference, deviceJSON } from "./device-registry.ts";
 import type { DeviceServiceEnv } from "./device-service.ts";
 
 const authFrame = z.strictObject({
@@ -41,7 +41,7 @@ const resultFrame = z.strictObject({
 });
 type Agent = {
   socket: WebSocket;
-  token: string;
+  reference: DeviceSessionReference;
   deviceId: string;
   expires: number;
   credentialVersion: number;
@@ -149,10 +149,16 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
       return { error: "target_offline", status: 503 };
     if (!this.observation().capabilities?.includes("policy.manage"))
       return { error: "target_management_unsupported", status: 409 };
-    const target = await registry.check(agent.token, request.deviceId);
-    if (!target.ok) return { error: "revoked_agent", status: 403 };
-    const final = await registry.check(token, request.deviceId);
-    if (!final.ok) return { error: final.error, status: final.status };
+    const target = await registry.checkSessionReference(agent.reference);
+    if (!target.ok)
+      return target.subject === "target"
+        ? { error: "revoked_agent", status: 403 }
+        : { error: target.error, status: target.status };
+    const final = await registry.checkSessionReference(agent.reference, token);
+    if (!final.ok)
+      return final.subject === "target"
+        ? { error: "revoked_agent", status: 403 }
+        : { error: final.error, status: final.status };
     if (
       this.agent !== agent ||
       agent.expires <= Date.now() ||
@@ -249,20 +255,23 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
               const auth = authFrame.parse(data);
               const checked = await this.env.DEVICE_REGISTRY.getByName(
                 "registry",
-              ).check(auth.sessionToken, targetId);
+              ).bindTargetSession(auth.sessionToken, targetId);
               if (!live()) return;
-              if (!checked.ok || checked.source.deviceId !== targetId)
-                throw new DeviceAuthenticationError("unauthorized_agent");
+              if (!checked.ok) {
+                if (checked.status === 401)
+                  throw new DeviceAuthenticationError("unauthorized_agent");
+                throw new Error("device_authorization_unavailable");
+              }
               if (this.agent) {
                 this.agent.socket.close(1008, "agent_replaced");
                 this.failPending("agent_replaced");
               }
               this.agent = {
                 socket,
-                token: auth.sessionToken,
+                reference: checked.reference,
                 deviceId: targetId,
                 expires: Date.now() + 30000,
-                credentialVersion: checked.source.credentialVersion,
+                credentialVersion: checked.reference.credentialVersion,
               };
               authenticated = true;
               clearTimeout(timeout);
@@ -272,12 +281,16 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
             }
             if (this.agent?.socket !== socket)
               throw new Error("agent_replaced");
+            const selectedAgent = this.agent;
             const checked = await this.env.DEVICE_REGISTRY.getByName(
               "registry",
-            ).check(this.agent.token, targetId);
-            if (!live() || this.agent?.socket !== socket) return;
-            if (!checked.ok)
-              throw new DeviceAuthenticationError("revoked_agent");
+            ).checkSessionReference(selectedAgent.reference);
+            if (!live() || this.agent !== selectedAgent) return;
+            if (!checked.ok) {
+              if (checked.subject === "target" && checked.status === 401)
+                throw new DeviceAuthenticationError("revoked_agent");
+              throw new Error("device_authorization_unavailable");
+            }
             const beat = heartbeat.safeParse(data);
             if (beat.success) {
               this.observe(beat.data.capabilities, beat.data.policy);
@@ -296,7 +309,7 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
                 return;
               const fresh = await this.env.DEVICE_REGISTRY.getByName(
                 "registry",
-              ).check(pending.token, targetId);
+              ).checkSessionReference(pending.agent.reference, pending.token);
               if (
                 !live() ||
                 this.agent !== pending.agent ||
@@ -307,10 +320,16 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
               this.policies.delete(message.relayId);
               pending.resolve(
                 !fresh.ok
-                  ? { error: fresh.error, status: fresh.status }
+                  ? {
+                      error: "policy_result_unknown_refresh_target",
+                      status: 504,
+                    }
                   : fresh.target.credentialVersion !==
                       pending.agent.credentialVersion
-                    ? { error: "revoked_agent", status: 403 }
+                    ? {
+                        error: "policy_result_unknown_refresh_target",
+                        status: 504,
+                      }
                     : message.policy
                       ? { policy: message.policy }
                       : {
@@ -336,7 +355,7 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
               return;
             const fresh = await this.env.DEVICE_REGISTRY.getByName(
               "registry",
-            ).check(pending.token, targetId);
+            ).checkSessionReference(selectedAgent.reference, pending.token);
             if (
               !live() ||
               this.agent?.socket !== socket ||
@@ -395,7 +414,7 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
           const selectedAgent = this.agent;
           const target = await this.env.DEVICE_REGISTRY.getByName(
             "registry",
-          ).check(this.agent.token, targetId);
+          ).checkSessionReference(selectedAgent.reference);
           if (!live()) return;
           if (this.agent !== selectedAgent) {
             this.respond(socket, operation, {
@@ -405,12 +424,19 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
             return;
           }
           if (!target.ok) {
-            selectedAgent.socket.close(1008, "revoked_agent");
-            this.agent = undefined;
-            this.respond(socket, operation, {
-              status: "denied",
-              error: "revoked_agent",
-            });
+            if (target.subject === "target" && target.status === 401) {
+              selectedAgent.socket.close(1008, "revoked_agent");
+              this.agent = undefined;
+              this.respond(socket, operation, {
+                status: "denied",
+                error: "revoked_agent",
+              });
+            } else {
+              this.respond(socket, operation, {
+                status: "unknown",
+                error: "device_authorization_unavailable",
+              });
+            }
             return;
           }
           const policy = this.observation().policy;
@@ -448,13 +474,19 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
           // Revocation before forwarding must prevent target side effects.
           if (!live()) return;
           const agent = this.agent;
+          if (!agent) {
+            this.respond(socket, operation, {
+              status: "denied",
+              error: "membership_or_agent_changed",
+            });
+            return;
+          }
           const final = await this.env.DEVICE_REGISTRY.getByName(
             "registry",
-          ).check(caller.sessionToken, targetId);
+          ).checkSessionReference(agent.reference, caller.sessionToken);
           if (!live()) return;
           if (
             !final.ok ||
-            !agent ||
             this.agent !== agent ||
             agent.expires <= Date.now() ||
             final.target.credentialVersion !== agent.credentialVersion
@@ -466,7 +498,7 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
                 status: "denied",
                 error: "membership_or_agent_changed",
               },
-              !final.ok && final.status === 401,
+              !final.ok && final.subject === "source" && final.status === 401,
             );
             return;
           }

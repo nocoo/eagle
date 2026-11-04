@@ -1277,7 +1277,11 @@ slice failed an unrelated redaction scaling ratio (20.25 ms versus 115.83 ms);
 the complete performance file alone passed with 12.51 ms versus 24.22 ms. The
 machine was concurrently busy, but that does not prove the cause. No limit or
 test was changed; the later full gate passed all 290 tests with 13.38 ms versus
-31.26 ms for that case.
+31.26 ms for that case. Before replacing the target bearer with a session
+reference, a controlled result-authorization barrier exposed an old generation
+race: removing and re-pairing the target could release its previous output. The
+combined target/source reference check now returns unknown without that output;
+the regression tests the actual await boundary, not just revocation before it.
 
 The second full CLI eval round collided with the singleton lock port of this run's
 own isolated foreground App. The failure was real, not a product test pass; the

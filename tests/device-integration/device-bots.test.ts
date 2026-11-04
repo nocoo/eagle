@@ -250,14 +250,26 @@ async function localCall(
 }
 
 async function workerFixture(directory: string) {
-  // Only a test transport fault: the real target finishes and the real relay
-  // authorizes its result, then the caller loses that one response. No executor,
-  // registry, SDK or device-port implementation is replaced.
+  // Test-only transport loss and an authorization barrier retain the real executor,
+  // registry, SDK and device-port implementations.
   writeFileSync(
     join(directory, "entry.ts"),
     `
-import worker,{DeviceRegistry,DeviceExecution as Execution} from "../../apps/web/src/worker/device-service.ts";
-export {DeviceRegistry};
+import worker,{DeviceRegistry as Registry,DeviceExecution as Execution} from "../../apps/web/src/worker/device-service.ts";
+export class DeviceRegistry extends Registry {
+ async checkSessionReference(reference,token){
+  const result=await super.checkSessionReference(reference,token);
+  if(result.ok&&token&&this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_result_gate'").toArray().length){
+   const row=this.ctx.storage.sql.exec("SELECT sourceId FROM test_result_gate WHERE sourceId=? AND targetId=?",result.source.deviceId,result.target.deviceId).toArray()[0];
+   if(row){this.ctx.storage.sql.exec("UPDATE test_result_gate SET started=1 WHERE sourceId=?",row.sourceId);
+    const deadline=Date.now()+5000;
+    while(!this.ctx.storage.sql.exec("SELECT released FROM test_result_gate WHERE sourceId=?",row.sourceId).toArray()[0]?.released){if(Date.now()>deadline)throw new Error('test result gate timeout');await new Promise(resolve=>setTimeout(resolve,10));}
+    return super.checkSessionReference(reference,token);
+   }
+  }
+  return result;
+ }
+}
 export class DeviceExecution extends Execution {
  respond(socket,request,result,unauthorized=false) {
   if(request.action==='run'&&request.operation?.command?.includes('device-integration-drop-response')&&result.status==='completed') {
@@ -290,8 +302,8 @@ export default {
     ],
     { stdio: "pipe" },
   );
-  const mf = new Miniflare(
-    convertV4MiniflareOptions({
+  const mf = new Miniflare({
+    ...convertV4MiniflareOptions({
       workers: [
         {
           name: "eagle",
@@ -307,7 +319,8 @@ export default {
         },
       ],
     }),
-  );
+    unsafeInspectDurableObjects: true,
+  });
   try {
     return { mf, origin: (await mf.ready).origin };
   } catch (error) {
@@ -958,6 +971,146 @@ test("remote operations skip discarded directory reads but still enforce live me
   if (failure !== undefined) errors.unshift(failure);
   if (errors.length)
     throw new AggregateError(errors, "device dispatch test failed");
+});
+
+test("lost authorization after a remote side effect keeps the source operation sent", {
+  timeout: 90000,
+}, async () => {
+  mkdirSync(".local", { recursive: true });
+  const workerRoot = mkdtempSync(resolve(".local/device-result-worker-"));
+  const root = mkdtempSync("/tmp/eagle-device-result-");
+  let worker: Awaited<ReturnType<typeof workerFixture>> | undefined;
+  let a: ReturnType<typeof deviceProcess> | undefined;
+  let b: ReturnType<typeof deviceProcess> | undefined;
+  let storage:
+    | Awaited<ReturnType<Miniflare["unsafeGetDurableObjectStorage"]>>
+    | undefined;
+  let pending: Promise<{ value?: Receipt; error?: unknown }> | undefined;
+  let gate = false;
+  let failure: unknown;
+  try {
+    worker = await workerFixture(workerRoot);
+    a = deviceProcess(join(root, "a"), worker.origin);
+    b = deviceProcess(join(root, "b"), worker.origin);
+    await Promise.all([a.ready(), b.ready()]);
+    await b.manage("policy.set", { mode: "all-approve" });
+    const invitation = await a.manage("pairing.create", {});
+    await b.manage("pairing.redeem", {
+      requestId: randomUUID(),
+      code: invitation.code,
+    });
+    const source = a;
+    const target = b;
+    await until(async () => {
+      const directory = (await localCall(
+        source.socketPath,
+        "directory",
+      )) as Directory;
+      const peer = directory.devices.find(
+        (device) => device.deviceId === target.deviceId,
+      );
+      return peer?.online && peer.policy?.mode === "all-approve"
+        ? true
+        : undefined;
+    }, "remote target observation");
+    const marker = join(target.root, "side-effect");
+    const release = join(target.root, "release");
+    const operation = {
+      kind: "command",
+      command: `printf x >> '${marker}'; while [ ! -f '${release}' ]; do sleep 0.02; done; printf fixture-private`,
+      timeoutMs: 10000,
+    };
+    const request = {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: target.deviceId,
+      action: "run",
+      operation,
+      relayOrigin: worker.origin,
+      digest: createHash("sha256")
+        .update(canonicalDeviceJSON(operation))
+        .digest("hex"),
+    };
+    pending = localCall(source.socketPath, "execute", request).then(
+      (value) => ({ value: value as Receipt }),
+      (error: unknown) => ({ error }),
+    );
+    await until(
+      async () => (existsSync(marker) ? true : undefined),
+      "target side effect",
+    );
+    storage = await worker.mf.unsafeGetDurableObjectStorage(
+      "eagle",
+      "DeviceRegistry",
+      { name: "registry" },
+    );
+    await storage.exec(
+      "CREATE TABLE test_result_gate(sourceId TEXT PRIMARY KEY,targetId TEXT,started INTEGER DEFAULT 0,released INTEGER DEFAULT 0)",
+    );
+    gate = true;
+    await storage.exec(
+      "INSERT INTO test_result_gate(sourceId,targetId) VALUES(?,?)",
+      source.deviceId,
+      target.deviceId,
+    );
+    writeFileSync(release, "go");
+    await until(async () => {
+      const rows = await storage?.exec(
+        "SELECT started FROM test_result_gate WHERE sourceId=?",
+        source.deviceId,
+      );
+      return rows?.[0]?.started === 1 ? true : undefined;
+    }, "result authorization gate");
+    await target.manage("member.remove", { deviceId: source.deviceId });
+    await storage.exec(
+      "UPDATE test_result_gate SET released=1 WHERE sourceId=?",
+      source.deviceId,
+    );
+    const outcome = await pending;
+    if (outcome.error) throw outcome.error;
+    assert.equal(outcome.value?.status, "unknown");
+    assert.equal(outcome.value?.error, "membership_changed_query_original_id");
+    assert.equal(outcome.value?.output, undefined);
+    await localCall(source.socketPath, "execute", request);
+    assert.equal(readFileSync(marker, "utf8"), "x");
+    await Promise.all([source.stop(), target.stop()]);
+    const journal = new DatabaseSync(join(source.root, "operations.sqlite"), {
+      readOnly: true,
+    });
+    try {
+      const row = journal
+        .prepare("SELECT state FROM outgoing_requests WHERE id=?")
+        .get(request.operationId) as { state: string };
+      assert.equal(row.state, "sent");
+    } finally {
+      journal.close();
+    }
+  } catch (error) {
+    failure = error;
+  }
+  if (gate)
+    await storage
+      ?.exec("UPDATE test_result_gate SET released=1")
+      .catch(() => undefined);
+  await pending?.catch(() => undefined);
+  const cleaned = await Promise.allSettled([
+    a?.stop(),
+    b?.stop(),
+    worker?.mf.dispose(),
+  ]);
+  const errors = cleaned.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  for (const path of [workerRoot, root]) {
+    try {
+      rmSync(path, { recursive: true, force: true });
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (failure !== undefined) errors.unshift(failure);
+  if (errors.length)
+    throw new AggregateError(errors, "device result authorization test failed");
 });
 
 test("relay changes cannot move pairing or policy IDs to another service", {

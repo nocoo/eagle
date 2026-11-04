@@ -85,6 +85,12 @@ export type DeviceSessionReference = {
   credentialVersion: number;
   expiresAt: number;
 };
+type ReferenceFailure = {
+  ok: false;
+  status: number;
+  error: string;
+  subject: "source" | "target" | "membership" | "internal";
+};
 const sessionReferenceSchema = z.strictObject({
   sessionHash: z.string().regex(/^[a-f0-9]{64}$/),
   deviceId: DeviceId,
@@ -100,6 +106,20 @@ function sessionFailure(error: unknown): {
     ok: false,
     status: error instanceof DeviceHttpError ? error.status : 401,
     error: error instanceof DeviceHttpError ? error.message : "invalid_session",
+  };
+}
+
+function referenceFailure(
+  error: unknown,
+  subject: "source" | "target",
+): ReferenceFailure {
+  if (error instanceof DeviceHttpError || error instanceof z.ZodError)
+    return { ...sessionFailure(error), subject };
+  return {
+    ok: false,
+    status: 503,
+    error: "device_authorization_unavailable",
+    subject: "internal",
   };
 }
 
@@ -240,40 +260,59 @@ export class DeviceRegistry extends DurableObject<DeviceServiceEnv> {
         },
       };
     } catch (error) {
-      return sessionFailure(error);
+      const failure = referenceFailure(error, "target");
+      return { ok: false, status: failure.status, error: failure.error };
     }
   }
   async checkSessionReference(
     reference: DeviceSessionReference,
     sourceToken?: string,
-  ): Promise<
-    | { ok: true; source: Device; target: Device }
-    | { ok: false; status: number; error: string }
-  > {
+  ): Promise<{ ok: true; source: Device; target: Device } | ReferenceFailure> {
+    if (
+      sourceToken !== undefined &&
+      (typeof sourceToken !== "string" ||
+        sourceToken.length === 0 ||
+        sourceToken.length > 200)
+    )
+      return {
+        ok: false,
+        status: 401,
+        error: "invalid_session",
+        subject: "source",
+      };
+    let sourceHash: string | undefined;
     try {
-      if (
-        sourceToken !== undefined &&
-        (typeof sourceToken !== "string" ||
-          sourceToken.length === 0 ||
-          sourceToken.length > 200)
-      )
-        throw new DeviceHttpError(401, "invalid_session");
-      const sourceHash =
+      sourceHash =
         sourceToken === undefined
           ? undefined
           : await this.sessionDigest(sourceToken);
-      const target = this.sessionReference(reference);
-      const source =
-        sourceHash === undefined ? target : this.sessionDevice(sourceHash);
-      if (
-        source.deviceId !== target.deviceId &&
-        (!source.groupId || source.groupId !== target.groupId)
-      )
-        throw new DeviceHttpError(403, "different_group");
-      return { ok: true, source, target };
     } catch (error) {
-      return sessionFailure(error);
+      return referenceFailure(error, "source");
     }
+    let target: DeviceRow;
+    try {
+      target = this.sessionReference(reference);
+    } catch (error) {
+      return referenceFailure(error, "target");
+    }
+    let source: DeviceRow;
+    try {
+      source =
+        sourceHash === undefined ? target : this.sessionDevice(sourceHash);
+    } catch (error) {
+      return referenceFailure(error, "source");
+    }
+    if (
+      source.deviceId !== target.deviceId &&
+      (!source.groupId || source.groupId !== target.groupId)
+    )
+      return {
+        ok: false,
+        status: 403,
+        error: "different_group",
+        subject: "membership",
+      };
+    return { ok: true, source, target };
   }
   private sweep(): void {
     const now = Date.now();

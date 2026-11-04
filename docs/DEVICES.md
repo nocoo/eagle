@@ -116,11 +116,14 @@ Signatures are base64url raw Ed25519. Node and Bots never receive the private ke
   memory only. Registration and redemption have bounded server rate limits.
   Internal Registry RPC can bind a target session to a SHA-256 reference with its
   authoritative expiry, device ID and credential generation; it can revalidate
-  that reference together with a source bearer and current membership. References
+  that reference together with a source bearer and current membership. Internal
+  failures distinguish source, target, membership and service failure, so an
+  expired target never invalidates a still-valid source credential. References
   are sensitive internal state, never HTTP credentials, public responses or logs.
   Renewal requires both old and new sessions to be current for the same device
-  and generation. Target sockets still use the existing heartbeat until the
-  separate hibernation cutover is implemented.
+  and generation. The target relay retains the reference instead of its bearer and
+  revalidates it at dispatch and result boundaries. Target sockets still use the
+  existing heartbeat until the separate hibernation cutover is implemented.
 - `GET /directory` returns `{localDeviceId,groupId,revision,observationRevision,devices}`.
   revision tracks durable membership/metadata only. observationRevision is an
   opaque SHA-256 of current device observations, including online lease expiry,
@@ -188,10 +191,12 @@ Relay sends `{type:"operation",sourceDeviceId,sourcePublicKey,request}`;
 agent responds `{type:"result",requestId,operationId,targetDeviceId,result}`.
 Result: `{status:"running"|"completed"|"failed"|"cancelled"|"unknown"|"busy"|
 "denied",output?,error?,exitCode?}`. busy means unaccepted, never queued.
-If source authorization changes after forwarding, the relay withholds the output
-and returns `unknown` with `membership_changed_query_original_id`; it never marks a
-possibly executed run as denied or retryable. A lost response means query the same ID;
-never automatically run again or switch target. Journal admission precedes side effects; interrupted running entries
+If source or target authorization changes after forwarding, including a target
+removed and rejoined with a new credential generation, the relay withholds the output
+and returns `unknown`; it never marks a possibly executed run as denied or retryable.
+The error names the observed failure, and recovery queries the original ID. A lost
+response means query the same ID; never automatically run again or switch target.
+Journal admission precedes side effects; interrupted running entries
 recover as unknown, never rerun. get/cancel remain usable during a running job.
 A target's local operations use the same journal and policy, without cloud.
 When a device identity changes, its private journal and fixed socket stay in place.
@@ -377,8 +382,8 @@ the target replies `{type:"policy.result",relayId,requestId,deviceId,policy?,err
 The server generates relayId and pins it to the target connection. Source IDs
 come only from live Registry authorization. Targets advertise `policy.manage` in
 capabilities; older targets fail `target_management_unsupported`, offline targets
-fail `target_offline`. A missing confirmation fails
-`policy_result_unknown_refresh_target`; there is no local fallback or retry.
+fail `target_offline`. A missing confirmation or lost authorization after
+forwarding fails `policy_result_unknown_refresh_target`; there is no local fallback or retry.
 Target policy, version and source/request-ID result are committed in one local
 journal transaction. Duplicate target requests return their original result
 without changing policy again, including after restart; request bindings include
