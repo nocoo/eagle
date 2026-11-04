@@ -434,11 +434,16 @@ test("a paused local policy permits original-ID recovery without another executi
   const first = body(await guarded.execute({}, api, BACKGROUND_CONTEXT));
   required(bench.view.devices[0]).policy = { mode: "paused", version: 2 };
   const recovered = body(await guarded.execute({}, api, BACKGROUND_CONTEXT));
+  assert.equal(first.status, "completed");
   assert.equal(runs, 1);
   assert.equal(bench.approvals.length, 0);
-  assert.equal(recovered.operationId, first.operationId);
+  assert.equal(bench.calls.length, 2);
   assert.equal(bench.calls[1]?.action, "get");
+  assert.equal(bench.calls[1]?.operationId, first.operationId);
   assert.equal(bench.calls[1]?.targetDeviceId, bench.view.localDeviceId);
+  assert.equal(recovered.operationId, first.operationId);
+  assert.equal(recovered.status, "completed");
+  assert.equal(recovered.output, "from target");
 });
 
 test("local status and policy failures never bypass native admission", async () => {
