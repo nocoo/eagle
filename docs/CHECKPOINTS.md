@@ -3492,3 +3492,17 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   or real-model acceptance. Herdr collection, viewer authentication, D1 and live
   rendering were not exercised. Child/in-flight tool refresh and target hibernation
   remain open; no Cloudflare deployment or billing measurement was performed.
+
+## 2026-11-04 18:45 +08 — Registry session references
+
+- Internal Registry session-reference RPCs are committed (`8d60b8e`), with real
+  Miniflare/SQLite tests for expiry, same-generation renewal, revocation,
+  membership and a digest/revocation barrier. They are not yet used by target
+  sockets; the existing heartbeat and token-in-memory path remain unchanged.
+- Root `npm run check` passed 290 tests after an earlier unrelated redaction
+  performance ratio failure; its standalone run and later full gate passed without
+  changing limits. Three isolated scripted CLI rounds previously passed 24 cases.
+- The isolated foreground source App remains running without a device socket.
+  No real-model, installed-App, Herdr collection, viewer authentication, D1,
+  physical two-Mac, Cloudflare hibernation or billing verification is claimed.
+  Child/in-flight tool refresh, socket renewal and hibernation remain open.
