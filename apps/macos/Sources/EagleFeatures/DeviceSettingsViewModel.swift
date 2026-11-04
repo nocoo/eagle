@@ -103,8 +103,14 @@ private struct DeviceServiceState: Decodable {
   private var startTask: Task<Void, Never>?
   private var approvalContinuation: CheckedContinuation<Bool, Never>?
   private var approvalExpiry: Task<Void, Never>?
-  private var observers: [UUID: CheckedContinuation<Void, Never>] = [:]
+  private var observers: [UUID: (continuation: CheckedContinuation<Void, Never>, directory: Bool)] =
+    [:]
   private var observationTask: Task<Void, Never>?
+  private var observationWaitTask: Task<Void, any Error>?
+  private var readWaiters: [CheckedContinuation<Void, Never>] = []
+  var observationCount: Int { observers.count }
+  var observationRunner: Task<Void, Never>? { observationTask }
+  var observationWaiting: Bool { observationWaitTask != nil }
 
   public init(
     control: any DeviceControl = DeviceSystemControl(), defaults: UserDefaults = .standard,
@@ -249,10 +255,17 @@ private struct DeviceServiceState: Decodable {
     await start(retrying: false)
   }
 
-  private func start(retrying: Bool) async {
+  public func startLocal() async {
+    await start(retrying: false, includeDirectory: false)
+  }
+
+  private func start(retrying: Bool, includeDirectory: Bool = true) async {
     guard enabled, !stopping, !isBusy else { return }
     if let startTask {
       await startTask.value
+      if !Task.isCancelled && includeDirectory && enabled && !stopping && localReady {
+        await readDirectory()
+      }
       return
     }
     guard !started else { return }
@@ -292,9 +305,9 @@ private struct DeviceServiceState: Decodable {
     await task.value
     startTask = nil
     // Cloud enrichment is outside the startup task: disabling never waits for a cloud read.
-    if enabled && !stopping && localReady {
+    if !Task.isCancelled && enabled && !stopping && localReady {
       let generation = stateGeneration
-      await readDirectory()
+      if includeDirectory { await readDirectory() }
       if acceptsRead(generation), pendingRedeemRequestId != nil, cloudStatus != "unconfigured" {
         await recoverPairing()
       }
@@ -342,21 +355,21 @@ private struct DeviceServiceState: Decodable {
 
   public func openSystemSettings() { control.openSystemSettings() }
 
-  /// Settings, inspectors and windows share one reader until the last view disappears.
-  public func observe() async {
+  public func observeLocal() async { await observe(directory: false) }
+
+  public func observe() async { await observe(directory: true) }
+
+  private func observe(directory: Bool) async {
     let id = UUID()
     await withTaskCancellationHandler {
       guard !Task.isCancelled else { return }
       await withCheckedContinuation { continuation in
-        observers[id] = continuation
-        guard observationTask == nil else { return }
-        observationTask = Task { @MainActor [weak self] in
-          while !Task.isCancelled {
-            guard let self else { return }
-            if started { await refresh() } else { await startIfNeeded() }
-            guard !Task.isCancelled else { return }
-            do { try await observationWait() } catch { return }
-          }
+        let hadDirectory = observers.values.contains { $0.directory }
+        observers[id] = (continuation, directory)
+        if observationTask == nil {
+          observationTask = Task { @MainActor [weak self] in await self?.runObservation() }
+        } else if directory && !hadDirectory {
+          observationWaitTask?.cancel()
         }
       }
     } onCancel: {
@@ -364,13 +377,44 @@ private struct DeviceServiceState: Decodable {
     }
   }
 
+  private func runObservation() async {
+    while !Task.isCancelled {
+      let starting = !started || startTask != nil
+      if starting { await startLocal() }
+      guard !Task.isCancelled else { return }
+      if refreshGeneration != nil {
+        await withCheckedContinuation { readWaiters.append($0) }
+      }
+      guard !Task.isCancelled else { return }
+      let directory = observers.values.contains { $0.directory }
+      if directory {
+        if starting {
+          await readDirectory(whileVisible: true)
+        } else if !isBusy {
+          await readState(whileVisible: true)
+        }
+      } else if !starting {
+        await readState(includeDirectory: false)
+      }
+      guard !Task.isCancelled else { return }
+      if !directory && observers.values.contains(where: { $0.directory }) { continue }
+      let wait = Task { @MainActor in try await observationWait() }
+      observationWaitTask = wait
+      do { try await wait.value } catch { if Task.isCancelled { return } }
+      guard !Task.isCancelled else { return }
+      observationWaitTask = nil
+    }
+  }
+
   private func endObservation(_ id: UUID) {
-    let continuation = observers.removeValue(forKey: id)
+    let observer = observers.removeValue(forKey: id)
     if observers.isEmpty {
       observationTask?.cancel()
+      observationWaitTask?.cancel()
       observationTask = nil
+      observationWaitTask = nil
     }
-    continuation?.resume()
+    observer?.continuation.resume()
   }
 
   public func refresh() async {
@@ -378,11 +422,13 @@ private struct DeviceServiceState: Decodable {
     await readState()
   }
 
-  private func readState(includeDirectory: Bool = true) async {
+  private func readState(includeDirectory: Bool = true, whileVisible: Bool = false) async {
     let generation = stateGeneration
-    guard enabled, started, !stopping, refreshGeneration != generation else { return }
+    guard enabled, started, !stopping, !Task.isCancelled, refreshGeneration != generation else {
+      return
+    }
     refreshGeneration = generation
-    defer { if refreshGeneration == generation { refreshGeneration = nil } }
+    defer { finishRead(generation) }
     var observedStatus: DeviceServiceState?
     var relayOverride: String?
     var cloudOverride: String?
@@ -418,7 +464,8 @@ private struct DeviceServiceState: Decodable {
         relayOverride = desired
         cloudOverride = cloud
       }
-      if !includeDirectory {
+      if !includeDirectory || (whileVisible && !observers.values.contains(where: { $0.directory }))
+      {
         applyStatus(status, cloudStatus: cloudOverride, relayOrigin: relayOverride)
         publish(\.errorCode, nil)
         return
@@ -445,11 +492,13 @@ private struct DeviceServiceState: Decodable {
     }
   }
 
-  private func readDirectory() async {
+  private func readDirectory(whileVisible: Bool = false) async {
     let generation = stateGeneration
-    guard enabled, started, !stopping, !isBusy, refreshGeneration != generation else { return }
+    guard enabled, started, !stopping, !isBusy, !Task.isCancelled, refreshGeneration != generation,
+      !whileVisible || observers.values.contains(where: { $0.directory })
+    else { return }
     refreshGeneration = generation
-    defer { if refreshGeneration == generation { refreshGeneration = nil } }
+    defer { finishRead(generation) }
     do {
       let expected: String? = savedServiceAddress.isEmpty ? nil : savedServiceAddress
       guard !enforcesSavedRelay || appliedRelayOrigin == expected else {
@@ -757,6 +806,14 @@ private struct DeviceServiceState: Decodable {
     if let cloud = value["cloudStatus"]?.string, ["offline", "unconfigured"].contains(cloud) {
       publish(\.cloudStatus, cloud)
     }
+  }
+
+  private func finishRead(_ generation: UInt64) {
+    guard refreshGeneration == generation else { return }
+    refreshGeneration = nil
+    let waiting = readWaiters
+    readWaiters.removeAll()
+    for waiter in waiting { waiter.resume() }
   }
 
   private func acceptsRead(_ generation: UInt64) -> Bool {

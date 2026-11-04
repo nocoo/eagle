@@ -8,6 +8,213 @@ import Testing
 @Suite("Device settings refresh", .serialized)
 @MainActor
 struct DeviceSettingsRefreshTests {
+  @Test("local startup avoids cloud directory reads until the device view opens")
+  func localStartupWithoutDirectory() async throws {
+    let (_, control, defaults) = deviceSettingsFixture()
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    let clock = DeviceObservationClock()
+    let model = DeviceSettingsViewModel(
+      control: control, defaults: defaults, observationWait: { try await clock.wait() })
+    await model.startLocal()
+    #expect(model.localReady)
+    #expect(control.calls.allSatisfy { $0.0 != "directory" })
+    let visible = Task { await model.observe() }
+    while clock.waits == 0 { await Task.yield() }
+    #expect(control.calls.filter { $0.0 == "directory" }.count == 1)
+    visible.cancel()
+    await visible.value
+    while !clock.waiters.isEmpty { await Task.yield() }
+    clock.advance()
+    #expect(control.calls.filter { $0.0 == "directory" }.count == 1)
+  }
+
+  @Test("visible device panels wake shared local observation and closing stops cloud reads")
+  func visiblePanelWithLocalObservers() async throws {
+    let (_, control, defaults) = deviceSettingsFixture()
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    let clock = DeviceObservationClock()
+    let model = DeviceSettingsViewModel(
+      control: control, defaults: defaults, observationWait: { try await clock.wait() })
+    let first = Task { await model.observeLocal() }
+    while clock.waits == 0 { await Task.yield() }
+    let second = Task { await model.observeLocal() }
+    while model.observationCount < 2 { await Task.yield() }
+    #expect(clock.waits == 1)
+    #expect(control.calls.allSatisfy { $0.0 != "directory" })
+    let visible = Task { await model.observe() }
+    while clock.waits < 2 { await Task.yield() }
+    #expect(control.calls.filter { $0.0 == "directory" }.count == 1)
+    visible.cancel()
+    await visible.value
+    clock.advance()
+    while clock.waits < 3 { await Task.yield() }
+    #expect(control.calls.filter { $0.0 == "directory" }.count == 1)
+    first.cancel()
+    second.cancel()
+    await first.value
+    await second.value
+    while !clock.waiters.isEmpty { await Task.yield() }
+  }
+
+  @Test("a cancelled old observation cannot clear its replacement's wait")
+  func oldObservationCannotClearNewWait() async throws {
+    let (_, control, defaults) = deviceSettingsFixture()
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    let clock = DeviceObservationClock()
+    var model: DeviceSettingsViewModel?
+    var first: Task<Void, Never>?
+    var replacement: Task<Void, Never>?
+    var release: CheckedContinuation<Void, Never>?
+    var waits = 0
+    model = DeviceSettingsViewModel(
+      control: control, defaults: defaults,
+      observationWait: {
+        waits += 1
+        if waits == 1 {
+          await withCheckedContinuation { release = $0 }
+          first?.cancel()
+          await first?.value
+          replacement = Task { if let model { await model.observeLocal() } }
+          while clock.waits == 0 { await Task.yield() }
+          return
+        }
+        try await clock.wait()
+      })
+    let current = try #require(model)
+    first = Task { await current.observeLocal() }
+    while release == nil { await Task.yield() }
+    let old = try #require(current.observationRunner)
+    release?.resume()
+    await old.value
+    #expect(current.observationWaiting)
+    replacement?.cancel()
+    clock.advance()
+    await replacement?.value
+    while !clock.waiters.isEmpty { await Task.yield() }
+  }
+
+  @Test("closing the panel during a health read skips the following directory request")
+  func panelClosesDuringHealthRead() async throws {
+    let (_, control, defaults) = deviceSettingsFixture()
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    let clock = DeviceObservationClock()
+    let model = DeviceSettingsViewModel(
+      control: control, defaults: defaults, observationWait: { try await clock.wait() })
+    let local = Task { await model.observeLocal() }
+    while clock.waits == 0 { await Task.yield() }
+    var release: CheckedContinuation<Void, Never>?
+    control.statusGate = { await withCheckedContinuation { release = $0 } }
+    let visible = Task { await model.observe() }
+    while release == nil { await Task.yield() }
+    visible.cancel()
+    await visible.value
+    control.statusGate = nil
+    release?.resume()
+    while clock.waits < 2 { await Task.yield() }
+    #expect(control.calls.allSatisfy { $0.0 != "directory" })
+    local.cancel()
+    await local.value
+    while !clock.waiters.isEmpty { await Task.yield() }
+  }
+
+  @Test("a device view joining local startup reads the directory immediately")
+  func viewJoinsLocalStartup() async throws {
+    let (_, control, defaults) = deviceSettingsFixture()
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    let clock = DeviceObservationClock()
+    let model = DeviceSettingsViewModel(
+      control: control, defaults: defaults, observationWait: { try await clock.wait() })
+    var release: CheckedContinuation<Void, Never>?
+    control.startGate = { await withCheckedContinuation { release = $0 } }
+    let startup = Task { await model.startLocal() }
+    while release == nil { await Task.yield() }
+    let visible = Task { await model.observe() }
+    while model.observationCount == 0 { await Task.yield() }
+    release?.resume()
+    await startup.value
+    while clock.waits == 0 { await Task.yield() }
+    #expect(model.localReady)
+    #expect(model.directory != nil)
+    #expect(control.calls.filter { $0.0 == "directory" }.count == 1)
+    visible.cancel()
+    await visible.value
+    while !clock.waiters.isEmpty { await Task.yield() }
+  }
+
+  @Test("local health recovers without a visible device panel or directory poll")
+  func backgroundLocalHealth() async throws {
+    let (_, control, defaults) = deviceSettingsFixture()
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    let clock = DeviceObservationClock()
+    var ready = false
+    control.handler = { method, _ in
+      if method == "service.status" {
+        return .object([
+          "deviceId": .string(deviceSettingsLocalID), "localReady": .bool(ready),
+          "cloudStatus": .string("offline"), "relayOrigin": .string("https://devices.example"),
+        ])
+      }
+      return nil
+    }
+    let model = DeviceSettingsViewModel(
+      control: control, defaults: defaults, observationWait: { try await clock.wait() })
+    let background = Task { await model.observeLocal() }
+    defer { background.cancel() }
+    while clock.waits == 0 { await Task.yield() }
+    #expect(!model.localReady)
+    ready = true
+    clock.advance()
+    while clock.waits < 2 { await Task.yield() }
+    #expect(model.localReady)
+    #expect(control.calls.allSatisfy { $0.0 != "directory" })
+    background.cancel()
+    await background.value
+    while !clock.waiters.isEmpty { await Task.yield() }
+  }
+
+  @Test("a panel joining the initial health read gets its directory without a timer tick")
+  func panelJoinsHealthRead() async throws {
+    let (_, control, defaults) = deviceSettingsFixture()
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    let clock = DeviceObservationClock()
+    let model = DeviceSettingsViewModel(
+      control: control, defaults: defaults, observationWait: { try await clock.wait() })
+    var release: CheckedContinuation<Void, Never>?
+    control.statusGate = { await withCheckedContinuation { release = $0 } }
+    let startup = Task { await model.startLocal() }
+    while release == nil { await Task.yield() }
+    let visible = Task { await model.observe() }
+    while model.observationCount == 0 { await Task.yield() }
+    control.statusGate = nil
+    release?.resume()
+    await startup.value
+    while clock.waits == 0 { await Task.yield() }
+    #expect(model.directory != nil)
+    #expect(control.calls.filter { $0.0 == "directory" }.count == 1)
+    visible.cancel()
+    await visible.value
+    while !clock.waiters.isEmpty { await Task.yield() }
+  }
+
+  @Test("a panel closed during startup does not fetch the directory")
+  func panelClosesDuringStartup() async throws {
+    let (_, control, defaults) = deviceSettingsFixture()
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    let model = DeviceSettingsViewModel(control: control, defaults: defaults)
+    var release: CheckedContinuation<Void, Never>?
+    control.startGate = { await withCheckedContinuation { release = $0 } }
+    let startup = Task { await model.startLocal() }
+    while release == nil { await Task.yield() }
+    let visible = Task { await model.observe() }
+    while model.observationCount == 0 { await Task.yield() }
+    visible.cancel()
+    await visible.value
+    release?.resume()
+    await startup.value
+    await Task.yield()
+    #expect(control.calls.allSatisfy { $0.0 != "directory" })
+  }
+
   @Test("settings, inspector and windows share one cancellable observation lifecycle")
   func sharedObservation() async throws {
     let (_, control, defaults) = deviceSettingsFixture()

@@ -19,9 +19,10 @@ fresh-cutover target and verification slices. Local-only helper startup and Bot
 admission work without a configured relay; live relay changes preserve local
 leases and bind remote IDs to their original relay. Remote dispatch no longer
 performs a discarded directory read; relay/target authorization remains enforced.
-Dynamic remote tool selection, visible-panel polling and target hibernation remain
-open. No live savings, installed-App acceptance or physical two-Mac verification
-is claimed.
+The workspace monitors local health without polling the cloud directory; visible
+device views share directory observation. Dynamic remote tool selection and target
+hibernation remain open. No live savings, installed-App acceptance or physical
+two-Mac verification is claimed.
 
 ## 共享设备与配对重构（2026-10-29）
 
