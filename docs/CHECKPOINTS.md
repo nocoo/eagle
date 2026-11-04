@@ -3308,3 +3308,17 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   Round three's remaining findings are closed by that change; the review budget is spent, so
   the last measurement was verified by its three new tests and the full gates, not a fourth
   review round.
+
+## 2026-11-04 11:29 +08 — Local-first device work in progress
+
+- The Bot native-tool path no longer fetches the remote directory before local
+  admission (`2d77bc8`); the Bots gate passed with 999 tests. Local approval and
+  paused-policy recovery received two additional passing tests (`ea3a935`).
+- Node local-only startup and uncertain-operation recovery have red/green process
+  tests but are not yet committed or connected to App startup. No claim is made
+  that a fresh packaged App or a real Bot can yet run with no remote address.
+- Herdr collection, viewer authentication, D1 and rendered App behaviour were not
+  exercised by this work. The next broken hop is the Swift helper/App startup and
+  its status protocol; full Swift tests require explicit authorization because they
+  create temporary ACLs. The foreground development App may reuse the owner's Bots
+  daemon and data, so its launch also awaits authorization.
