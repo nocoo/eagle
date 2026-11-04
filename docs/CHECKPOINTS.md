@@ -3506,3 +3506,18 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   No real-model, installed-App, Herdr collection, viewer authentication, D1,
   physical two-Mac, Cloudflare hibernation or billing verification is claimed.
   Child/in-flight tool refresh, socket renewal and hibernation remain open.
+
+## 2026-11-04 19:08 +08 — Target relay reference integration
+
+- The uncommitted target-relay slice replaces its retained bearer with the
+  Registry reference and performs combined source/target checks at dispatch and
+  result release. Tests reproduced a target-rejoin output leak and verified the
+  fix; post-forward policy authorization loss is explicitly unknown.
+- Real Miniflare/SQLite API tests passed 32 cases; `npm run test:devices` passed
+  11, including a real target side effect, source revocation and a `sent` source
+  journal with no duplicate effect. Review also caught and verified a fix for
+  invalidating the wrong session when only the target expires. The full root gate
+  for this slice is still pending.
+- The isolated foreground source App still has no device socket. No real model,
+  installed App, Herdr collection, viewer authentication, D1, Cloudflare
+  hibernation or billing was verified. Same-socket renewal and hibernation remain open.
