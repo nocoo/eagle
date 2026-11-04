@@ -962,6 +962,108 @@ test("real outbound WebSockets execute bidirectionally with original-ID dedup an
   }
 });
 
+test("a retired target connection cannot start a gated remote operation", {
+  timeout: 60000,
+}, async () => {
+  const { DeviceCloud } = await import("../packages/agent/device-cloud.ts");
+  const { DeviceRuntime } = await import("../packages/agent/device-runtime.ts");
+  const { canonicalDeviceJSON, deviceDigest } = await import(
+    "../packages/contracts/src/devices.ts"
+  );
+  const [a, b] = await Promise.all([
+    identity("retire-a"),
+    identity("retire-b"),
+  ]);
+  await pair(a.token, await code(b.token));
+  const stateA = join(root, `retire-a-${randomUUID()}`);
+  const stateB = join(root, `retire-b-${randomUUID()}`);
+  mkdirSync(stateA, { mode: 0o700 });
+  mkdirSync(stateB, { mode: 0o700 });
+  const deviceA = {
+    deviceId: a.deviceId,
+    publicKey: a.publicKey,
+    name: "retire-a",
+    platform: "darwin",
+    arch: "arm64",
+    groupId: null,
+    membershipEpoch: 0,
+    credentialVersion: 1,
+  };
+  const deviceB = {
+    ...deviceA,
+    deviceId: b.deviceId,
+    publicKey: b.publicKey,
+    name: "retire-b",
+  };
+  const runtimeA = new DeviceRuntime(deviceA, join(stateA, "journal.sqlite"));
+  const runtimeB = new DeviceRuntime(deviceB, join(stateB, "journal.sqlite"));
+  runtimeA.setPolicy("all-approve");
+  runtimeB.setPolicy("all-approve");
+  let enter: () => void;
+  let release: (() => void) | undefined;
+  let finish: () => void;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const finished = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const handle = runtimeB.handle.bind(runtimeB);
+  runtimeB.handle = async (...args) => {
+    enter();
+    await blocked;
+    try {
+      return await handle(...args);
+    } finally {
+      finish();
+    }
+  };
+  const origin = (await mf.ready).origin;
+  const cloudA = new DeviceCloud(origin, deviceA, runtimeA, async (payload) =>
+    sign(null, Buffer.from(payload), a.keys.privateKey).toString("base64url"),
+  );
+  const cloudB = new DeviceCloud(origin, deviceB, runtimeB, async (payload) =>
+    sign(null, Buffer.from(payload), b.keys.privateKey).toString("base64url"),
+  );
+  try {
+    await Promise.all([cloudA.start(), cloudB.start()]);
+    const path = join(stateB, "must-not-exist");
+    const operation = {
+      kind: "file.write" as const,
+      path,
+      content: "forbidden",
+    };
+    const pending = cloudA.execute({
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: b.deviceId,
+      action: "run",
+      operation,
+      digest: await deviceDigest(canonicalDeviceJSON(operation)),
+    });
+    const reached = await Promise.race([
+      entered.then(() => true),
+      pending.then(() => false),
+    ]);
+    assert.equal(reached, true, "the target must receive the operation");
+    await cloudB.close();
+    release?.();
+    const answer = await pending;
+    await finished;
+    assert.equal(answer.status, "unknown");
+    assert.equal(existsSync(path), false);
+  } finally {
+    release?.();
+    await Promise.all([cloudA.close(), cloudB.close()]);
+    await Promise.all([runtimeA.close(), runtimeB.close()]);
+    rmSync(stateA, { recursive: true, force: true });
+    rmSync(stateB, { recursive: true, force: true });
+  }
+});
+
 test("slow management body cannot outlive session revocation or expiry", async () => {
   for (const expire of [false, true]) {
     const [a, b] = await Promise.all([

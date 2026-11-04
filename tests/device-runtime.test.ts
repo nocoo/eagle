@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
@@ -518,6 +524,67 @@ test("policy changed while a real approval signature verifies cannot admit side 
     f.runtime.setPolicy("paused");
     release?.();
     assert.equal((await running).status, "denied");
+    assert.equal(
+      (await f.runtime.handle({ ...input, action: "get" }, f.device)).status,
+      "unknown",
+    );
+  } finally {
+    crypto.subtle.verify = original;
+    release?.();
+    await f.close();
+  }
+});
+
+test("a retired remote connection cannot admit an operation after approval verification", async () => {
+  const f = fixture();
+  const original = crypto.subtle.verify.bind(crypto.subtle);
+  let enter: () => void;
+  let release: (() => void) | undefined;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    f.runtime.setPolicy("always-ask");
+    const path = join(f.directory, "must-not-exist");
+    const input = await request(f.device.deviceId, {
+      kind: "file.write",
+      path,
+      content: "forbidden",
+    });
+    const envelope = {
+      operationId: input.operationId,
+      sourceDeviceId: f.device.deviceId,
+      targetDeviceId: f.device.deviceId,
+      digest: input.digest as string,
+      policyVersion: f.runtime.policy.version,
+      expiresAt: Date.now() + 60000,
+    };
+    input.approval = {
+      ...envelope,
+      signature: sign(
+        null,
+        Buffer.from(approvalPayload(envelope)),
+        f.keys.privateKey,
+      ).toString("base64url"),
+    };
+    crypto.subtle.verify = async (
+      ...args: Parameters<SubtleCrypto["verify"]>
+    ) => {
+      const verified = await original(...args);
+      enter();
+      await blocked;
+      return verified;
+    };
+    const controller = new AbortController();
+    const running = f.runtime.handle(input, f.device, controller.signal);
+    await entered;
+    controller.abort();
+    release?.();
+    assert.equal((await running).status, "denied");
+    assert.equal(existsSync(path), false);
     assert.equal(
       (await f.runtime.handle({ ...input, action: "get" }, f.device)).status,
       "unknown",

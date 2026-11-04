@@ -155,7 +155,10 @@ Agent opens one outbound WSS `/execution/<targetDeviceId>/agent` and sends
 opens one WSS `/execution/<targetDeviceId>/request`, sends
 `{type:"request",sessionToken,request:<OperationRequest>}` and receives exactly
 one `{type:"response",requestId,operationId,targetDeviceId,result}` then closes.
-Every run/get/cancel rechecks live Registry source and target membership.
+Every run/get/cancel rechecks live Registry source and target membership. A retired
+outbound Agent connection cannot admit a new target operation, even when retirement
+races asynchronous approval verification. An operation admitted before retirement
+may complete locally; an uncertain result is queried by its original ID.
 Authentication/revocation closes use code 1008 with reason `unauthorized_agent`,
 `revoked_agent` or `unauthorized_caller`. Only those reasons invalidate the
 matching cached session and require fresh helper identity proof on the next connection.

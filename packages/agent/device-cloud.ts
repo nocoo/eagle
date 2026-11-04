@@ -229,6 +229,7 @@ export class DeviceCloud {
         maxPayload: 524288,
       });
       this.agent = socket;
+      const connection = new AbortController();
       let ready = false;
       const deadline = setTimeout(() => {
         socket.terminate();
@@ -246,6 +247,12 @@ export class DeviceCloud {
       );
       socket.on("message", (data) => {
         void (async () => {
+          if (
+            this.stopped ||
+            this.agent !== socket ||
+            socket.readyState !== WebSocket.OPEN
+          )
+            return;
           const frame: unknown = JSON.parse(data.toString());
           if (!ready) {
             if (
@@ -320,8 +327,16 @@ export class DeviceCloud {
             deviceId: operation.sourceDeviceId,
             publicKey: operation.sourcePublicKey,
           };
-          const result = await this.runtime.handle(operation.request, source);
-          if (socket.readyState === WebSocket.OPEN)
+          const result = await this.runtime.handle(
+            operation.request,
+            source,
+            AbortSignal.any([this.shutdown.signal, connection.signal]),
+          );
+          if (
+            !this.stopped &&
+            this.agent === socket &&
+            socket.readyState === WebSocket.OPEN
+          )
             socket.send(
               JSON.stringify({
                 type: "result",
@@ -334,6 +349,7 @@ export class DeviceCloud {
         })().catch(() => socket.close(1008, "invalid_agent_frame"));
       });
       const ended = (closeCode: number, reason: Buffer) => {
+        connection.abort();
         this.closedSession(token, closeCode, reason);
         clearTimeout(deadline);
         clearInterval(this.heartbeat);
