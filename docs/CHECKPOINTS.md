@@ -3338,3 +3338,16 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   The next broken hop remains Swift helper/App startup, followed by truthful
   remote-tool selection. Full Swift tests create temporary ACLs and the dev App
   may reuse the owner's Bots daemon/data; both await explicit authorization.
+
+## 2026-11-04 12:01 +08 — Local-first gates and remaining boundary
+
+- Three complete isolated Bots CLI eval rounds passed, 24 cases each. The root
+  browser suite reported 191 passed and 11 existing platform-conditional skips.
+  Device CLI fixture cleanup and Swift command deadlines were reviewed and fixed.
+- The current committed slice proves local-only Node and Bot tools through an
+  isolated CLI with a scripted model; the packaged App still does not start its
+  helper without a remote address. Tool registration, wake/hibernation and the
+  remaining design slices are not implemented.
+- No real Herdr collection, viewer authentication, D1 or installed App rendering
+  was exercised. The Swift suite's temporary ACL tests and a foreground dev App
+  potentially sharing the owner's Bots daemon/data remain unauthorized and unrun.
