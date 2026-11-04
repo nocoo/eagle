@@ -3351,3 +3351,17 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 - No real Herdr collection, viewer authentication, D1 or installed App rendering
   was exercised. The Swift suite's temporary ACL tests and a foreground dev App
   potentially sharing the owner's Bots daemon/data remain unauthorized and unrun.
+
+## 2026-11-04 14:58 +08 — App local startup and remote cutover
+
+- Swift helper/App startup now accepts an empty relay, and unconfigured pairing
+  cannot strand a new request (`bd9492d`, `95a02e3`, `2bdd0bc`). Full Swift tests
+  passed and the logic coverage gate reported 91.5%. A real installed App and a
+  real model have not been used to verify this path.
+- A retired target connection cannot admit a late operation (`06b8f77`); real
+  local WebSocket/SQLite tests passed. A new Node red test currently shows that
+  remote configuration cannot yet change without interrupting local leases.
+  Cross-origin operation provenance and safe credential redaction are prerequisites
+  for implementing that control path; it is not complete.
+- Herdr collection, viewer authentication, D1 and live rendering were not tested.
+  The foreground dev App has not yet been started for this revision.
