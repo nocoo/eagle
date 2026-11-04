@@ -211,7 +211,7 @@ private struct DeviceServiceState: Decodable {
   }
 
   private func start(retrying: Bool) async {
-    guard enabled, !stopping, !isBusy, !needsServiceAddress else { return }
+    guard enabled, !stopping, !isBusy else { return }
     if let startTask {
       await startTask.value
       return
@@ -256,7 +256,9 @@ private struct DeviceServiceState: Decodable {
     if enabled && !stopping && localReady {
       let generation = stateGeneration
       await readDirectory()
-      if acceptsRead(generation), pendingRedeemRequestId != nil { await recoverPairing() }
+      if acceptsRead(generation), pendingRedeemRequestId != nil, cloudStatus != "unconfigured" {
+        await recoverPairing()
+      }
     }
   }
 
@@ -550,7 +552,9 @@ private struct DeviceServiceState: Decodable {
       {
         let current = try await control.call("directory", params: nil)
         // The Agent's offline local fallback cannot confirm current Registry membership.
-        guard current["cloudStatus"]?.string != "offline" else { throw DeviceHostError.unavailable }
+        guard !["offline", "unconfigured"].contains(current["cloudStatus"]?.string ?? "") else {
+          throw DeviceHostError.unavailable
+        }
         try applyDirectory(current)
         clearPendingRedemption()
       }
@@ -611,7 +615,9 @@ private struct DeviceServiceState: Decodable {
       directory = current
     }
     publish(\.directoryIsStale, false)
-    if value["cloudStatus"]?.string == "offline" { publish(\.cloudStatus, "offline") }
+    if let cloud = value["cloudStatus"]?.string, ["offline", "unconfigured"].contains(cloud) {
+      publish(\.cloudStatus, cloud)
+    }
   }
 
   private func acceptsRead(_ generation: UInt64) -> Bool {

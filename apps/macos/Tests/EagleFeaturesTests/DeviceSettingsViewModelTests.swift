@@ -368,14 +368,16 @@ func deviceApproval(expiresAt: Int64) throws -> DeviceApprovalRequest {
 @Suite("Device service address configuration", .serialized)
 @MainActor
 struct DeviceServiceAddressConfigurationTests {
-  @Test("a bundle without a relay never starts the service before a person names one")
-  func unconfiguredStaysIdle() async throws {
+  @Test("a bundle without a relay starts local protection without configuring remote access")
+  func unconfiguredStartsLocally() async throws {
     let (model, control, defaults) = deviceSettingsFixture(requiresServiceAddress: true)
     defer { defaults.removePersistentDomain(forName: control.domain) }
     #expect(model.needsServiceAddress)
     await model.startIfNeeded()
-    #expect(control.starts == 0)
-    #expect(!model.localReady)
+    #expect(control.starts == 1)
+    #expect(model.localReady)
+    #expect(model.policy?.mode == .allApprove)
+    #expect(model.needsServiceAddress)
   }
 
   @Test("saving an origin is stored and starts the service; a bad value is refused")

@@ -216,7 +216,8 @@ struct DeviceSettingsRecoveryTests {
   }
 
   @Test(
-    "dead retry retains original ID without a cloud directory", arguments: ["offline", "transport"])
+    "dead retry retains original ID without a cloud directory",
+    arguments: ["offline", "unconfigured", "transport"])
   func deadRetryNeedsDirectory(failure: String) async throws {
     let (model, control, defaults) = deviceSettingsFixture()
     defer { defaults.removePersistentDomain(forName: control.domain) }
@@ -234,7 +235,7 @@ struct DeviceSettingsRecoveryTests {
       if method == "directory" {
         if failure == "transport" { throw DeviceHostError.timeout }
         guard case .object(var value) = control.directory else { return nil }
-        value["cloudStatus"] = .string("offline")
+        value["cloudStatus"] = .string(failure)
         return .object(value)
       }
       return nil

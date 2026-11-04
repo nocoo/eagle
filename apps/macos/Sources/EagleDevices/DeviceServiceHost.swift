@@ -271,7 +271,9 @@ public final class DeviceServiceHost {
       }
       localReady = true
     case "cloud":
-      guard let status = value["status"]?.string, ["online", "offline"].contains(status) else {
+      guard let status = value["status"]?.string,
+        ["online", "offline", "unconfigured"].contains(status)
+      else {
         rejectProtocol()
         return
       }

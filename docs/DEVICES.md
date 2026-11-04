@@ -252,8 +252,9 @@ A **published App ships no relay address**: `Support/DeviceHost.release.json` ca
 their own service in **设置 → 设备 → 服务地址**; the choice is stored in the app's defaults as
 `eagle.deviceServiceAddress` (an origin only: HTTPS, or `http` on loopback, with no path,
 query or credentials) and the helper reads it at start, so changing it restarts the local
-service with the new relay. Until an address exists the App does not register the background
-service at all and nothing is contacted; the helper parks without starting its agent.
+service with the new relay. Before an address exists the App starts the local helper and
+agent without a cloud client; local policy and tools remain available and no remote service
+is contacted.
 
 `EAGLE_DEVICE_SERVICE_URL` remains an optional build input for a bundle that must name an
 origin up front (a candidate pointing at a local service, or a deployment that deliberately

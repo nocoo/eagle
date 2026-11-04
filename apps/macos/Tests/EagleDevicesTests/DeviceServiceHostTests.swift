@@ -14,7 +14,9 @@ private final class HostVault: DeviceIdentityVault, @unchecked Sendable {
 
 @Suite("Private device host") @MainActor
 struct DeviceServiceHostTests {
-  private func host(delayedExit: Bool = false) throws -> DeviceServiceHost {
+  private func host(
+    delayedExit: Bool = false, baseUrl: String = "http://127.0.0.1:1"
+  ) throws -> DeviceServiceHost {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
       "../../../../"
     ).standardizedFileURL
@@ -45,9 +47,13 @@ struct DeviceServiceHostTests {
     }
     let configuration = try JSONDecoder().decode(
       DeviceHostConfiguration.self,
-      from: Data(
-        #"{"version":1,"profile":"isolated-test","baseUrl":"http://127.0.0.1:1","machServiceName":"ai.hexly.eagle.devices.test","launchAgentPlist":"ai.hexly.eagle.devices.test.plist"}"#
-          .utf8))
+      from: JSONSerialization.data(withJSONObject: [
+        "version": 1,
+        "profile": "isolated-test",
+        "baseUrl": baseUrl,
+        "machServiceName": "ai.hexly.eagle.devices.test",
+        "launchAgentPlist": "ai.hexly.eagle.devices.test.plist",
+      ]))
     return DeviceServiceHost(
       identity: try .loadOrCreate(profile: "test", vault: HostVault()),
       configuration: configuration,
@@ -67,6 +73,32 @@ struct DeviceServiceHostTests {
   private func clean(_ host: DeviceServiceHost) async throws {
     await host.stop()
     try FileManager.default.removeItem(at: host.stateDirectory)
+  }
+
+  @Test("an empty relay starts the real local service with its saved policy")
+  func unconfigured() async throws {
+    let host = try host(baseUrl: "")
+    try host.start()
+    do {
+      for _ in 0..<200 {
+        if host.cloudStatus == "unconfigured" || host.failure != nil { break }
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      let localReady = host.localReady
+      let cloudStatus = host.cloudStatus
+      #expect(localReady)
+      #expect(cloudStatus == "unconfigured")
+      let status = try await host.call("service.status")
+      #expect(status["localReady"] == .bool(true))
+      #expect(status["cloudStatus"] == .string("unconfigured"))
+      #expect(status["policy"]?["mode"] == .string("always-ask"))
+      let policy = try await host.call("policy.set", params: .object(["mode": .string("paused")]))
+      #expect(policy["mode"] == .string("paused"))
+    } catch {
+      try await clean(host)
+      throw error
+    }
+    try await clean(host)
   }
 
   @Test("authenticated helper handshake is independent of Node and cloud readiness")
