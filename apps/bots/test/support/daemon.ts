@@ -107,16 +107,26 @@ export const portIsFree = async (port: number): Promise<boolean> => {
  * A fresh root whose derived lock port is free. The daemon refuses a root whose port
  * another daemon holds, so the harness picks one that can actually be taken.
  */
-export const daemonRoot = async (prefix = "bots-daemon-"): Promise<string> => {
+export const daemonRoot = async (
+  prefix = "bots-daemon-",
+  suffix: () => string = () => randomBytes(6).toString("hex"),
+): Promise<string> => {
   // The daemon hashes the canonical root, so the search runs over canonical names: no
   // directory is created for a candidate that loses.
+  if (!/^[a-zA-Z0-9_-]+$/.test(prefix)) throw new Error("invalid root prefix");
   const canonical = await realpath(tmpdir());
   for (let attempt = 0; attempt < 1_000; attempt += 1) {
-    const name = `${prefix}${randomBytes(6).toString("hex")}`;
+    const value = suffix();
+    if (!/^[a-zA-Z0-9_-]+$/.test(value)) throw new Error("invalid root suffix");
+    const name = `${prefix}${value}`;
     const candidate = join(canonical, name);
     if (!(await portIsFree(lockPort(candidate)))) continue;
-    await mkdir(candidate, { recursive: true, mode: 0o700 });
-    return candidate;
+    try {
+      await mkdir(candidate, { mode: 0o700 });
+      return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
   }
   throw new Error("no root with a free lock port was found");
 };

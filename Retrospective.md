@@ -1271,6 +1271,13 @@ updated, and review found it could erase an interrupted operation receipt. Write
 and review the recovery contract first; prove reopen with a killed real Harness,
 not only a direct tool invocation.
 
+The second full CLI eval round collided with the singleton lock port of this run's
+own isolated foreground App. The failure was real, not a product test pass; the
+runner now chooses a fresh root with a currently free derived port, without stopping
+another daemon or retrying a failed case. A deterministic occupied-port test and an
+existing-directory negative control protect fixture isolation. A later bind race
+still fails explicitly.
+
 ## 2026-11-04 — Keep time-dependent secret tests deterministic
 
 The full Swift red run also exposed an unrelated secret-validity fixture whose

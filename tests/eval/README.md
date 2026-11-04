@@ -42,7 +42,10 @@ the CLI takes its own name from argv0: that name selects the development credent
 Each case gets its own temporary `HOME`, `XDG_CONFIG_HOME` and `XDG_STATE_HOME`; the
 in-process daemon, provider lookup, tool subprocesses and CLI all use that case's paths.
 Before boot, the runner refuses memory, secrets or secrets-key paths outside the case root.
-A CLI case mints its development credential under the case home (mode 0600) and arms the
+It chooses a fresh root whose derived singleton lock port is currently free, without
+stopping or touching an existing daemon. A later bind race still fails the case rather
+than being hidden or retried. A CLI case mints its development credential under
+the case home (mode 0600) and arms the
 daemon with that path. A `file` step rewrites it (mode or value) to prove a case fails closed.
 
 | Extra step | Does |

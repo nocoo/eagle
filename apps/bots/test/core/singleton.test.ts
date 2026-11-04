@@ -1,11 +1,55 @@
 // Ladder row 48: the root is owned by a kernel listener, so a second daemon on the same
 // root is refused and a killed one releases the port.
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { createServer } from "node:net";
+import { basename } from "node:path";
 import test from "node:test";
 import { acquireLock, fnv1a, LockError, lockPort } from "../../src/server/singleton.ts";
-import { daemonRoot, freeLockPort, rootWithLockPort } from "../support/daemon.ts";
+import { daemonRoot, freeLockPort, portIsFree, rootWithLockPort } from "../support/daemon.ts";
+
+test("temporary daemon roots avoid a live owner's lock port without touching it", async () => {
+  const prefix = "bots-eval-collision-";
+  const port = await freeLockPort();
+  const occupied = await rootWithLockPort(port, prefix, { create: false });
+  const owner = await acquireLock({ root: occupied });
+  let candidate: string | undefined;
+  let calls = 0;
+  try {
+    candidate = await daemonRoot(prefix, () =>
+      calls++ === 0 ? basename(occupied).slice(prefix.length) : randomBytes(6).toString("hex"),
+    );
+    assert.ok(calls >= 2);
+    assert.notEqual(lockPort(candidate), port);
+    assert.equal(owner.port, port);
+    const other = await acquireLock({ root: candidate });
+    await other.close();
+  } finally {
+    await owner.close();
+    if (candidate) await rm(candidate, { recursive: true, force: true });
+  }
+  await assert.rejects(() => daemonRoot("../unsafe-"), /invalid root prefix/);
+  await assert.rejects(() => daemonRoot(prefix, () => "../unsafe"), /invalid root suffix/);
+});
+
+test("temporary daemon roots never reuse an existing directory", async () => {
+  const prefix = "bots-eval-existing-";
+  const existing = await daemonRoot(prefix);
+  let candidate: string | undefined;
+  let calls = 0;
+  try {
+    assert.equal(await portIsFree(lockPort(existing)), true);
+    candidate = await daemonRoot(prefix, () =>
+      calls++ === 0 ? basename(existing).slice(prefix.length) : randomBytes(6).toString("hex"),
+    );
+    assert.ok(calls >= 2);
+    assert.notEqual(candidate, existing);
+  } finally {
+    await rm(existing, { recursive: true, force: true });
+    if (candidate) await rm(candidate, { recursive: true, force: true });
+  }
+});
 
 test("a live daemon rejects a second instance on the same root", async () => {
   // The root decides the port, so the root is one whose port nobody holds: a port another
