@@ -3322,3 +3322,19 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   its status protocol; full Swift tests require explicit authorization because they
   create temporary ACLs. The foreground development App may reuse the owner's Bots
   daemon and data, so its launch also awaits authorization.
+
+## 2026-11-04 11:48 +08 — Local service and CLI acceptance
+
+- The Node device service supports an empty remote address (`ea4241c`). It keeps
+  local policy and socket-bound admission, and preserves uncertain remote operation
+  bindings. The App/helper startup path still blocks an unconfigured address, so
+  this is not yet a usable fresh-install App fix.
+- Root `npm run check` passed with 271 tests and the official Node build. The
+  independent Bots gate passed with 999 tests. `npm run test:devices` passed all
+  eight cases, including an isolated real CLI/local Bot test with a scripted
+  model and a paused-policy negative control. The first complete Bots eval run
+  passed all 24 cases; real-model tool choice and rendered App remain unverified.
+- Herdr collection, viewer authentication, D1 and live rendering were not exercised.
+  The next broken hop remains Swift helper/App startup, followed by truthful
+  remote-tool selection. Full Swift tests create temporary ACLs and the dev App
+  may reuse the owner's Bots daemon/data; both await explicit authorization.
