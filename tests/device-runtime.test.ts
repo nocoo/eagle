@@ -579,7 +579,10 @@ test("a retired remote connection cannot admit an operation after approval verif
       return verified;
     };
     const controller = new AbortController();
-    const running = f.runtime.handle(input, f.device, controller.signal);
+    const running = f.runtime.handle(input, f.device, {
+      signal: controller.signal,
+      isLive: () => true,
+    });
     await entered;
     controller.abort();
     release?.();

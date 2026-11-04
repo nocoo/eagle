@@ -327,11 +327,13 @@ export class DeviceCloud {
             deviceId: operation.sourceDeviceId,
             publicKey: operation.sourcePublicKey,
           };
-          const result = await this.runtime.handle(
-            operation.request,
-            source,
-            AbortSignal.any([this.shutdown.signal, connection.signal]),
-          );
+          const result = await this.runtime.handle(operation.request, source, {
+            signal: AbortSignal.any([this.shutdown.signal, connection.signal]),
+            isLive: () =>
+              !this.stopped &&
+              this.agent === socket &&
+              socket.readyState === WebSocket.OPEN,
+          });
           if (
             !this.stopped &&
             this.agent === socket &&
@@ -362,6 +364,7 @@ export class DeviceCloud {
       };
       socket.once("close", ended);
       socket.on("error", () => {
+        connection.abort();
         socket.terminate();
       });
     });

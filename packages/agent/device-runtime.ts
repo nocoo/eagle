@@ -30,6 +30,11 @@ function result(record: OperationRecord): OperationResult {
     exitCode: record.exitCode,
   };
 }
+type RemoteAdmission = { signal: AbortSignal; isLive: () => boolean };
+const retired = (connection?: RemoteAdmission) =>
+  connection !== undefined &&
+  (connection.signal.aborted || !connection.isLive());
+
 function outcome(value: OperationResult): OperationOutcome {
   return {
     state:
@@ -140,7 +145,7 @@ export class DeviceRuntime {
     input: OperationRequest,
     source: Device,
     native: boolean,
-    sourceSignal?: AbortSignal,
+    sourceConnection?: RemoteAdmission,
   ): Promise<{ accepted: boolean; result: OperationResult }> {
     const parsed = OperationRequest.safeParse(input);
     if (this.unhealthy)
@@ -154,7 +159,7 @@ export class DeviceRuntime {
         result: { status: "denied", error: "invalid_request" },
       };
     const request = parsed.data;
-    if (sourceSignal?.aborted)
+    if (retired(sourceConnection))
       return {
         accepted: false,
         result: { status: "denied", error: "remote_connection_retired" },
@@ -183,7 +188,7 @@ export class DeviceRuntime {
         sourceBotId: request.sourceBotId,
       }),
     );
-    if (sourceSignal?.aborted)
+    if (retired(sourceConnection))
       return {
         accepted: false,
         result: { status: "denied", error: "remote_connection_retired" },
@@ -209,7 +214,7 @@ export class DeviceRuntime {
         accepted: false,
         result: { status: "denied", error: "policy_confirmation_required" },
       };
-    if (sourceSignal?.aborted)
+    if (retired(sourceConnection))
       return {
         accepted: false,
         result: { status: "denied", error: "remote_connection_retired" },
@@ -297,10 +302,10 @@ export class DeviceRuntime {
   async handle(
     input: OperationRequest,
     source: Device,
-    sourceSignal?: AbortSignal,
+    sourceConnection?: RemoteAdmission,
   ): Promise<OperationResult> {
     try {
-      if (sourceSignal?.aborted)
+      if (retired(sourceConnection))
         return { status: "denied", error: "remote_connection_retired" };
       const request = OperationRequest.parse(input);
       if (this.unhealthy)
@@ -316,7 +321,12 @@ export class DeviceRuntime {
       }
       if (request.operation?.kind === "native")
         return { status: "denied", error: "native_requires_local_begin" };
-      const admitted = await this.admit(request, source, false, sourceSignal);
+      const admitted = await this.admit(
+        request,
+        source,
+        false,
+        sourceConnection,
+      );
       if (!admitted.accepted) return admitted.result;
       const controller = new AbortController();
       const promise = Promise.resolve().then(async () => {
