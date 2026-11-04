@@ -3466,3 +3466,17 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   answers on 43286 but reports no device socket. No real model, installed App,
   Herdr collection, viewer authentication, D1, Cloudflare hibernation or billing
   was verified. Dynamic child refresh and in-flight propagation remain open.
+
+## 2026-11-04 18:08 +08 — Root selection committed; eval collision
+
+- Root tool selection and safe interrupted-root receipts are committed (`455c44e`).
+  Bots `npm run check` passed 1,015 tests and coverage; the device integration
+  suite passed ten. Three review rounds caught SDK recovery, coerced arguments,
+  receipt format and accepted extra-field cases; those regressions passed.
+- Full CLI eval round one passed all 24 cases. Round two passed 23 and failed one:
+  the case's random temporary root hashed to the same singleton lock port as this
+  run's isolated foreground App. No user daemon or data was modified. The fixture
+  allocator needs a deterministic collision guard before continuing the rounds.
+- The isolated App remains foreground with no injected device socket. Installed App,
+  real model, Herdr collection, viewer authentication, D1, Cloudflare hibernation
+  and billing remain unverified. Child refresh and in-flight propagation remain open.
