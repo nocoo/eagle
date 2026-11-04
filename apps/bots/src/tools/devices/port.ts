@@ -134,7 +134,18 @@ export class SocketDevicePort implements SharedDevicePort {
   }
   async request(request: DeviceRequest, signal?: AbortSignal): Promise<DeviceResult> {
     const method = request.action === "run" ? "execute" : `operation.${request.action}`;
-    return resultSchema.parse(await this.#call(method, request, signal));
+    const operation = request.operation;
+    const command = request.action === "run" && operation?.kind === "command";
+    const duration = operation?.timeoutMs;
+    const timeoutMs = command
+      ? (typeof duration === "number" &&
+        Number.isInteger(duration) &&
+        duration >= 1 &&
+        duration <= 300000
+          ? duration
+          : 30000) + 95000
+      : undefined;
+    return resultSchema.parse(await this.#call(method, request, signal, timeoutMs));
   }
   async approve(
     request: DeviceRequest,

@@ -1329,10 +1329,15 @@ line was restored. A bounded rerun then passed six of seven cases but exposed a
 Node mock-timer/Undici `runAt` failure in the following case. The tests remain
 unfixed and uncommitted; use independent clocks or real-time process watchdogs,
 and verify that asynchronous network resources are closed before resetting timers.
-No test limit was widened or failure suppressed. The later fix isolated the two
+The next timeout regression first failed to compile because its fixture omitted the
+required Bot ID and TypeScript could not follow a callback assignment. The fixture
+was corrected before collecting the behavioral red. No test limit was widened or failure suppressed. The later fix isolated the two
 fake-clock network cases in separate Node test processes, used captured real-time
 watchdogs and added a no-ready cleanup regression. The complete root check then
-passed all 309 tests.
+passed all 309 tests. A subsequent Bots coverage run failed with `ENOTEMPTY` while
+removing a trace-test fixture; that complete trace file passed independently and
+a later full Bots check passed all 1,019 tests. The teardown race's cause remains
+unproven; no cleanup retry, timeout increase or test suppression was added.
 
 Stopping the isolated foreground source App with Ctrl-C left its own Bots daemon
 orphaned. Its PID and isolated root were verified before sending it SIGTERM; both

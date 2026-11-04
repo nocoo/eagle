@@ -326,6 +326,35 @@ test("transmission is memoed first; lost replies and replay query the original t
   assert.equal(bench.calls.length, 2);
 });
 
+test("a remote socket timeout remains unknown and replay queries the original ID", async () => {
+  const bench = fixture();
+  const { api } = memoApi();
+  bench.port.request = async (request) => {
+    bench.calls.push(structuredClone(request));
+    if (request.action === "run") throw new Error("device_timeout");
+    return { status: "completed", output: "original result" };
+  };
+  const args = {
+    deviceId: ids[1],
+    operation: { kind: "command", command: "pwd", timeoutMs: 300000 },
+  };
+  const original = body(await bench.invoke("remote_execute", args, api));
+  assert.equal(original.status, "unknown");
+  assert.equal(original.error, "device_timeout");
+  const replay = body(await bench.invoke("remote_execute", args, api));
+  assert.equal(replay.status, "completed");
+  assert.equal(replay.operationId, original.operationId);
+  assert.equal(replay.targetDeviceId, original.targetDeviceId);
+  assert.deepEqual(
+    bench.calls.map((request) => request.action),
+    ["run", "get"],
+  );
+  assert.equal(
+    bench.calls.every((request) => request.operationId === original.operationId),
+    true,
+  );
+});
+
 test("an operation memo without its relay origin is never sent or recreated", async () => {
   const bench = fixture();
   const { api, memos } = memoApi();

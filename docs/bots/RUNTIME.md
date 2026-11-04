@@ -542,7 +542,10 @@ durable tool memo records the target, full operation, digest, operation ID and
 validated relay origin before transmission. The local service binds the operation
 and origin atomically; an operation cannot be claimed by another relay. Retries
 query the original ID at its original relay; they never resend unknown effects or
-substitute a local target. A busy response is unaccepted and creates no queue.
+substitute a local target. Remote command calls keep their local socket open for
+the requested command timeout plus 95 seconds for bounded authentication and
+relay overhead, up to 395 seconds. A timeout is still unknown, never proof of
+failure or permission to replay. A busy response is unaccepted and creates no queue.
 If a root tool was interrupted and remote access is unconfigured or the local service
 unavailable at reopen, the adapter validates the saved binding against the SDK's final
 execution arguments and preserves an `unknown` receipt before scheduling resumes. It
