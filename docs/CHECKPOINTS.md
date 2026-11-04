@@ -3393,3 +3393,17 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   original relay. Remote tool registration and hibernation are still open.
 - Herdr collection, viewer authentication, D1 and live rendering were not exercised.
   The foreground dev App has not yet been started for this revision.
+
+## 2026-11-04 16:23 +08 — Origin-bound configuration tests
+
+- The uncommitted hot configuration keeps an admitted local lease active. Pairing
+  now prepares its ID, code digest and relay locally before the App persists and
+  sends; its pending record remains bound across relay changes and App restart.
+  Operation and policy IDs also retain their relay. Old credentials stay redacted.
+- Swift's complete test run passed (289, 50, 60 and 36 tests across its packages).
+  The affected Node run passed 75 tests, and `npm run test:devices` passed nine,
+  including two real local Device services, Miniflare and a separate relay that
+  received no pairing/policy request or old authorization during cutover.
+- No installed App, real model, Herdr collection, viewer authentication, D1 or
+  live rendering was exercised. Remote tool refresh and hibernation remain open;
+  this uncommitted slice still needs full gates and an independent review.
