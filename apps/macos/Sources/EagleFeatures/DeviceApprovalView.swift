@@ -17,7 +17,7 @@ public struct DeviceApprovalView: View {
       if let request = model.pendingApproval {
         let summary = DeviceApprovalPresentation(operation: request.operation)
         Text("允许这次\(summary.title)？")
-          .font(.system(size: 20, weight: .semibold))
+          .font(Theme.TypeScale.dialogTitle)
           .foregroundStyle(Theme.Palette.textPrimary)
         Text("仅允许下面这一次操作。关闭或超时会拒绝。")
           .font(Theme.TypeScale.note)

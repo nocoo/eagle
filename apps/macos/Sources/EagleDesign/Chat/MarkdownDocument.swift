@@ -217,13 +217,13 @@ public struct MarkdownDocument {
       let intent = run.inlinePresentationIntent
       var container = AttributeContainer()
       if intent?.contains(.code) == true {
-        container.font = .system(size: 13, design: .monospaced)
+        container.font = Theme.TypeScale.mono
         container.foregroundColor = Theme.Palette.textPrimary
         container.backgroundColor = Theme.Palette.canvas
       } else if intent?.contains(.stronglyEmphasized) == true {
-        container.font = .system(size: 15, weight: .bold)
+        container.font = Theme.TypeScale.bodyStrong
       } else if intent?.contains(.emphasized) == true {
-        container.font = .system(size: 15).italic()
+        container.font = Theme.TypeScale.bodyItalic
       }
       if run.link != nil {
         container.foregroundColor = Theme.Palette.accent

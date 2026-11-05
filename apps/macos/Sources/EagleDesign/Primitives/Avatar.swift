@@ -41,8 +41,8 @@ public struct Avatar: View {
       .frame(width: size, height: size)
       .overlay {
         Text(initial)
-          .font(.system(size: size * 0.42, weight: .semibold))
-          .foregroundStyle(.white)
+          .font(Theme.TypeScale.avatarInitial(size: size))
+          .foregroundStyle(Theme.Palette.onColor)
       }
 
       if let badge {

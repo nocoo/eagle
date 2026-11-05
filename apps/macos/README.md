@@ -198,12 +198,13 @@ Sources/
   Scripts/           build-app, make-icon, coverage
 ```
 
-Design rules: one component per file, colors and spacing only from `Theme`, no
-global state inside components, no elevation except the sender chip and the
-unread pill, monochrome plus one green, and scroll edges fade instead of
-clipping. Groups expand and collapse with animation; right-clicking a group or a
-conversation offers rename/delete, and the header menu creates groups. Column
-widths are draggable and both side columns collapse. See [DESIGN.md](DESIGN.md).
+Design ownership and its implemented guard are specified in [DESIGN.md](DESIGN.md).
+Palette definitions and explicit font construction live in `Theme`; from the root,
+`npm run check:design` checks their ownership and `npm run test:design` verifies syntax
+rules and real staged-snapshot commit rejection. Spacing and shared-control consolidation
+are still in progress under the [design plan](../../docs/MACOS-DESIGN-PLAN.md), not
+asserted complete. Groups expand and collapse; context menus rename/delete, the header
+creates groups, and both side columns resize and collapse.
 
 The inspector's task hierarchy uses fine dashed gutter lines and rounded final
 elbows, rather than indentation alone. Each parent has one continuous trunk that

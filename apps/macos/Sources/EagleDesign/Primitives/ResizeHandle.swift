@@ -35,7 +35,7 @@ public struct ResizeHandle: View {
       Rectangle()
         .fill(Theme.Palette.line)
         .frame(width: Theme.Metric.hairline)
-      Color.clear
+      Theme.Palette.clear
         .contentShape(Rectangle())
         .background(CursorRect(cursor: .resizeLeftRight))
     }

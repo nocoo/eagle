@@ -47,11 +47,11 @@ public struct SettingsRail: View {
         } label: {
           HStack(spacing: 10) {
             Image(systemName: section.symbol)
-              .font(.system(size: 14))
+              .font(Theme.TypeScale.fieldLabel)
               .foregroundStyle(Theme.Palette.textPrimary)
               .frame(width: 20)
             Text(section.rawValue)
-              .font(.system(size: 14, weight: section == selection ? .medium : .regular))
+              .font(section == selection ? Theme.TypeScale.cardTitle : Theme.TypeScale.fieldLabel)
               .foregroundStyle(Theme.Palette.textPrimary)
             Spacer(minLength: 0)
           }
@@ -110,7 +110,7 @@ public struct SettingsScaffold<Content: View>: View {
       VStack(spacing: 0) {
         HStack(spacing: 16) {
           Text(selection.rawValue)
-            .font(.system(size: 22, weight: .semibold))
+            .font(Theme.TypeScale.settingsTitle)
             .foregroundStyle(Theme.Palette.textPrimary)
           Spacer(minLength: 0)
           if showsCloseButton {

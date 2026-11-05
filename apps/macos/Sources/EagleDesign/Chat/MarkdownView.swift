@@ -85,7 +85,7 @@ public struct AssistantBubble: View, Equatable {
       paragraph(text, caret: caret)
     case .heading(let level, let text):
       Text(text)
-        .font(.system(size: headingSize(level), weight: .semibold))
+        .font(Theme.TypeScale.markdownHeading(level))
         .foregroundStyle(Theme.Palette.textPrimary)
         .lineSpacing(3)
         .fixedSize(horizontal: false, vertical: true)
@@ -140,14 +140,14 @@ public struct AssistantBubble: View, Equatable {
     VStack(alignment: .leading, spacing: 0) {
       if let language, !language.isEmpty {
         Text(language)
-          .font(.system(size: 11, weight: .medium, design: .monospaced))
+          .font(Theme.TypeScale.codeLanguage)
           .foregroundStyle(Theme.Palette.textMuted)
           .padding(.horizontal, 12)
           .padding(.top, 8)
       }
       ScrollView(.horizontal, showsIndicators: false) {
         Text(body)
-          .font(.system(size: 12.5, design: .monospaced))
+          .font(Theme.TypeScale.code)
           .foregroundStyle(Theme.Palette.textPrimary)
 
           .fixedSize(horizontal: true, vertical: true)
@@ -176,7 +176,7 @@ public struct AssistantBubble: View, Equatable {
         GridRow {
           ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
             Text(header)
-              .font(.system(size: 13, weight: .semibold))
+              .font(Theme.TypeScale.noteStrong)
               .foregroundStyle(Theme.Palette.textSecondary)
               .fixedSize(horizontal: false, vertical: true)
           }
@@ -188,7 +188,7 @@ public struct AssistantBubble: View, Equatable {
           GridRow {
             ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
               Text(cell)
-                .font(.system(size: 13.5))
+                .font(Theme.TypeScale.rowSubtitle)
                 .foregroundStyle(Theme.Palette.textPrimary)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -221,18 +221,10 @@ public struct AssistantBubble: View, Equatable {
       if hovering {
         MessageCopyButton(text: text, label: "复制 Bot 消息")
       } else {
-        Color.clear
+        Theme.Palette.clear
       }
     }
     .frame(width: Theme.Metric.hitTarget, height: Theme.Metric.hitTarget)
-  }
-
-  private func headingSize(_ level: Int) -> CGFloat {
-    switch level {
-    case 1: return 20
-    case 2: return 17
-    default: return 15.5
-    }
   }
 
 }
@@ -249,7 +241,7 @@ private struct MarkdownInline: View {
           reduceMotion || Int(context.date.timeIntervalSinceReferenceDate / 0.62) % 2 == 0
         Text(text)
           + Text("▍")
-          .font(.system(size: 14, design: .monospaced))
+          .font(Theme.TypeScale.streamingCaret)
           .foregroundColor(Theme.Palette.accent.opacity(visible ? 1 : 0.12))
       }
     } else {

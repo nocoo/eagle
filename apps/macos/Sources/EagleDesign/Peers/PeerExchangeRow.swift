@@ -32,7 +32,7 @@ public struct PeerExchangeRow: View {
       }
       .padding(.vertical, 5)
       .padding(.horizontal, 12)
-      .background(Capsule().fill(hovering ? Theme.Palette.hover : Color.clear))
+      .background(Capsule().fill(hovering ? Theme.Palette.hover : Theme.Palette.clear))
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -71,7 +71,7 @@ public struct PeerOriginRow: View {
       }
       .padding(.vertical, 3)
       .padding(.horizontal, 12)
-      .background(Capsule().fill(hovering ? Theme.Palette.hover : Color.clear))
+      .background(Capsule().fill(hovering ? Theme.Palette.hover : Theme.Palette.clear))
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)

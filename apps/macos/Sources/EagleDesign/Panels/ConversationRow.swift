@@ -38,7 +38,7 @@ public struct ConversationRow: View {
           }
           if item.pinned {
             Image(systemName: "pin.fill")
-              .font(.system(size: 9.5, weight: .semibold))
+              .font(Theme.TypeScale.Glyph.pin)
               .foregroundStyle(Theme.Palette.textMuted)
           }
         }

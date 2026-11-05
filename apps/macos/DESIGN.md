@@ -1,193 +1,159 @@
-# macOS client — design alignment (proposal)
+# macOS design system
 
-Status: **proposal, awaiting decisions**. Nothing in this document is
-implemented yet. Goal is a pure SwiftUI template library that mirrors one Herdr
-Space as one conversation, in the visual language of Grok Bot's desktop app
-rather than Basalt.
+Eagle's native UI is implemented in SwiftUI/AppKit. `EagleDesign` is the shared
+component boundary; `EagleFeatures` supplies state, actions and screen composition.
+The App does not import the website's Basalt implementation or ship private reference
+fonts. UI typography uses the system font and CJK fallback.
 
-## Evidence used
+## Status and source of truth
 
-- `~/Desktop/grokbot.png`, 3680 × 2392 px, Display P3, captured at 2×: the
-  window measures **1840 × 1196 pt**.
-- `/Applications/Grok Bot.app` (Electron, `com.anysphere.sand` 0.75.5). Its
-  renderer ships two custom families, `X-VF` (UI sans) and `XMono-VF` (mono),
-  so Grok Bot does **not** use SF Pro. No public SwiftUI design tokens exist to
-  reuse; all values below were sampled from the screenshot.
-- A `cua` computer-use CLI/skill is not installed on this machine, so live
-  driving of the app was not possible. Measurements come from pixel sampling
-  (sRGB-converted) and bundle inspection.
+- **Implemented:** palette definitions and explicit font construction are centralized
+  in `Sources/EagleDesign/Theme.swift`. The existing twelve manual Bot colors, eight
+  indexed colors and font values are preserved during extraction.
+- **Enforced:** `npm run check:design` parses every `Sources/**/*.swift` file with the
+  selected Xcode toolchain's SwiftParser/SwiftSyntax. The pre-commit design check runs
+  from a temporary Git-index snapshot; macOS CI runs the same check and its tests.
+- **Not yet enforced:** all spacing, radius, alpha, motion and control-construction
+  ownership. Some callsites still contain these styles. A clean color/font scan does
+  not mean the entire design system is consolidated.
+- **Not yet redesigned:** eight candy identities with stable hashing, accessible
+  solid/soft color pairs, the new spacing grid, reference-aligned shell and control
+  polish. Current contrast and small-window settings defects remain open.
 
-## Layout metrics (points)
+The execution order and pending product choices live in
+[the design plan](../../docs/MACOS-DESIGN-PLAN.md). The measured source/screenshot
+baseline lives in [the audit](../../docs/MACOS-DESIGN-REVIEW.md). This document owns
+implemented design conventions; those documents must not be read as proof that a
+planned token, guard or layout change already exists.
 
+## Ownership
+
+`Theme.Palette` owns color values, appearance variants, transparent paint, foreground
+on colored surfaces, scrims and shadow colors. The Bot face's tint enumeration and
+lookup are defined here, not in the face renderer. `Theme.TypeScale` owns font
+construction, including settings, Markdown/code, symbols and the existing proportional
+avatar/button font helpers. `Theme.Metric` owns the currently extracted layout metrics.
+
+Views consume those definitions directly or receive a typed style from a shared
+component. Do not define colors/fonts in another `Theme` extension, local factory or
+alias. A comment or named local constant does not make an arbitrary style a token.
+Keep semantic role names; do not generate a second palette or hundreds of numeric
+aliases to satisfy a checker.
+
+### Parser guard contract
+
+From the repository root:
+
+```sh
+npm run check:design
+npm run test:design
 ```
-window 1840 × 1196
-┌──────────────┬──────────────────────────────┬─────────────┐
-│ sidebar 411  │ conversation 996             │ inspector 319│
-└──────────────┴──────────────────────────────┴─────────────┘
-```
 
-- Sidebar: header (search, compose) 44, profile block ~120, list rows 44 each,
-  section headers 28, footer banner 52, current-user row 56.
-- Conversation: message column starts 32 from the divider and is capped near
-  700 wide; assistant turns are plain full-width text, user turns are right
-  aligned pills (measured **128 × 35 pt** for a single short line, so radius =
-  height / 2). Vertical rhythm: 22–28 between turns.
-- Composer: 48 high, 24 inset, fully rounded, sits 20 above the bottom edge.
-- Inspector: 320 wide, 64 avatar, 24 inset, cards 10 radius with 1 px border,
-  row height 34, section gap 20.
+The checker uses host parser modules already bundled with Xcode, not an installed
+SwiftLint binary, network package or source-code regular expression. It selects the
+compiler, parser modules and SDK from the same `DEVELOPER_DIR` (default Xcode).
+Parsing failure, missing token owner/tooling and source symlinks are errors.
 
-## Color tokens (sampled, sRGB)
+The only definition owner exempted from palette/type construction checks is the exact
+path `EagleDesign/Theme.swift`; raw/owner typealias declarations remain forbidden there
+so they cannot export a new construction path to other files. Features, components, gallery, snapshot renderer,
+fixture executables and newly added Swift files are all scanned. The rules reject:
 
-| Token | Value | Where it came from |
-| --- | --- | --- |
-| `canvas` | `#F4F4F4` | sidebar fill |
-| `surface` | `#FCFCFC` | conversation and inspector fill |
-| `card` | `#FFFFFF` | list cards, composer |
-| `line` | `#EEEEEE` | dividers, card borders |
-| `textPrimary` | `#252525` | message and row text |
-| `textSecondary` | `#757575` | subtitles, section labels |
-| `accent` | `#3B7DCD` | inline links |
-| `accentFill` | `#55A471` | user bubble fill |
-| `accentStrong` | `#5DB57B` | toggles, tool and task spinners |
+- Direct or qualified `Color`/`NSColor`/`CGColor` constructors, static colors and
+  color literals outside the owner, including initializers and interpolation bodies.
+- Raw color type aliases or constructor references; moving the source expression to
+  another helper/file does not hide it.
+- Implicit named colors such as `.red` or `.white`. Use explicit domain enum names
+  such as `BotAppearance.Tint.green` when a non-color value shares the spelling.
+  Implicit `.clear` remains permitted for absent paint in a conditional style.
+- Explicit `Font`/`NSFont` construction and static styles; implicit construction in
+  font arguments, typed bindings/parameters/returns and `.font` assignments.
+- External `Theme.Palette` and `Theme.TypeScale` extensions, including qualified
+  spellings, and aliases of those owners or the Theme root.
 
-Notes: the palette is effectively monochrome plus one green. There is no
-gradient, no shadow heavier than a 1 px line, and no colored chrome. Avatars are
-the only saturated elements besides the bubble and switches.
+This is a constrained syntax contract, not Swift type inference. It does not certify
+arbitrary generic helper APIs, derived alpha/weight, layout dimensions or all primitive
+callers. Subsequent phase-1 slices must extend its rules and adversarial fixtures
+before claiming those properties. Native geometry and non-visual numbers are not
+automatically prohibited.
 
-## Typography (proposal, since SF differs from X-VF)
+`tests/native/design-guard.test.ts` covers accepted/rejected syntax.
+`tests/native/design-gate.test.ts` creates isolated repositories and performs real
+commits: a staged violation fails despite an unstaged correction, a valid staged
+source succeeds despite an unstaged style change, and an unstaged disabled checker
+cannot replace the index version. Renamed source and deleted required inputs are
+covered. The design gate does not change the owner's working tree or index.
+Other pre-commit checks retain their existing behavior; the new staged-snapshot proof
+must not be generalized into a claim that every repository gate has been normalized.
 
-| Role | Size / weight |
+## Current visual baseline
+
+The authoritative values are the tokens and their actual callers, not the former
+reference proposal. Key current values:
+
+| Role | Current value |
 | --- | --- |
-| Row title | 13 semibold, one line, tail truncation |
-| Row subtitle | 12 regular, secondary, tail truncation |
-| Section label | 11 medium, secondary, tracking +0.2 |
-| Message body | 13 regular, line spacing 4, `textPrimary` |
-| Bubble text | 13 regular, white |
-| Delivery note | 11 regular, secondary, centered |
-| Composer placeholder | 13 regular, secondary |
-| Inspector title | 15 semibold |
-| Inspector subtitle | 12 regular, secondary |
-| Card title | 12 medium |
-| Monospaced tokens | 12 regular `SF Mono` |
+| Sidebar / inspector defaults | 374 / 319 pt, both resizable |
+| Default window / minimum | 1728 × 1082 / 1280 × 760 pt |
+| Sidebar row / face | 58 / 34 pt |
+| Header / circular control | 72 / 35 pt |
+| Body / subtitle / note | 15 / 13.5 / 13 pt |
+| Conversation inset / entry gap | 24 / 24 pt |
+| Composer / waiting band | 54 / 32 pt; the waiting band is reserved while idle |
+| Inspector portrait | 76 pt |
+| Settings | Fixed 1120 × 820 pt; responsive sizing is still planned |
+| Stroke token | 1 pt, which is 2 physical pixels at 2× |
 
-## Component inventory from the screenshot
+Colors are dynamic light/dark sRGB pairs. Light canvas is currently `#F2F2F7`, surface
+and card are `#FFFFFF`, primary text is `#141416`, and the user bubble fill is `#2FB457`.
+White text on that green is only 2.70:1; centralization preserves this existing defect,
+it does not establish accessibility. The next palette phase must test all declared
+foreground/background pairs and both appearances without lowering thresholds.
 
-Sidebar: window drag region with traffic lights, search icon button, compose
-button, organization header (56 avatar, name, plan label), section header with
-count, conversation row (30 avatar, title, subtitle, optional `Personal` tag),
-unread banner (inline link), current-user footer row.
+The token-consolidation tests preserve manual tint order, all light/dark face values,
+scrim/shadow opacity, and exact font construction. In particular, the near-transparent
+hit surface stays black at 0.001 opacity: replacing it with an absent view or clear
+paint during refactoring would change hit testing.
 
-Conversation: sender attachment card (avatar + name, 10 radius), assistant turn
-(one neutral card, no accent and no border, markdown inside), delivery note with mini
-avatars ("已发送给 … 8 个智能体"), user turn (green pill, right aligned), waiting line
-(the bot's own face breathing like its busy sidebar row, then `正在输入` and three dots
-alternating, above the composer, its band always reserved), composer
-(attach button, placeholder that names the recipient and swaps to `⌘↩ 插入当前回答`
-while an answer can be steered, mic and waveform buttons).
+## Shared components and behavior
 
-Settings: a left rail of sections. `工具` sits under `模型` and holds the two core prompts
-first (Core Prompt's editable paragraph, Core Machine Prompt's read-only file and text),
-then the tool-group switches, because the prompts are the first sections of the system
-prompt.
+Reuse existing cards, settings rows/fields/actions, icon actions, tabs, conversation
+rows and Markdown primitives. The consolidation of remaining menu/switch variants is
+still pending. Being implemented in EagleDesign does not guarantee native semantics:
+the existing gallery-only drawn switch is a Button, while production settings use
+native Toggle. Preserve role/value, keyboard focus, disabled state, identifiers and
+async Binding behavior when converging those paths. Secret-card checkboxes remain
+checkboxes, not switches.
 
-Inspector: close and share icon buttons, 64 avatar, name, subtitle, segmented
-tabs (详情 / 资料库 / 电脑), section label, list card of rows with a code icon,
-title and chevron, `展开` action, second section with task rows and green
-switches.
+Colors identify Bots but never certify success or device freshness. Unknown remains
+unknown; stale observations must not look newly confirmed. Empty state, unavailable
+action and active task are different states. Do not populate screenshots with invented
+activity or add new features to make visual polish easier.
 
-## Proposed SwiftUI template library
+## Scrolling and rendering constraints
 
-Target: `apps/macos`, SPM package with three targets, no third-party
-dependencies, macOS 14+ for `@Observable`.
+Transcript scroll bookkeeping stays in `TranscriptScroller`, not per-frame observable
+state. Previously moving every scroll tick through SwiftUI state invalidated the entire
+conversation; `TranscriptScrollCostTests` guards the cost relative to bare rows.
 
-```text
-Sources/
-  EagleDesign/        tokens + primitives, previewable in isolation
-    Theme.swift           colors, metrics, typography, radii
-    Primitives/           Avatar, Tag, IconButton, SectionLabel, ChevronRow,
-                          ToggleRow, SegmentedTabs, Divider
-    Chat/                 Transcript, AssistantTurn, UserBubble, DeliveryNote,
-                          TypingIndicator, Composer
-    Panels/               SidebarList, ConversationColumn, InspectorColumn,
-                          ThreeColumnShell
-  EagleFeatures/      MVVM
-    WorkspaceListViewModel.swift   spaces → conversations (mock for now)
-    ChatViewModel.swift            messages, draft, typing state
-    InspectorViewModel.swift       token list, scheduled jobs
-  EagleApp/           thin AppKit/SwiftUI app target
-    EagleApp.swift, MenuCommands, WindowRoot
-Tests/
-  EagleDesignTests/   token snapshot + layout math
-  EagleFeaturesTests/ view-model behaviour against mock spaces
-```
+Rows retain lightweight placeholders for copy actions and text selection until hovered.
+Do not rebuild always-active selection/copy machinery for every row merely to align
+icons. Preserve streaming, follow/unfollow, user scrolling, code/table overflow and
+composer focus. A smaller waiting indicator must not introduce transcript jumps.
 
-Rules for the library: one file per component, every component gets a
-`#Preview` with fixed sample data, no component reaches for global state, colors
-and spacing come only from `Theme`, and no dependency outside Foundation +
-SwiftUI + AppKit.
+The existing SnapshotRenderer hosts views in an offscreen NSWindow. Use fixed synthetic
+content for repeatable comparisons and label it as fixture evidence. Real foreground
+App captures remain necessary; gallery/rendered fixtures alone do not prove feature
+bindings, state transitions or native active/inactive-window appearance.
 
-## MVVM shape and the Herdr mapping
+## Validation
 
-`WorkspaceListViewModel` owns `[Conversation]`. Today `Conversation` is mock
-data; later it is built from `/api/v1/overview` — one Herdr Space becomes one
-conversation, its panes become participant agents, and the sidebar grouping
-follows the existing machine groups.
+Use the explicit Xcode toolchain for Swift tests, strict formatting and the existing
+coverage gate. Run the new design guard and its rejection tests in addition to those
+checks. Keep the existing coverage and performance thresholds; do not skip a test to
+finish a visual change. Run CLI/native focus acceptance when the corresponding
+interaction path changes. Root check/browser gates remain release requirements.
 
-`ChatViewModel` owns the transcript. Later the daemon's pane activity becomes
-assistant turns and terminal input becomes user turns; for now `send()` appends
-to a local array so the composer and scroll behaviour can be designed properly.
-
-`InspectorViewModel` owns the detail column: evidence/artifact rows and
-scheduled jobs, matching the right panel's 详情 / 资料库 / 电脑 tabs.
-
-## Deliberate differences from Basalt
-
-Basalt is a component library with its own surfaces, meters and color system.
-This client follows Grok Bot instead: 13 pt body text, 1 px lines, monochrome
-plus one green, near-square 10 pt card radii, and no elevation. Accessibility
-still matters: text/background contrast stays above 4.5:1, every icon button
-keeps a label and 24 pt hit target, and the green bubble uses white text.
-
-## Decisions taken
-
-1. **Typography**: SF Pro only. No font assets are shipped; the reference uses a
-   private grotesque (`X-VF`) that cannot be reproduced without licensing.
-2. **Layout**: fixed sidebar 411 and inspector 319, conversation flexible, with
-   a `showsInspector` switch ready for a collapse toggle.
-3. **Window chrome**: native title bar. The content starts below it instead of
-   drawing traffic lights over the sidebar.
-4. **Color**: the sampled values are used verbatim, including
-   `#55A471`/`#5DB57B`; white text on the bubble stays above 4.5:1.
-5. **First slice**: template gallery plus the three-column shell on mock data,
-   with a composer that appends locally.
-6. **App shell**: SPM package whose `Eagle` product is the `EagleApp` executable. No Xcode project,
-   so the tree builds with Command Line Tools; a bundled `.app` and signing are
-   a later, separately scoped step.
-
-## Scrolling rules
-
-The transcript scrolls at 120 Hz, so anything on the scroll path must stay out of
-SwiftUI state. `onScrollGeometryChange` fires on every tick; writing `@State`
-there invalidated the whole conversation column per tick and re-placed every
-visible row, which cost ~3.0 ms per tick against 0.3 ms for the same rows without
-it. Follow bookkeeping therefore lives in `TranscriptScroller`, a plain object
-held by `@State` whose properties are not observed, and only the decision to
-scroll the bottom into view touches the view graph. `TranscriptScrollCostTests`
-guards the ratio against a bare `LazyVStack` of the same rows.
-
-Scrollable rows rebuild on every entry, so a row carries only what a pointer can reach.
-`MessageCopyButton` and `.textSelection` are built for the hovered row and replaced by
-clear placeholders otherwise: an always-built copy button cost 3.7 ms a page and
-selection 1.7 ms a page, against 3.9 ms for the whole page now. Measured alternatives
-that did not pay: `List` instead of `ScrollView` + `LazyVStack` (6% slower), removing
-the nested code/table scroll views (no change), dropping `.fixedSize` (no change) and
-removing the per-row `@StateObject` renderer (no change).
-
-## Toolchain constraints discovered
-
-Command Line Tools only (no Xcode) means the SwiftUI macro and Swift Testing
-plugins are missing, so the package keeps `ObservableObject` view models and a
-`LocalState` shim, and the scripts export
-`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` so tests, strict
-`swift format` lint and coverage run against the Xcode toolchain. Installing
-Xcode also restores `#Preview` for local design work.
+Every macOS implementation slice ends with an inspectable foreground development App
+in the project's right-side Herdr pane and an atomic commit. Report actual tests,
+known warnings, screenshot evidence and remaining design-system coverage honestly.

@@ -46,7 +46,7 @@ public struct UserBubble: View {
       VStack(alignment: .leading, spacing: 3) {
         Text(origin)
           .font(Theme.TypeScale.pill)
-          .foregroundStyle(.white.opacity(0.72))
+          .foregroundStyle(Theme.Palette.onColorSecondary)
         messageText
       }
     } else {
@@ -57,7 +57,7 @@ public struct UserBubble: View {
   private var messageText: some View {
     Text(text)
       .font(Theme.TypeScale.bubble)
-      .foregroundStyle(.white)
+      .foregroundStyle(Theme.Palette.onColor)
   }
 
   /// Selection machinery is built only for the row under the pointer: it costs more
@@ -76,7 +76,7 @@ public struct UserBubble: View {
       if hovering {
         MessageCopyButton(text: text, label: "复制用户消息")
       } else {
-        Color.clear
+        Theme.Palette.clear
       }
     }
     .frame(width: Theme.Metric.hitTarget, height: Theme.Metric.hitTarget)
@@ -100,8 +100,8 @@ public struct DeliveryNote: View {
         Avatar(initial: "", tint: tint, size: Theme.Metric.avatarNote)
           .overlay(alignment: .center) {
             Image(systemName: index % 2 == 0 ? "person.fill" : "sparkle")
-              .font(.system(size: 7, weight: .bold))
-              .foregroundStyle(.white)
+              .font(Theme.TypeScale.Glyph.delivery)
+              .foregroundStyle(Theme.Palette.onColor)
           }
       }
       Text(text)

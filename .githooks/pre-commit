@@ -5,6 +5,31 @@
 set -eu
 cd "$(git rev-parse --show-toplevel)"
 
+if ! git diff --cached --quiet -- apps/macos tests/native/design-guard.test.ts \
+  tests/native/design-gate.test.ts .githooks/pre-commit .github/workflows/check.yml package.json; then
+  echo "pre-commit: staged design ownership"
+  (
+    snapshot=$(mktemp -d "${TMPDIR:-/tmp}/eagle-design-index.XXXXXX")
+    trap 'rm -rf "$snapshot"' EXIT
+    git checkout-index --all --prefix="$snapshot/"
+    for path in apps apps/macos apps/macos/Sources apps/macos/Scripts tests tests/native; do
+      if [ -L "$snapshot/$path" ] || [ ! -d "$snapshot/$path" ]; then
+        echo "design-guard: snapshot path refused: $path" >&2
+        exit 1
+      fi
+    done
+    for path in apps/macos/Scripts/check-design.ts apps/macos/Scripts/DesignGuard.swift \
+      tests/native/design-guard.test.ts; do
+      if [ -L "$snapshot/$path" ] || [ ! -f "$snapshot/$path" ]; then
+        echo "design-guard: snapshot path refused: $path" >&2
+        exit 1
+      fi
+    done
+    node "$snapshot/apps/macos/Scripts/check-design.ts"
+    node --test "$snapshot/tests/native/design-guard.test.ts"
+  )
+fi
+
 staged=$(git diff --cached --name-only --diff-filter=ACM)
 [ -n "$staged" ] || exit 0
 

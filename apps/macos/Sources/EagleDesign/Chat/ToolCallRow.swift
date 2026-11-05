@@ -67,7 +67,7 @@ public struct ToolCallRow: View {
         } else if let preview = preview {
           // The result is visible without a click: one dim line, the rest on expansion.
           Text(preview)
-            .font(.system(size: 11.5, design: .monospaced))
+            .font(Theme.TypeScale.monoCaption)
             .foregroundStyle(
               row.isError ? Theme.Palette.destructive : Theme.Palette.textMuted
             )
@@ -81,7 +81,7 @@ public struct ToolCallRow: View {
       .frame(maxWidth: contentWidth, alignment: .leading)
       .background(
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .fill(hovering ? Theme.Palette.hover : Color.clear)
+          .fill(hovering ? Theme.Palette.hover : Theme.Palette.clear)
       )
       .contentShape(Rectangle())
       .onTapGesture { withAnimation(.easeOut(duration: 0.16)) { expanded.toggle() } }
@@ -104,13 +104,13 @@ public struct ToolCallRow: View {
   private var header: some View {
     HStack(spacing: 7) {
       Image(systemName: "wrench.and.screwdriver")
-        .font(.system(size: 10.5, weight: .medium))
+        .font(Theme.TypeScale.toolCaption)
         .foregroundStyle(
           row.isError ? Theme.Palette.destructive : Theme.Palette.textSecondary
         )
         .frame(width: 14)
       Text(row.name)
-        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+        .font(Theme.TypeScale.monoTitle)
         .foregroundStyle(Theme.Palette.textPrimary)
         .lineLimit(1)
       if !row.subtitle.isEmpty {
@@ -129,11 +129,11 @@ public struct ToolCallRow: View {
           .foregroundStyle(Theme.Palette.destructive)
       } else if let duration = row.durationLabel {
         Text(duration)
-          .font(.system(size: 11.5, design: .monospaced))
+          .font(Theme.TypeScale.monoCaption)
           .foregroundStyle(Theme.Palette.textMuted)
       }
       Image(systemName: expanded ? "chevron.up" : "chevron.down")
-        .font(.system(size: 9, weight: .semibold))
+        .font(Theme.TypeScale.Glyph.chevron)
         .foregroundStyle(Theme.Palette.textMuted)
     }
   }
@@ -145,7 +145,7 @@ public struct ToolCallRow: View {
         label("参数")
         ScrollView(.vertical) {
           Text(row.input)
-            .font(.system(size: 11.5, design: .monospaced))
+            .font(Theme.TypeScale.monoCaption)
             .foregroundStyle(Theme.Palette.textSecondary)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -156,7 +156,7 @@ public struct ToolCallRow: View {
         label(row.isError ? "错误" : "结果")
         ScrollView(.vertical) {
           Text(output)
-            .font(.system(size: 11.5, design: .monospaced))
+            .font(Theme.TypeScale.monoCaption)
             .foregroundStyle(
               row.isError ? Theme.Palette.destructive : Theme.Palette.textSecondary
             )
@@ -170,7 +170,7 @@ public struct ToolCallRow: View {
 
   private func label(_ text: String) -> some View {
     Text(text)
-      .font(.system(size: 10.5, weight: .medium))
+      .font(Theme.TypeScale.toolCaption)
       .foregroundStyle(Theme.Palette.textMuted)
   }
 }
@@ -200,12 +200,12 @@ public struct ToolRunRow: View {
       } label: {
         HStack(spacing: 8) {
           Image(systemName: "wrench.and.screwdriver")
-            .font(.system(size: 10.5, weight: .medium))
+            .font(Theme.TypeScale.toolCaption)
             .foregroundStyle(failures > 0 ? Theme.Palette.destructive : Theme.Palette.textSecondary)
             .frame(width: 14)
           if let running {
             Text("正在执行 \(running.name)")
-              .font(.system(size: 12, weight: .semibold, design: .monospaced))
+              .font(Theme.TypeScale.monoTitle)
               .foregroundStyle(Theme.Palette.textPrimary)
               .lineLimit(1)
             if !running.subtitle.isEmpty {
@@ -217,7 +217,7 @@ public struct ToolRunRow: View {
             }
           } else {
             Text("\(rows.count) 个工具调用")
-              .font(.system(size: 12, weight: .semibold))
+              .font(Theme.TypeScale.compactTitle)
               .foregroundStyle(Theme.Palette.textPrimary)
             if failures > 0 {
               Text("\(failures) 个失败")
@@ -225,7 +225,7 @@ public struct ToolRunRow: View {
                 .foregroundStyle(Theme.Palette.destructive)
             } else if totalMs > 0 {
               Text(totalLabel)
-                .font(.system(size: 11.5, design: .monospaced))
+                .font(Theme.TypeScale.monoCaption)
                 .foregroundStyle(Theme.Palette.textMuted)
             }
           }
@@ -234,7 +234,7 @@ public struct ToolRunRow: View {
             SpinnerArc(size: 11, lineWidth: 1.5)
           }
           Image(systemName: "chevron.right")
-            .font(.system(size: 9, weight: .semibold))
+            .font(Theme.TypeScale.Glyph.chevron)
             .foregroundStyle(Theme.Palette.textMuted)
         }
         .padding(.horizontal, 8)
@@ -242,7 +242,7 @@ public struct ToolRunRow: View {
         .frame(maxWidth: contentWidth, alignment: .leading)
         .background(
           RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(hovering ? Theme.Palette.hover : Color.clear)
+            .fill(hovering ? Theme.Palette.hover : Theme.Palette.clear)
         )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -276,7 +276,7 @@ public struct ToolRunDetailView: View {
     VStack(spacing: 0) {
       HStack {
         Text("工具调用")
-          .font(.system(size: 15, weight: .semibold))
+          .font(Theme.TypeScale.sectionTitle)
           .foregroundStyle(Theme.Palette.textPrimary)
         Text("\(rows.count)")
           .font(Theme.TypeScale.note)
@@ -309,7 +309,7 @@ public struct ToolRunDetailView: View {
     VStack(alignment: .leading, spacing: 7) {
       HStack(spacing: 8) {
         Text(row.name)
-          .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+          .font(Theme.TypeScale.toolDetailTitle)
           .foregroundStyle(Theme.Palette.textPrimary)
         if row.isRunning {
           SpinnerArc(size: 10, lineWidth: 1.4)
@@ -319,7 +319,7 @@ public struct ToolRunDetailView: View {
             .foregroundStyle(Theme.Palette.destructive)
         } else if let duration = row.durationLabel {
           Text(duration)
-            .font(.system(size: 11.5, design: .monospaced))
+            .font(Theme.TypeScale.monoCaption)
             .foregroundStyle(Theme.Palette.textMuted)
         }
         Spacer()
@@ -334,7 +334,7 @@ public struct ToolRunDetailView: View {
         sectionLabel("参数")
         ScrollView(.vertical) {
           Text(row.input)
-            .font(.system(size: 11.5, design: .monospaced))
+            .font(Theme.TypeScale.monoCaption)
             .foregroundStyle(Theme.Palette.textSecondary)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -345,7 +345,7 @@ public struct ToolRunDetailView: View {
         sectionLabel(row.isError ? "错误" : "结果")
         ScrollView(.vertical) {
           Text(output)
-            .font(.system(size: 11.5, design: .monospaced))
+            .font(Theme.TypeScale.monoCaption)
             .foregroundStyle(row.isError ? Theme.Palette.destructive : Theme.Palette.textSecondary)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -358,7 +358,7 @@ public struct ToolRunDetailView: View {
 
   private func sectionLabel(_ text: String) -> some View {
     Text(text)
-      .font(.system(size: 10.5, weight: .medium))
+      .font(Theme.TypeScale.toolCaption)
       .foregroundStyle(Theme.Palette.textMuted)
   }
 }

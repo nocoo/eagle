@@ -1329,7 +1329,7 @@ struct BotsPresenter {
   func faceStyle(for bot: BotSummary) -> BotFace.Style {
     BotFace.Style(
       shape: BotFace.Shape(rawValue: bot.face.shape.rawValue) ?? .blob,
-      tint: Theme.Palette.BotTint(rawValue: bot.face.tint.rawValue) ?? .green
+      tint: Theme.Palette.BotTint(rawValue: bot.face.tint.rawValue) ?? Theme.Palette.BotTint.green
     )
   }
 
@@ -1574,11 +1574,11 @@ struct BotsModelSetupBanner: View {
   var body: some View {
     HStack(spacing: 10) {
       Image(systemName: "sparkles")
-        .font(.system(size: 13, weight: .medium))
+        .font(Theme.TypeScale.noteEmphasis)
         .foregroundStyle(Theme.Palette.info)
       VStack(alignment: .leading, spacing: 2) {
         Text("还没有配置模型网关")
-          .font(.system(size: 13.5, weight: .semibold))
+          .font(Theme.TypeScale.sectionLabelStrong)
           .foregroundStyle(Theme.Palette.textPrimary)
         Text("在设置里填入网关地址、API Key 和模型后，这个 Bot 就能回答。")
           .font(Theme.TypeScale.note)
@@ -1587,7 +1587,7 @@ struct BotsModelSetupBanner: View {
       Spacer(minLength: 8)
       Button("去设置", action: onOpen)
         .buttonStyle(.plain)
-        .font(.system(size: 13, weight: .medium))
+        .font(Theme.TypeScale.noteEmphasis)
         .foregroundStyle(Theme.Palette.info)
       IconButton(systemName: "xmark", label: "关闭提示", size: 20, style: .plain, action: onDismiss)
     }

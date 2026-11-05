@@ -61,7 +61,7 @@ public struct SectionLabel: View {
         Text("\(unreadCount)")
           .font(Theme.TypeScale.sectionLabel)
           .monospacedDigit()
-          .foregroundStyle(.white)
+          .foregroundStyle(Theme.Palette.onColor)
           .padding(.horizontal, Theme.Metric.unreadBadgeInset)
           .frame(minWidth: Theme.Metric.unreadBadgeHeight)
           .frame(height: Theme.Metric.unreadBadgeHeight)

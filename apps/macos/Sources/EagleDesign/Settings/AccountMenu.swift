@@ -63,13 +63,15 @@ public struct AccountMenu: View {
         } label: {
           HStack(spacing: 10) {
             Image(systemName: row.systemName)
-              .font(.system(size: 14))
+              .font(Theme.TypeScale.fieldLabel)
               .foregroundStyle(
                 row.destructive ? Theme.Palette.destructive : Theme.Palette.textPrimary
               )
               .frame(width: 20)
             Text(row.title)
-              .font(.system(size: 13.5, weight: row.kind == .plan ? .semibold : .regular))
+              .font(
+                row.kind == .plan ? Theme.TypeScale.sectionLabelStrong : Theme.TypeScale.rowSubtitle
+              )
               .foregroundStyle(
                 row.destructive ? Theme.Palette.destructive : Theme.Palette.textPrimary)
             Spacer(minLength: 8)
@@ -80,7 +82,7 @@ public struct AccountMenu: View {
             }
             if row.showsChevron {
               Image(systemName: "chevron.right")
-                .font(.system(size: 10, weight: .semibold))
+                .font(Theme.TypeScale.Glyph.action)
                 .foregroundStyle(Theme.Palette.textMuted)
             }
           }
@@ -108,6 +110,6 @@ public struct AccountMenu: View {
       RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous)
         .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
     )
-    .shadow(color: .black.opacity(0.10), radius: 18, y: 6)
+    .shadow(color: Theme.Palette.accountShadow, radius: 18, y: 6)
   }
 }

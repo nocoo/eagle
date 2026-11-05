@@ -219,7 +219,7 @@ public struct SidebarPanel: View {
       } label: {
         HStack(spacing: 5) {
           Image(systemName: "chevron.right")
-            .font(.system(size: 9, weight: .bold))
+            .font(Theme.TypeScale.Glyph.groupChevron)
             .foregroundStyle(Theme.Palette.textSecondary.opacity(0.75))
             .rotationEffect(.degrees(section.isExpanded ? 90 : 0))
             // The collapse control is always visible: a group's state should be readable
@@ -379,16 +379,16 @@ public struct SidebarPanel: View {
       Button(action: onUnread) {
         HStack(spacing: 8) {
           Circle()
-            .fill(.white.opacity(0.22))
+            .fill(Theme.Palette.unreadHighlight)
             .frame(width: 18, height: 18)
             .overlay {
               Image(systemName: "chevron.down")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.white)
+                .font(Theme.TypeScale.Glyph.unreadChevron)
+                .foregroundStyle(Theme.Palette.onColor)
             }
           Text("更多未读消息")
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.white)
+            .font(Theme.TypeScale.activity)
+            .foregroundStyle(Theme.Palette.onColor)
         }
         .padding(.horizontal, 11)
         .frame(height: Theme.Metric.unreadPillHeight)

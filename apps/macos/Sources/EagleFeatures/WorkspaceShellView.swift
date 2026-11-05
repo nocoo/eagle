@@ -339,7 +339,7 @@ public struct WorkspaceShellView: View {
 
       if let exchange = openedPeerExchange ?? bots.openedExchange {
         // The sidebar stays visible, as the transcript behind the dialog keeps its context.
-        Color.black.opacity(0.001)
+        Theme.Palette.hitSurface
           .ignoresSafeArea()
           .onTapGesture {
             openedPeerExchange = nil
@@ -356,7 +356,7 @@ public struct WorkspaceShellView: View {
       }
 
       if showsAccountMenu {
-        Color.black.opacity(0.001)
+        Theme.Palette.hitSurface
           .ignoresSafeArea()
           .onTapGesture { showsAccountMenu = false }
         AccountMenu(rows: account.rows) { row in
@@ -388,7 +388,7 @@ public struct WorkspaceShellView: View {
   private var settingsOverlay: some View {
     ZStack {
       // The blur lives on the window itself (a few points); this layer only dims.
-      Color.black.opacity(0.32)
+      Theme.Palette.modalScrim
         .ignoresSafeArea()
         .onTapGesture { showsSettings = false }
 
@@ -405,7 +405,7 @@ public struct WorkspaceShellView: View {
         RoundedRectangle(cornerRadius: 18, style: .continuous)
           .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
       )
-      .shadow(color: .black.opacity(0.28), radius: 40, y: 18)
+      .shadow(color: Theme.Palette.modalShadow, radius: 40, y: 18)
       .background(TrafficLights(hidden: true))
     }
     .transition(.opacity)

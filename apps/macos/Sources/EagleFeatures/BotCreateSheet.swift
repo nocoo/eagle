@@ -11,7 +11,7 @@ struct BotCreateSheet: View {
   @State private var name = ""
   @State private var label = ""
   @State private var shape: BotFace.Shape = .blob
-  @State private var tint: Theme.Palette.BotTint = .green
+  @State private var tint: Theme.Palette.BotTint = Theme.Palette.BotTint.green
   @FocusState private var nameFocused: Bool
 
   private var canCreate: Bool {
@@ -115,7 +115,7 @@ struct BotCreateSheet: View {
       trimmedLabel.isEmpty ? nil : trimmedLabel,
       BotAppearance(
         shape: BotAppearance.Shape(rawValue: shape.rawValue) ?? .blob,
-        tint: BotAppearance.Tint(rawValue: tint.rawValue) ?? .green
+        tint: BotAppearance.Tint(rawValue: tint.rawValue) ?? BotAppearance.Tint.green
       )
     )
   }

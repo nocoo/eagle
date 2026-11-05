@@ -1,7 +1,13 @@
 # macOS design-system consolidation and refinement
 
-Status: **planning only; implementation has not started**.
-Updated 2026-11-05 following the owner's requested order. This document replaces the
+Status: **phase 1 in progress; phases 2–4 have not started**.
+Updated 2026-11-05 following the owner's requested order.
+
+The first implementation slice centralizes palette definitions and explicit font
+construction with a parser-based guard and staged-snapshot rejection tests. It preserves
+current appearance values and manual Bot choices. Spacing/alpha/motion ownership and
+standard-control consolidation remain unfinished; passing this guard is not completion
+of phase 1. See `apps/macos/DESIGN.md` for the precise implemented contract. This document replaces the
 execution sequence and color-choice proposals in `MACOS-DESIGN-REVIEW.md`; that review
 remains the source of measured current-state/reference evidence.
 
@@ -308,8 +314,9 @@ screens as well as specimens: a beautiful unused gallery component does not coun
 - Each coherent slice commits independently and leaves a foreground dev App for manual
   inspection whenever macOS code changes. Run full release gates before any release;
   publishing is not authorized by this plan.
-- No UI implementation, token replacement, new guard or hook change has occurred yet.
-  This document describes intended enforcement, not a successful enforcement run.
+- The first palette/font slice has source-guard and isolated real-commit rejection
+  evidence. Other phase exit criteria remain planned until verified; do not generalize
+  that proof to spacing, control ownership, layout redesign or all repository hooks.
 
 ## Decisions to confirm before the relevant phase
 

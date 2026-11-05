@@ -61,10 +61,10 @@ public struct PillSelect<Value: Hashable>: View {
     } label: {
       HStack(spacing: 6) {
         Text(options.first { $0.id == selection }?.title ?? "")
-          .font(.system(size: 13, weight: .medium))
+          .font(Theme.TypeScale.noteEmphasis)
           .foregroundStyle(Theme.Palette.textPrimary)
         Image(systemName: "chevron.down")
-          .font(.system(size: 9, weight: .semibold))
+          .font(Theme.TypeScale.Glyph.chevron)
           .foregroundStyle(Theme.Palette.textSecondary)
       }
       .padding(.horizontal, 14)
@@ -92,10 +92,10 @@ public struct InfoBanner: View {
   public var body: some View {
     HStack(spacing: 8) {
       Image(systemName: "checkmark.circle")
-        .font(.system(size: 14, weight: .medium))
+        .font(Theme.TypeScale.cardTitle)
         .foregroundStyle(Theme.Palette.info)
       Text(text)
-        .font(.system(size: 13, weight: .medium))
+        .font(Theme.TypeScale.noteEmphasis)
         .foregroundStyle(Theme.Palette.info)
       Spacer(minLength: 0)
     }
@@ -125,7 +125,7 @@ public struct SettingsSectionHeader<Trailing: View>: View {
     HStack(alignment: .center, spacing: 12) {
       VStack(alignment: .leading, spacing: 4) {
         Text(title)
-          .font(.system(size: 15, weight: .semibold))
+          .font(Theme.TypeScale.sectionTitle)
           .foregroundStyle(Theme.Palette.textPrimary)
         if let detail {
           Text(detail)
@@ -157,7 +157,7 @@ public struct SettingsSectionRow<Trailing: View>: View {
     HStack(alignment: .center, spacing: 16) {
       VStack(alignment: .leading, spacing: 3) {
         Text(title)
-          .font(.system(size: 14))
+          .font(Theme.TypeScale.fieldLabel)
           .foregroundStyle(Theme.Palette.textPrimary)
         if let detail {
           Text(detail)
@@ -213,14 +213,14 @@ public struct SettingsTextArea: View {
     ZStack(alignment: .topLeading) {
       if text.isEmpty {
         Text(placeholder)
-          .font(.system(size: 13.5))
+          .font(Theme.TypeScale.rowSubtitle)
           .foregroundStyle(Theme.Palette.textSecondary)
           .padding(.horizontal, 6)
           .padding(.vertical, 6)
           .allowsHitTesting(false)
       }
       TextEditor(text: $text)
-        .font(.system(size: 13.5))
+        .font(Theme.TypeScale.rowSubtitle)
         .foregroundStyle(Theme.Palette.textPrimary)
         .scrollContentBackground(.hidden)
         .padding(.horizontal, 3)
@@ -262,7 +262,7 @@ public struct SettingsTextField: View {
         }
       }
       .textFieldStyle(.plain)
-      .font(.system(size: 13.5))
+      .font(Theme.TypeScale.rowSubtitle)
       .foregroundStyle(Theme.Palette.textPrimary)
       .focused($focused)
       if !secure, !text.isEmpty {
@@ -270,7 +270,7 @@ public struct SettingsTextField: View {
           text = ""
         } label: {
           Image(systemName: "xmark.circle.fill")
-            .font(.system(size: 12))
+            .font(Theme.TypeScale.Glyph.compact)
             .foregroundStyle(Theme.Palette.textMuted)
         }
         .buttonStyle(.plain)
@@ -293,7 +293,7 @@ public struct SettingsTextField: View {
     .overlay(alignment: .leading) {
       if text.isEmpty {
         Text(placeholder)
-          .font(.system(size: 13.5))
+          .font(Theme.TypeScale.rowSubtitle)
           .foregroundStyle(Theme.Palette.textMuted)
           .padding(.leading, 12)
           .allowsHitTesting(false)
@@ -320,8 +320,8 @@ public struct SettingsActionButton: View {
   public var body: some View {
     Button(action: action) {
       Text(title)
-        .font(.system(size: 13, weight: .medium))
-        .foregroundStyle(prominent ? Color.white : Theme.Palette.textPrimary)
+        .font(Theme.TypeScale.noteEmphasis)
+        .foregroundStyle(prominent ? Theme.Palette.onColor : Theme.Palette.textPrimary)
         .padding(.horizontal, 14)
         .frame(height: 30)
         .background(

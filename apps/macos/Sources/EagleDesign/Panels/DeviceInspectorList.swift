@@ -85,7 +85,7 @@ public struct DeviceInspectorList: View {
   private var header: some View {
     HStack(spacing: Theme.Metric.panelSectionRowGap) {
       Image(systemName: "desktopcomputer")
-        .font(.system(size: Theme.Metric.panelSectionGlyph, weight: .semibold))
+        .font(Theme.TypeScale.Glyph.section)
         .foregroundStyle(Theme.Palette.textMuted)
         .frame(width: Theme.Metric.panelSectionGlyphWidth)
       Text("可用电脑")
@@ -108,7 +108,7 @@ public struct DeviceInspectorList: View {
   private var empty: some View {
     HStack(spacing: 8) {
       Image(systemName: enabled ? "desktopcomputer.trianglebadge.exclamationmark" : "power")
-        .font(.system(size: 12))
+        .font(Theme.TypeScale.Glyph.compact)
         .foregroundStyle(Theme.Palette.textMuted)
       Text(enabled ? "还没有读到设备目录" : "设备服务已停用")
         .font(Theme.TypeScale.note)
@@ -132,7 +132,7 @@ public struct DeviceInspectorList: View {
     let isLocal = device.isLocal
     return HStack(spacing: 8) {
       Image(systemName: "desktopcomputer")
-        .font(.system(size: 12, weight: .medium))
+        .font(Theme.TypeScale.activity)
         .foregroundStyle(isLocal ? Theme.Palette.textSecondary : Theme.Palette.textMuted)
         .frame(width: 16)
       Text(device.name)
@@ -142,7 +142,7 @@ public struct DeviceInspectorList: View {
         .truncationMode(.middle)
       if isLocal {
         Text("本机")
-          .font(.system(size: 10, weight: .medium))
+          .font(Theme.TypeScale.localBadge)
           .foregroundStyle(Theme.Palette.textMuted)
           .padding(.horizontal, 5)
           .padding(.vertical, 1)
@@ -174,7 +174,7 @@ public struct DeviceInspectorList: View {
           .foregroundStyle(Theme.Palette.accent)
         Spacer(minLength: 0)
         Image(systemName: "arrow.up.forward")
-          .font(.system(size: 10, weight: .semibold))
+          .font(Theme.TypeScale.Glyph.action)
           .foregroundStyle(Theme.Palette.textMuted)
       }
       .padding(.horizontal, 10)

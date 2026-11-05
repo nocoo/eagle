@@ -65,7 +65,7 @@ public struct PeerPairChip: View {
         index, peer in
         if index > 0 {
           Image(systemName: "arrow.left.arrow.right")
-            .font(.system(size: 10, weight: .semibold))
+            .font(Theme.TypeScale.Glyph.action)
             .foregroundStyle(Theme.Palette.textMuted)
         }
         PeerFaceName(
@@ -84,7 +84,7 @@ public struct PeerPairChip: View {
       Capsule(style: .continuous)
         .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
     )
-    .shadow(color: .black.opacity(0.22), radius: 12, y: 4)
+    .shadow(color: Theme.Palette.peerAvatarShadow, radius: 12, y: 4)
     .accessibilityElement(children: .combine)
   }
 }

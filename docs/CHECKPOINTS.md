@@ -1,5 +1,49 @@
 # 用户视角检查点
 
+## 2026-11-05 08:09 +08 — Palette/font slice accepted locally
+
+- All 59 design guard/gate cases pass, including the review's alias, chained-font,
+  native-color and staged-directory-link regressions. Three read-only review rounds
+  are closed. Root typecheck and check-only lint, strict Swift format, 431 Swift tests
+  and the 91.7% logic-coverage gate pass. The native composer fixture passes all 42
+  interaction checks with the explicit Xcode environment.
+- Fresh foreground App PID 94299 owns daemon 95309 from this checkout's `apps/bots`;
+  CLI health and the development credential succeed. The same 1280 × 1290 pt synthetic
+  chat was captured before and after: all pixels outside the native traffic-light
+  rectangle are identical. Captures are `.local/design-stage1-before.png` and
+  `.local/design-stage1-after.png`; this is light-theme single-screen evidence only.
+- No production authentication, D1 or Herdr collection was exercised, and no release
+  was made. Root check/browser release gates were not run. Phase 1 still needs remaining
+  geometry/alpha/motion extraction and standard-control ownership/consolidation;
+  palette redesign, stable hash assignment and layout polish have not started.
+
+## 2026-11-05 08:00 +08 — Design guard rejection verified
+
+- The first palette/font slice passes all 54 parser/gate tests, including actual commits
+  from isolated Git index snapshots, renamed inputs, missing Xcode and directory-link
+  escape attempts. All 431 Swift tests pass; the existing logic-coverage gate reports
+  91.7% against its unchanged 90% floor. Review round 2 is checking the repaired guard.
+- Dev App PID 77085 still owns daemon 77591 on 43117; CLI health succeeded and the
+  catalog has seven unopened Bots and one idle Bot, no active generation. A fresh
+  source-built App and rendering comparison are next. No new Herdr collection,
+  production authentication or D1 verification was performed.
+- Phase 1 remains incomplete: geometry/alpha/motion and primitive ownership are not
+  guarded yet. The eight-color/hash redesign and layout/control polish have not started.
+
+## 2026-11-05 07:37 +08 — Design consolidation, first slice
+
+- Phase 1 is in progress, not complete. Palette definitions (including the existing
+  twelve manual Bot tints) and explicit font construction now live in Theme without
+  intentionally changing values. The parser-based source guard first rejected 164
+  locations; its 35 fixture tests now pass and the current source scan is clean.
+- Eagle builds successfully with existing concurrency warnings. The full Swift run
+  exposed one font-equivalence assertion in the new test and an existing fixed-date
+  password-validity test; both are being investigated rather than skipped. Staged
+  snapshot hook proof, CI wiring and the updated foreground App remain unfinished.
+- The previously launched dev App still runs the prior binary. No new Herdr collection,
+  production authentication or D1 check was performed. Earlier actual App screenshots
+  are the visual baseline; no new rendering equivalence is claimed yet.
+
 ## 2026-11-04 07:49 +08 — macOS 0.18.0 DMG published
 
 - `macos-v0.18.0` points to `9eb61e4`, whose GitHub root and macOS checks

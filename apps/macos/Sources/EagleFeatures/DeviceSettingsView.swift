@@ -211,7 +211,7 @@ public struct DeviceSettingsView: View {
         Text("有效期 \(Self.validityTitle(ttlSeconds))")
         Image(systemName: "chevron.down")
       }
-      .font(.system(size: 13, weight: .medium))
+      .font(Theme.TypeScale.noteEmphasis)
       .foregroundStyle(Theme.Palette.textPrimary)
       .padding(.horizontal, 14)
       .frame(height: 30)
@@ -337,7 +337,7 @@ public struct DeviceSettingsView: View {
     HStack(alignment: .top, spacing: 12) {
       HStack(alignment: .top, spacing: 10) {
         Image(systemName: "desktopcomputer")
-          .font(.system(size: 16))
+          .font(Theme.TypeScale.Glyph.device)
           .foregroundStyle(Theme.Palette.textMuted)
           .frame(width: 20)
         VStack(alignment: .leading, spacing: 5) {
@@ -420,7 +420,7 @@ struct DeviceSummaryView: View {
   var body: some View {
     HStack(alignment: .top, spacing: 10) {
       Image(systemName: "desktopcomputer")
-        .font(.system(size: 16))
+        .font(Theme.TypeScale.Glyph.device)
         .foregroundStyle(Theme.Palette.textMuted)
         .frame(width: 20)
       VStack(alignment: .leading, spacing: 5) {
@@ -497,7 +497,7 @@ private struct DeviceStatusIcon: View {
 
   var body: some View {
     Image(systemName: online == true ? "circle.fill" : online == false ? "circle" : "circle.dashed")
-      .font(.system(size: 9, weight: .medium))
+      .font(Theme.TypeScale.Glyph.status)
       .foregroundStyle(online == true ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
       .frame(width: 12, height: 20)
       .help(label)

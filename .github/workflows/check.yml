@@ -40,6 +40,8 @@ jobs:
       - run: npm --prefix apps/bots ci
       - run: npm --workspace @nocoo/eagle-agent run build
       - run: npm run test:devices
+      - run: npm run check:design
+      - run: npm run test:design
       - run: swift build --package-path apps/macos
       - run: npm run test:focus
       - run: cd apps/macos && swift format lint --strict --recursive Sources Scripts Tests

@@ -109,12 +109,12 @@ public struct AskCardRow: View {
   private var header: some View {
     HStack(spacing: 10) {
       Image(systemName: locked ? "checkmark.circle.fill" : "questionmark.circle")
-        .font(.system(size: 13, weight: .medium))
+        .font(Theme.TypeScale.noteEmphasis)
         .foregroundStyle(locked ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
       Text(
         card.answered ? "已回答" : submission.pending ? "提交中" : submission.confirmed ? "已提交" : "需要你确认"
       )
-      .font(.system(size: 13, weight: .medium))
+      .font(Theme.TypeScale.noteEmphasis)
       .foregroundStyle(Theme.Palette.textPrimary)
       Spacer(minLength: 0)
       if !locked {
@@ -135,7 +135,7 @@ public struct AskCardRow: View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 8) {
         Text(question.prompt)
-          .font(.system(size: 13.5, weight: .medium))
+          .font(Theme.TypeScale.sectionLabel)
           .foregroundStyle(Theme.Palette.textPrimary)
           .fixedSize(horizontal: false, vertical: true)
         Text(question.multiple ? "多选" : "单选")
@@ -171,12 +171,12 @@ public struct AskCardRow: View {
     } label: {
       HStack(alignment: .top, spacing: 10) {
         Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-          .font(.system(size: 14, weight: .medium))
+          .font(Theme.TypeScale.cardTitle)
           .foregroundStyle(selected ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
           .frame(width: 18, alignment: .center)
         VStack(alignment: .leading, spacing: 2) {
           Text(option.label)
-            .font(.system(size: 13))
+            .font(Theme.TypeScale.note)
             .foregroundStyle(Theme.Palette.textPrimary)
           if let detail = option.detail, !detail.isEmpty {
             Text(detail)
@@ -208,8 +208,8 @@ public struct AskCardRow: View {
         send(skipped: false)
       } label: {
         Text("提交")
-          .font(.system(size: 13, weight: .medium))
-          .foregroundStyle(Color.white)
+          .font(Theme.TypeScale.noteEmphasis)
+          .foregroundStyle(Theme.Palette.onColor)
           .padding(.horizontal, 16)
           .frame(height: 30)
           .background(

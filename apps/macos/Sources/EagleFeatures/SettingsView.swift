@@ -243,7 +243,7 @@ public struct SettingsView: View {
             .fill(daemonStatusTint(daemon))
             .frame(width: 8, height: 8)
           Text(daemonStatusText(daemon))
-            .font(.system(size: 13))
+            .font(Theme.TypeScale.note)
             .foregroundStyle(Theme.Palette.textPrimary)
         }
       }
@@ -430,12 +430,12 @@ public struct SettingsView: View {
         } label: {
           HStack(alignment: .center, spacing: 8) {
             Image(systemName: "chevron.right")
-              .font(.system(size: 10, weight: .semibold))
+              .font(Theme.TypeScale.Glyph.action)
               .foregroundStyle(Theme.Palette.textMuted)
               .rotationEffect(.degrees(expanded ? 90 : 0))
             VStack(alignment: .leading, spacing: 3) {
               Text(title)
-                .font(.system(size: 14))
+                .font(Theme.TypeScale.fieldLabel)
                 .foregroundStyle(Theme.Palette.textPrimary)
               Text(detail)
                 .font(Theme.TypeScale.note)
@@ -499,13 +499,13 @@ public struct SettingsView: View {
     VStack(alignment: .leading, spacing: 6) {
       if let machine = model.gatewayMachinePrompt {
         Text(machine.path)
-          .font(.system(size: 11.5, design: .monospaced))
+          .font(Theme.TypeScale.monoCaption)
           .foregroundStyle(Theme.Palette.textMuted)
           .lineLimit(1)
           .truncationMode(.middle)
         ScrollView {
           Text(machine.text)
-            .font(.system(size: 12.5))
+            .font(Theme.TypeScale.compactBody)
             .foregroundStyle(Theme.Palette.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .textSelection(.enabled)
@@ -536,10 +536,10 @@ public struct SettingsView: View {
     } label: {
       HStack(spacing: 6) {
         Text(model.gatewayThinkingLevelLabel)
-          .font(.system(size: 13, weight: .medium))
+          .font(Theme.TypeScale.noteEmphasis)
           .foregroundStyle(Theme.Palette.textPrimary)
         Image(systemName: "chevron.down")
-          .font(.system(size: 9, weight: .semibold))
+          .font(Theme.TypeScale.Glyph.chevron)
           .foregroundStyle(Theme.Palette.textSecondary)
       }
       .padding(.horizontal, 14)
@@ -703,7 +703,7 @@ public struct SettingsView: View {
       }
       if let purpose = secret.purpose, !purpose.isEmpty {
         Text(purpose)
-          .font(.system(size: 12.5))
+          .font(Theme.TypeScale.compactBody)
           .foregroundStyle(Theme.Palette.textPrimary)
           .fixedSize(horizontal: false, vertical: true)
       }
@@ -777,7 +777,7 @@ public struct SettingsView: View {
     return VStack(alignment: .leading, spacing: 10) {
       HStack(spacing: 8) {
         Text(provider.title)
-          .font(.system(size: 14, weight: .medium))
+          .font(Theme.TypeScale.cardTitle)
           .foregroundStyle(Theme.Palette.textPrimary)
         Text(provider.enabled ? "使用中" : (provider.hasApiKey ? "Key 已保存" : "未配置"))
           .font(Theme.TypeScale.note)
@@ -795,7 +795,7 @@ public struct SettingsView: View {
           } label: {
             HStack(spacing: 4) {
               Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .semibold))
+                .font(Theme.TypeScale.Glyph.chevron)
                 .rotationEffect(.degrees(expanded ? 90 : 0))
               Text("地址与模型")
             }
@@ -840,7 +840,7 @@ public struct SettingsView: View {
       }
       if provider.isDecision {
         Text("\(provider.baseUrl) · \(provider.model)")
-          .font(.system(size: 11.5, design: .monospaced))
+          .font(Theme.TypeScale.monoCaption)
           .foregroundStyle(Theme.Palette.textMuted)
           .lineLimit(1)
           .truncationMode(.middle)
@@ -1037,11 +1037,11 @@ public struct SettingsView: View {
     case .available(let latest, let release):
       HStack(spacing: 12) {
         Image(systemName: "arrow.down.circle.fill")
-          .font(.system(size: 15, weight: .semibold))
+          .font(Theme.TypeScale.sectionTitle)
           .foregroundStyle(Theme.Palette.accentStrong)
         VStack(alignment: .leading, spacing: 2) {
           Text("有新版本 \(latest)")
-            .font(.system(size: 14, weight: .semibold))
+            .font(Theme.TypeScale.cardTitleStrong)
             .foregroundStyle(Theme.Palette.textPrimary)
           Text("下载安装包后手动安装；Eagle 不会自行替换。")
             .font(Theme.TypeScale.note)
@@ -1085,7 +1085,7 @@ public struct SettingsView: View {
             aboutMark
             VStack(alignment: .leading, spacing: 4) {
               Text(DevAppIdentity.currentDisplayName)
-                .font(.system(size: 20, weight: .semibold))
+                .font(Theme.TypeScale.dialogTitle)
                 .foregroundStyle(Theme.Palette.textPrimary)
               HStack(spacing: 8) {
                 Text(model.appVersion.display)
@@ -1094,7 +1094,7 @@ public struct SettingsView: View {
                   .textSelection(.enabled)
                 if !model.appVersion.isRelease {
                   Text("开发版")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(Theme.TypeScale.compactBadge)
                     .foregroundStyle(Theme.Palette.textMuted)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -1166,7 +1166,7 @@ public struct SettingsView: View {
         .frame(width: 64, height: 64)
     } else {
       Image(systemName: "bird")
-        .font(.system(size: 44, weight: .semibold))
+        .font(Theme.TypeScale.aboutTitle)
         .foregroundStyle(Theme.Palette.textPrimary)
         .frame(width: 64, height: 64)
     }

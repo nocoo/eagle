@@ -98,7 +98,7 @@ public struct InspectorSectionView: View {
                   .foregroundStyle(Theme.Palette.textPrimary)
                   .lineLimit(1)
                 Image(systemName: "chevron.down")
-                  .font(.system(size: 8, weight: .semibold))
+                  .font(Theme.TypeScale.Glyph.microChevron)
                   .foregroundStyle(Theme.Palette.textMuted)
               }
             }
@@ -162,7 +162,7 @@ struct InspectorTaskRowView: View {
   var body: some View {
     HStack(spacing: Theme.Metric.panelSectionRowGap) {
       Image(systemName: row.symbolName)
-        .font(.system(size: Theme.Metric.panelSectionGlyph, weight: .medium))
+        .font(Theme.TypeScale.Glyph.sectionRegular)
         .foregroundStyle(Theme.Palette.textMuted)
         .frame(width: Theme.Metric.panelSectionGlyphWidth)
       Text(row.title)
@@ -212,12 +212,12 @@ private struct InspectorPullRowView: View {
     } label: {
       HStack(alignment: .firstTextBaseline, spacing: 8) {
         Image(systemName: row.appearance.symbol)
-          .font(.system(size: 12, weight: .semibold))
+          .font(Theme.TypeScale.compactTitle)
           .foregroundStyle(row.appearance.tint)
           .frame(width: Theme.Metric.panelSectionGlyphWidth)
         VStack(alignment: .leading, spacing: 2) {
           Text(row.title)
-            .font(.system(size: 12.5))
+            .font(Theme.TypeScale.compactBody)
             .foregroundStyle(Theme.Palette.textPrimary)
             .lineLimit(2)
           Text("\(row.appearance.label) · \(row.host)")
@@ -227,7 +227,7 @@ private struct InspectorPullRowView: View {
         }
         Spacer(minLength: 4)
         Image(systemName: "arrow.up.forward")
-          .font(.system(size: 9, weight: .semibold))
+          .font(Theme.TypeScale.Glyph.chevron)
           .foregroundStyle(Theme.Palette.textMuted)
           .opacity(hovering ? 1 : 0)
       }

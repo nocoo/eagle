@@ -25,6 +25,8 @@
     "test:devices": "node --test tests/device-integration/*.test.ts",
     "test:browser": "playwright test",
     "test:focus": "node --test tests/native/composer-focus.test.ts",
+    "check:design": "node apps/macos/Scripts/check-design.ts",
+    "test:design": "node --test tests/native/design-*.test.ts",
     "check": "npm run test && npm run typecheck && npm run lint && npm run build",
     "deploy": "node scripts/deploy.ts",
     "agent": "node packages/agent/cli.ts",

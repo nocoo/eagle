@@ -197,7 +197,7 @@ public enum MockWorkspace {
 
   public static let firefly = PeerRef(
     id: "firefly", title: "发布管家",
-    face: BotFace.Style(shape: .squircle, tint: .orange), tintIndex: 3)
+    face: BotFace.Style(shape: .squircle, tint: Theme.Palette.BotTint.orange), tintIndex: 3)
 
   public static let fireflyExchange = PeerExchange(
     id: "x2",

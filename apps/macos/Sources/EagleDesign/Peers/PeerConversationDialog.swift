@@ -46,7 +46,7 @@ public struct PeerConversationDialog: View {
         .padding(.trailing, Theme.Metric.peerDialogInset)
         .padding(.top, 14)
     }
-    .shadow(color: .black.opacity(0.28), radius: 34, y: 16)
+    .shadow(color: Theme.Palette.modalShadow, radius: 34, y: 16)
   }
 
   private var footer: some View {

@@ -45,7 +45,7 @@ public struct TemplateGallery: View {
     VStack(alignment: .leading, spacing: 24) {
       HStack(spacing: 10) {
         Image(systemName: "square.stack.3d.up.fill")
-          .font(.system(size: 24, weight: .medium))
+          .font(Theme.TypeScale.gallerySymbol)
           .foregroundStyle(Theme.Palette.accentStrong)
         VStack(alignment: .leading, spacing: 2) {
           Text("Eagle").font(Theme.TypeScale.brand)
@@ -129,7 +129,7 @@ public struct TemplateGallery: View {
           .font(Theme.TypeScale.mono)
           .foregroundStyle(Theme.Palette.accentStrong)
         Text(section.rawValue)
-          .font(.system(size: 26, weight: .semibold))
+          .font(Theme.TypeScale.galleryTitle)
           .foregroundStyle(Theme.Palette.textPrimary)
         Text(section.detail)
           .font(Theme.TypeScale.rowSubtitle)

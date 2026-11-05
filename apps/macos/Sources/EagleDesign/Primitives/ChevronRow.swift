@@ -19,7 +19,7 @@ public struct ChevronRow: View {
     } label: {
       HStack(spacing: 9) {
         Image(systemName: systemName)
-          .font(.system(size: 12, weight: .medium))
+          .font(Theme.TypeScale.activity)
           .foregroundStyle(Theme.Palette.textSecondary)
           .frame(width: 20)
         Text(title)
@@ -29,7 +29,7 @@ public struct ChevronRow: View {
           .truncationMode(.middle)
         Spacer(minLength: 8)
         Image(systemName: "chevron.right")
-          .font(.system(size: 10, weight: .semibold))
+          .font(Theme.TypeScale.Glyph.action)
           .foregroundStyle(Theme.Palette.textSecondary)
       }
       .padding(.horizontal, 14)

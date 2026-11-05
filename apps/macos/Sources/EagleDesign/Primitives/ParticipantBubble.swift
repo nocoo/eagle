@@ -50,12 +50,12 @@ public struct ParticipantBubble: View {
         HStack(spacing: Theme.Metric.participantGap) {
           avatar
           Text(name)
-            .font(.system(size: 13.5, weight: .semibold))
+            .font(Theme.TypeScale.sectionLabelStrong)
             .foregroundStyle(Theme.Palette.textPrimary)
             .lineLimit(1)
           if let status {
             Image(systemName: status.glyph)
-              .font(.system(size: 12, weight: .semibold))
+              .font(Theme.TypeScale.compactTitle)
               .foregroundStyle(statusTint)
               .id(status.glyph)
               .transition(.opacity)
@@ -130,7 +130,7 @@ public struct ParticipantBubble: View {
         .fill(Theme.Palette.card)
         .overlay { if hovering { Capsule(style: .continuous).fill(Theme.Palette.hover) } }
         .shadow(
-          color: .black.opacity(Theme.Metric.participantShadowOpacity),
+          color: Theme.Palette.participantShadow,
           radius: Theme.Metric.participantShadowRadius,
           y: Theme.Metric.participantShadowY
         )

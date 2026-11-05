@@ -42,7 +42,7 @@ public struct IconButton: View {
   public var body: some View {
     Button(action: action) {
       Image(systemName: systemName)
-        .font(.system(size: glyphSize, weight: style == .circled ? .regular : .medium))
+        .font(Theme.TypeScale.buttonGlyph(size: glyphSize, circled: style == .circled))
         .foregroundStyle(tint)
         .frame(width: size, height: size)
         .background { background }
@@ -85,7 +85,7 @@ struct RoundControlSurface: View {
         )
       }
       .shadow(
-        color: .black.opacity(Theme.Metric.roundShadowOpacity),
+        color: Theme.Palette.roundShadow,
         radius: Theme.Metric.roundShadowRadius,
         y: Theme.Metric.roundShadowY
       )

@@ -15,7 +15,7 @@ public struct PanelSectionHeader: View {
   public var body: some View {
     HStack(spacing: Theme.Metric.panelSectionRowGap) {
       Image(systemName: symbolName)
-        .font(.system(size: Theme.Metric.panelSectionGlyph, weight: .semibold))
+        .font(Theme.TypeScale.Glyph.section)
         .foregroundStyle(Theme.Palette.textMuted)
         .frame(width: Theme.Metric.panelSectionGlyphWidth)
       Text(title)
@@ -45,7 +45,7 @@ public struct PanelEmptyState: View {
   public var body: some View {
     HStack(alignment: .top, spacing: Theme.Metric.panelSectionRowGap) {
       Image(systemName: placeholder.symbolName)
-        .font(.system(size: Theme.Metric.panelEmptyGlyph, weight: .regular))
+        .font(Theme.TypeScale.Glyph.empty)
         .foregroundStyle(Theme.Palette.textMuted)
         .frame(width: Theme.Metric.panelSectionGlyphWidth)
       VStack(alignment: .leading, spacing: Theme.Metric.panelTaskRowGap) {

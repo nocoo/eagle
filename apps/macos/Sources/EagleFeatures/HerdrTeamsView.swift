@@ -15,7 +15,7 @@ public struct HerdrTeamsView: View {
     } label: {
       HStack(spacing: Theme.Metric.panelSectionRowGap) {
         Image(systemName: "person.2")
-          .font(.system(size: Theme.Metric.panelSectionGlyph, weight: .semibold))
+          .font(Theme.TypeScale.Glyph.section)
           .frame(width: Theme.Metric.panelSectionGlyphWidth)
         Text("Herdr")
           .font(Theme.TypeScale.sectionLabel.weight(.semibold))
@@ -24,7 +24,7 @@ public struct HerdrTeamsView: View {
         Text(countLabel).font(Theme.TypeScale.pill).monospacedDigit()
         if let error = model.error {
           Image(systemName: "exclamationmark.circle")
-            .font(.system(size: 11)).foregroundStyle(Theme.Palette.warning)
+            .font(Theme.TypeScale.Glyph.notice).foregroundStyle(Theme.Palette.warning)
             .accessibilityLabel("读取失败").help(error.message)
         } else if !model.isStale && runningTeams > 0 {
           Circle().fill(Theme.Palette.info).frame(width: 6, height: 6)
@@ -195,12 +195,12 @@ public struct HerdrTeamsView: View {
         .fixedSize()
       if !team.members.isEmpty {
         Image(systemName: expanded ? "chevron.down" : "chevron.right")
-          .font(.system(size: 9, weight: .semibold))
+          .font(Theme.TypeScale.Glyph.chevron)
           .frame(width: 10)
           .foregroundStyle(Theme.Palette.textSecondary)
           .accessibilityHidden(true)
       } else {
-        Color.clear.frame(width: 10, height: 10).accessibilityHidden(true)
+        Theme.Palette.clear.frame(width: 10, height: 10).accessibilityHidden(true)
       }
     }
     .font(Theme.TypeScale.note)
@@ -238,7 +238,7 @@ private struct HerdrDisclosureStyle: DisclosureGroupStyle {
       } label: {
         HStack(spacing: 6) {
           Image(systemName: configuration.isExpanded ? "chevron.down" : "chevron.right")
-            .font(.system(size: 9, weight: .semibold))
+            .font(Theme.TypeScale.Glyph.chevron)
             .foregroundStyle(Theme.Palette.textSecondary)
             .frame(width: 10)
             .accessibilityHidden(true)

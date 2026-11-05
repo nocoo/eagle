@@ -46,7 +46,7 @@ public struct SwitchToggle: View {
             .fill(Theme.Palette.card)
             .frame(width: knob, height: knob)
             .padding(2)
-            .shadow(color: .black.opacity(0.08), radius: 1, y: 0.5)
+            .shadow(color: Theme.Palette.switchShadow, radius: 1, y: 0.5)
         }
         .animation(.easeOut(duration: 0.14), value: isOn)
     }

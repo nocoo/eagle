@@ -14,6 +14,19 @@ public enum Theme {
     public static let textSecondary = Color(light: 0x6C6C72, dark: 0xA6A6AE)
     public static let textMuted = Color(light: 0x9A9AA2, dark: 0x75757D)
     public static let taskGuide = textMuted.opacity(0.55)
+    public static let clear = Color.clear
+    public static let onColor = Color.white
+    public static let onColorSecondary = Color.white.opacity(0.72)
+    public static let unreadHighlight = Color.white.opacity(0.22)
+    public static let hitSurface = Color.black.opacity(0.001)
+    public static let modalScrim = Color.black.opacity(0.32)
+    public static let avatarScrim = Color.black.opacity(0.36)
+    public static let modalShadow = Color.black.opacity(0.28)
+    public static let peerAvatarShadow = Color.black.opacity(0.22)
+    public static let switchShadow = Color.black.opacity(0.08)
+    public static let accountShadow = Color.black.opacity(0.10)
+    public static let roundShadow = Color.black.opacity(Metric.roundShadowOpacity)
+    public static let participantShadow = Color.black.opacity(Metric.participantShadowOpacity)
     public static let accent = Color(light: 0x0B84C4, dark: 0x4FC3F7)
     public static let accentFill = Color(light: 0x2FB457, dark: 0x2FB457)
     public static let accentStrong = Color(light: 0x2FB457, dark: 0x3DD068)
@@ -42,6 +55,29 @@ public enum Theme {
 
     public static func avatarTint(_ index: Int) -> Color {
       avatarTints[abs(index) % avatarTints.count]
+    }
+
+    public enum BotTint: String, CaseIterable, Hashable, Sendable {
+      case paper, clay, red, orange, yellow, green, teal, sky, blue, violet, pink, graphite
+    }
+
+    public static let botEye = Color(light: 0x2A2A2E, dark: 0x1A1A1C)
+
+    public static func botTint(_ tint: BotTint) -> Color {
+      switch tint {
+      case .paper: return Color(light: 0xFFFFFF, dark: 0xF4F4F6)
+      case .clay: return Color(light: 0xA9713F, dark: 0xB98052)
+      case .red: return Color(light: 0xE5484D, dark: 0xF4646A)
+      case .orange: return Color(light: 0xF5752B, dark: 0xFF8C4D)
+      case .yellow: return Color(light: 0xF5B51B, dark: 0xFFC63D)
+      case .green: return Color(light: 0x3DBB6A, dark: 0x4CD47C)
+      case .teal: return Color(light: 0x2FB7A3, dark: 0x3FD0BC)
+      case .sky: return Color(light: 0x56B4E9, dark: 0x6FC8F5)
+      case .blue: return Color(light: 0x3B7CF6, dark: 0x5A94FF)
+      case .violet: return Color(light: 0x8B5CF6, dark: 0xA479FF)
+      case .pink: return Color(light: 0xF04FA0, dark: 0xFF6FB5)
+      case .graphite: return Color(light: 0x6E6E76, dark: 0x8A8A93)
+      }
     }
   }
 
@@ -209,6 +245,68 @@ public enum Theme {
     public static let mono = Font.system(size: 13, design: .monospaced)
     public static let pill = Font.system(size: 11.5, weight: .medium)
     public static let activity = Font.system(size: 12, weight: .medium)
+    public static let noteEmphasis = Font.system(size: 13, weight: .medium)
+    public static let noteStrong = Font.system(size: 13, weight: .semibold)
+    public static let compactBody = Font.system(size: 12.5)
+    public static let compactEmphasis = Font.system(size: 12.5, weight: .medium)
+    public static let compactTitle = Font.system(size: 12, weight: .semibold)
+    public static let fieldLabel = Font.system(size: 14)
+    public static let sectionTitle = Font.system(size: 15, weight: .semibold)
+    public static let cardTitleStrong = Font.system(size: 14, weight: .semibold)
+    public static let sectionLabelStrong = Font.system(size: 13.5, weight: .semibold)
+    public static let settingsTitle = Font.system(size: 22, weight: .semibold)
+    public static let dialogTitle = Font.system(size: 20, weight: .semibold)
+    public static let aboutTitle = Font.system(size: 44, weight: .semibold)
+    public static let galleryTitle = Font.system(size: 26, weight: .semibold)
+    public static let gallerySymbol = Font.system(size: 24, weight: .medium)
+    public static let toolCaption = Font.system(size: 10.5, weight: .medium)
+    public static let localBadge = Font.system(size: 10, weight: .medium)
+    public static let compactBadge = Font.system(size: 11, weight: .medium)
+    public static let monoCaption = Font.system(size: 11.5, design: .monospaced)
+    public static let monoTitle = Font.system(size: 12, weight: .semibold, design: .monospaced)
+    public static let toolDetailTitle = Font.system(
+      size: 12.5, weight: .semibold, design: .monospaced)
+    public static let code = Font.system(size: 12.5, design: .monospaced)
+    public static let codeLanguage = Font.system(size: 11, weight: .medium, design: .monospaced)
+    public static let streamingCaret = Font.system(size: 14, design: .monospaced)
+    public static let bodyStrong = Font.system(size: 15, weight: .bold)
+    public static let bodyItalic = Font.system(size: 15).italic()
+
+    public enum Glyph {
+      public static let compact = Font.system(size: 12)
+      public static let action = Font.system(size: 10, weight: .semibold)
+      public static let chevron = Font.system(size: 9, weight: .semibold)
+      public static let microChevron = Font.system(size: 8, weight: .semibold)
+      public static let groupChevron = Font.system(size: 9, weight: .bold)
+      public static let unreadChevron = Font.system(size: 8, weight: .bold)
+      public static let delivery = Font.system(size: 7, weight: .bold)
+      public static let pin = Font.system(size: 9.5, weight: .semibold)
+      public static let status = Font.system(size: 9, weight: .medium)
+      public static let notice = Font.system(size: 11)
+      public static let device = Font.system(size: 16)
+      public static let section = Font.system(size: Metric.panelSectionGlyph, weight: .semibold)
+      public static let sectionRegular = Font.system(
+        size: Metric.panelSectionGlyph, weight: .medium)
+      public static let empty = Font.system(size: Metric.panelEmptyGlyph, weight: .regular)
+    }
+
+    public static func avatarInitial(size: CGFloat) -> Font {
+      .system(size: size * 0.42, weight: .semibold)
+    }
+
+    public static func buttonGlyph(size: CGFloat, circled: Bool) -> Font {
+      .system(size: size, weight: circled ? .regular : .medium)
+    }
+
+    public static func markdownHeading(_ level: Int) -> Font {
+      let size: CGFloat
+      switch level {
+      case 1: size = 20
+      case 2: size = 17
+      default: size = 15.5
+      }
+      return .system(size: size, weight: .semibold)
+    }
   }
 }
 

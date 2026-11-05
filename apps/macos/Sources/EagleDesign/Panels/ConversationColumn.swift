@@ -213,7 +213,7 @@ public struct ConversationColumn: View {
             ForEach(entries.hidingToolCalls(!showsToolCalls)) { entry in
               row(entry).id(entry.id)
             }
-            Color.clear.frame(height: 1).id("bottom")
+            Theme.Palette.clear.frame(height: 1).id("bottom")
           }
           .frame(maxWidth: .infinity, alignment: .leading)
           .padding(.horizontal, Theme.Metric.conversationInset)
@@ -223,7 +223,7 @@ public struct ConversationColumn: View {
           .frame(minHeight: viewport.size.height, alignment: .top)
           // The document's background catches only blank space, behind message controls.
           .background {
-            Color.clear
+            Theme.Palette.clear
               .contentShape(Rectangle())
               .onTapGesture { composerFocusRequest += 1 }
               .accessibilityHidden(true)

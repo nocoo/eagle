@@ -28,7 +28,7 @@ public struct MenuIconButton<Content: View>: View {
     } label: {
       Image(systemName: systemName)
         .font(
-          .system(size: size * Theme.Metric.roundGlyphRatio, weight: .regular)
+          Theme.TypeScale.buttonGlyph(size: size * Theme.Metric.roundGlyphRatio, circled: true)
         )
         .foregroundStyle(Theme.Palette.textPrimary)
         .frame(width: size, height: size)

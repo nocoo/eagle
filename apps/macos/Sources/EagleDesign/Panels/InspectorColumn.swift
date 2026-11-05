@@ -225,10 +225,10 @@ private struct Identity: View {
           if hoveringAvatar, onEditFace != nil {
             ZStack {
               Circle()
-                .fill(Color.black.opacity(0.36))
+                .fill(Theme.Palette.avatarScrim)
               Image(systemName: "pencil")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.white)
+                .font(Theme.TypeScale.settingsTitle)
+                .foregroundStyle(Theme.Palette.onColor)
             }
           }
         }

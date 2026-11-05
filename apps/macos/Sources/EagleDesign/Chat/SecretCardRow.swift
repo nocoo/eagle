@@ -182,10 +182,10 @@ public struct SecretCardRow: View {
         systemName: locked
           ? (card.skipped || skipped ? "xmark.circle.fill" : "checkmark.circle.fill") : "key.fill"
       )
-      .font(.system(size: 13, weight: .medium))
+      .font(Theme.TypeScale.noteEmphasis)
       .foregroundStyle(locked ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
       Text(locked ? (effectiveSkipped ? "已取消" : "已保存") : "需要你提供密码")
-        .font(.system(size: 13, weight: .medium))
+        .font(Theme.TypeScale.noteEmphasis)
         .foregroundStyle(Theme.Palette.textPrimary)
       Spacer(minLength: 0)
       if working { SpinnerArc(size: 12) }
@@ -198,7 +198,7 @@ public struct SecretCardRow: View {
     VStack(alignment: .leading, spacing: 10) {
       if let purpose = card.purpose, !purpose.isEmpty {
         Text(purpose)
-          .font(.system(size: 12.5))
+          .font(Theme.TypeScale.compactBody)
           .foregroundStyle(Theme.Palette.textSecondary)
           .fixedSize(horizontal: false, vertical: true)
       }
@@ -212,7 +212,7 @@ public struct SecretCardRow: View {
       }
       if let failure {
         Text(failure)
-          .font(.system(size: 12.5))
+          .font(Theme.TypeScale.compactBody)
           .foregroundStyle(Theme.Palette.destructive)
           .fixedSize(horizontal: false, vertical: true)
       }
@@ -233,7 +233,7 @@ public struct SecretCardRow: View {
         }
       }
       .textFieldStyle(.plain)
-      .font(.system(size: 13))
+      .font(Theme.TypeScale.note)
       .foregroundStyle(Theme.Palette.textPrimary)
       .accessibilityLabel("密码")
       IconButton(
@@ -259,10 +259,10 @@ public struct SecretCardRow: View {
   private var nameRow: some View {
     HStack(spacing: 8) {
       Text("名称")
-        .font(.system(size: 12.5))
+        .font(Theme.TypeScale.compactBody)
         .foregroundStyle(Theme.Palette.textSecondary)
       Text(card.key)
-        .font(.system(size: 12.5, design: .monospaced))
+        .font(Theme.TypeScale.code)
         .foregroundStyle(Theme.Palette.textPrimary)
       Spacer(minLength: 0)
     }
@@ -271,7 +271,7 @@ public struct SecretCardRow: View {
   private var scopeRow: some View {
     Toggle("共享给所有 Bot", isOn: $shared)
       .toggleStyle(.checkbox)
-      .font(.system(size: 12.5))
+      .font(Theme.TypeScale.compactBody)
       .foregroundStyle(Theme.Palette.textPrimary)
   }
 
@@ -280,7 +280,7 @@ public struct SecretCardRow: View {
   private var expiryRow: some View {
     HStack(spacing: 8) {
       Text("有效期")
-        .font(.system(size: 12.5))
+        .font(Theme.TypeScale.compactBody)
         .foregroundStyle(Theme.Palette.textSecondary)
       expiryMenu
       Spacer(minLength: 0)
@@ -295,10 +295,10 @@ public struct SecretCardRow: View {
     } label: {
       HStack(spacing: 6) {
         Text(expiryTitle(expiry))
-          .font(.system(size: 12.5, weight: .medium))
+          .font(Theme.TypeScale.compactEmphasis)
           .foregroundStyle(Theme.Palette.textPrimary)
         Image(systemName: "chevron.down")
-          .font(.system(size: 9, weight: .semibold))
+          .font(Theme.TypeScale.Glyph.chevron)
           .foregroundStyle(Theme.Palette.textSecondary)
       }
       .padding(.horizontal, 12)
@@ -339,10 +339,10 @@ public struct SecretCardRow: View {
   private var savedValue: some View {
     HStack(spacing: 8) {
       Text(effectiveSkipped ? "已取消" : "已保存")
-        .font(.system(size: 12.5))
+        .font(Theme.TypeScale.compactBody)
         .foregroundStyle(Theme.Palette.textSecondary)
       Text(card.key)
-        .font(.system(size: 12.5, design: .monospaced))
+        .font(Theme.TypeScale.code)
         .foregroundStyle(Theme.Palette.textPrimary)
       Spacer(minLength: 0)
     }
@@ -354,8 +354,8 @@ public struct SecretCardRow: View {
         send(value: value, skipped: false)
       } label: {
         Text("保存")
-          .font(.system(size: 13, weight: .medium))
-          .foregroundStyle(Color.white)
+          .font(Theme.TypeScale.noteEmphasis)
+          .foregroundStyle(Theme.Palette.onColor)
           .padding(.horizontal, 16)
           .frame(height: 30)
           .background(
@@ -371,7 +371,7 @@ public struct SecretCardRow: View {
         send(value: "", skipped: true)
       } label: {
         Text("取消")
-          .font(.system(size: 13, weight: .medium))
+          .font(Theme.TypeScale.noteEmphasis)
           .foregroundStyle(Theme.Palette.textSecondary)
           .padding(.horizontal, 12)
           .frame(height: 30)
@@ -381,7 +381,7 @@ public struct SecretCardRow: View {
 
       if !canSave && !working {
         Text("至少 \(Self.minimumValueLength) 个字符才能保存")
-          .font(.system(size: 12.5))
+          .font(Theme.TypeScale.compactBody)
           .foregroundStyle(Theme.Palette.textMuted)
       }
       Spacer(minLength: 0)

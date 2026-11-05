@@ -1,5 +1,23 @@
 # Retrospective
 
+## 2026-11-05 — Guard rejection needs a real staged-snapshot proof
+
+The first guard launcher compared `argv[1]` with its module URL without canonicalizing
+paths. macOS temporary paths can name the same file through `/var` and `/private/var`,
+so the snapshot launcher silently did nothing. Real isolated commit tests exposed it;
+canonical paths now determine the executable entrypoint. Clear the parent Node test
+runner context for child hook tests so Node does not silently skip a nested test run.
+The positive-control commit must pass, not just a collection of unrelated failures.
+
+The initial fixture also lacked the installed Biome binary and let `npx --no-install`
+resolve metadata before refusing execution. Reuse local dependencies read-only, set
+offline npm mode and a fixture-private cache before running hooks in temporary projects.
+When invoking the selected Xcode compiler directly, pass the matching SDK explicitly;
+compiler discovery alone did not supply its standard library in the first probe.
+The native focus test also launches Swift from Node: passing `DEVELOPER_DIR` to earlier
+Swift commands does not export it to a later npm command. Run the entire native test
+driver with the explicit Xcode environment, not Command Line Tools' missing macro plugin.
+
 ## 2026-11-05 — A validity test expired with its fixture
 
 The full Swift gate failed during design consolidation because a password-metadata

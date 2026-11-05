@@ -216,7 +216,7 @@ public struct CLISettingsView: View {
       VStack(alignment: .leading, spacing: 3) {
         HStack(spacing: 8) {
           Text(client.name)
-            .font(.system(size: 14))
+            .font(Theme.TypeScale.fieldLabel)
             .foregroundStyle(Theme.Palette.textPrimary)
           Text(client.statusLabel)
             .font(Theme.TypeScale.pill)

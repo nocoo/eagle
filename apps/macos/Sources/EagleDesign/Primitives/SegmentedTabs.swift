@@ -24,7 +24,7 @@ public struct SegmentedTabs<Value: Hashable>: View {
           selection = value
         } label: {
           Text(title(value))
-            .font(.system(size: 13, weight: selected ? .semibold : .regular))
+            .font(selected ? Theme.TypeScale.noteStrong : Theme.TypeScale.note)
             .foregroundStyle(selected ? Theme.Palette.textPrimary : Theme.Palette.textSecondary)
             .padding(.bottom, 6)
             .overlay(alignment: .bottom) {

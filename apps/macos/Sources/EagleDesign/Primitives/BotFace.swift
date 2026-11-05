@@ -222,29 +222,3 @@ private struct ShapePath: Shape {
     return path
   }
 }
-
-extension Theme.Palette {
-  /// The tints a bot may pick. The order is the picker's order.
-  public enum BotTint: String, CaseIterable, Hashable, Sendable {
-    case paper, clay, red, orange, yellow, green, teal, sky, blue, violet, pink, graphite
-  }
-
-  public static let botEye = Color(light: 0x2A2A2E, dark: 0x1A1A1C)
-
-  public static func botTint(_ tint: BotTint) -> Color {
-    switch tint {
-    case .paper: return Color(light: 0xFFFFFF, dark: 0xF4F4F6)
-    case .clay: return Color(light: 0xA9713F, dark: 0xB98052)
-    case .red: return Color(light: 0xE5484D, dark: 0xF4646A)
-    case .orange: return Color(light: 0xF5752B, dark: 0xFF8C4D)
-    case .yellow: return Color(light: 0xF5B51B, dark: 0xFFC63D)
-    case .green: return Color(light: 0x3DBB6A, dark: 0x4CD47C)
-    case .teal: return Color(light: 0x2FB7A3, dark: 0x3FD0BC)
-    case .sky: return Color(light: 0x56B4E9, dark: 0x6FC8F5)
-    case .blue: return Color(light: 0x3B7CF6, dark: 0x5A94FF)
-    case .violet: return Color(light: 0x8B5CF6, dark: 0xA479FF)
-    case .pink: return Color(light: 0xF04FA0, dark: 0xFF6FB5)
-    case .graphite: return Color(light: 0x6E6E76, dark: 0x8A8A93)
-    }
-  }
-}

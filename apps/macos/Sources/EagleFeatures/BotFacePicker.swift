@@ -116,7 +116,7 @@ struct BotFaceEditorSheet: View {
           onSave(
             BotAppearance(
               shape: BotAppearance.Shape(rawValue: shape.rawValue) ?? .blob,
-              tint: BotAppearance.Tint(rawValue: tint.rawValue) ?? .green
+              tint: BotAppearance.Tint(rawValue: tint.rawValue) ?? BotAppearance.Tint.green
             )
           )
         }
