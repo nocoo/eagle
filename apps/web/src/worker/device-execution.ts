@@ -13,7 +13,7 @@ import {
   type PolicySetResult,
   verifyApproval,
 } from "../../../../packages/contracts/src/devices.ts";
-import { deviceJSON } from "./device-registry.ts";
+import { type DeviceSessionReference, deviceJSON } from "./device-registry.ts";
 import type { DeviceServiceEnv } from "./device-service.ts";
 
 const authFrame = z.strictObject({
@@ -32,6 +32,11 @@ const heartbeat = z.strictObject({
   capabilities: z.array(z.string().max(80)).max(32),
   policy: DevicePolicy,
 });
+const renewalFrame = z.strictObject({
+  type: z.literal("session.renew"),
+  requestId: DeviceId,
+  sessionToken: z.string().max(200),
+});
 const resultFrame = z.strictObject({
   type: z.literal("result"),
   requestId: DeviceId,
@@ -41,7 +46,7 @@ const resultFrame = z.strictObject({
 });
 type Agent = {
   socket: WebSocket;
-  token: string;
+  reference: DeviceSessionReference;
   deviceId: string;
   expires: number;
   credentialVersion: number;
@@ -136,6 +141,19 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
     }
     this.policies.clear();
   }
+  private async checkAgent(agent: Agent, sourceToken?: string) {
+    const registry = this.env.DEVICE_REGISTRY.getByName("registry");
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const reference = agent.reference;
+      const result = await registry.checkSessionReference(
+        reference,
+        sourceToken,
+      );
+      if (this.agent !== agent) return undefined;
+      if (agent.reference === reference) return result;
+    }
+    return undefined;
+  }
   async setPolicy(
     token: string,
     input: PolicySetRequest,
@@ -149,10 +167,18 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
       return { error: "target_offline", status: 503 };
     if (!this.observation().capabilities?.includes("policy.manage"))
       return { error: "target_management_unsupported", status: 409 };
-    const target = await registry.check(agent.token, request.deviceId);
-    if (!target.ok) return { error: "revoked_agent", status: 403 };
-    const final = await registry.check(token, request.deviceId);
-    if (!final.ok) return { error: final.error, status: final.status };
+    const target = await this.checkAgent(agent);
+    if (!target) return { error: "target_offline", status: 503 };
+    if (!target.ok)
+      return target.subject === "target"
+        ? { error: "revoked_agent", status: 403 }
+        : { error: target.error, status: target.status };
+    const final = await this.checkAgent(agent, token);
+    if (!final) return { error: "target_offline", status: 503 };
+    if (!final.ok)
+      return final.subject === "target"
+        ? { error: "revoked_agent", status: 403 }
+        : { error: final.error, status: final.status };
     if (
       this.agent !== agent ||
       agent.expires <= Date.now() ||
@@ -249,38 +275,83 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
               const auth = authFrame.parse(data);
               const checked = await this.env.DEVICE_REGISTRY.getByName(
                 "registry",
-              ).check(auth.sessionToken, targetId);
+              ).bindTargetSession(auth.sessionToken, targetId);
               if (!live()) return;
-              if (!checked.ok || checked.source.deviceId !== targetId)
-                throw new DeviceAuthenticationError("unauthorized_agent");
+              if (!checked.ok) {
+                if (checked.status === 401)
+                  throw new DeviceAuthenticationError("unauthorized_agent");
+                throw new Error("device_authorization_unavailable");
+              }
               if (this.agent) {
                 this.agent.socket.close(1008, "agent_replaced");
                 this.failPending("agent_replaced");
               }
               this.agent = {
                 socket,
-                token: auth.sessionToken,
+                reference: checked.reference,
                 deviceId: targetId,
                 expires: Date.now() + 30000,
-                credentialVersion: checked.source.credentialVersion,
+                credentialVersion: checked.reference.credentialVersion,
               };
               authenticated = true;
               clearTimeout(timeout);
               this.observe(auth.capabilities, auth.policy);
-              this.send(socket, { type: "ready" });
+              this.send(socket, {
+                type: "ready",
+                expiresAt: checked.reference.expiresAt,
+              });
               return;
             }
             if (this.agent?.socket !== socket)
               throw new Error("agent_replaced");
+            const selectedAgent = this.agent;
             const checked = await this.env.DEVICE_REGISTRY.getByName(
               "registry",
-            ).check(this.agent.token, targetId);
-            if (!live() || this.agent?.socket !== socket) return;
-            if (!checked.ok)
-              throw new DeviceAuthenticationError("revoked_agent");
+            ).checkSessionReference(selectedAgent.reference);
+            if (!live() || this.agent !== selectedAgent) return;
+            if (!checked.ok) {
+              if (checked.subject === "target" && checked.status === 401)
+                throw new DeviceAuthenticationError("revoked_agent");
+              throw new Error("device_authorization_unavailable");
+            }
             const beat = heartbeat.safeParse(data);
             if (beat.success) {
               this.observe(beat.data.capabilities, beat.data.policy);
+              return;
+            }
+            const renewal = renewalFrame.safeParse(data);
+            if (renewal.success) {
+              const previous = selectedAgent.reference;
+              const renewed = await this.env.DEVICE_REGISTRY.getByName(
+                "registry",
+              ).bindTargetSession(
+                renewal.data.sessionToken,
+                targetId,
+                previous,
+              );
+              if (
+                !live() ||
+                this.agent !== selectedAgent ||
+                selectedAgent.reference !== previous
+              )
+                return;
+              if (
+                !renewed.ok ||
+                renewed.reference.expiresAt <= previous.expiresAt
+              ) {
+                this.send(socket, {
+                  type: "session.renewed",
+                  requestId: renewal.data.requestId,
+                  error: "session_renewal_failed",
+                });
+                return;
+              }
+              selectedAgent.reference = renewed.reference;
+              this.send(socket, {
+                type: "session.renewed",
+                requestId: renewal.data.requestId,
+                expiresAt: renewed.reference.expiresAt,
+              });
               return;
             }
             const policy = PolicyResultFrame.safeParse(data);
@@ -296,7 +367,7 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
                 return;
               const fresh = await this.env.DEVICE_REGISTRY.getByName(
                 "registry",
-              ).check(pending.token, targetId);
+              ).checkSessionReference(pending.agent.reference, pending.token);
               if (
                 !live() ||
                 this.agent !== pending.agent ||
@@ -307,10 +378,16 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
               this.policies.delete(message.relayId);
               pending.resolve(
                 !fresh.ok
-                  ? { error: fresh.error, status: fresh.status }
+                  ? {
+                      error: "policy_result_unknown_refresh_target",
+                      status: 504,
+                    }
                   : fresh.target.credentialVersion !==
                       pending.agent.credentialVersion
-                    ? { error: "revoked_agent", status: 403 }
+                    ? {
+                        error: "policy_result_unknown_refresh_target",
+                        status: 504,
+                      }
                     : message.policy
                       ? { policy: message.policy }
                       : {
@@ -336,7 +413,7 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
               return;
             const fresh = await this.env.DEVICE_REGISTRY.getByName(
               "registry",
-            ).check(pending.token, targetId);
+            ).checkSessionReference(selectedAgent.reference, pending.token);
             if (
               !live() ||
               this.agent?.socket !== socket ||
@@ -350,7 +427,10 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
               pending.request,
               fresh.ok
                 ? message.result
-                : { status: "denied", error: "membership_changed" },
+                : {
+                    status: "unknown",
+                    error: "membership_changed_query_original_id",
+                  },
             );
             return;
           }
@@ -390,11 +470,9 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
             return;
           }
           const selectedAgent = this.agent;
-          const target = await this.env.DEVICE_REGISTRY.getByName(
-            "registry",
-          ).check(this.agent.token, targetId);
+          const target = await this.checkAgent(selectedAgent);
           if (!live()) return;
-          if (this.agent !== selectedAgent) {
+          if (!target || this.agent !== selectedAgent) {
             this.respond(socket, operation, {
               status: "unknown",
               error: "agent_changed",
@@ -402,12 +480,19 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
             return;
           }
           if (!target.ok) {
-            selectedAgent.socket.close(1008, "revoked_agent");
-            this.agent = undefined;
-            this.respond(socket, operation, {
-              status: "denied",
-              error: "revoked_agent",
-            });
+            if (target.subject === "target" && target.status === 401) {
+              selectedAgent.socket.close(1008, "revoked_agent");
+              this.agent = undefined;
+              this.respond(socket, operation, {
+                status: "denied",
+                error: "revoked_agent",
+              });
+            } else {
+              this.respond(socket, operation, {
+                status: "unknown",
+                error: "device_authorization_unavailable",
+              });
+            }
             return;
           }
           const policy = this.observation().policy;
@@ -445,13 +530,24 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
           // Revocation before forwarding must prevent target side effects.
           if (!live()) return;
           const agent = this.agent;
-          const final = await this.env.DEVICE_REGISTRY.getByName(
-            "registry",
-          ).check(caller.sessionToken, targetId);
+          if (!agent) {
+            this.respond(socket, operation, {
+              status: "denied",
+              error: "membership_or_agent_changed",
+            });
+            return;
+          }
+          const final = await this.checkAgent(agent, caller.sessionToken);
           if (!live()) return;
+          if (!final) {
+            this.respond(socket, operation, {
+              status: "unknown",
+              error: "agent_changed",
+            });
+            return;
+          }
           if (
             !final.ok ||
-            !agent ||
             this.agent !== agent ||
             agent.expires <= Date.now() ||
             final.target.credentialVersion !== agent.credentialVersion
@@ -463,7 +559,7 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
                 status: "denied",
                 error: "membership_or_agent_changed",
               },
-              !final.ok && final.status === 401,
+              !final.ok && final.subject === "source" && final.status === 401,
             );
             return;
           }

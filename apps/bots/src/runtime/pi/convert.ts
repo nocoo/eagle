@@ -7,6 +7,7 @@ import type {
   Message as PiMessage,
   Usage as PiUsage,
 } from "@earendil-works/pi-ai";
+import { z } from "zod";
 import type { ContentBlock, Message, MessageState, StopReason, Usage } from "../../core/domain.ts";
 
 /** A committed entry becomes `e_<id>`; a provisional is `p_a<attempt>` (PROTOCOL.md). */
@@ -54,10 +55,37 @@ type ToolResultLike = {
   readonly durationMs?: number;
 };
 
-const toolText = (content: ToolResultLike["content"]): string =>
-  content
-    .flatMap((part) => (part.type === "text" && typeof part.text === "string" ? [part.text] : []))
-    .join("\n");
+const interruptedDeviceReceipt = z.strictObject({
+  type: z.literal("device-operation"),
+  version: z.literal(1),
+  targetDeviceId: z.uuid(),
+  operationId: z.uuid(),
+  digest: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  status: z.literal("unknown"),
+  error: z.enum(["remote_not_configured", "device_service_unavailable"]),
+  truncated: z.literal(false),
+});
+
+const toolText = (result: ToolResultLike): string => {
+  const texts = result.content.flatMap((part) =>
+    part.type === "text" && typeof part.text === "string" ? [part.text] : [],
+  );
+  if (
+    result.isError &&
+    ["remote_execute", "remote_operation"].includes(result.toolName) &&
+    texts.length > 1 &&
+    texts.slice(1).every((text) => text.startsWith("<harness>\n") && text.endsWith("\n</harness>"))
+  ) {
+    try {
+      const receipt = interruptedDeviceReceipt.safeParse(JSON.parse(texts[0] ?? ""));
+      if (receipt.success) return JSON.stringify({ ...receipt.data, diagnostics: texts.slice(1) });
+    } catch {}
+  }
+  return texts.join("\n");
+};
 
 const isTextBlock = (block: AssistantBlock | TextBlockLike): block is TextBlockLike =>
   block.type === "text";
@@ -161,7 +189,7 @@ export const convertMessage = (
           type: "toolResult",
           callId: result.toolCallId,
           name: result.toolName,
-          text: toolText(result.content),
+          text: toolText(result),
           isError: result.isError === true,
           ...(typeof result.durationMs === "number" ? { durationMs: result.durationMs } : {}),
         },

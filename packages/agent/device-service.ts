@@ -22,19 +22,24 @@ import {
   verifyApproval,
 } from "../contracts/src/devices.ts";
 import { DeviceCloud } from "./device-cloud.ts";
-import { OperationAdmissionError } from "./device-journal.ts";
+import {
+  OperationAdmissionError,
+  OperationOriginError,
+  type OutgoingScope,
+} from "./device-journal.ts";
 import { NativeDeviceLeases } from "./device-native-leases.ts";
 import { DeviceRuntime } from "./device-runtime.ts";
 
 const configure = DeviceRegistration.extend({
   type: z.literal("configure"),
   version: z.literal(1),
-  baseUrl: z.url(),
+  baseUrl: z.union([z.literal(""), z.url()]),
   stateDirectory: z.string().min(1),
   socketPath: z.string().min(1),
   bootSessionId: DeviceId.optional(),
 });
 const portRequest = z.strictObject({
+  version: z.literal(2),
   requestId: DeviceId,
   method: z.string().min(1).max(80),
   params: z.unknown().optional(),
@@ -61,10 +66,12 @@ const managementMethods = new Set([
   "policy.get",
   "policy.set",
   "pairing.create",
+  "pairing.prepare",
   "pairing.revoke",
   "pairing.redeem",
   "pairing.result",
   "member.remove",
+  "remote.configure",
 ]);
 const capabilities = [
   "command",
@@ -151,6 +158,45 @@ async function clearStaleSocket(path: string): Promise<void> {
   unlinkSync(path);
 }
 
+function remoteOrigin(value: string): string {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    if (
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      value.includes("?") ||
+      value.includes("#") ||
+      url.pathname !== "/" ||
+      (url.protocol !== "https:" &&
+        !(
+          url.protocol === "http:" &&
+          ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+        ))
+    )
+      throw new Error("invalid_service_address");
+    return url.origin;
+  } catch {
+    throw new Error("invalid_service_address");
+  }
+}
+
+function withOrigin(value: unknown) {
+  const { relayOrigin, ...input } = z
+    .record(z.string(), z.unknown())
+    .parse(value);
+  return {
+    input,
+    relayOrigin: z.string().min(1).max(2048).optional().parse(relayOrigin),
+  };
+}
+function operationWithOrigin(value: unknown) {
+  const { input, relayOrigin } = withOrigin(value);
+  return { request: OperationRequest.parse(input), relayOrigin };
+}
+
 type HelperPending = {
   kind: "signature" | "approval";
   resolve: (value: unknown) => void;
@@ -164,6 +210,9 @@ export async function runDeviceService(): Promise<void> {
   let runtime: DeviceRuntime | undefined;
   let nativeLeases: NativeDeviceLeases | undefined;
   let cloud: DeviceCloud | undefined;
+  let cloudOrigin = "";
+  let cloudUpdates = Promise.resolve();
+  const issuedSecrets = new Set<string>();
   let server: ReturnType<typeof createServer> | undefined;
   let socketOwner: { dev: number; ino: number } | undefined;
   let configuration: z.infer<typeof configure> | undefined;
@@ -198,6 +247,7 @@ export async function runDeviceService(): Promise<void> {
     for (const socket of sockets) socket.destroy();
     nativeLeases?.close();
     await cloud?.close();
+    await cloudUpdates;
     await runtime?.close();
     if (server?.listening)
       await new Promise<void>((resolveClosed) =>
@@ -235,55 +285,218 @@ export async function runDeviceService(): Promise<void> {
       ],
     };
   };
+  const requireCloud = () => {
+    if (!cloud) throw new Error("remote_not_configured");
+    return cloud;
+  };
+  const selectCloud = (origin: string | undefined) => {
+    const selected = requireCloud();
+    if (!origin || selected.origin !== origin)
+      throw new Error("remote_configuration_changed");
+    return selected;
+  };
+  const makeCloud = (origin: string) => {
+    if (!runtime) throw new Error("not_ready");
+    const localRuntime = runtime;
+    const device = localRuntime.device;
+    let next: DeviceCloud;
+    next = new DeviceCloud(
+      origin,
+      device,
+      localRuntime,
+      async (payload) => {
+        const lines = payload.split("\n");
+        if (
+          stopping ||
+          cloud !== next ||
+          lines.length !== 7 ||
+          lines[0] !== "eagle-device-register-v1" ||
+          lines[1] !== origin ||
+          lines[2] !== device.deviceId ||
+          lines[3] !== device.publicKey
+        )
+          throw new Error("invalid_registration_purpose");
+        const signature = await helper("signature", { type: "sign", payload });
+        if (stopping || cloud !== next)
+          throw new Error("remote_configuration_changed");
+        return z.string().max(2048).parse(signature);
+      },
+      (status) => {
+        if (!stopping && cloud === next) send({ type: "cloud", status });
+      },
+      (credential) => issuedSecrets.add(credential),
+    );
+    return next;
+  };
+  const configureCloud = (value: string) => {
+    const origin = remoteOrigin(value);
+    const change = cloudUpdates.then(async () => {
+      if (stopping) throw new Error("service_stopped");
+      if (origin === cloudOrigin)
+        return {
+          baseUrl: origin,
+          cloudStatus: cloud?.status ?? "unconfigured",
+        };
+      const next = origin ? makeCloud(origin) : undefined;
+      const previous = cloud;
+      cloud = undefined;
+      cloudOrigin = "";
+      await previous?.close();
+      if (stopping) {
+        await next?.close();
+        throw new Error("service_stopped");
+      }
+      cloud = next;
+      cloudOrigin = origin;
+      send({ type: "cloud", status: next ? "offline" : "unconfigured" });
+      void next?.start().catch(() => {
+        if (!stopping && cloud === next)
+          send({ type: "cloud", status: "offline" });
+      });
+      return { baseUrl: origin, cloudStatus: next?.status ?? "unconfigured" };
+    });
+    cloudUpdates = change.then(
+      () => {},
+      () => {},
+    );
+    return change;
+  };
   const getDirectory = async () => {
+    const selected = cloud;
+    if (!selected) return { ...ownDirectory(), cloudStatus: "unconfigured" };
     try {
-      return (await cloud?.directory()) ?? ownDirectory();
+      const directory = await selected.directory();
+      if (cloud !== selected) throw new Error("remote_configuration_changed");
+      return { ...directory, relayOrigin: selected.origin };
     } catch {
+      if (cloud !== selected) throw new Error("remote_configuration_changed");
       return { ...ownDirectory(), cloudStatus: "offline" };
     }
   };
+  const pairingResult = (value: unknown, origin: string) => {
+    const result = z.record(z.string(), z.unknown()).parse(value);
+    const directory = z.record(z.string(), z.unknown()).parse(result.directory);
+    return { ...result, directory: { ...directory, relayOrigin: origin } };
+  };
   const manage = async (method: string, params: unknown): Promise<unknown> => {
-    if (!runtime || !cloud) throw new Error("not_ready");
+    if (!runtime) throw new Error("not_ready");
     switch (method) {
+      case "remote.configure": {
+        const input = z
+          .strictObject({ baseUrl: z.string().max(2048) })
+          .parse(params);
+        return configureCloud(input.baseUrl);
+      }
       case "policy.get":
         return runtime.policy;
       case "policy.set": {
+        const { input: fields, relayOrigin } = withOrigin(params);
         const input = z
           .union([
             z.strictObject({ mode: DevicePolicy.shape.mode }),
             PolicySetRequest,
           ])
-          .parse(params);
+          .parse(fields);
+        if (
+          relayOrigin &&
+          (!("deviceId" in input) || input.deviceId === runtime.device.deviceId)
+        )
+          throw new Error("invalid_local_origin");
         if ("deviceId" in input) {
-          runtime.journal.preparePolicy(input);
-          if (input.deviceId !== runtime.device.deviceId)
-            return cloud.setPolicy(input);
+          if (input.deviceId !== runtime.device.deviceId) {
+            const remote = selectCloud(relayOrigin);
+            runtime.journal.preparePolicy(input, {
+              kind: "remote",
+              origin: remote.origin,
+            });
+            const result = await remote.setPolicy(input);
+            if (cloud !== remote)
+              throw new Error("policy_result_unknown_refresh_target");
+            return result;
+          }
+          runtime.journal.preparePolicy(input, { kind: "local" });
         }
         const result =
           "deviceId" in input
             ? runtime.applyPolicy(input, runtime.device.deviceId)
             : runtime.setPolicy(input.mode);
-        cloud.publishPolicy();
+        cloud?.publishPolicy();
         return result;
       }
-      case "pairing.create":
-        return cloud.manage("/pairings", PairingCreate.parse(params ?? {}));
-      case "pairing.revoke":
-        return cloud.manage(
-          "/pairings/revoke",
-          z.strictObject({ code: PairingCode }).parse(params),
+      case "pairing.create": {
+        const { input, relayOrigin } = withOrigin(params ?? {});
+        const remote = selectCloud(relayOrigin);
+        const result = await remote.manage(
+          "/pairings",
+          PairingCreate.parse(input),
         );
-      case "pairing.redeem":
-        return cloud.manage("/pairings/redeem", PairingRedeem.parse(params));
-      case "pairing.result": {
-        const input = z.strictObject({ requestId: DeviceId }).parse(params);
-        return cloud.manage(`/pairings/results/${input.requestId}`);
+        if (cloud !== remote) throw new Error("remote_configuration_changed");
+        return result;
       }
-      case "member.remove":
-        return cloud.manage(
-          "/members/remove",
-          z.strictObject({ deviceId: DeviceId }).parse(params),
+      case "pairing.prepare": {
+        const { input: fields, relayOrigin } = withOrigin(params);
+        const input = z
+          .strictObject({
+            requestId: DeviceId,
+            codeHash: z.string().regex(/^[a-f0-9]{64}$/),
+          })
+          .parse(fields);
+        const remote = selectCloud(relayOrigin);
+        runtime.journal.bindPairing(input.requestId, input.codeHash, {
+          kind: "remote",
+          origin: remote.origin,
+        });
+        return { prepared: true };
+      }
+      case "pairing.revoke": {
+        const { input, relayOrigin } = withOrigin(params);
+        const remote = selectCloud(relayOrigin);
+        const result = await remote.manage(
+          "/pairings/revoke",
+          z.strictObject({ code: PairingCode }).parse(input),
         );
+        if (cloud !== remote) throw new Error("remote_configuration_changed");
+        return result;
+      }
+      case "pairing.redeem": {
+        const { input: fields, relayOrigin } = withOrigin(params);
+        const input = PairingRedeem.parse(fields);
+        const remote = selectCloud(relayOrigin);
+        const digest = await deviceDigest(input.code);
+        if (cloud !== remote) throw new Error("remote_configuration_changed");
+        runtime.journal.bindPairing(input.requestId, digest, {
+          kind: "remote",
+          origin: remote.origin,
+        });
+        const result = await remote.manage("/pairings/redeem", input);
+        if (cloud !== remote)
+          throw new Error("pairing_result_unknown_query_original_id");
+        return pairingResult(result, remote.origin);
+      }
+      case "pairing.result": {
+        const { input: fields, relayOrigin } = withOrigin(params);
+        const input = z.strictObject({ requestId: DeviceId }).parse(fields);
+        const bound = runtime.journal.pairingOrigin(input.requestId);
+        if (relayOrigin !== bound) throw new Error("relay_origin_mismatch");
+        const remote = selectCloud(bound);
+        const result = await remote.manage(
+          `/pairings/results/${input.requestId}`,
+        );
+        if (cloud !== remote)
+          throw new Error("pairing_result_unknown_query_original_id");
+        return pairingResult(result, bound);
+      }
+      case "member.remove": {
+        const { input, relayOrigin } = withOrigin(params);
+        const remote = selectCloud(relayOrigin);
+        const result = await remote.manage(
+          "/members/remove",
+          z.strictObject({ deviceId: DeviceId }).parse(input),
+        );
+        if (cloud !== remote)
+          throw new Error("member_removal_unknown_refresh_directory");
+        return result;
+      }
       default:
         throw new Error("unknown_management_method");
     }
@@ -293,7 +506,7 @@ export async function runDeviceService(): Promise<void> {
     params: unknown,
     session: { id: string; closed: boolean },
   ): Promise<unknown> => {
-    if (!runtime || !cloud) throw new Error("not_ready");
+    if (!runtime) throw new Error("not_ready");
     if (managementMethods.has(method))
       throw new Error("management_requires_private_helper");
     switch (method) {
@@ -301,7 +514,8 @@ export async function runDeviceService(): Promise<void> {
         return {
           deviceId: runtime.device.deviceId,
           localReady: true,
-          cloudStatus: cloud.status,
+          cloudStatus: cloud?.status ?? "unconfigured",
+          ...(cloudOrigin ? { relayOrigin: cloudOrigin } : {}),
           policy: runtime.policy,
         };
       case "directory":
@@ -320,7 +534,9 @@ export async function runDeviceService(): Promise<void> {
             result: { status: "denied", error: "invalid_native_request" },
           };
         try {
-          const prepared = runtime.journal.prepareOutgoing(input);
+          const prepared = runtime.journal.prepareOutgoing(input, {
+            kind: "local",
+          });
           if (prepared.action !== "run")
             return {
               accepted: false,
@@ -328,7 +544,9 @@ export async function runDeviceService(): Promise<void> {
             };
           const admitted = await nativeLeases?.begin(prepared, session);
           if (!admitted) throw new Error("native_service_unavailable");
-          runtime.journal.completeOutgoing(prepared, admitted.result);
+          runtime.journal.completeOutgoing(prepared, admitted.result, {
+            kind: "local",
+          });
           return admitted;
         } catch (error) {
           return {
@@ -372,7 +590,7 @@ export async function runDeviceService(): Promise<void> {
       case "execute":
       case "operation.get":
       case "operation.cancel": {
-        const input = OperationRequest.parse(params);
+        const { request: input, relayOrigin } = operationWithOrigin(params);
         if (
           (method === "operation.get" && input.action !== "get") ||
           (method === "operation.cancel" && input.action !== "cancel")
@@ -389,9 +607,40 @@ export async function runDeviceService(): Promise<void> {
           input.targetDeviceId !== runtime.device.deviceId
         )
           return { status: "denied", error: "native_is_local_only" };
-        let request: OperationRequest;
+        const targetIsLocal = input.targetDeviceId === runtime.device.deviceId;
+        const remote = cloud;
+        let scope: OutgoingScope = { kind: "local" };
         try {
-          request = runtime.journal.prepareOutgoing(input);
+          if (targetIsLocal && relayOrigin)
+            return { status: "denied", error: "invalid_local_origin" };
+          if (!targetIsLocal) {
+            const state = runtime.journal.outgoingState(input);
+            const bound = runtime.journal.relayOrigin(input);
+            if (state && !bound)
+              return { status: "unknown", error: "relay_origin_unknown" };
+            if (bound && relayOrigin && bound !== relayOrigin)
+              return { status: "unknown", error: "relay_origin_mismatch" };
+            if (!remote)
+              return state === "sent"
+                ? {
+                    status: "unknown",
+                    error: "remote_not_configured_query_original_id",
+                  }
+                : { status: "denied", error: "remote_not_configured" };
+            const expected =
+              relayOrigin ?? (input.action === "run" ? undefined : bound);
+            if (!expected)
+              return {
+                status: state ? "unknown" : "denied",
+                error: "relay_origin_unknown",
+              };
+            if (remote.origin !== expected)
+              return {
+                status: state ? "unknown" : "denied",
+                error: "remote_configuration_changed",
+              };
+            scope = { kind: "remote", origin: expected };
+          }
         } catch (error) {
           return {
             status:
@@ -402,22 +651,44 @@ export async function runDeviceService(): Promise<void> {
                 : "caller_storage_unavailable",
           };
         }
+        let request: OperationRequest;
+        try {
+          request = runtime.journal.prepareOutgoing(input, scope);
+        } catch (error) {
+          return {
+            status:
+              error instanceof OperationAdmissionError ? "denied" : "unknown",
+            error:
+              error instanceof OperationOriginError
+                ? error.message
+                : error instanceof OperationAdmissionError
+                  ? "operation_binding_conflict"
+                  : "caller_storage_unavailable",
+          };
+        }
         let result: OperationResult;
         if (request.targetDeviceId === runtime.device.deviceId)
           result = await runtime.handle(request, runtime.device);
         else {
           try {
-            await cloud.directory();
-            result = await cloud.execute(request);
+            if (!remote) throw new Error("remote_not_configured");
+            if (cloud !== remote)
+              throw new Error("remote_configuration_changed");
+            result = await remote.execute(request);
           } catch {
             result = {
               status: "unknown",
               error: "cloud_unavailable_query_original_id",
             };
           }
+          if (cloud !== remote)
+            result = {
+              status: "unknown",
+              error: "remote_configuration_changed_query_original_id",
+            };
         }
         try {
-          runtime.journal.completeOutgoing(request, result);
+          runtime.journal.completeOutgoing(request, result, scope);
         } catch {
           return { status: "unknown", error: "caller_storage_unavailable" };
         }
@@ -426,12 +697,12 @@ export async function runDeviceService(): Promise<void> {
       case "approval.request": {
         const input = z
           .strictObject({
-            request: OperationRequest,
+            request: z.record(z.string(), z.unknown()),
             policyVersion: z.number().int().positive(),
             expiresAt: z.number().int().positive(),
           })
           .parse(params);
-        const request = input.request;
+        const { request, relayOrigin } = operationWithOrigin(input.request);
         if (
           request.action !== "run" ||
           !request.operation ||
@@ -442,19 +713,31 @@ export async function runDeviceService(): Promise<void> {
         )
           throw new Error("invalid_approval_request");
         let policy = runtime.policy;
+        let remote: DeviceCloud | undefined;
         if (request.targetDeviceId !== runtime.device.deviceId) {
-          const directory = await cloud.directory();
+          remote = requireCloud();
+          if (!relayOrigin || remote.origin !== relayOrigin)
+            throw new Error("remote_configuration_changed");
+          const directory = await remote.directory();
+          if (cloud !== remote) throw new Error("remote_configuration_changed");
           const target = directory.devices.find(
             (device) => device.deviceId === request.targetDeviceId,
           );
           if (!target?.policy) throw new Error("target_policy_unknown");
           policy = target.policy;
-        }
+        } else if (relayOrigin) throw new Error("invalid_local_origin");
         if (
           policy.mode !== "always-ask" ||
           policy.version !== input.policyVersion
         )
           throw new Error("approval_policy_changed");
+        if (remote) {
+          if (!relayOrigin) throw new Error("relay_origin_unknown");
+          runtime.journal.bindOperationOrigin(request, {
+            kind: "remote",
+            origin: relayOrigin,
+          });
+        }
         const response = DeviceApproval.parse(
           await helper("approval", {
             type: "approve",
@@ -469,6 +752,8 @@ export async function runDeviceService(): Promise<void> {
         );
         if (!(await verifyApproval(response, request, runtime.device, policy)))
           throw new Error("invalid_helper_approval");
+        if (remote && cloud !== remote)
+          throw new Error("remote_configuration_changed");
         return { approval: response };
       }
       default:
@@ -495,33 +780,14 @@ export async function runDeviceService(): Promise<void> {
     runtime = new DeviceRuntime(
       device,
       join(config.stateDirectory, "operations.sqlite"),
-      () => cloud?.secrets() ?? [],
+      () => [...issuedSecrets],
       config.bootSessionId,
     );
     nativeLeases = new NativeDeviceLeases(runtime, 30000, () =>
       send({ type: "failed", error: "native_lease_storage_failed" }),
     );
-    cloud = new DeviceCloud(
-      config.baseUrl,
-      device,
-      runtime,
-      async (payload) => {
-        const lines = payload.split("\n");
-        if (
-          lines.length !== 7 ||
-          lines[0] !== "eagle-device-register-v1" ||
-          lines[1] !== new URL(config.baseUrl).origin ||
-          lines[2] !== device.deviceId ||
-          lines[3] !== device.publicKey
-        )
-          throw new Error("invalid_registration_purpose");
-        return z
-          .string()
-          .max(2048)
-          .parse(await helper("signature", { type: "sign", payload }));
-      },
-      (status) => send({ type: "cloud", status }),
-    );
+    cloudOrigin = remoteOrigin(config.baseUrl);
+    if (cloudOrigin) cloud = makeCloud(cloudOrigin);
     await clearStaleSocket(config.socketPath);
     server = createServer((socket) => {
       sockets.add(socket);
@@ -540,14 +806,25 @@ export async function runDeviceService(): Promise<void> {
       jsonLines(
         socket,
         (value) => {
+          const envelope = z
+            .object({ requestId: DeviceId, version: z.number().optional() })
+            .safeParse(value);
+          if (envelope.success && envelope.data.version !== 2) {
+            socket.end(
+              `${JSON.stringify({ version: 2, requestId: envelope.data.requestId, error: "device_port_version_mismatch" })}\n`,
+            );
+            return;
+          }
           const request = portRequest.safeParse(value);
           if (!request.success) {
-            socket.end(`${JSON.stringify({ error: "invalid_request" })}\n`);
+            socket.end(
+              `${JSON.stringify({ version: 2, error: "invalid_request" })}\n`,
+            );
             return;
           }
           if (inFlight >= 16) {
             socket.write(
-              `${JSON.stringify({ requestId: request.data.requestId, error: "local_port_busy" })}\n`,
+              `${JSON.stringify({ version: 2, requestId: request.data.requestId, error: "local_port_busy" })}\n`,
             );
             return;
           }
@@ -557,13 +834,13 @@ export async function runDeviceService(): Promise<void> {
               (result) => {
                 if (!socket.destroyed)
                   socket.write(
-                    `${JSON.stringify({ requestId: request.data.requestId, result })}\n`,
+                    `${JSON.stringify({ version: 2, requestId: request.data.requestId, result })}\n`,
                   );
               },
               (error) => {
                 if (!socket.destroyed)
                   socket.write(
-                    `${JSON.stringify({ requestId: request.data.requestId, error: code(error) })}\n`,
+                    `${JSON.stringify({ version: 2, requestId: request.data.requestId, error: code(error) })}\n`,
                   );
               },
             )
@@ -586,9 +863,11 @@ export async function runDeviceService(): Promise<void> {
       socketPath: config.socketPath,
       deviceId: device.deviceId,
     });
-    send({ type: "cloud", status: "offline" });
-    void cloud.start().catch(() => {
-      if (!stopping) send({ type: "cloud", status: "offline" });
+    const initialCloud = cloud;
+    send({ type: "cloud", status: initialCloud ? "offline" : "unconfigured" });
+    void initialCloud?.start().catch(() => {
+      if (!stopping && cloud === initialCloud)
+        send({ type: "cloud", status: "offline" });
     });
   };
   jsonLines(

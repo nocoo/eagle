@@ -36,8 +36,14 @@ public final class DeviceServiceHost {
   private var timeouts: [String: Task<Void, Never>] = [:]
   private var approvalId: String?
   private var approvalTimeout: Task<Void, Never>?
+  private var remoteOrigin: String
+  private var remoteGeneration = UUID()
+  private var configuringRemote = false
   private var stopping: Task<Void, Never>?
   private var retrying: Task<Void, any Error>?
+  var statusReader: @MainActor (String) async throws -> DeviceJSON = { path in
+    try await DeviceLocalPort(path: path).call("status")
+  }
 
   public init(
     identity: DeviceIdentity, configuration: DeviceHostConfiguration,
@@ -45,6 +51,7 @@ public final class DeviceServiceHost {
   ) {
     self.identity = identity
     self.configuration = configuration
+    self.remoteOrigin = configuration.serviceOrigin
     self.node = node
     self.entry = entry
     self.stateDirectory = stateDirectory ?? configuration.stateDirectory
@@ -63,6 +70,7 @@ public final class DeviceServiceHost {
     buffer.removeAll(keepingCapacity: false)
     let current = UUID()
     generation = current
+    remoteGeneration = UUID()
     let process = Process()
     let incoming = Pipe()
     let outgoing = Pipe()
@@ -98,7 +106,7 @@ public final class DeviceServiceHost {
     output = outgoing.fileHandleForReading
     var config: [String: DeviceJSON] = [
       "type": .string("configure"), "version": .number(1),
-      "baseUrl": .string(configuration.serviceOrigin),
+      "baseUrl": .string(remoteOrigin),
       "deviceId": .string(identity.deviceId), "publicKey": .string(identity.publicKey),
       "name": .string(Host.current().localizedName ?? "Mac"), "platform": .string("darwin"),
       "arch": .string(Self.arch), "stateDirectory": .string(stateDirectory.path),
@@ -118,6 +126,7 @@ public final class DeviceServiceHost {
   }
 
   public func stop() async {
+    remoteGeneration = UUID()
     if let stopping {
       await stopping.value
       return
@@ -174,14 +183,24 @@ public final class DeviceServiceHost {
       return .object(["version": .number(1)])
     }
     if method == "service.status" {
+      let observedGeneration = remoteGeneration
       var status: [String: DeviceJSON] = [
         "deviceId": .string(identity.deviceId), "localReady": .bool(localReady),
         "cloudStatus": .string(cloudStatus),
       ]
       if let failure { status["error"] = .string(failure) }
-      if localReady, let raw = try? await DeviceLocalPort(path: socketPath).call("status"),
+      if localReady, let raw = try? await statusReader(socketPath),
         case .object(let value) = raw
       {
+        if !configuringRemote && observedGeneration == remoteGeneration {
+          if value["cloudStatus"]?.string == "unconfigured" {
+            remoteOrigin = ""
+          } else if let origin = value["relayOrigin"]?.string,
+            DeviceServiceAddress.normalize(origin) == origin
+          {
+            remoteOrigin = origin
+          }
+        }
         status.merge(value) { _, new in new }
       }
       return .object(status)
@@ -196,17 +215,44 @@ public final class DeviceServiceHost {
     }
     guard
       [
-        "pairing.create", "pairing.revoke", "pairing.redeem", "pairing.result", "member.remove",
-        "policy.get", "policy.set",
+        "pairing.create", "pairing.prepare", "pairing.revoke", "pairing.redeem", "pairing.result",
+        "member.remove",
+        "policy.get", "policy.set", "remote.configure",
       ].contains(method)
     else { throw DeviceHostError.forbidden }
     guard pending.count < 32 else { throw DeviceHostError.unavailable }
+    var requestedOrigin: String?
+    var managedParams = params
+    if method == "remote.configure" {
+      guard !configuringRemote, let value = params?["baseUrl"]?.string else {
+        throw DevicePortError("remote_configuration_busy")
+      }
+      let origin: String
+      if value.isEmpty {
+        origin = ""
+      } else if let normalized = DeviceServiceAddress.normalize(value) {
+        origin = normalized
+      } else {
+        throw DevicePortError("invalid_service_address")
+      }
+      configuringRemote = true
+      remoteGeneration = UUID()
+      requestedOrigin = origin
+      remoteOrigin = origin
+      managedParams = .object(["baseUrl": .string(origin)])
+    }
+    defer {
+      if requestedOrigin != nil {
+        remoteGeneration = UUID()
+        configuringRemote = false
+      }
+    }
     let id = UUID().uuidString.lowercased()
     var message: [String: DeviceJSON] = [
       "type": .string("manage"), "requestId": .string(id), "method": .string(method),
     ]
-    if let params { message["params"] = params }
-    return try await withCheckedThrowingContinuation { continuation in
+    if let managedParams { message["params"] = managedParams }
+    let result: DeviceJSON = try await withCheckedThrowingContinuation { continuation in
       pending[id] = continuation
       timeouts[id] = Task { [weak self] in
         do { try await Task.sleep(for: .seconds(20)) } catch { return }
@@ -214,6 +260,13 @@ public final class DeviceServiceHost {
       }
       do { try send(.object(message)) } catch { finish(id, error: error) }
     }
+    if let requestedOrigin {
+      guard result["baseUrl"]?.string == requestedOrigin else {
+        throw DeviceHostError.invalidResponse
+      }
+      remoteOrigin = requestedOrigin
+    }
+    return result
   }
   private func finish(_ id: String, result: DeviceJSON? = nil, error: (any Error)? = nil) {
     timeouts.removeValue(forKey: id)?.cancel()
@@ -271,7 +324,9 @@ public final class DeviceServiceHost {
       }
       localReady = true
     case "cloud":
-      guard let status = value["status"]?.string, ["online", "offline"].contains(status) else {
+      guard let status = value["status"]?.string,
+        ["online", "offline", "unconfigured"].contains(status)
+      else {
         rejectProtocol()
         return
       }
@@ -295,7 +350,7 @@ public final class DeviceServiceHost {
       }
       do {
         let signature = try identity.signRegistration(
-          payload, serviceOrigin: configuration.serviceOrigin, now: Self.now)
+          payload, serviceOrigin: remoteOrigin, now: Self.now)
         try send(
           .object([
             "type": .string("signature"), "requestId": .string(id), "signature": .string(signature),

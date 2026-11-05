@@ -135,9 +135,11 @@ that supplies no search client installs no search extension or loader for it.
 There are **41 tool names** with all current groups registered: five filesystem/coding tools,
 two pull-report tools, three child-agent tools, eight Herdr tools, two search tools, five
 decision tools, five trigger tools, three peer tools, five memory tools, three shared-device
-tools (only when the daemon supplies a device socket) and one SDK loader. With the default
-selection (no `search`, no `decision`, no `peers`) the eager tools are offered at once and the
-Herdr, decision, trigger and device tools wait behind `tool_search`.
+tools (installed when the daemon supplies a device socket) and one SDK loader. A root
+conversation selects those three eagerly only when local status says remote is configured;
+local coding tools remain available under local policy. With the default selection (no
+`search`, no `decision`, no `peers`) eager selected tools are offered at once. Herdr,
+decision and trigger tools wait behind `tool_search`.
 
 ### Filesystem and coding
 
@@ -221,11 +223,11 @@ and planned `peer_*` addresses independent catalog Bots. These identities and
 lifecycles are not interchangeable. `herdr_send` is not a screen read;
 `herdr_wait` is not a verdict that a task succeeded.
 
-Current child-target validation only parses an ID and looks up the conversation
-in this Harness. `agent_send`/`agent_stop` do not yet verify that its `bots.agent`
-marker names the caller as parent. The send request ID also includes `api.now()`;
-do not describe it as proven replay deduplication. The one-level configuration
-and happy-path test are not evidence for stronger targeting/recovery guarantees.
+`agent_send` verifies the `bots.agent` marker names its caller as direct parent;
+`agent_stop` still only parses an ID and looks up the conversation. The send request
+ID includes `api.now()`; do not describe it as proven replay deduplication. The
+one-level configuration and happy-path test are not evidence for stronger targeting
+or recovery guarantees.
 
 ### Existing test evidence
 

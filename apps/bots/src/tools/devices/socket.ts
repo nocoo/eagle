@@ -21,9 +21,9 @@ type Pending = {
   cleanup(): void;
 };
 
-/** Version-1 private host port. One channel can hold a native admission until settlement. */
+/** Private host port. One channel can hold a native admission until settlement. */
 export class DeviceChannel {
-  readonly version = 1;
+  readonly version = 2;
   readonly #path: string;
   readonly #timeoutMs: number;
   readonly #pending = new Map<string, Pending>();
@@ -81,6 +81,7 @@ export class DeviceChannel {
     if (signal?.aborted) throw new Error("device_cancelled");
     const requestId = randomUUID();
     const frame = JSON.stringify({
+      version: this.version,
       requestId,
       method,
       ...(params === undefined ? {} : { params }),
@@ -124,7 +125,7 @@ export class DeviceChannel {
       }
       if (end < 0) return;
       this.#buffer = this.#buffer.slice(end + 1);
-      let value: { requestId?: unknown; result?: unknown; error?: unknown };
+      let value: { version?: unknown; requestId?: unknown; result?: unknown; error?: unknown };
       try {
         value = JSON.parse(line);
       } catch {
@@ -134,6 +135,7 @@ export class DeviceChannel {
       if (
         value === null ||
         typeof value !== "object" ||
+        value.version !== this.version ||
         typeof value.requestId !== "string" ||
         !this.#pending.has(value.requestId) ||
         Object.hasOwn(value, "result") === Object.hasOwn(value, "error")

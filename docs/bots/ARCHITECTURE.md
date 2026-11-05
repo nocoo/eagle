@@ -34,12 +34,15 @@ dependency direction is fixed: Eagle imports Bots, Bots never imports Eagle (and
 
 ## Layers
 
-Eagle may inject a version-1 shared-device access port at daemon composition.
+Eagle may inject a version-2 shared-device access port at daemon composition.
 The adapter in `tools/devices` owns its JSONL codec and Unix socket client; it
 imports no Eagle, Worker, Agent or contracts source. Credentials remain behind
 the independently managed host helper. The same injected port serves existing
 and newly created Bots. Standalone Bots without a port retain native local tools.
-The device extension is mandatory when injected, regardless of saved tool groups.
+An injected port always guards native local tools. The remote extension is selected
+for a configured relay regardless of saved tool groups, not merely because the port
+exists. Its SDK extension identity remains `bots-shared-devices-v1`; that persisted name
+is independent of the version-2 local transport and is not a v1 transport fallback.
 
 
 Five layers. Calls go one way; every crossing logs one `trace` (see

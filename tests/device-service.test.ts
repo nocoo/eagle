@@ -9,12 +9,14 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { createServer } from "node:http";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
+import { OperationJournal } from "../packages/agent/device-journal.ts";
 import {
   approvalPayload,
   canonicalDeviceJSON,
@@ -92,7 +94,7 @@ test("private helper config boots offline local tools; Bot port cannot change po
           resolve(JSON.parse(line));
         });
         socket.write(
-          `${JSON.stringify({ requestId: randomUUID(), method, params })}\n`,
+          `${JSON.stringify({ version: 2, requestId: randomUUID(), method, params })}\n`,
         );
       });
     }
@@ -117,6 +119,7 @@ test("private helper config boots offline local tools; Bot port cannot change po
       "pairing.revoke",
       "pairing.redeem",
       "member.remove",
+      "remote.configure",
     ]) {
       assert.equal(
         (await request(method, { mode: "all-approve", deviceId })).error,
@@ -146,6 +149,7 @@ test("private helper config boots offline local tools; Bot port cannot change po
       requestId: randomUUID(),
       operationId: randomUUID(),
       targetDeviceId: randomUUID(),
+      relayOrigin: "http://127.0.0.1:1",
     };
     assert.equal(
       ((await request("execute", lost)).result as { status: string }).status,
@@ -185,7 +189,7 @@ test("private helper config boots offline local tools; Bot port cannot change po
       receivedResponse = true;
     });
     lostSocket.write(
-      `${JSON.stringify({ requestId: randomUUID(), method: "execute", params: lostRequest })}\n`,
+      `${JSON.stringify({ version: 2, requestId: randomUUID(), method: "execute", params: lostRequest })}\n`,
     );
     const admissionDeadline = Date.now() + 5_000;
     for (;;) {
@@ -464,14 +468,21 @@ function serviceProcess(inputReady = false) {
   });
   return {
     child,
-    message(type: string): Promise<Record<string, unknown>> {
+    message(
+      type: string,
+      requestId?: string,
+    ): Promise<Record<string, unknown>> {
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           listeners.delete(check);
           reject(new Error(`service ${type} timeout: ${stderr}`));
         }, 5000);
         const check = () => {
-          const message = messages.find((value) => value.type === type);
+          const message = messages.find(
+            (value) =>
+              value.type === type &&
+              (!requestId || value.requestId === requestId),
+          );
           if (message || child.exitCode !== null) {
             clearTimeout(timer);
             listeners.delete(check);
@@ -516,7 +527,7 @@ async function portCall(socketPath: string, method: string, params?: unknown) {
         resolve(JSON.parse(line));
       });
       socket.write(
-        `${JSON.stringify({ requestId: randomUUID(), method, params })}\n`,
+        `${JSON.stringify({ version: 2, requestId: randomUUID(), method, params })}\n`,
       );
     });
   } finally {
@@ -524,6 +535,779 @@ async function portCall(socketPath: string, method: string, params?: unknown) {
     socket.destroy();
   }
 }
+
+function deviceSession(socketPath: string) {
+  const socket = connect(socketPath);
+  const lines = createInterface({ input: socket });
+  const reader = lines[Symbol.asyncIterator]();
+  return {
+    async call(method: string, params: unknown) {
+      const requestId = randomUUID();
+      socket.write(
+        `${JSON.stringify({ version: 2, requestId, method, params })}\n`,
+      );
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const response = await Promise.race([
+        reader.next(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("native port timeout")),
+            3000,
+          );
+        }),
+      ]).finally(() => clearTimeout(timer));
+      assert.equal(response.done, false);
+      const value = JSON.parse(response.value) as Record<string, unknown>;
+      assert.equal(value.requestId, requestId);
+      return value;
+    },
+    close() {
+      lines.close();
+      socket.destroy();
+    },
+  };
+}
+
+test("the local device port rejects an older protocol version", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-port-version-"));
+  const configuration = { ...serviceConfiguration(root), baseUrl: "" };
+  const service = serviceProcess();
+  try {
+    service.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await service.message("ready");
+    const socket = connect(configuration.socketPath);
+    const lines = createInterface({ input: socket });
+    try {
+      const requestId = randomUUID();
+      const response = new Promise<Record<string, unknown>>(
+        (resolve, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("version response timeout")),
+            3000,
+          );
+          socket.once("error", (error) => {
+            clearTimeout(timer);
+            reject(error);
+          });
+          lines.once("line", (line) => {
+            clearTimeout(timer);
+            resolve(JSON.parse(line));
+          });
+        },
+      );
+      socket.write(
+        `${JSON.stringify({ version: 1, requestId, method: "status" })}\n`,
+      );
+      assert.deepEqual(await response, {
+        version: 2,
+        requestId,
+        error: "device_port_version_mismatch",
+      });
+    } finally {
+      lines.close();
+      socket.destroy();
+    }
+    const status = (await portCall(configuration.socketPath, "status"))
+      .result as { localReady: boolean };
+    assert.equal(status.localReady, true);
+  } finally {
+    await service.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unconfigured relay starts local tools without changing policy", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-local-only-"));
+  const configuration = { ...serviceConfiguration(root), baseUrl: "" };
+  const service = serviceProcess();
+  try {
+    service.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await service.message("ready");
+    assert.equal((await service.message("cloud")).status, "unconfigured");
+    const status = (await portCall(configuration.socketPath, "status"))
+      .result as {
+      localReady: boolean;
+      cloudStatus: string;
+      policy: { mode: string };
+    };
+    assert.equal(status.localReady, true);
+    assert.equal(status.cloudStatus, "unconfigured");
+    assert.equal(status.policy.mode, "all-approve");
+    const directory = (await portCall(configuration.socketPath, "directory"))
+      .result as { cloudStatus: string; devices: { deviceId: string }[] };
+    assert.equal(directory.cloudStatus, "unconfigured");
+    assert.deepEqual(
+      directory.devices.map((device) => device.deviceId),
+      [configuration.deviceId],
+    );
+    const operation = { kind: "command", command: "printf local-only" };
+    const request = {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: configuration.deviceId,
+      action: "run",
+      operation,
+      digest: await deviceDigest(canonicalDeviceJSON(operation)),
+    };
+    const result = (
+      await portCall(configuration.socketPath, "execute", request)
+    ).result as { status: string; output?: string };
+    assert.equal(result.status, "completed");
+    assert.equal(result.output, "local-only");
+    const remoteId = randomUUID();
+    const remote = (
+      await portCall(configuration.socketPath, "execute", {
+        ...request,
+        operationId: remoteId,
+        targetDeviceId: randomUUID(),
+      })
+    ).result as { status: string; error: string };
+    assert.equal(remote.status, "denied");
+    assert.equal(remote.error, "remote_not_configured");
+    const policyRequest = randomUUID();
+    service.child.stdin.write(
+      `${JSON.stringify({ type: "manage", requestId: policyRequest, method: "policy.set", params: { mode: "paused" } })}\n`,
+    );
+    const managed = await service.message("managed");
+    assert.equal(managed.requestId, policyRequest);
+    assert.equal((managed.result as { mode: string }).mode, "paused");
+    const paused = (
+      await portCall(configuration.socketPath, "execute", {
+        ...request,
+        operationId: randomUUID(),
+      })
+    ).result as { status: string; error: string };
+    assert.equal(paused.status, "denied");
+    assert.equal(paused.error, "policy_confirmation_required");
+    await service.stop();
+    const database = new DatabaseSync(join(root, "operations.sqlite"), {
+      readOnly: true,
+    });
+    try {
+      assert.equal(
+        (
+          database
+            .prepare("SELECT count(*) AS n FROM outgoing_requests WHERE id=?")
+            .get(remoteId) as { n: number }
+        ).n,
+        0,
+      );
+    } finally {
+      database.close();
+    }
+  } finally {
+    await service.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unconfigured relay does not bypass a fresh local approval policy", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-local-policy-"));
+  const configuration = { ...serviceConfiguration(root), baseUrl: "" };
+  rmSync(join(root, "policy.json"));
+  const service = serviceProcess();
+  try {
+    service.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await service.message("ready");
+    const status = (await portCall(configuration.socketPath, "status"))
+      .result as { policy: { mode: string } };
+    assert.equal(status.policy.mode, "always-ask");
+    const operation = { kind: "command", command: "printf must-not-run" };
+    const result = (
+      await portCall(configuration.socketPath, "execute", {
+        requestId: randomUUID(),
+        operationId: randomUUID(),
+        targetDeviceId: configuration.deviceId,
+        action: "run",
+        operation,
+        digest: await deviceDigest(canonicalDeviceJSON(operation)),
+      })
+    ).result as { status: string; error: string };
+    assert.equal(result.status, "denied");
+    assert.equal(result.error, "policy_confirmation_required");
+    const pairingRequest = randomUUID();
+    service.child.stdin.write(
+      `${JSON.stringify({ type: "manage", requestId: pairingRequest, method: "pairing.create", params: {} })}\n`,
+    );
+    const pairing = await service.message("managed");
+    assert.equal(pairing.requestId, pairingRequest);
+    assert.equal(pairing.error, "remote_not_configured");
+  } finally {
+    await service.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unconfigured relay retains socket-bound native admission", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-local-native-"));
+  const configuration = { ...serviceConfiguration(root), baseUrl: "" };
+  const service = serviceProcess();
+  try {
+    service.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await service.message("ready");
+    const session = deviceSession(configuration.socketPath);
+    const operation = {
+      kind: "native",
+      tool: "bash",
+      args: { command: "printf local" },
+    };
+    const request = {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: configuration.deviceId,
+      action: "run",
+      operation,
+      digest: await deviceDigest(canonicalDeviceJSON(operation)),
+    };
+    try {
+      const first = (await session.call("local.begin", request)).result as {
+        accepted: boolean;
+        leaseId: string;
+      };
+      assert.equal(first.accepted, true);
+      assert.equal(
+        (
+          (await session.call("local.begin", request)).result as {
+            accepted: boolean;
+          }
+        ).accepted,
+        false,
+      );
+      const heartbeat = await session.call("local.heartbeat", {
+        operationId: request.operationId,
+        leaseId: first.leaseId,
+      });
+      assert.equal(
+        typeof (heartbeat.result as { expiresAt: number }).expiresAt,
+        "number",
+      );
+      const completion = {
+        operationId: request.operationId,
+        leaseId: first.leaseId,
+        result: { status: "completed", output: "local" },
+      };
+      assert.equal(
+        (await portCall(configuration.socketPath, "local.complete", completion))
+          .error,
+        "native_lease_mismatch",
+      );
+      assert.equal(
+        (
+          (await session.call("local.complete", completion)).result as {
+            status: string;
+          }
+        ).status,
+        "completed",
+      );
+      assert.equal(
+        (
+          (
+            await portCall(configuration.socketPath, "operation.get", {
+              ...request,
+              action: "get",
+            })
+          ).result as { output: string }
+        ).output,
+        "local",
+      );
+    } finally {
+      session.close();
+    }
+  } finally {
+    await service.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a stale remote origin cannot claim a new operation", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-stale-origin-"));
+  const configuration = serviceConfiguration(root);
+  const service = serviceProcess();
+  const operation = { kind: "command", command: "printf forbidden" };
+  const request = {
+    requestId: randomUUID(),
+    operationId: randomUUID(),
+    targetDeviceId: randomUUID(),
+    relayOrigin: "https://other.example",
+    action: "run",
+    operation,
+    digest: await deviceDigest(canonicalDeviceJSON(operation)),
+  };
+  try {
+    service.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await service.message("ready");
+    const result = (
+      await portCall(configuration.socketPath, "execute", request)
+    ).result as {
+      status: string;
+      error: string;
+    };
+    assert.equal(result.status, "denied");
+    assert.equal(result.error, "remote_configuration_changed");
+    await service.stop();
+    const database = new DatabaseSync(join(root, "operations.sqlite"), {
+      readOnly: true,
+    });
+    try {
+      assert.equal(
+        (
+          database
+            .prepare("SELECT count(*) n FROM outgoing_requests WHERE id=?")
+            .get(request.operationId) as { n: number }
+        ).n,
+        0,
+      );
+    } finally {
+      database.close();
+    }
+  } finally {
+    await service.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote configuration changes leave local native leases intact", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-remote-change-"));
+  const configuration = { ...serviceConfiguration(root), baseUrl: "" };
+  const service = serviceProcess();
+  try {
+    service.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await service.message("ready");
+    const inode = statSync(configuration.socketPath).ino;
+    const session = deviceSession(configuration.socketPath);
+    const operation = {
+      kind: "native",
+      tool: "write",
+      args: { content: "local" },
+    };
+    const request = {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: configuration.deviceId,
+      action: "run",
+      operation,
+      digest: await deviceDigest(canonicalDeviceJSON(operation)),
+    };
+    const change = async (baseUrl: string) => {
+      const requestId = randomUUID();
+      service.child.stdin.write(
+        `${JSON.stringify({ type: "manage", requestId, method: "remote.configure", params: { baseUrl } })}\n`,
+      );
+      return service.message("managed", requestId);
+    };
+    try {
+      const admission = (await session.call("local.begin", request)).result as {
+        accepted: boolean;
+        leaseId: string;
+      };
+      assert.equal(admission.accepted, true);
+      const invalid = await change("http://example.com");
+      assert.equal(invalid.error, "invalid_service_address");
+      const initial = (await portCall(configuration.socketPath, "status"))
+        .result as {
+        localReady: boolean;
+        cloudStatus: string;
+      };
+      assert.equal(initial.cloudStatus, "unconfigured");
+      const enabled = await change("http://127.0.0.1:1");
+      assert.equal(enabled.error, undefined);
+      assert.equal(
+        (enabled.result as { cloudStatus: string }).cloudStatus,
+        "offline",
+      );
+      assert.equal(statSync(configuration.socketPath).ino, inode);
+      const heartbeat = await session.call("local.heartbeat", {
+        operationId: request.operationId,
+        leaseId: admission.leaseId,
+      });
+      assert.equal(
+        typeof (heartbeat.result as { expiresAt: number }).expiresAt,
+        "number",
+      );
+      const disabled = await change("");
+      assert.equal(disabled.error, undefined);
+      assert.equal(
+        (disabled.result as { cloudStatus: string }).cloudStatus,
+        "unconfigured",
+      );
+      const completed = await session.call("local.complete", {
+        operationId: request.operationId,
+        leaseId: admission.leaseId,
+        result: { status: "completed", output: "local" },
+      });
+      assert.equal(
+        (completed.result as { status: string }).status,
+        "completed",
+      );
+      assert.equal(statSync(configuration.socketPath).ino, inode);
+    } finally {
+      session.close();
+    }
+  } finally {
+    await service.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("retired remote credentials remain redacted from a live local lease", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-retired-secret-"));
+  const key = generateKeyPairSync("ed25519");
+  const configuration = {
+    ...serviceConfiguration(root),
+    baseUrl: "",
+    publicKey: key.publicKey
+      .export({ type: "spki", format: "der" })
+      .toString("base64url"),
+  };
+  const token = "fixtureOpaqueCredential0123456789abcdef";
+  let origin = "";
+  let upgraded: () => void;
+  const upgrade = new Promise<void>((resolve) => {
+    upgraded = resolve;
+  });
+  const server = createServer((request, response) => {
+    response.setHeader("content-type", "application/json");
+    if (request.url?.endsWith("/register/challenge")) {
+      const challengeId = randomUUID();
+      const expiresAt = Date.now() + 60000;
+      const payload = [
+        "eagle-device-register-v1",
+        origin,
+        configuration.deviceId,
+        configuration.publicKey,
+        challengeId,
+        "fixture-nonce",
+        String(expiresAt),
+      ].join("\n");
+      response.end(JSON.stringify({ challengeId, payload, expiresAt }));
+    } else if (request.url?.endsWith("/register/complete")) {
+      response.end(
+        JSON.stringify({ sessionToken: token, expiresAt: Date.now() + 900000 }),
+      );
+    } else {
+      response.writeHead(404).end(JSON.stringify({ error: "not_found" }));
+    }
+  });
+  server.on("upgrade", (_request, socket) => {
+    socket.destroy();
+    upgraded();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert(address && typeof address !== "string");
+  origin = `http://127.0.0.1:${address.port}`;
+  const service = serviceProcess();
+  let failure: unknown;
+  try {
+    service.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await service.message("ready");
+    const session = deviceSession(configuration.socketPath);
+    try {
+      const operation = {
+        kind: "native",
+        tool: "write",
+        args: { content: "local" },
+      };
+      const request = {
+        requestId: randomUUID(),
+        operationId: randomUUID(),
+        targetDeviceId: configuration.deviceId,
+        action: "run",
+        operation,
+        digest: await deviceDigest(canonicalDeviceJSON(operation)),
+      };
+      const admission = (await session.call("local.begin", request)).result as {
+        accepted: boolean;
+        leaseId: string;
+      };
+      assert.equal(admission.accepted, true);
+      const enableId = randomUUID();
+      service.child.stdin.write(
+        `${JSON.stringify({ type: "manage", requestId: enableId, method: "remote.configure", params: { baseUrl: origin } })}\n`,
+      );
+      assert.equal(
+        (await service.message("managed", enableId)).error,
+        undefined,
+      );
+      const prompt = await service.message("sign");
+      const signature = sign(
+        null,
+        Buffer.from(String(prompt.payload)),
+        key.privateKey,
+      ).toString("base64url");
+      service.child.stdin.write(
+        `${JSON.stringify({ type: "signature", requestId: prompt.requestId, signature })}\n`,
+      );
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        upgrade,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("upgrade timeout")), 5000);
+        }),
+      ]).finally(() => clearTimeout(timer));
+      const disableId = randomUUID();
+      service.child.stdin.write(
+        `${JSON.stringify({ type: "manage", requestId: disableId, method: "remote.configure", params: { baseUrl: "" } })}\n`,
+      );
+      assert.equal(
+        (await service.message("managed", disableId)).error,
+        undefined,
+      );
+      const completed = (
+        await session.call("local.complete", {
+          operationId: request.operationId,
+          leaseId: admission.leaseId,
+          result: { status: "completed", output: `output ${token}` },
+        })
+      ).result as { status: string; output: string };
+      assert.equal(completed.status, "completed");
+      assert.equal(completed.output.includes(token), false);
+      assert.match(completed.output, /\[REDACTED\]/);
+      session.close();
+      await service.stop();
+      const database = new DatabaseSync(join(root, "operations.sqlite"), {
+        readOnly: true,
+      });
+      try {
+        const row = database
+          .prepare("SELECT stdout FROM operations WHERE id=?")
+          .get(request.operationId) as { stdout: string };
+        assert.equal(row.stdout.includes(token), false);
+      } finally {
+        database.close();
+      }
+    } finally {
+      session.close();
+    }
+  } catch (error) {
+    failure = error;
+  }
+  server.closeAllConnections();
+  const cleaned = await Promise.allSettled([
+    service.stop(),
+    new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    ),
+  ]);
+  const errors = cleaned.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch (error) {
+    errors.push(error);
+  }
+  if (failure !== undefined) errors.unshift(failure);
+  if (errors.length)
+    throw new AggregateError(errors, "remote credential test failed");
+});
+
+test("local-only native approval remains bound to the operation and socket", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-local-approval-"));
+  const key = generateKeyPairSync("ed25519");
+  const configuration = {
+    ...serviceConfiguration(root),
+    baseUrl: "",
+    publicKey: key.publicKey
+      .export({ type: "spki", format: "der" })
+      .toString("base64url"),
+  };
+  rmSync(join(root, "policy.json"));
+  const service = serviceProcess();
+  try {
+    service.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await service.message("ready");
+    const operation = {
+      kind: "native",
+      tool: "write",
+      args: { content: "local" },
+    };
+    const request = {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: configuration.deviceId,
+      action: "run",
+      operation,
+      digest: await deviceDigest(canonicalDeviceJSON(operation)),
+    };
+    const pending = portCall(configuration.socketPath, "approval.request", {
+      request,
+      policyVersion: 1,
+      expiresAt: Date.now() + 60000,
+    });
+    const prompt = await service.message("approve");
+    assert.deepEqual(prompt.operation, operation);
+    const envelope = {
+      operationId: request.operationId,
+      sourceDeviceId: configuration.deviceId,
+      targetDeviceId: configuration.deviceId,
+      digest: request.digest,
+      policyVersion: 1,
+      expiresAt: prompt.expiresAt as number,
+    };
+    const approval = {
+      ...envelope,
+      signature: sign(
+        null,
+        Buffer.from(approvalPayload(envelope)),
+        key.privateKey,
+      ).toString("base64url"),
+    };
+    service.child.stdin.write(
+      `${JSON.stringify({ type: "approval", requestId: prompt.requestId, approval })}\n`,
+    );
+    assert.deepEqual((await pending).result, { approval });
+    const invalid = (
+      await portCall(configuration.socketPath, "local.begin", {
+        ...request,
+        approval: { ...approval, signature: "AAAA" },
+      })
+    ).result as { accepted: boolean; result: { status: string } };
+    assert.equal(invalid.accepted, false);
+    assert.equal(invalid.result.status, "denied");
+    const session = deviceSession(configuration.socketPath);
+    try {
+      const accepted = (
+        await session.call("local.begin", { ...request, approval })
+      ).result as {
+        accepted: boolean;
+        leaseId: string;
+      };
+      assert.equal(accepted.accepted, true);
+      const completed = (
+        await session.call("local.complete", {
+          operationId: request.operationId,
+          leaseId: accepted.leaseId,
+          result: { status: "completed", output: "local" },
+        })
+      ).result as { status: string; output: string };
+      assert.equal(completed.status, "completed");
+      assert.equal(completed.output, "local");
+    } finally {
+      session.close();
+    }
+  } finally {
+    await service.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("removing remote configuration preserves uncertain original operations", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-local-recovery-"));
+  const configuration = serviceConfiguration(root);
+  const configured = serviceProcess();
+  const local = serviceProcess();
+  const operation = { kind: "command" as const, command: "printf original" };
+  const request = {
+    requestId: randomUUID(),
+    operationId: randomUUID(),
+    targetDeviceId: randomUUID(),
+    sourceBotId: "bot-one",
+    relayOrigin: configuration.baseUrl,
+    action: "run" as const,
+    operation,
+    digest: await deviceDigest(canonicalDeviceJSON(operation)),
+  };
+  try {
+    configured.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await configured.message("ready");
+    const first = (await portCall(configuration.socketPath, "execute", request))
+      .result as { status: string };
+    assert.equal(first.status, "unknown");
+    await configured.stop();
+    local.child.stdin.write(
+      `${JSON.stringify({ ...configuration, baseUrl: "" })}\n`,
+    );
+    await local.message("ready");
+    for (const [method, action] of [
+      ["execute", "run"],
+      ["operation.get", "get"],
+      ["operation.cancel", "cancel"],
+    ] as const) {
+      const answer = (
+        await portCall(configuration.socketPath, method, {
+          ...request,
+          requestId: randomUUID(),
+          action,
+        })
+      ).result as { status: string; error: string };
+      assert.equal(answer.status, "unknown", action);
+      assert.equal(
+        answer.error,
+        "remote_not_configured_query_original_id",
+        action,
+      );
+    }
+    const conflict = (
+      await portCall(configuration.socketPath, "execute", {
+        ...request,
+        targetDeviceId: randomUUID(),
+      })
+    ).result as { status: string; error: string };
+    assert.equal(conflict.status, "denied");
+    assert.equal(conflict.error, "operation_binding_conflict");
+    await local.stop();
+    const journal = new OperationJournal(join(root, "operations.sqlite"));
+    try {
+      assert.equal(
+        journal.prepareOutgoing(request, {
+          kind: "remote",
+          origin: configuration.baseUrl,
+        }).action,
+        "get",
+      );
+    } finally {
+      journal.close();
+    }
+  } finally {
+    await Promise.all([configured.stop(), local.stop()]);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unconfigured relay retains a known unaccepted remote operation", async () => {
+  const root = mkdtempSync(join(tmpdir(), "device-local-retryable-"));
+  const configuration = { ...serviceConfiguration(root), baseUrl: "" };
+  const operation = { kind: "command" as const, command: "printf original" };
+  const request = {
+    requestId: randomUUID(),
+    operationId: randomUUID(),
+    targetDeviceId: randomUUID(),
+    action: "run" as const,
+    operation,
+    digest: await deviceDigest(canonicalDeviceJSON(operation)),
+  };
+  const journal = new OperationJournal(join(root, "operations.sqlite"));
+  const scope = { kind: "remote", origin: "https://devices.example" } as const;
+  journal.prepareOutgoing(request, scope);
+  journal.completeOutgoing(request, { status: "denied" }, scope);
+  journal.close();
+  const service = serviceProcess();
+  try {
+    service.child.stdin.write(`${JSON.stringify(configuration)}\n`);
+    await service.message("ready");
+    const result = (
+      await portCall(configuration.socketPath, "execute", request)
+    ).result as { status: string; error: string };
+    assert.equal(result.status, "denied");
+    assert.equal(result.error, "remote_not_configured");
+    await service.stop();
+    const database = new DatabaseSync(join(root, "operations.sqlite"), {
+      readOnly: true,
+    });
+    try {
+      const row = database
+        .prepare("SELECT state FROM outgoing_requests WHERE id=?")
+        .get(request.operationId) as { state: string };
+      assert.equal(row.state, "retryable");
+    } finally {
+      database.close();
+    }
+  } finally {
+    await service.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("failed second service never unlinks the first process's live socket", async () => {
   const root = mkdtempSync(join(tmpdir(), "device-owner-"));
@@ -611,6 +1395,7 @@ for (const transport of ["stdin", "socket"]) {
         await fragmentedLine(
           socket,
           {
+            version: 2,
             requestId: randomUUID(),
             method: "execute",
             params: {
@@ -752,6 +1537,7 @@ for (const pendingNative of [false, true]) {
       ...request,
       operationId: randomUUID(),
       targetDeviceId: randomUUID(),
+      relayOrigin: previous.baseUrl,
     };
     const nativeOperation = {
       kind: "native",

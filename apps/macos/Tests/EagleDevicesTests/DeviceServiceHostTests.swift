@@ -14,7 +14,10 @@ private final class HostVault: DeviceIdentityVault, @unchecked Sendable {
 
 @Suite("Private device host") @MainActor
 struct DeviceServiceHostTests {
-  private func host(delayedExit: Bool = false) throws -> DeviceServiceHost {
+  private func host(
+    delayedExit: Bool = false, delayedConfiguration: Bool = false,
+    baseUrl: String = "http://127.0.0.1:1"
+  ) throws -> DeviceServiceHost {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
       "../../../../"
     ).standardizedFileURL
@@ -29,10 +32,12 @@ struct DeviceServiceHostTests {
     process.waitUntilExit()
     let directory = URL(fileURLWithPath: "/tmp/eagle-host-" + UUID().uuidString.prefix(12))
     var entry = root.appendingPathComponent("packages/agent/dist/agent/device-service.js")
-    if delayedExit {
+    if delayedExit || delayedConfiguration {
       try FileManager.default.createDirectory(
         at: directory, withIntermediateDirectories: true,
         attributes: [.posixPermissions: 0o700])
+    }
+    if delayedExit {
       let script = """
         import {appendFileSync} from 'node:fs';
         import {runDeviceService} from '\(entry.absoluteString)';
@@ -43,11 +48,38 @@ struct DeviceServiceHostTests {
       entry = directory.appendingPathComponent("delayed-exit.mjs")
       try Data(script.utf8).write(to: entry)
     }
+    if delayedConfiguration {
+      let script = """
+        import {appendFileSync, existsSync, writeFileSync} from 'node:fs';
+        import {createInterface} from 'node:readline';
+        const path = name => new URL(name, import.meta.url);
+        for await (const line of createInterface({input: process.stdin})) {
+          const message = JSON.parse(line);
+          if (message.type === 'configure') {
+            appendFileSync(path('origins'), message.baseUrl + '\\n');
+            console.log(JSON.stringify({type:'ready',deviceId:message.deviceId,socketPath:message.socketPath}));
+          } else if (message.method === 'remote.configure') {
+            writeFileSync(path('configuring'), 'yes');
+            const timer = setInterval(() => {
+              if (!existsSync(path('allow'))) return;
+              clearInterval(timer);
+              console.log(JSON.stringify({type:'managed',requestId:message.requestId,result:{baseUrl:message.params.baseUrl,cloudStatus:'offline'}}));
+            }, 10);
+          }
+        }
+        """
+      entry = directory.appendingPathComponent("delayed-configuration.mjs")
+      try Data(script.utf8).write(to: entry)
+    }
     let configuration = try JSONDecoder().decode(
       DeviceHostConfiguration.self,
-      from: Data(
-        #"{"version":1,"profile":"isolated-test","baseUrl":"http://127.0.0.1:1","machServiceName":"ai.hexly.eagle.devices.test","launchAgentPlist":"ai.hexly.eagle.devices.test.plist"}"#
-          .utf8))
+      from: JSONSerialization.data(withJSONObject: [
+        "version": 1,
+        "profile": "isolated-test",
+        "baseUrl": baseUrl,
+        "machServiceName": "ai.hexly.eagle.devices.test",
+        "launchAgentPlist": "ai.hexly.eagle.devices.test.plist",
+      ]))
     return DeviceServiceHost(
       identity: try .loadOrCreate(profile: "test", vault: HostVault()),
       configuration: configuration,
@@ -67,6 +99,145 @@ struct DeviceServiceHostTests {
   private func clean(_ host: DeviceServiceHost) async throws {
     await host.stop()
     try FileManager.default.removeItem(at: host.stateDirectory)
+  }
+
+  @Test("an empty relay starts the real local service with its saved policy")
+  func unconfigured() async throws {
+    let host = try host(baseUrl: "")
+    try host.start()
+    do {
+      for _ in 0..<200 {
+        if host.cloudStatus == "unconfigured" || host.failure != nil { break }
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      let localReady = host.localReady
+      let cloudStatus = host.cloudStatus
+      #expect(localReady)
+      #expect(cloudStatus == "unconfigured")
+      let status = try await host.call("service.status")
+      #expect(status["localReady"] == .bool(true))
+      #expect(status["cloudStatus"] == .string("unconfigured"))
+      #expect(status["policy"]?["mode"] == .string("always-ask"))
+      let policy = try await host.call("policy.set", params: .object(["mode": .string("paused")]))
+      #expect(policy["mode"] == .string("paused"))
+    } catch {
+      try await clean(host)
+      throw error
+    }
+    try await clean(host)
+  }
+
+  @Test("remote configuration keeps the real local service and socket alive")
+  func reconfigureRemote() async throws {
+    let host = try host(baseUrl: "")
+    try await ready(host)
+    do {
+      let socket = host.stateDirectory.appendingPathComponent("access.sock")
+      let before =
+        try FileManager.default.attributesOfItem(atPath: socket.path)[.systemFileNumber]
+        as? NSNumber
+      let configured = try await host.call(
+        "remote.configure", params: .object(["baseUrl": .string("http://127.0.0.1:1")]))
+      #expect(configured["baseUrl"] == .string("http://127.0.0.1:1"))
+      let status = try await host.call("service.status")
+      #expect(status["localReady"] == .bool(true))
+      #expect(status["policy"]?["mode"] == .string("always-ask"))
+      let after =
+        try FileManager.default.attributesOfItem(atPath: socket.path)[.systemFileNumber]
+        as? NSNumber
+      #expect(before == after)
+    } catch {
+      try await clean(host)
+      throw error
+    }
+    try await clean(host)
+  }
+
+  @Test("a late old status cannot restore the retired relay on retry")
+  func lateStatusAfterConfiguration() async throws {
+    let host = try host(baseUrl: "http://127.0.0.1:1")
+    try await ready(host)
+    var release: CheckedContinuation<Void, Never>?
+    host.statusReader = { path in
+      let value = try await DeviceLocalPort(path: path).call("status")
+      await withCheckedContinuation { release = $0 }
+      return value
+    }
+    let reading = Task { try await host.call("service.status") }
+    do {
+      for _ in 0..<200 {
+        if release != nil { break }
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      let held = try #require(release)
+      _ = try await host.call(
+        "remote.configure", params: .object(["baseUrl": .string("http://127.0.0.1:2")]))
+      release = nil
+      held.resume()
+      _ = try await reading.value
+      host.statusReader = { path in try await DeviceLocalPort(path: path).call("status") }
+      _ = try await host.call("service.retry")
+      try await ready(host)
+      let status = try await host.call("service.status")
+      #expect(status["relayOrigin"] == .string("http://127.0.0.1:2"))
+    } catch {
+      release?.resume()
+      _ = try? await reading.value
+      try await clean(host)
+      throw error
+    }
+    try await clean(host)
+  }
+
+  @Test("status started during a relay cutover cannot restore the retired relay")
+  func statusDuringConfiguration() async throws {
+    let host = try host(delayedConfiguration: true)
+    try await ready(host)
+    var release: CheckedContinuation<Void, Never>?
+    var reading: Task<DeviceJSON, any Error>?
+    let changing = Task {
+      try await host.call(
+        "remote.configure", params: .object(["baseUrl": .string("http://127.0.0.1:2")]))
+    }
+    let marker = host.stateDirectory.appendingPathComponent("configuring")
+    let allow = host.stateDirectory.appendingPathComponent("allow")
+    do {
+      for _ in 0..<200 {
+        if FileManager.default.fileExists(atPath: marker.path) { break }
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      try #require(FileManager.default.fileExists(atPath: marker.path))
+      host.statusReader = { _ in
+        await withCheckedContinuation { release = $0 }
+        return .object([
+          "relayOrigin": .string("http://127.0.0.1:1"), "cloudStatus": .string("offline"),
+        ])
+      }
+      reading = Task { try await host.call("service.status") }
+      for _ in 0..<200 {
+        if release != nil { break }
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      let held = try #require(release)
+      try Data().write(to: allow)
+      _ = try await changing.value
+      release = nil
+      held.resume()
+      _ = try await reading?.value
+      _ = try await host.call("service.retry")
+      try await ready(host)
+      let origins = try String(
+        contentsOf: host.stateDirectory.appendingPathComponent("origins"), encoding: .utf8)
+      #expect(origins.split(separator: "\n").last == "http://127.0.0.1:2")
+    } catch {
+      release?.resume()
+      try? Data().write(to: allow)
+      _ = try? await reading?.value
+      _ = try? await changing.value
+      try await clean(host)
+      throw error
+    }
+    try await clean(host)
   }
 
   @Test("authenticated helper handshake is independent of Node and cloud readiness")

@@ -53,6 +53,46 @@ test("every content block becomes the wire block of the same meaning", () => {
   assert.equal(convertBlock({ type: "image", data: "…" } as never), undefined);
 });
 
+test("interrupted device receipts retain diagnostics in valid JSON without changing other tool text", () => {
+  const receipt = {
+    type: "device-operation",
+    version: 1,
+    targetDeviceId: "11111111-1111-4111-8111-111111111111",
+    operationId: "22222222-2222-4222-8222-222222222222",
+    status: "unknown",
+    error: "remote_not_configured",
+    truncated: false,
+  };
+  const diagnostic = "<harness>\n[error] Tool remote_execute was interrupted\n</harness>";
+  const message = (name: string, value: string) =>
+    convertMessage(
+      {
+        role: "toolResult",
+        toolCallId: "call_1",
+        toolName: name,
+        isError: true,
+        timestamp: 0,
+        content: [
+          { type: "text", text: value },
+          { type: "text", text: diagnostic },
+        ],
+      } as never,
+      { id: "e_1", now },
+    );
+  const recovered = message("remote_execute", JSON.stringify(receipt))?.blocks[0];
+  assert.equal(recovered?.type, "toolResult");
+  if (recovered?.type !== "toolResult") throw new Error("missing tool result");
+  assert.deepEqual(JSON.parse(recovered.text), { ...receipt, diagnostics: [diagnostic] });
+  const other = message("other_tool", JSON.stringify(receipt))?.blocks[0];
+  assert.equal(other?.type, "toolResult");
+  if (other?.type !== "toolResult") throw new Error("missing tool result");
+  assert.equal(other.text, `${JSON.stringify(receipt)}\n${diagnostic}`);
+  const malformed = message("remote_execute", "not-json")?.blocks[0];
+  assert.equal(malformed?.type, "toolResult");
+  if (malformed?.type !== "toolResult") throw new Error("missing tool result");
+  assert.equal(malformed.text, `not-json\n${diagnostic}`);
+});
+
 test("message ids are the wire's ids", () => {
   assert.equal(entryMessageId(10), "e_10");
   assert.equal(entryMessageId("10"), "e_10");

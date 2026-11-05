@@ -1,5 +1,22 @@
 # 用户视角检查点
 
+## 2026-11-05 08:33 +08 — Remote main integration
+
+- Merged remote source `e6ded9e` (53 remote-only commits) with local design work
+  `094f49b`. The only textual conflict was the fixed-clock secret-validity test:
+  both parents have the same production seam; retain the stricter local boundary
+  assertions. Read-only integration review found no issue.
+- Design guard/gate: 59 pass; Bots check: 1,022 tests plus coverage pass; device
+  integration: 11 pass; Swift: 450 tests pass, logic coverage 92.5%. Separate root
+  typecheck, lint, website build and Agent build pass. Two complete root checks
+  each remain red at 308/309 because the unchanged styled-redaction performance
+  case failed (details in Retrospective.md). Browser and full CLI eval not rerun.
+- No production authentication, D1, deployment or physical remote-device operation
+  was attempted. Fresh development App PID 70010 owns daemon 70387 from this
+  checkout's `apps/bots`, in the existing right-side pane. CLI health and development
+  authentication pass. `deviceAccess` remains null for this unbundled source App;
+  the isolated device-integration tests are not proof of installed-App readiness.
+
 ## 2026-11-05 08:09 +08 — Palette/font slice accepted locally
 
 - All 59 design guard/gate cases pass, including the review's alias, chained-font,
@@ -3378,3 +3395,325 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   Round three's remaining findings are closed by that change; the review budget is spent, so
   the last measurement was verified by its three new tests and the full gates, not a fourth
   review round.
+
+## 2026-11-04 11:29 +08 — Local-first device work in progress
+
+- The Bot native-tool path no longer fetches the remote directory before local
+  admission (`2d77bc8`); the Bots gate passed with 999 tests. Local approval and
+  paused-policy recovery received two additional passing tests (`ea3a935`).
+- Node local-only startup and uncertain-operation recovery have red/green process
+  tests but are not yet committed or connected to App startup. No claim is made
+  that a fresh packaged App or a real Bot can yet run with no remote address.
+- Herdr collection, viewer authentication, D1 and rendered App behaviour were not
+  exercised by this work. The next broken hop is the Swift helper/App startup and
+  its status protocol; full Swift tests require explicit authorization because they
+  create temporary ACLs. The foreground development App may reuse the owner's Bots
+  daemon and data, so its launch also awaits authorization.
+
+## 2026-11-04 11:48 +08 — Local service and CLI acceptance
+
+- The Node device service supports an empty remote address (`ea4241c`). It keeps
+  local policy and socket-bound admission, and preserves uncertain remote operation
+  bindings. The App/helper startup path still blocks an unconfigured address, so
+  this is not yet a usable fresh-install App fix.
+- Root `npm run check` passed with 271 tests and the official Node build. The
+  independent Bots gate passed with 999 tests. `npm run test:devices` passed all
+  eight cases, including an isolated real CLI/local Bot test with a scripted
+  model and a paused-policy negative control. The first complete Bots eval run
+  passed all 24 cases; real-model tool choice and rendered App remain unverified.
+- Herdr collection, viewer authentication, D1 and live rendering were not exercised.
+  The next broken hop remains Swift helper/App startup, followed by truthful
+  remote-tool selection. Full Swift tests create temporary ACLs and the dev App
+  may reuse the owner's Bots daemon/data; both await explicit authorization.
+
+## 2026-11-04 12:01 +08 — Local-first gates and remaining boundary
+
+- Three complete isolated Bots CLI eval rounds passed, 24 cases each. The root
+  browser suite reported 191 passed and 11 existing platform-conditional skips.
+  Device CLI fixture cleanup and Swift command deadlines were reviewed and fixed.
+- The current committed slice proves local-only Node and Bot tools through an
+  isolated CLI with a scripted model; the packaged App still does not start its
+  helper without a remote address. Tool registration, wake/hibernation and the
+  remaining design slices are not implemented.
+- No real Herdr collection, viewer authentication, D1 or installed App rendering
+  was exercised. The Swift suite's temporary ACL tests and a foreground dev App
+  potentially sharing the owner's Bots daemon/data remain unauthorized and unrun.
+
+## 2026-11-04 14:58 +08 — App local startup and remote cutover
+
+- Swift helper/App startup now accepts an empty relay, and unconfigured pairing
+  cannot strand a new request (`bd9492d`, `95a02e3`, `2bdd0bc`). Full Swift tests
+  passed and the logic coverage gate reported 91.5%. A real installed App and a
+  real model have not been used to verify this path.
+- A retired target connection cannot admit a late operation (`06b8f77`); real
+  local WebSocket/SQLite tests passed. A new Node red test currently shows that
+  remote configuration cannot yet change without interrupting local leases.
+  Cross-origin operation provenance and safe credential redaction are prerequisites
+  for implementing that control path; it is not complete.
+- Herdr collection, viewer authentication, D1 and live rendering were not tested.
+  The foreground dev App has not yet been started for this revision.
+
+## 2026-11-04 15:21 +08 — Remote origin safety in progress
+
+- Local helper/App startup and unconfigured UI tests passed, including the
+  91.5% Swift logic-coverage gate. These are isolated tests, not evidence from a
+  packaged App or a real model. The owner's foreground dev App is still pending.
+- Remote authorization after a target side effect now returns unknown without
+  exposing output (`81cfeb0`). A closing target connection is checked again at
+  admission (`cbf7890`); the affected real WebSocket/SQLite tests passed.
+- Work in progress binds source operation IDs to a relay origin and keeps local
+  leases alive across remote changes. Its origin test is green, but the new
+  `remote.configure` process test remains red; the full change is uncommitted and
+  cannot be treated as a finished feature. Policy/pairing provenance, tool refresh
+  and hibernation remain open.
+- No real Herdr collection, viewer authentication, D1 or installed App rendering
+  was exercised in this slice.
+
+## 2026-11-04 16:04 +08 — Device port and hot configuration in progress
+
+- Local helper/App startup, local policy and the unconfigured settings view have
+  isolated green tests; no installed App or real-model acceptance is claimed.
+- The uncommitted v2 local port rejects older envelopes. Remote operation intent,
+  approval and policy IDs are being bound to a relay origin; Node's hot-config
+  test preserves a real local lease and a retired-token redaction test passed.
+  A Swift regression remains red because pending pairing does not yet retain its
+  original relay. Remote tool registration and hibernation are still open.
+- Herdr collection, viewer authentication, D1 and live rendering were not exercised.
+  The foreground dev App has not yet been started for this revision.
+
+## 2026-11-04 16:23 +08 — Origin-bound configuration tests
+
+- The uncommitted hot configuration keeps an admitted local lease active. Pairing
+  now prepares its ID, code digest and relay locally before the App persists and
+  sends; its pending record remains bound across relay changes and App restart.
+  Operation and policy IDs also retain their relay. Old credentials stay redacted.
+- Swift's complete test run passed (289, 50, 60 and 36 tests across its packages).
+  The affected Node run passed 75 tests, and `npm run test:devices` passed nine,
+  including two real local Device services, Miniflare and a separate relay that
+  received no pairing/policy request or old authorization during cutover.
+- No installed App, real model, Herdr collection, viewer authentication, D1 or
+  live rendering was exercised. Remote tool refresh and hibernation remain open;
+  this uncommitted slice still needs full gates and an independent review.
+
+## 2026-11-04 16:41 +08 — Reconciliation and stale-status races
+
+- Independent review found that a crash between saving relay B and applying it
+  could leave a live helper on A, and that stale helper status could restore A's
+  signing context after cutover. Red/green Swift tests now exercise startup
+  reconciliation, its fail-closed error path, and old status reads begun both
+  before and during configuration. Local policy remains available on failure.
+- The full Swift run passed (291, 52, 60 and 36 tests). Root `npm run check`
+  passed 288 tests and build; the independent Bots gate passed 1,003 tests and
+  coverage. Those Node gates preceded the latest Swift-only fixes. The final
+  incremental review and commit of this slice remain pending.
+- No installed App, real model, Herdr collection, viewer authentication, D1 or
+  live rendering was exercised. Tool refresh and target hibernation are open.
+
+## 2026-11-04 17:00 +08 — Dispatch and panel lifecycle
+
+- Remote `run/get/cancel` no longer perform a discarded directory fetch
+  (`e26f586`); ten device integration cases passed, including live membership
+  revocation and a counted real Miniflare directory endpoint. Root check passed
+  288 tests. No Cloudflare deployment or billing measurement was performed.
+- The uncommitted panel slice avoids periodic cloud reads from the workspace.
+  Review found late local readiness, a panel joining an in-flight health read,
+  and cancellation before startup completes need further fixes; the slice is not
+  complete. The last full Swift run passed before those review findings were fixed.
+- Installed App, real-model tool choice, Herdr collection, authentication, D1
+  and live rendering remain unverified. Dynamic remote tools and target
+  hibernation remain open.
+
+## 2026-11-04 17:20 +08 — Visible observation and root-tool selection
+
+- Visible-panel observation is committed (`40fd998`). Three review rounds fixed
+  late local readiness and overlapping open/close/cancellation races. Full Swift
+  tests passed (299, 52, 60 and 36), with 92.3% logic coverage.
+- An isolated foreground source App is running with a separate Bots root and port;
+  its local health endpoint answered, but its source build has no injected device
+  socket. It is not evidence of installed-App or real-model acceptance. The build
+  emitted existing AppKit concurrency warnings.
+- An uncommitted root-runtime slice removes remote schemas when the local port is
+  unconfigured, restores them for a configured but offline relay on a later user
+  input, and guards stale loaded tools. CLI/scripted-model and focused tests are
+  green. Existing child conversations, in-flight refresh and hibernation remain open.
+  Herdr collection, viewer authentication, D1 and live rendering were not exercised.
+
+## 2026-11-04 17:50 +08 — Root tool selection and restart recovery
+
+- Root tool selection is still uncommitted. The CLI/scripted model now verifies
+  unconfigured, configured-but-offline and disabled selection without changing
+  local policy. Review found that hiding remote tools could lose an interrupted
+  operation ID during SDK recovery. Real Harness/SIGKILL tests reproduced it.
+- A candidate adapter preserves validated original IDs before SDK settlement;
+  red/green tests cover absent and unconfigured service, repeated crash, get,
+  cancel, coerced arguments and valid JSON diagnostics. This depends on the
+  pinned SDK's exposed `LiveDoc` behaviour and needs final independent review
+  and full gates. It is not evidence that child/nested recovery is solved.
+- The isolated source App remains foreground (PID 87255); its isolated daemon
+  answers on 43286 but reports no device socket. No real model, installed App,
+  Herdr collection, viewer authentication, D1, Cloudflare hibernation or billing
+  was verified. Dynamic child refresh and in-flight propagation remain open.
+
+## 2026-11-04 18:08 +08 — Root selection committed; eval collision
+
+- Root tool selection and safe interrupted-root receipts are committed (`455c44e`).
+  Bots `npm run check` passed 1,015 tests and coverage; the device integration
+  suite passed ten. Three review rounds caught SDK recovery, coerced arguments,
+  receipt format and accepted extra-field cases; those regressions passed.
+- Full CLI eval round one passed all 24 cases. Round two passed 23 and failed one:
+  the case's random temporary root hashed to the same singleton lock port as this
+  run's isolated foreground App. No user daemon or data was modified. The fixture
+  allocator needs a deterministic collision guard before continuing the rounds.
+- The isolated App remains foreground with no injected device socket. Installed App,
+  real model, Herdr collection, viewer authentication, D1, Cloudflare hibernation
+  and billing remain unverified. Child refresh and in-flight propagation remain open.
+
+## 2026-11-04 18:30 +08 — Isolated CLI eval restored
+
+- The eval allocator now avoids occupied singleton ports and existing directories
+  (`d5a8ac4`), with deterministic collision and isolation tests. After that fix,
+  three separate full CLI eval rounds each passed all 24 cases; the earlier failed
+  round remains recorded above. Bots `npm run check` passed 1,017 tests and coverage.
+- The foreground source App still uses an isolated daemon without a device socket.
+  This is scripted-model and process evidence, not installed-App, physical two-Mac
+  or real-model acceptance. Herdr collection, viewer authentication, D1 and live
+  rendering were not exercised. Child/in-flight tool refresh and target hibernation
+  remain open; no Cloudflare deployment or billing measurement was performed.
+
+## 2026-11-04 18:45 +08 — Registry session references
+
+- Internal Registry session-reference RPCs are committed (`8d60b8e`), with real
+  Miniflare/SQLite tests for expiry, same-generation renewal, revocation,
+  membership and a digest/revocation barrier. They are not yet used by target
+  sockets; the existing heartbeat and token-in-memory path remain unchanged.
+- Root `npm run check` passed 290 tests after an earlier unrelated redaction
+  performance ratio failure; its standalone run and later full gate passed without
+  changing limits. Three isolated scripted CLI rounds previously passed 24 cases.
+- The isolated foreground source App remains running without a device socket.
+  No real-model, installed-App, Herdr collection, viewer authentication, D1,
+  physical two-Mac, Cloudflare hibernation or billing verification is claimed.
+  Child/in-flight tool refresh, socket renewal and hibernation remain open.
+
+## 2026-11-04 19:08 +08 — Target relay reference integration
+
+- The uncommitted target-relay slice replaces its retained bearer with the
+  Registry reference and performs combined source/target checks at dispatch and
+  result release. Tests reproduced a target-rejoin output leak and verified the
+  fix; post-forward policy authorization loss is explicitly unknown.
+- Real Miniflare/SQLite API tests passed 32 cases; `npm run test:devices` passed
+  11, including a real target side effect, source revocation and a `sent` source
+  journal with no duplicate effect. Review also caught and verified a fix for
+  invalidating the wrong session when only the target expires. The full root gate
+  for this slice is still pending.
+- The isolated foreground source App still has no device socket. No real model,
+  installed App, Herdr collection, viewer authentication, D1, Cloudflare
+  hibernation or billing was verified. Same-socket renewal and hibernation remain open.
+
+## 2026-11-04 19:25 +08 — Worker-side session renewal
+
+- Target reference authorization is committed (`9573456`); root `npm run check`
+  passed 294 tests, and the 11-case device process suite included a source journal
+  retaining `sent` after an actual remote side effect and revocation.
+- The uncommitted Worker accepts same-socket session renewal with a later Registry
+  expiry. Red/green Miniflare tests cover in-flight work, old-token expiry,
+  generation revocation, downgrade rejection and concurrent operation/policy
+  authorization. Independent incremental review and full gates are still pending.
+- The Node Agent does not yet initiate renewal, and target hibernation is not
+  implemented. The isolated foreground source App has no device socket; real model,
+  installed App, Herdr collection, viewer auth, D1 and Cloudflare were not verified.
+
+## 2026-11-04 19:43 +08 — Same-socket renewal client
+
+- The Worker-side same-socket renewal is committed (`4a9ea90`); root check passed
+  299 tests. It rejects expiry downgrade and rechecks authorization when renewal
+  races a dispatch. It does not yet hibernate target sockets.
+- The uncommitted Node client schedules key-proved renewal and keeps a successful
+  operation on the same socket. Local fake-relay tests pass for success, rejection,
+  mismatched ACK and lost ACK; a real Miniflare/DeviceCloud test also completed
+  an in-flight write once across renewal. Independent review and full gates remain.
+- The foreground source App remains isolated and has no device socket. Real-model,
+  installed-App, Herdr collection, viewer auth, D1, Cloudflare hibernation and
+  billing remain unverified. Child/in-flight tool refresh remains open.
+
+## 2026-11-05 05:56 +08 — Paused work and pane cleanup
+
+- At the owner's request, the controlled review pane and isolated foreground App
+  pane were closed. The App's orphaned daemon was identified by its isolated root
+  and stopped; only the steering pane remains. No other spaces or daemons were
+  touched. The isolated `.local/manual-app-20261104-1714` data was not deleted.
+- Node Agent renewal remains uncommitted in `packages/agent/device-cloud.ts`,
+  `tests/device-cloud-renewal.test.ts`, `tests/device-api.test.ts`, `docs/DEVICES.md`
+  and `Retrospective.md`. A temporary red-test change to ACK deadline cancellation
+  was restored. Root check-only lint and TypeScript pass. A bounded rerun of the
+  seven-case Agent test passed six and failed the last with Node mock timers /
+  Undici `Cannot read properties of undefined (reading 'runAt')`; the fake-clock
+  fixture and subsequent full gates require repair. Earlier Worker and real
+  Miniflare renewal tests passed, but do not validate this latest worktree.
+- Remaining design: propagate remote configuration to existing root/child and
+  in-flight conversations without widening child/reflection scope; finish and
+  review the Node renewal client; implement target WebSocket hibernation, bounded
+  auto-ping liveness, safe wake and timeout budgets. Test authorization, unknown
+  original-ID recovery and no replay across these boundaries.
+- No deployment was performed. Real-model choice, installed-App first run,
+  physical two-Mac behaviour, Herdr collection, viewer auth, D1, Cloudflare
+  hibernation, live latency and billing remain unverified. Three isolated scripted
+  CLI eval rounds and earlier root/Bots/Swift gates passed as recorded above;
+  they are not final evidence for the uncommitted Agent slice.
+
+## 2026-11-05 06:40 +08 — Agent renewal and long-command deadline
+
+- Agent same-socket renewal is committed (`caed7ac`). Mock-clock network tests
+  now run in separate processes with real-time watchdogs and bounded cleanup;
+  root `npm run check` passed 309 tests and `npm run test:devices` passed 11.
+- The uncommitted Bot socket deadline now accounts for the requested command
+  duration and bounded authentication/relay overhead. Focused socket and
+  original-ID recovery tests passed; the latest full Bots coverage gate failed
+  during an unrelated trace fixture cleanup with `ENOTEMPTY`. Its cause is still
+  being investigated, not suppressed or treated as a pass.
+- Remote configuration propagation to existing child/in-flight conversations
+  and target WebSocket hibernation remain unimplemented. No deployment, installed
+  App, real-model, Herdr collection, viewer auth, D1, Cloudflare hibernation or
+  billing verification was performed.
+
+## 2026-11-05 07:05 +08 — Long commands and child turns
+
+- Agent renewal was completed earlier (`caed7ac`), and long remote command socket
+  budgets now cover the requested duration plus bounded authentication/relay time
+  (`9ad4053`). Timeout recovery retains the original ID. Bots check passed 1,019
+  tests after one independently investigated trace-fixture cleanup failure.
+- App-managed children now refresh remote tools at spawn/send (`66a9bcc`), preserve
+  local tools and prohibit further delegation. Three review rounds found and drove
+  fixes for parallel sends, stop/cancellation and a marker-validation race; Bots
+  check passed all 1,022 tests including coverage. This is not automatic refresh of
+  an already-running generation or exhaustive child restart recovery.
+- Target WebSocket hibernation, auto-ping and wake remain unimplemented. No
+  deployment or real-model, installed-App, Herdr collection, viewer auth, D1,
+  physical two-Mac, Cloudflare hibernation or billing verification was performed.
+
+## 2026-11-05 07:22 +08 — Child-turn acceptance
+
+- After the child-turn and long-command slices, three separate full CLI eval
+  rounds each passed all 24 cases, with explicit real-time process watchdogs.
+  The scripted cases do not exercise every child-device change or a real model.
+- Root check previously passed 309 tests, Bots check passed 1,022 tests with
+  coverage, and the real device-process suite passed 11. These do not establish
+  the remaining target hibernation or automatic in-flight refresh.
+- Only the steering pane remains. No dev App or daemon is running from this task;
+  no deployment, live Herdr collection, viewer auth, D1, installed-App or
+  physical two-Mac verification was performed.
+
+## 2026-11-05 07:26 +08 — Current acceptance and remaining work
+
+- The browser release gate passed 191 tests with 11 existing conditional skips;
+  the current device process suite passed 11. Three isolated scripted CLI eval
+  rounds passed 24 cases each. Root check passed 309 tests and Bots check passed
+  1,022 tests with coverage. The worktree is clean after the committed slices.
+- The primary idle-cost target is still open: target Agent sockets still use
+  ordinary `accept()` and periodic heartbeat, not hibernation/auto-response. Root
+  and child remote tools refresh at explicit input/spawn/send boundaries, but
+  configuration changes are not pushed into an already-running generation. The
+  existing settings do not yet provide a distinct remote-disable control that
+  leaves the local service running. These are not completed by the passing gates.
+- No production deployment or live Cloudflare/billing test was performed. Real
+  model selection, installed-App first run, Herdr collection, viewer auth, D1 and
+  physical two-Mac acceptance remain unverified. Only the steering pane remains.

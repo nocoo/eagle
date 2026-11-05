@@ -24,6 +24,7 @@ struct DeviceSettingsPolicyTests {
     let request = try #require(control.calls.first { $0.0 == "policy.set" }?.1)
     #expect(request["deviceId"]?.string == remote.deviceId)
     #expect(request["requestId"]?.string.flatMap(UUID.init(uuidString:)) != nil)
+    #expect(request["relayOrigin"]?.string == "https://devices.example")
     #expect(model.policy?.mode == .allApprove)
     // The older cloud observation must not replace the acknowledged target version.
     #expect(model.policy(for: remote)?.mode == .paused)

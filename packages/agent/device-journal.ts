@@ -36,6 +36,9 @@ export type OperationScope = {
   targetDeviceId: string;
   sourceBotId?: string;
 };
+export type OutgoingScope =
+  | { kind: "local" }
+  | { kind: "remote"; origin: string };
 
 type Row = {
   id: string;
@@ -103,6 +106,7 @@ const record = (row: Row): OperationRecord => ({
 
 /** Expected admission rejection; other journal errors mean storage is unhealthy. */
 export class OperationAdmissionError extends Error {}
+export class OperationOriginError extends Error {}
 
 export class OperationJournal {
   private database: DatabaseSync;
@@ -175,6 +179,16 @@ export class OperationJournal {
         CREATE TABLE IF NOT EXISTS outgoing_requests (
           id TEXT PRIMARY KEY,target TEXT NOT NULL,digest TEXT,source_bot TEXT,
           state TEXT NOT NULL CHECK(state IN ('sent','retryable'))
+        );
+        CREATE TABLE IF NOT EXISTS outgoing_relay_bindings (
+          kind TEXT NOT NULL CHECK(kind IN ('operation','policy','pairing')),
+          id TEXT NOT NULL,origin TEXT NOT NULL,PRIMARY KEY(kind,id)
+        );
+        CREATE TABLE IF NOT EXISTS outgoing_operation_intents (
+          id TEXT PRIMARY KEY,target TEXT NOT NULL,digest TEXT NOT NULL,source_bot TEXT
+        );
+        CREATE TABLE IF NOT EXISTS outgoing_pairing_intents (
+          id TEXT PRIMARY KEY,code_hash TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS device_policy (
           singleton INTEGER PRIMARY KEY CHECK(singleton=1),mode TEXT NOT NULL,version INTEGER NOT NULL
@@ -376,28 +390,80 @@ export class OperationJournal {
       throw error;
     }
   }
-  preparePolicy(request: PolicySetRequest): void {
-    const previous = this.database
-      .prepare("SELECT target,mode FROM outgoing_policy_requests WHERE id=?")
-      .get(request.requestId) as { target: string; mode: string } | undefined;
-    if (previous) {
+  preparePolicy(request: PolicySetRequest, scope: OutgoingScope): void {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const previous = this.database
+        .prepare("SELECT target,mode FROM outgoing_policy_requests WHERE id=?")
+        .get(request.requestId) as { target: string; mode: string } | undefined;
       if (
-        previous.target !== request.deviceId ||
-        previous.mode !== request.mode
+        previous &&
+        (previous.target !== request.deviceId || previous.mode !== request.mode)
       )
         throw new OperationAdmissionError("policy_request_conflict");
-      throw new OperationAdmissionError(
-        "policy_request_already_sent_refresh_target",
-      );
+      const origin = this.binding("policy", request.requestId);
+      this.checkRelayScope(scope, origin, !!previous);
+      if (previous)
+        throw new OperationAdmissionError(
+          "policy_request_already_sent_refresh_target",
+        );
+      const count = this.database
+        .prepare("SELECT count(*) n FROM outgoing_policy_requests")
+        .get() as { n: number };
+      if (count.n >= this.capacity)
+        throw new OperationAdmissionError("policy_request_capacity");
+      this.database
+        .prepare("INSERT INTO outgoing_policy_requests VALUES(?,?,?)")
+        .run(request.requestId, request.deviceId, request.mode);
+      if (scope.kind === "remote")
+        this.database
+          .prepare("INSERT INTO outgoing_relay_bindings VALUES('policy',?,?)")
+          .run(request.requestId, scope.origin);
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
     }
-    const count = this.database
-      .prepare("SELECT count(*) n FROM outgoing_policy_requests")
-      .get() as { n: number };
-    if (count.n >= this.capacity)
-      throw new OperationAdmissionError("policy_request_capacity");
-    this.database
-      .prepare("INSERT INTO outgoing_policy_requests VALUES(?,?,?)")
-      .run(request.requestId, request.deviceId, request.mode);
+  }
+  bindPairing(id: string, codeHash: string, scope: OutgoingScope): void {
+    if (scope.kind !== "remote" || !/^[a-f0-9]{64}$/.test(codeHash))
+      throw new OperationAdmissionError("invalid_pairing_binding");
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const previous = this.database
+        .prepare("SELECT code_hash FROM outgoing_pairing_intents WHERE id=?")
+        .get(id) as { code_hash: string } | undefined;
+      if (previous && previous.code_hash !== codeHash)
+        throw new OperationAdmissionError("request_conflict");
+      const origin = this.binding("pairing", id);
+      this.checkRelayScope(scope, origin, !!previous);
+      if (!previous) {
+        const count = this.database
+          .prepare("SELECT count(*) n FROM outgoing_pairing_intents")
+          .get() as { n: number };
+        if (count.n >= this.capacity)
+          throw new OperationAdmissionError("pairing_request_capacity");
+        this.database
+          .prepare("INSERT INTO outgoing_pairing_intents VALUES(?,?)")
+          .run(id, codeHash);
+        this.database
+          .prepare("INSERT INTO outgoing_relay_bindings VALUES('pairing',?,?)")
+          .run(id, scope.origin);
+      }
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  pairingOrigin(id: string): string {
+    const intent = this.database
+      .prepare("SELECT id FROM outgoing_pairing_intents WHERE id=?")
+      .get(id);
+    const origin = this.binding("pairing", id);
+    if (!intent || !origin)
+      throw new OperationOriginError("relay_origin_unknown");
+    return origin;
   }
   getScope(id: string): OperationScope | null {
     const value = this.row(id)?.scope;
@@ -413,7 +479,7 @@ export class OperationJournal {
         .all() as { id: string }[]
     ).map((row) => row.id);
   }
-  prepareOutgoing(request: OperationRequest): OperationRequest {
+  private outgoing(request: OperationRequest) {
     const row = this.database
       .prepare(
         "SELECT target,digest,source_bot,state FROM outgoing_requests WHERE id=?",
@@ -426,39 +492,201 @@ export class OperationJournal {
           state: "sent" | "retryable";
         }
       | undefined;
-    if (row) {
-      if (
-        row.target !== request.targetDeviceId ||
+    if (
+      row &&
+      (row.target !== request.targetDeviceId ||
         (request.digest !== undefined && row.digest !== request.digest) ||
         (request.action === "run" &&
-          row.source_bot !== (request.sourceBotId ?? null))
-      )
-        throw new OperationAdmissionError("operation_binding_conflict");
-      const action =
-        request.action === "run" && row.state !== "retryable"
-          ? "get"
-          : request.action;
-      this.database
-        .prepare("UPDATE outgoing_requests SET state='sent' WHERE id=?")
-        .run(request.operationId);
-      return { ...request, action };
-    }
-    const count = this.database
-      .prepare("SELECT count(*) n FROM outgoing_requests")
-      .get() as { n: number };
-    if (count.n >= this.capacity)
-      throw new OperationAdmissionError("caller_journal_capacity");
-    this.database
-      .prepare("INSERT INTO outgoing_requests VALUES(?,?,?,?,'sent')")
-      .run(
-        request.operationId,
-        request.targetDeviceId,
-        request.digest ?? null,
-        request.sourceBotId ?? null,
-      );
-    return request;
+          row.source_bot !== (request.sourceBotId ?? null)))
+    )
+      throw new OperationAdmissionError("operation_binding_conflict");
+    return row;
   }
-  completeOutgoing(request: OperationRequest, value: OperationResult): void {
+  outgoingState(request: OperationRequest): "sent" | "retryable" | undefined {
+    return this.outgoing(request)?.state;
+  }
+  private binding(
+    kind: "operation" | "policy" | "pairing",
+    id: string,
+  ): string | undefined {
+    return (
+      this.database
+        .prepare(
+          "SELECT origin FROM outgoing_relay_bindings WHERE kind=? AND id=?",
+        )
+        .get(kind, id) as { origin: string } | undefined
+    )?.origin;
+  }
+  relayOrigin(request: OperationRequest): string | undefined {
+    this.outgoing(request);
+    return this.binding("operation", request.operationId);
+  }
+  private checkRelayScope(
+    scope: OutgoingScope,
+    origin: string | undefined,
+    exists: boolean,
+  ) {
+    if (scope.kind === "local") {
+      if (origin) throw new OperationOriginError("relay_origin_mismatch");
+      return;
+    }
+    let url: URL;
+    try {
+      url = new URL(scope.origin);
+    } catch {
+      throw new OperationOriginError("invalid_relay_origin");
+    }
+    if (
+      url.origin !== scope.origin ||
+      (url.protocol !== "https:" &&
+        !(
+          url.protocol === "http:" &&
+          ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+        ))
+    )
+      throw new OperationOriginError("invalid_relay_origin");
+    if (origin && origin !== scope.origin)
+      throw new OperationOriginError("relay_origin_mismatch");
+    if (!origin && exists)
+      throw new OperationOriginError("relay_origin_unknown");
+  }
+  private outgoingCount(): number {
+    return (
+      this.database
+        .prepare(
+          "SELECT count(*) n FROM (SELECT id FROM outgoing_requests UNION SELECT id FROM outgoing_operation_intents)",
+        )
+        .get() as { n: number }
+    ).n;
+  }
+  private intent(request: OperationRequest) {
+    const row = this.database
+      .prepare(
+        "SELECT target,digest,source_bot FROM outgoing_operation_intents WHERE id=?",
+      )
+      .get(request.operationId) as
+      | { target: string; digest: string; source_bot: string | null }
+      | undefined;
+    if (
+      row &&
+      (row.target !== request.targetDeviceId ||
+        (request.digest !== undefined && row.digest !== request.digest) ||
+        (request.action === "run" &&
+          row.source_bot !== (request.sourceBotId ?? null)))
+    )
+      throw new OperationAdmissionError("operation_binding_conflict");
+    return row;
+  }
+  private checkOutgoingScope(
+    request: OperationRequest,
+    scope: OutgoingScope,
+    exists: boolean,
+  ) {
+    const origin = this.relayOrigin(request);
+    const intent = this.intent(request);
+    this.checkRelayScope(scope, origin, exists);
+    if (scope.kind === "remote") {
+      if (!!origin !== !!intent || (!exists && request.action !== "run"))
+        throw new OperationOriginError("relay_origin_unknown");
+    } else if (intent) throw new OperationOriginError("relay_origin_mismatch");
+    return { origin, intent };
+  }
+  bindOperationOrigin(request: OperationRequest, scope: OutgoingScope): void {
+    if (scope.kind !== "remote" || request.action !== "run" || !request.digest)
+      throw new OperationAdmissionError("invalid_operation_target");
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.outgoing(request);
+      const { origin, intent } = this.checkOutgoingScope(request, scope, !!row);
+      if (row?.state === "sent")
+        throw new OperationAdmissionError(
+          "operation_already_sent_query_original_id",
+        );
+      if (!intent) {
+        if (this.outgoingCount() >= this.capacity)
+          throw new OperationAdmissionError("caller_journal_capacity");
+        this.database
+          .prepare("INSERT INTO outgoing_operation_intents VALUES(?,?,?,?)")
+          .run(
+            request.operationId,
+            request.targetDeviceId,
+            request.digest,
+            request.sourceBotId ?? null,
+          );
+        this.database
+          .prepare(
+            "INSERT INTO outgoing_relay_bindings VALUES('operation',?,?)",
+          )
+          .run(request.operationId, scope.origin);
+      } else if (!origin)
+        throw new OperationOriginError("relay_origin_unknown");
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  prepareOutgoing(
+    request: OperationRequest,
+    scope: OutgoingScope,
+  ): OperationRequest {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.outgoing(request);
+      const { intent } = this.checkOutgoingScope(request, scope, !!row);
+      if (row) {
+        const action =
+          request.action === "run" && row.state !== "retryable"
+            ? "get"
+            : request.action;
+        this.database
+          .prepare("UPDATE outgoing_requests SET state='sent' WHERE id=?")
+          .run(request.operationId);
+        this.database.exec("COMMIT");
+        return { ...request, action };
+      }
+      if (!intent && this.outgoingCount() >= this.capacity)
+        throw new OperationAdmissionError("caller_journal_capacity");
+      this.database
+        .prepare("INSERT INTO outgoing_requests VALUES(?,?,?,?,'sent')")
+        .run(
+          request.operationId,
+          request.targetDeviceId,
+          request.digest ?? null,
+          request.sourceBotId ?? null,
+        );
+      if (scope.kind === "remote" && !intent) {
+        if (!request.digest)
+          throw new OperationAdmissionError("invalid_operation_target");
+        this.database
+          .prepare("INSERT INTO outgoing_operation_intents VALUES(?,?,?,?)")
+          .run(
+            request.operationId,
+            request.targetDeviceId,
+            request.digest,
+            request.sourceBotId ?? null,
+          );
+        this.database
+          .prepare(
+            "INSERT INTO outgoing_relay_bindings VALUES('operation',?,?)",
+          )
+          .run(request.operationId, scope.origin);
+      }
+      this.database.exec("COMMIT");
+      return request;
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  completeOutgoing(
+    request: OperationRequest,
+    value: OperationResult,
+    scope: OutgoingScope,
+  ): void {
+    const row = this.outgoing(request);
+    if (!row) throw new OperationAdmissionError("operation_binding_conflict");
+    this.checkOutgoingScope(request, scope, true);
     const retryable =
       request.action === "run" && ["busy", "denied"].includes(value.status);
     this.database

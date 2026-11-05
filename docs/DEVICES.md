@@ -114,6 +114,16 @@ Signatures are base64url raw Ed25519. Node and Bots never receive the private ke
   and are single-use. Sessions expire in 15 minutes; only their hash is stored.
 - Other HTTPS calls use `Authorization: Bearer <sessionToken>`; credentials are
   memory only. Registration and redemption have bounded server rate limits.
+  Internal Registry RPC can bind a target session to a SHA-256 reference with its
+  authoritative expiry, device ID and credential generation; it can revalidate
+  that reference together with a source bearer and current membership. Internal
+  failures distinguish source, target, membership and service failure, so an
+  expired target never invalidates a still-valid source credential. References
+  are sensitive internal state, never HTTP credentials, public responses or logs.
+  Renewal requires both old and new sessions to be current for the same device
+  and generation. The target relay retains the reference instead of its bearer and
+  revalidates it at dispatch and result boundaries. Target sockets still use the
+  existing heartbeat until the separate hibernation cutover is implemented.
 - `GET /directory` returns `{localDeviceId,groupId,revision,observationRevision,devices}`.
   revision tracks durable membership/metadata only. observationRevision is an
   opaque SHA-256 of current device observations, including online lease expiry,
@@ -151,17 +161,33 @@ consumption. Invitation issuance epoch must still match. Results retain 7 days.
 ## Execution
 
 Agent opens one outbound WSS `/execution/<targetDeviceId>/agent` and sends
-`{type:"authenticate",sessionToken}`; server returns `{type:"ready"}`. Caller
+`{type:"authenticate",sessionToken}`; server returns `{type:"ready",expiresAt}`
+with the Registry-authoritative session expiry. On that same socket, the agent can
+send `{type:"session.renew",requestId,sessionToken}`. The relay validates the old
+and new sessions for the same device/generation, requires a later expiry, atomically
+swaps the reference and answers `{type:"session.renewed",requestId,expiresAt}`.
+A rejected new session while the old one remains valid returns
+`{type:"session.renewed",requestId,error:"session_renewal_failed"}` and never
+extends the previous session; an expired or revoked old session closes the connection.
+Renewal does not replace the connection, cancel an
+in-flight operation or reveal a session hash. The target client obtains a fresh
+key-proved session before the socket's current session expires, waits for the
+matching acknowledgement and keeps the original operation correlation. A failed
+or lost acknowledgement cannot extend authorization or cause an operation replay.
+Caller
 opens one WSS `/execution/<targetDeviceId>/request`, sends
 `{type:"request",sessionToken,request:<OperationRequest>}` and receives exactly
 one `{type:"response",requestId,operationId,targetDeviceId,result}` then closes.
-Every run/get/cancel rechecks live Registry source and target membership.
+Every run/get/cancel rechecks live Registry source and target membership. A retired
+outbound Agent connection cannot admit a new target operation, even when retirement
+races asynchronous approval verification. An operation admitted before retirement
+may complete locally; an uncertain result is queried by its original ID.
 Authentication/revocation closes use code 1008 with reason `unauthorized_agent`,
 `revoked_agent` or `unauthorized_caller`. Only those reasons invalidate the
 matching cached session and require fresh helper identity proof on the next connection.
 Transport failures, lease expiry and Agent replacement retain a valid session.
-An old socket's rejection cannot invalidate a newer session. Reauthentication
-never resends an operation; an uncertain result still requires querying its ID.
+An old socket or HTTP rejection cannot invalidate a newer cached session.
+Reauthentication never resends an operation; an uncertain result still requires querying its ID.
 
 OperationRequest: `{requestId,operationId,targetDeviceId,action:"run"|"get"|"cancel",
 sourceBotId?:string,operation?:{kind:"command",command,cwd?,timeoutMs?}|{kind:"file.read",path}|
@@ -178,8 +204,12 @@ Relay sends `{type:"operation",sourceDeviceId,sourcePublicKey,request}`;
 agent responds `{type:"result",requestId,operationId,targetDeviceId,result}`.
 Result: `{status:"running"|"completed"|"failed"|"cancelled"|"unknown"|"busy"|
 "denied",output?,error?,exitCode?}`. busy means unaccepted, never queued.
-A lost response means query the same ID; never automatically run again or switch
-target. Journal admission precedes side effects; interrupted running entries
+If source or target authorization changes after forwarding, including a target
+removed and rejoined with a new credential generation, the relay withholds the output
+and returns `unknown`; it never marks a possibly executed run as denied or retryable.
+The error names the observed failure, and recovery queries the original ID. A lost
+response means query the same ID; never automatically run again or switch target.
+Journal admission precedes side effects; interrupted running entries
 recover as unknown, never rerun. get/cancel remain usable during a running job.
 A target's local operations use the same journal and policy, without cloud.
 When a device identity changes, its private journal and fixed socket stay in place.
@@ -191,8 +221,9 @@ existing trusted boot/completion rules can release them. No old row is moved,
 retargeted or deleted when adopting a new file-vault identity.
 
 Policy `{mode:"all-approve"|"always-ask"|"paused",version:positive integer}` is
-persisted by target. Default all-approve. Always ask is confirmed in the initiating
-App. Approval envelope `{operationId,sourceDeviceId,targetDeviceId,digest,
+persisted by target. A fresh device with no saved policy defaults to `always-ask`;
+a saved policy is preserved. Always ask is confirmed in the initiating App.
+Approval envelope `{operationId,sourceDeviceId,targetDeviceId,digest,
 policyVersion,expiresAt,signature}` signs exact UTF-8
 `eagle-device-approval-v1\n<operationId>\n<sourceDeviceId>\n<targetDeviceId>\n<digest>\n<policyVersion>\n<expiresAt>`.
 Expiry is Unix milliseconds, at most 5 minutes ahead. Registry relay and target
@@ -213,8 +244,16 @@ Node requests identity signatures through stdout
 `{type:"signature",requestId,signature}` or `{type:"signature",requestId,error}`.
 Only exact requested payloads are signed; helper validates identity/purpose.
 Node emits `{type:"ready",socketPath,deviceId}` after local tools/port are ready,
-and `{type:"cloud",status:"online"|"offline",error?}` separately. Cloud failure
-does not prevent local readiness. The independent identity helper owns the Node lifecycle (SMAppService);
+and `{type:"cloud",status:"online"|"offline"|"unconfigured",error?}` separately.
+An empty `baseUrl` starts the Node service without a cloud client or network access;
+local `status` and `directory` report `cloudStatus: "unconfigured"`. Local policy,
+identity, journal and admission still apply. A new remote operation is denied with
+`remote_not_configured` without recording it as sent. An existing `sent` operation
+returns `unknown` with `remote_not_configured_query_original_id`; its original
+binding remains unchanged and cannot become an unaccepted retry. A previously
+unaccepted operation is denied as unconfigured. Remote management also returns
+`remote_not_configured`. Cloud failure does not prevent local readiness. The
+independent identity helper owns the Node lifecycle (SMAppService);
 closing the App window does not end this pipe. Helper EOF stops the child cleanly.
 The App attempts registration for both `notRegistered` and the first-install
 `notFound` state, then requires `enabled` before opening XPC. A background approval
@@ -242,9 +281,13 @@ A **published App ships no relay address**: `Support/DeviceHost.release.json` ca
 `baseUrl`, and nothing in the Swift sources names a host. The person who runs the App names
 their own service in **设置 → 设备 → 服务地址**; the choice is stored in the app's defaults as
 `eagle.deviceServiceAddress` (an origin only: HTTPS, or `http` on loopback, with no path,
-query or credentials) and the helper reads it at start, so changing it restarts the local
-service with the new relay. Until an address exists the App does not register the background
-service at all and nothing is contacted; the helper parks without starting its agent.
+query or credentials) and the helper reads it at start. Changing the address configures
+the remote connection without restarting the local service or interrupting native leases.
+Before an address exists the App starts the local helper and
+agent without a cloud client; local policy and tools remain available and no remote service
+is contacted. Settings labels the remote as unconfigured and disables pairing actions while
+keeping the local policy available. A first redemption rejected as unconfigured was never sent
+and clears its pending ID; a previously uncertain request retains its original binding.
 
 `EAGLE_DEVICE_SERVICE_URL` remains an optional build input for a bundle that must name an
 origin up front (a candidate pointing at a local service, or a deployment that deliberately
@@ -252,11 +295,23 @@ pins one). Omitted or empty keeps whatever the profile file says: `http://127.0.
 for a candidate, nothing for a release. The address is validated the same way either way, and
 a built-in address is never a requirement for publishing.
 
-Unix socket is JSONL request/response, one response per request:
-`{requestId,method,params?}` → `{requestId,result}` or `{requestId,error}`.
+Unix socket is device-port v2 JSONL request/response, one response per request:
+`{version:2,requestId,method,params?}` → `{version:2,requestId,result}` or
+`{version:2,requestId,error}`. Both peers validate the version; a different or
+missing version fails closed. This local version does not change the cloud v1 API.
 Bot port read/execute methods: `status`, `directory`, `execute` (OperationRequest),
 `operation.get`, `operation.cancel` (OperationRequest), `local.begin` and
-`local.complete` and `local.heartbeat`. It rejects all management writes, including `policy.set`,
+`local.complete` and `local.heartbeat`. A successful cloud directory includes its canonical
+`relayOrigin` as local control metadata. A remote run carries that same origin in the local
+request; the service strips it before the cloud wire, validates it against the current client,
+and atomically binds the operation ID and origin in the journal. `get`/`cancel` use that
+binding; an unknown or mismatched origin cannot be adopted, re-executed or sent elsewhere.
+Remote `run`, `get` and `cancel` do not issue a discarded directory read before dispatch.
+The relay still checks live source and target sessions and membership before forwarding
+and before releasing results. For a `run`, it also checks target policy at forwarding;
+the target checks policy again at admission. An `always-ask` approval still fetches current
+target policy separately before signing.
+It rejects all management writes, including `policy.set`,
 `pairing.create/revoke/redeem` and `member.remove`; 0600 alone does not distinguish
 same-UID Bots from the App. `pairing.result` is App management only as well.
 `local.begin` takes OperationRequest with `operation:{kind:"native",tool,args,cwd?}`
@@ -306,9 +361,20 @@ automatic recovery. No process supervisor or execution scheduler is involved.
 Management uses only the trusted helper's parent stdin:
 `{type:"manage",requestId,method,params?}` → stdout
 `{type:"managed",requestId,result}` or `{type:"managed",requestId,error}`.
-Methods: `pairing.create` (`ttlSeconds?`), `pairing.revoke` (`code`),
+Methods: `pairing.create` (`ttlSeconds?`), `pairing.prepare`
+(`requestId,codeHash,relayOrigin`), `pairing.revoke` (`code`),
 `pairing.redeem` (`requestId,code`), `pairing.result` (`requestId`),
-`member.remove` (`deviceId`), `policy.get`, `policy.set` (`mode`).
+`member.remove` (`deviceId`), `policy.get`, `policy.set` (`mode`) and
+`remote.configure` (`baseUrl`). Remote management carries the selected relay origin
+as local control metadata; the service checks it before sending and strips it from
+the cloud request. `remote.configure` accepts an empty string or a bare HTTPS origin
+(loopback HTTP for local development), validates it before changing the connection,
+and keeps the local service and native leases running.
+`pairing.prepare` binds the ID, code digest and relay locally without sending or storing
+the code. The App prepares before persisting its pending record and before redemption,
+so a crash after persistence can query the original relay without guessing it. An
+unbound or invalid pending record fails closed; it is not silently assigned to the
+current relay.
 `policy.set` also accepts exactly `{deviceId,mode,requestId}`. The original
 `{mode}` remains local and works offline. An explicit target uses a durable
 request-ID binding to that target and mode before sending; a reused ID with
@@ -329,8 +395,8 @@ the target replies `{type:"policy.result",relayId,requestId,deviceId,policy?,err
 The server generates relayId and pins it to the target connection. Source IDs
 come only from live Registry authorization. Targets advertise `policy.manage` in
 capabilities; older targets fail `target_management_unsupported`, offline targets
-fail `target_offline`. A missing confirmation fails
-`policy_result_unknown_refresh_target`; there is no local fallback or retry.
+fail `target_offline`. A missing confirmation or lost authorization after
+forwarding fails `policy_result_unknown_refresh_target`; there is no local fallback or retry.
 Target policy, version and source/request-ID result are committed in one local
 journal transaction. Duplicate target requests return their original result
 without changing policy again, including after restart; request bindings include
@@ -356,8 +422,9 @@ remote entries are fetched live before remote execution. Multiple Bots share
 this port and never copy device secrets. `status` returns
 `{deviceId,localReady,cloudStatus,policy}`. App may open the same port for settings.
 Settings, the device inspector and App windows share one five-second observation
-task while any of them is present. Unchanged background reads publish no UI
-changes and do not disable local controls. User mutations supersede older reads,
+task while any is present. Workspace-only observation reads local health and policy;
+the directory is read only while a device view is visible. Unchanged background
+reads publish no UI changes and do not disable local controls. User mutations supersede older reads,
 including their errors; stopped services cannot be revived by delayed replies.
 App launch also starts the enabled device service independently of view creation.
 Registration and signature inspection run off the UI actor. A registered service
@@ -369,10 +436,12 @@ unregisters/registers its helper before probing again. Repeated failed observati
 do not repeat that recovery; successful contact or an explicit retry resets the
 budget. Approval, signature validation and protocol failures remain closed.
 Normal status and management calls keep their existing deadlines. Local
-initialization is observed every 100 ms for up to five seconds, then returns
-to the normal observation cadence. Local readiness and policy publish before a
-cloud directory request completes. Recovery preserves the enabled preference,
-device identity and pending pairing IDs and never replays a management mutation.
+initialization is observed every 100 ms for up to five seconds. App launch checks
+local readiness and policy without fetching the cloud directory; a pending pairing
+may still query its original result. Device settings and the computer inspector
+refresh the directory when opened and while visible, sharing one observation
+lifecycle. The ordinary workspace does not poll it. Recovery preserves the enabled
+preference, device identity and pending pairing IDs and never replays a management mutation.
 Local policy remains available when the cloud directory is offline or stale,
 provided the service is enabled, locally ready and its policy is known.
 The Add device and detail disclosures use full-width, 44-point-minimum Button

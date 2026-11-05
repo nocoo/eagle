@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { defineExtension } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
+import { DEVICE_EXTENSION } from "../../src/tools/devices/tools.ts";
 import type { HerdrClient } from "../../src/tools/herdr/client.ts";
 import { HERDR_TOOLS_EXTENSION } from "../../src/tools/herdr/tools.ts";
 import {
@@ -45,7 +46,8 @@ test("a shared device registry exposes no Herdr writes outside device policy", (
   ]);
 });
 
-test("an injected shared device port is available to saved and new Bots without an opt-in group", () => {
+test("remote tools are selected only for a configured shared device", () => {
+  assert.equal(DEVICE_EXTENSION, "bots-shared-devices-v1");
   const registry = createToolRegistry(
     { root: "/tmp" },
     {
@@ -53,13 +55,41 @@ test("an injected shared device port is available to saved and new Bots without 
     },
   );
   for (const groups of [[], ["core", "coding"], ["herdr", "agents"]]) {
-    const names = selectToolExtensions(registry, groups)
+    const disabled = selectToolExtensions(registry, groups)
       .flatMap((extension) => extension.tools ?? [])
       .map((tool) => tool.name);
-    assert.ok(names.includes("remote_status"));
-    assert.ok(names.includes("remote_execute"));
-    assert.ok(names.includes("remote_operation"));
+    assert.equal(
+      disabled.some((name) => name.startsWith("remote_")),
+      false,
+    );
+    const enabled = selectToolExtensions(registry, groups, true)
+      .flatMap((extension) => extension.tools ?? [])
+      .map((tool) => tool.name);
+    assert.ok(enabled.includes("remote_status"));
+    assert.ok(enabled.includes("remote_execute"));
+    assert.ok(enabled.includes("remote_operation"));
   }
+});
+
+test("the local prompt distinguishes absent remote setup from a failed local protection service", () => {
+  let capability: "unconfigured" | "unavailable" | "configured" = "unconfigured";
+  const registry = createToolRegistry(
+    { root: "/tmp" },
+    {
+      devices: {
+        socketPath: "/tmp/unused.sock",
+        botId: "test",
+        remoteCapability: () => capability,
+      },
+    },
+  );
+  assert.match(botsToolsSection(registry), /Remote access is not configured or enabled/);
+  capability = "unavailable";
+  const failed = botsToolsSection(registry);
+  assert.match(failed, /local device protection service is unavailable/);
+  assert.doesNotMatch(failed, /Remote access is not configured or enabled/);
+  capability = "configured";
+  assert.match(botsToolsSection(registry), /Local tools operate on this computer by default/);
 });
 
 test("core supplies list and coding installs the original native extension without aliases", async () => {

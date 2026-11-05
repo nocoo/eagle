@@ -421,10 +421,11 @@ listing in the client protocol; the parent transcript contains the tool results,
 the SDK can inspect the child by conversation id. The generic task graph is separate
 from a child-conversation UI. The `peers` capability stays false.
 
-Current `agent_send` and `agent_stop` look up a conversation in this Harness without
-checking its parent marker. Their documented child-targeting intent is not yet fully
-enforced; the extension guide plans `agent_list` and direct-parent validation with
-negative tests. Independent catalog Bot communication belongs to planned `peer_*`
+`agent_send` requires a `bots.agent` marker naming the caller as direct parent.
+Sends with shared devices serialize each child's idle wait, remote refresh and
+submission, so parallel sends cannot reconfigure active work. `agent_stop` still
+looks up a conversation without checking its parent marker; `agent_list` remains
+planned. Independent catalog Bot communication belongs to planned `peer_*`
 tools, not a reinterpretation of these same-Harness `agent_*` operations.
 
 ### Deferred tools
@@ -530,15 +531,39 @@ None of them may change v1 semantics for existing fields.
 ## Recovery semantics
 
 Shared device access uses `remote_status`, `remote_execute(deviceId, operation)`
-and `remote_operation(deviceId, operationId, action)` from the injected v1 port.
+and `remote_operation(deviceId, operationId, action)` from the injected v2 device port.
+At root open and before each new input, local status decides whether those eager tools
+are selected: configured-but-offline remains configured; unconfigured or unavailable
+is not selected. Already loaded remote calls check current local status before dispatch.
+An app-managed child is synchronized from local configuration before `agent_spawn`
+and before an idle `agent_send`; only the three remote names change, leaving its
+other filters and its ban on further delegation intact. Child work already in
+flight settles first. Automatic propagation to an already-running root or child
+between model requests remains open work in [DEVICE-IDLE-AND-WAKE.md](DEVICE-IDLE-AND-WAKE.md).
 The model reads current names, online evidence and capabilities before choosing
 a remote target; local coding tools keep the local execution environment. A
-durable tool memo records the target, full operation, digest and operation ID
-before transmission. Retries query that ID; they never resend unknown effects or
-substitute a local target. A busy response is unaccepted and creates no queue.
+durable tool memo records the target, full operation, digest, operation ID and
+validated relay origin before transmission. The local service binds the operation
+and origin atomically; an operation cannot be claimed by another relay. Retries
+query the original ID at its original relay; they never resend unknown effects or
+substitute a local target. Remote command calls keep their local socket open for
+the requested command timeout plus 95 seconds for bounded authentication and
+relay overhead, up to 395 seconds. A timeout is still unknown, never proof of
+failure or permission to replay. A busy response is unaccepted and creates no queue.
+If a root tool was interrupted and remote access is unconfigured or the local service
+unavailable at reopen, the adapter validates the saved binding against the SDK's final
+execution arguments and preserves an `unknown` receipt before scheduling resumes. It
+uses the pinned SDK's public `LiveDoc` progress and lets the SDK settle the interrupted
+task; it sends no recovery request and does not invent an outcome. The wire
+`toolResult.text` remains JSON and includes the SDK's diagnostic in `diagnostics`;
+the model transcript retains that diagnostic as a separate block. This path is tested
+with real Harness/SIGKILL restarts, including a second crash before resume. It does not
+establish child or nested-call recovery after a configuration change.
 All native coding tools and `list` cross the same local policy/admission seam
-when a device port is configured. Approval requests carry the complete operation;
-only the initiating App can confirm them. No port credentials enter Bot storage.
+when a device port is configured. They obtain the local device ID and policy from
+the local status method, without reading the remote directory or waiting for the
+cloud. Approval requests carry the complete operation; only the initiating App
+can confirm them. No port credentials enter Bot storage.
 
 The shared adapter captures native `output`, `retainedOutput`, diagnostics and
 details in bounded memory. No raw progress is published to pi.live, and native

@@ -5,13 +5,13 @@
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { WebSocket } from "ws";
 import { readConfig } from "../src/config.ts";
 import { type DaemonHandle, startDaemon } from "../src/main.ts";
+import { daemonRoot } from "../test/support/daemon.ts";
 import { assertOutputExcludes } from "./eval-assertions.ts";
 import { createEvalRouter } from "./eval-routing.ts";
 
@@ -667,7 +667,7 @@ const runCase = async (
   const study = JSON.parse(await readFile(file, "utf8")) as CaseFile;
   const budget = study.timeoutMs ?? 120_000;
   const started = Date.now();
-  const root = await mkdtemp(join(tmpdir(), `bots-eval-${study.id}-`));
+  const root = await daemonRoot(`bots-eval-${study.id}-`);
   const usesCli = study.steps.some((step) => step.kind === "cli");
   const home = join(root, "home");
   const previousEnvironment = {

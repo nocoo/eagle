@@ -32,6 +32,7 @@ const directory = (): DeviceDirectory => ({
   localDeviceId: required(ids[0]),
   groupId: "group-test",
   revision: 1,
+  relayOrigin: "https://devices.example",
   devices: ids.map((deviceId, index) => ({
     deviceId,
     name: `Mac ${index}`,
@@ -63,7 +64,13 @@ const fixture = () => {
   const approvals: DeviceRequest[] = [];
   const finishes: DeviceResult[] = [];
   const port: SharedDevicePort = {
-    version: 1,
+    version: 2,
+    status: async () => ({
+      deviceId: view.localDeviceId,
+      localReady: true,
+      cloudStatus: "online",
+      policy: required(required(view.devices[0]).policy),
+    }),
     directory: async () => view,
     request: async (request) => {
       calls.push(structuredClone(request));
@@ -217,7 +224,9 @@ test("a maximal escaped output keeps a complete original-ID receipt after the SD
 
 test("existing and new Bot adapters read the same changing four-member directory", async () => {
   const bench = fixture();
-  assert.equal(body(await bench.invoke("remote_status", {})).devices.length, 4);
+  const initial = body(await bench.invoke("remote_status", {}));
+  assert.equal(initial.devices.length, 4);
+  assert.equal(initial.relayOrigin, undefined);
   required(bench.view.devices[1]).name = "Renamed B";
   bench.view.revision++;
   const tools = required(deviceExtension({ botId: "new-bot", port: bench.port }).tools);
@@ -232,6 +241,55 @@ test("existing and new Bot adapters read the same changing four-member directory
   assert.equal(body(await bench.invoke("remote_status", {})).error, "cloud_unavailable");
 });
 
+test("stale loaded remote tools fail closed when remote access is disabled", async () => {
+  const bench = fixture();
+  let directories = 0;
+  bench.port.status = async () => ({
+    deviceId: required(ids[0]),
+    localReady: true,
+    cloudStatus: "unconfigured",
+    policy: { mode: "all-approve", version: 1 },
+  });
+  bench.port.directory = async () => {
+    directories++;
+    return bench.view;
+  };
+  const status = await bench.invoke("remote_status", {});
+  assert.equal(body(status).error, "remote_not_configured");
+  const operation = { kind: "command", command: "pwd" };
+  const first = await bench.invoke("remote_execute", { deviceId: ids[1], operation });
+  assert.equal(body(first).error, "remote_not_configured");
+  const { api, memos } = memoApi();
+  const original = {
+    requestId: randomUUID(),
+    operationId: randomUUID(),
+    targetDeviceId: ids[1],
+    sourceBotId: "bot-existing",
+    relayOrigin: "https://devices.example",
+    action: "run",
+    operation,
+    digest: operationDigest(operation),
+  };
+  memos.set("device.operation.v1", original);
+  memos.set("device.transmitted.v1", true);
+  const recovered = body(
+    await bench.invoke("remote_execute", { deviceId: ids[1], operation }, api),
+  );
+  assert.equal(recovered.error, "remote_not_configured");
+  assert.equal(recovered.operationId, original.operationId);
+  const query = body(
+    await bench.invoke("remote_operation", {
+      deviceId: ids[1],
+      operationId: original.operationId,
+      action: "get",
+    }),
+  );
+  assert.equal(query.error, "remote_not_configured");
+  assert.equal(query.operationId, original.operationId);
+  assert.equal(directories, 0);
+  assert.equal(bench.calls.length, 0);
+});
+
 test("transmission is memoed first; lost replies and replay query the original target and ID", async () => {
   const bench = fixture();
   const { api, memos } = memoApi();
@@ -244,6 +302,7 @@ test("transmission is memoed first; lost replies and replay query the original t
   const args = { deviceId: ids[1], operation: { kind: "command", command: "pwd" } };
   const first = body(await bench.invoke("remote_execute", args, api));
   assert.equal(first.status, "unknown");
+  bench.view.relayOrigin = "https://other.example";
   required(bench.view.devices[1]).online = false;
   const replay = body(await bench.invoke("remote_execute", args, api));
   assert.equal(replay.operationId, first.operationId);
@@ -257,10 +316,68 @@ test("transmission is memoed first; lost replies and replay query the original t
     true,
   );
   assert.equal(
+    bench.calls.every((call) => call.relayOrigin === "https://devices.example"),
+    true,
+  );
+  assert.equal(
     body(await bench.invoke("remote_execute", { ...args, deviceId: ids[2] }, api)).error,
     "operation_binding_changed",
   );
   assert.equal(bench.calls.length, 2);
+});
+
+test("a remote socket timeout remains unknown and replay queries the original ID", async () => {
+  const bench = fixture();
+  const { api } = memoApi();
+  bench.port.request = async (request) => {
+    bench.calls.push(structuredClone(request));
+    if (request.action === "run") throw new Error("device_timeout");
+    return { status: "completed", output: "original result" };
+  };
+  const args = {
+    deviceId: ids[1],
+    operation: { kind: "command", command: "pwd", timeoutMs: 300000 },
+  };
+  const original = body(await bench.invoke("remote_execute", args, api));
+  assert.equal(original.status, "unknown");
+  assert.equal(original.error, "device_timeout");
+  const replay = body(await bench.invoke("remote_execute", args, api));
+  assert.equal(replay.status, "completed");
+  assert.equal(replay.operationId, original.operationId);
+  assert.equal(replay.targetDeviceId, original.targetDeviceId);
+  assert.deepEqual(
+    bench.calls.map((request) => request.action),
+    ["run", "get"],
+  );
+  assert.equal(
+    bench.calls.every((request) => request.operationId === original.operationId),
+    true,
+  );
+});
+
+test("an operation memo without its relay origin is never sent or recreated", async () => {
+  const bench = fixture();
+  const { api, memos } = memoApi();
+  const operation = { kind: "command", command: "pwd" };
+  const original = {
+    requestId: randomUUID(),
+    operationId: randomUUID(),
+    targetDeviceId: ids[1],
+    sourceBotId: "bot-existing",
+    action: "run",
+    operation,
+    digest: operationDigest(operation),
+  };
+  memos.set("device.operation.v1", original);
+  memos.set("device.transmitted.v1", true);
+  const result = await bench.invoke("remote_execute", { deviceId: ids[1], operation }, api);
+  assert.equal(result.isError, true);
+  assert.equal(body(result).error, "relay_origin_unknown");
+  assert.equal(body(result).operationId, original.operationId);
+  assert.equal(body(result).targetDeviceId, original.targetDeviceId);
+  assert.equal(body(result).digest, original.digest);
+  assert.deepEqual(result.structuredOutput, body(result));
+  assert.equal(bench.calls.length, 0);
 });
 
 test("offline, unknown, unsupported, paused and refused approval never execute or choose another device", async () => {
@@ -321,6 +438,156 @@ test("approval receives full immutable parameters and get/cancel never requests 
     ).error,
     "device_request_failed",
   );
+});
+
+test("local native tools use local policy without reading the remote directory", async () => {
+  const bench = fixture();
+  const root = await mkdtemp(join(tmpdir(), "native-local-only-"));
+  let directoryReads = 0;
+  bench.port.directory = async () => {
+    directoryReads++;
+    throw new Error("cloud_unavailable");
+  };
+  const port = bench.port;
+  port.status = async () => ({
+    deviceId: bench.view.localDeviceId,
+    localReady: true,
+    cloudStatus: "unconfigured",
+    policy: { mode: "all-approve", version: 1 },
+  });
+  const native = defineTool({
+    name: "write",
+    parameters: Type.Object({ content: Type.String() }),
+    description: "test native implementation",
+    async execute(args) {
+      await writeFile(join(root, "out"), args.content);
+      return { output: [{ type: "text" as const, text: "written" }] };
+    },
+  });
+  try {
+    const result = await guardNativeTool(native, { botId: "local-bot", port }).execute(
+      { content: "local-only" },
+      memoApi().api,
+      BACKGROUND_CONTEXT,
+    );
+    assert.equal(body(result).status, "completed");
+    assert.equal(await readFile(join(root, "out"), "utf8"), "local-only");
+    assert.equal(directoryReads, 0);
+    assert.equal(bench.calls[0]?.targetDeviceId, bench.view.localDeviceId);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("local always-ask policy still requires a bound approval", async () => {
+  const bench = fixture();
+  required(bench.view.devices[0]).policy = { mode: "always-ask", version: 3 };
+  const native = defineTool({
+    name: "write",
+    description: "test native implementation",
+    parameters: Type.Object({}),
+    async execute() {
+      return { output: [{ type: "text" as const, text: "written" }] };
+    },
+  });
+  const result = await guardNativeTool(native, { botId: "local-bot", port: bench.port }).execute(
+    {},
+    memoApi().api,
+    BACKGROUND_CONTEXT,
+  );
+  assert.equal(body(result).status, "completed");
+  assert.equal(bench.approvals.length, 1);
+  assert.equal(bench.approvals[0]?.targetDeviceId, bench.view.localDeviceId);
+  assert.equal(bench.calls[0]?.approval?.policyVersion, 3);
+});
+
+test("a refused local approval never begins the native tool", async () => {
+  const bench = fixture();
+  required(bench.view.devices[0]).policy = { mode: "always-ask", version: 3 };
+  bench.port.approve = async () => {
+    throw new Error("approval_denied");
+  };
+  let runs = 0;
+  const native = defineTool({
+    name: "write",
+    description: "test native implementation",
+    parameters: Type.Object({}),
+    async execute() {
+      runs++;
+      return { output: [{ type: "text" as const, text: "written" }] };
+    },
+  });
+  const result = await guardNativeTool(native, { botId: "local-bot", port: bench.port }).execute(
+    {},
+    memoApi().api,
+    BACKGROUND_CONTEXT,
+  );
+  assert.equal(result.isError, true);
+  assert.equal(body(result).error, "approval_denied");
+  assert.equal(runs, 0);
+  assert.equal(bench.calls.length, 0);
+});
+
+test("a paused local policy permits original-ID recovery without another execution", async () => {
+  const bench = fixture();
+  let runs = 0;
+  const native = defineTool({
+    name: "write",
+    description: "test native implementation",
+    parameters: Type.Object({}),
+    async execute() {
+      runs++;
+      return { output: [{ type: "text" as const, text: "written" }] };
+    },
+  });
+  const guarded = guardNativeTool(native, { botId: "local-bot", port: bench.port });
+  const { api } = memoApi();
+  const first = body(await guarded.execute({}, api, BACKGROUND_CONTEXT));
+  required(bench.view.devices[0]).policy = { mode: "paused", version: 2 };
+  const recovered = body(await guarded.execute({}, api, BACKGROUND_CONTEXT));
+  assert.equal(first.status, "completed");
+  assert.equal(runs, 1);
+  assert.equal(bench.approvals.length, 0);
+  assert.equal(bench.calls.length, 2);
+  assert.equal(bench.calls[1]?.action, "get");
+  assert.equal(bench.calls[1]?.operationId, first.operationId);
+  assert.equal(bench.calls[1]?.targetDeviceId, bench.view.localDeviceId);
+  assert.equal(recovered.operationId, first.operationId);
+  assert.equal(recovered.status, "completed");
+  assert.equal(recovered.output, "from target");
+});
+
+test("local status and policy failures never bypass native admission", async () => {
+  for (const state of ["unavailable", "paused", "disconnected"]) {
+    const bench = fixture();
+    let runs = 0;
+    const native = defineTool({
+      name: "write",
+      description: "test native implementation",
+      parameters: Type.Object({}),
+      async execute() {
+        runs++;
+        return { output: [{ type: "text" as const, text: "written" }] };
+      },
+    });
+    bench.port.status = async () => {
+      if (state === "disconnected") throw new Error("device_unavailable");
+      return {
+        deviceId: bench.view.localDeviceId,
+        localReady: state !== "unavailable",
+        cloudStatus: "unconfigured",
+        policy: { mode: state === "paused" ? "paused" : "all-approve", version: 1 },
+      };
+    };
+    const result = await guardNativeTool(native, { botId: "local-bot", port: bench.port }).execute(
+      {},
+      memoApi().api,
+      BACKGROUND_CONTEXT,
+    );
+    assert.equal(result.isError, true, state);
+    assert.equal(runs, 0, state);
+    assert.equal(bench.calls.length, 0, state);
+  }
 });
 
 test("native tools require admission before touching real files and replay never invokes them twice", async () => {
