@@ -9,13 +9,11 @@ public struct WorkspaceShellView: View {
   @StateObject private var chat: BotChatViewModel
   @StateObject private var inspector: InspectorViewModel
   @StateObject private var layout: ShellLayoutViewModel
-  @StateObject private var account = AccountMenuViewModel()
   @StateObject private var settings = SettingsViewModel()
   @StateObject private var daemon = BotsDaemonSupervisor.shared
   @StateObject private var devices = DeviceSettingsViewModel.shared
   @StateObject private var bots = BotsWorkspaceViewModel()
   @StateObject private var chrome = SidebarChromeViewModel()
-  @State private var showsAccountMenu = false
   @State private var showsBotCreate = false
   @State private var showsBotFaceEditor = false
   @State private var showsSettings = false
@@ -191,7 +189,7 @@ public struct WorkspaceShellView: View {
             }
           },
           onCollapse: { layout.toggleSidebar() },
-          onAccount: { showsAccountMenu = true },
+          onSettings: { showsSettings = true },
           onGallery: { onShowGallery { showsSettings = true } },
           productVersion: AppVersion.current().display,
           onPinItem: { id in chrome.togglePin(id) },
@@ -367,22 +365,7 @@ public struct WorkspaceShellView: View {
         .transition(.opacity.combined(with: .scale(scale: Theme.Motion.overlayEntryScale)))
       }
 
-      if showsAccountMenu {
-        Theme.Palette.hitSurface
-          .ignoresSafeArea()
-          .onTapGesture { showsAccountMenu = false }
-        AccountMenu(rows: account.rows) { row in
-          showsAccountMenu = false
-          if row.id == "settings" { showsSettings = true }
-        }
-        .padding(.leading, Theme.Metric.contentInset)
-        .padding(
-          .bottom, Theme.Metric.footerHeight + Theme.Metric.footerBottom + Theme.Layout.labelGap
-        )
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
-      }
     }
-    .animation(Theme.Motion.account, value: showsAccountMenu)
     .animation(Theme.Motion.selection, value: openedPeerExchange)
     // A small blur under the settings card: the window stays recognisable, only softened.
     .blur(radius: showsSettings ? Theme.Dialog.backdropBlur : 0)

@@ -17,7 +17,7 @@ public struct SidebarPanel: View {
   private let onDeleteItem: (String) -> Void
   private let onSearch: () -> Void
   private let onCollapse: () -> Void
-  private let onAccount: () -> Void
+  private let onSettings: () -> Void
   private let onGallery: () -> Void
   private let unreadCount: Int
   private let onUnread: () -> Void
@@ -52,7 +52,7 @@ public struct SidebarPanel: View {
     onDeleteItem: @escaping (String) -> Void = { _ in },
     onSearch: @escaping () -> Void = {},
     onCollapse: @escaping () -> Void = {},
-    onAccount: @escaping () -> Void = {},
+    onSettings: @escaping () -> Void = {},
     onGallery: @escaping () -> Void = {},
     unreadCount: Int = 0,
     onUnread: @escaping () -> Void = {},
@@ -81,7 +81,7 @@ public struct SidebarPanel: View {
     self.onDeleteItem = onDeleteItem
     self.onSearch = onSearch
     self.onCollapse = onCollapse
-    self.onAccount = onAccount
+    self.onSettings = onSettings
     self.onGallery = onGallery
     self.unreadCount = unreadCount
     self.onUnread = onUnread
@@ -423,7 +423,7 @@ public struct SidebarPanel: View {
 
   private var footer: some View {
     HStack(spacing: Theme.Metric.rowAvatarGap) {
-      Button(action: onAccount) {
+      Button(action: onSettings) {
         HStack(spacing: Theme.Metric.rowAvatarGap) {
           productMark
           VStack(alignment: .leading, spacing: Theme.Layout.microGap) {
@@ -443,14 +443,14 @@ public struct SidebarPanel: View {
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .accessibilityLabel("eagle \(productVersion)，账户与设置")
+      .accessibilityLabel("eagle \(productVersion)，打开设置")
       Spacer(minLength: 0)
       HStack(spacing: Theme.Metric.headerControlGap) {
         IconButton(
           systemName: "gearshape", label: "设置",
           size: Theme.Metric.headerControlHeight,
           style: .circled,
-          action: onAccount
+          action: onSettings
         )
         IconButton(
           systemName: "square.grid.2x2", label: "Eagle 模板库",

@@ -423,7 +423,6 @@ public enum Theme {
     public static let stopEntryScale: CGFloat = 0.7
     public static let participant = Animation.spring(response: 0.38, dampingFraction: 0.82)
     public static let accountHover = Animation.easeOut(duration: 0.1)
-    public static let account = Animation.snappy(duration: 0.18)
     public static let overlayEntryScale: CGFloat = 0.995
     public static let modal = Animation.easeOut(duration: 0.18)
     public static let spinner = Animation.linear(duration: 0.9).repeatForever(autoreverses: false)
