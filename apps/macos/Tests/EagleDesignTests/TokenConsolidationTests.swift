@@ -38,7 +38,7 @@ struct TokenConsolidationTests {
     let black: [(Color, CGFloat)] = [
       (Theme.Palette.hitSurface, 0.001), (Theme.Palette.modalScrim, 0.32),
       (Theme.Palette.avatarScrim, 0.36), (Theme.Palette.modalShadow, 0.28),
-      (Theme.Palette.peerAvatarShadow, 0.22), (Theme.Palette.switchShadow, 0.08),
+      (Theme.Palette.peerAvatarShadow, 0.22),
       (Theme.Palette.accountShadow, 0.10), (Theme.Palette.roundShadow, 0.10),
       (Theme.Palette.participantShadow, 0.12),
     ]

@@ -23,7 +23,6 @@ public enum Theme {
     public static let avatarScrim = Color.black.opacity(0.36)
     public static let modalShadow = Color.black.opacity(0.28)
     public static let peerAvatarShadow = Color.black.opacity(0.22)
-    public static let switchShadow = Color.black.opacity(0.08)
     public static let accountShadow = Color.black.opacity(0.10)
     public static let roundShadow = Color.black.opacity(Metric.roundShadowOpacity)
     public static let participantShadow = Color.black.opacity(Metric.participantShadowOpacity)

@@ -88,6 +88,53 @@ for (const source of [
   });
 }
 
+for (const source of [
+  'Toggle("Setting", isOn: state)',
+  'SwiftUI.Toggle("Setting", isOn: state)',
+  'Toggle<Text>("Setting", isOn: state)',
+  'let control: Toggle<Text> = .init("Setting", isOn: state)',
+  "let make = Toggle<Text>.init",
+  "typealias Native = SwiftUI.Toggle<Text>",
+  "enum Foreign { typealias Toggle = String }",
+]) {
+  test(`rejects raw toggle outside standard controls: ${source}`, () => {
+    assert(check(source).some((item) => item.rule === "toggle-ownership"));
+  });
+}
+
+test("raw Toggle is owned by the exact switch and checkbox bodies, not entire files", () => {
+  for (const name of ["SwitchToggle", "Checkbox"]) {
+    const path = `EagleDesign/Primitives/${name}.swift`;
+    assert.deepEqual(
+      check("", {
+        [path]: `struct ${name} { var body: some View { Toggle("Setting", isOn: state) } }`,
+      }),
+      [],
+    );
+    assert(
+      check("", { [path]: 'let stray = Toggle("Setting", isOn: state)' }).some(
+        (item) => item.rule === "toggle-ownership",
+      ),
+    );
+    assert(
+      check("", {
+        [path]:
+          'struct Other { var body: some View { Toggle("Setting", isOn: state) } }',
+      }).some((item) => item.rule === "toggle-ownership"),
+    );
+    assert(
+      check("", {
+        [path]: `struct ${name} { var body: some View { Toggle(isOn: state) { Text("Setting").foregroundStyle(.white) } } }`,
+      }).some((item) => item.rule === "palette-ownership"),
+    );
+  }
+  assert(
+    check("", {
+      "EagleDesign/Theme.swift": 'let stray = Toggle("Setting", isOn: state)',
+    }).some((item) => item.rule === "toggle-ownership"),
+  );
+});
+
 test("tracks type aliases across files rather than blessing local names", () => {
   const findings = check(
     "let fill = Paint.red; let title = Letter.system(size: 13)",

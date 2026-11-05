@@ -269,8 +269,7 @@ public struct SecretCardRow: View {
   }
 
   private var scopeRow: some View {
-    Toggle("共享给所有 Bot", isOn: $shared)
-      .toggleStyle(.checkbox)
+    Checkbox(isOn: $shared, label: "共享给所有 Bot")
       .font(Theme.TypeScale.compactBody)
       .foregroundStyle(Theme.Palette.textPrimary)
   }

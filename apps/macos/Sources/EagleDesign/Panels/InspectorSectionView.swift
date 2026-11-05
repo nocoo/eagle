@@ -58,13 +58,11 @@ public struct InspectorSectionView: View {
                 .lineLimit(1)
             }
             Spacer(minLength: 8)
-            Toggle(
-              "",
-              isOn: Binding(
-                get: { row.isOn }, set: { onToggleTrigger(row.id, $0) })
+            SwitchToggle(
+              isOn: Binding(get: { row.isOn }, set: { onToggleTrigger(row.id, $0) }),
+              label: row.name
             )
             .labelsHidden()
-            .toggleStyle(.switch)
             .controlSize(.mini)
             .accessibilityIdentifier("inspector.trigger.\(row.id)")
           }

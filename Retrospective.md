@@ -1,5 +1,21 @@
 # Retrospective
 
+## 2026-11-05 — Native control acceptance needs real input readiness
+
+The new checkbox keyboard fixture initially targeted a native focus-ring proxy as
+though it were the interactive control, and sampled AX geometry before the hosting
+window had finished resizing. Switching to settled AX-frame mouse input fixed the
+missed click, but checkbox Space remains unverified. A process-local NSApplication
+keyboard-navigation override is not proof that SwiftUI observes the corresponding
+system mode; the earlier attribution to a disabled system setting was premature.
+Do not add product key handlers or relax assertions to compensate for a test driver.
+
+Running the foreground keyboard fixture alongside window-hosting Swift tests also
+coincided with focus/time failures. The full Swift suite passed when run separately.
+Keep native UI gates serial, preserve the original composer run budget, and run new
+control scenarios in their own bounded process. Obtain explicit owner permission
+before changing a system-wide preference for a diagnostic comparison.
+
 ## 2026-11-05 — Remote-main merge retains a redaction performance failure
 
 Both complete root checks for the `094f49b` + `e6ded9e` merge passed 308/309 tests.

@@ -18,6 +18,11 @@ func family(_ name: String) -> String? {
   {
     return family(String(name.dropFirst(prefix.count).dropLast()))
   }
+  if name == "Toggle" || name == "SwiftUI.Toggle"
+    || name.hasPrefix("Toggle<") || name.hasPrefix("SwiftUI.Toggle<")
+  {
+    return "toggle-ownership"
+  }
   switch name {
   case "Color", "SwiftUI.Color", "NSColor", "AppKit.NSColor", "CGColor", "CoreGraphics.CGColor":
     return "palette-ownership"
@@ -104,8 +109,32 @@ final class Ownership: SyntaxVisitor {
     return nil
   }
 
+  func isToggleBody(_ node: some SyntaxProtocol) -> Bool {
+    var parent = Syntax(node).parent
+    var inBody = false
+    while let current = parent {
+      if let binding = current.as(PatternBindingSyntax.self), symbol(binding.pattern) == "body" {
+        inBody = true
+      }
+      if let type = current.as(StructDeclSyntax.self) {
+        let name = type.name.text
+        return inBody && ["SwitchToggle", "Checkbox"].contains(name)
+          && path == "EagleDesign/Primitives/\(name).swift"
+      }
+      parent = current.parent
+    }
+    return false
+  }
+
   func report(_ node: some SyntaxProtocol, _ rule: String, enforceInOwner: Bool = false) {
-    if path == "EagleDesign/Theme.swift", !enforceInOwner { return }
+    if !enforceInOwner {
+      if rule == "toggle-ownership", isToggleBody(node) { return }
+      if path == "EagleDesign/Theme.swift",
+        ["palette-ownership", "typography-ownership"].contains(rule)
+      {
+        return
+      }
+    }
     findings.insert(
       Finding(
         path: path, line: locations.location(for: node.positionAfterSkippingLeadingTrivia).line,
@@ -140,7 +169,7 @@ final class Ownership: SyntaxVisitor {
   override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
     if let rule = family(symbol(node.calledExpression)) {
       report(node, rule)
-      return .skipChildren
+      return rule == "toggle-ownership" ? .visitChildren : .skipChildren
     }
     return .visitChildren
   }

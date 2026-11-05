@@ -77,30 +77,26 @@ public struct SettingsView: View {
       "外观与启动", detail: "打开 App 时的行为，以及对话里显示什么"
     ) {
       SettingsSectionRow("登录时自动启动", detail: "让 Eagle 在后台保持机器在线") {
-        Toggle("", isOn: $model.launchAtLogin)
+        SwitchToggle(isOn: $model.launchAtLogin, label: "登录时自动启动")
           .labelsHidden()
-          .toggleStyle(.switch)
           .tint(Theme.Palette.accentStrong)
       }
       Divider().overlay(Theme.Palette.line)
       SettingsSectionRow("显示未聚焦的 Space", detail: "侧栏同时列出所有 Herdr 工作区") {
-        Toggle("", isOn: $model.showUnfocusedSpaces)
+        SwitchToggle(isOn: $model.showUnfocusedSpaces, label: "显示未聚焦的 Space")
           .labelsHidden()
-          .toggleStyle(.switch)
           .tint(Theme.Palette.accentStrong)
       }
       Divider().overlay(Theme.Palette.line)
       SettingsSectionRow("加载 Mock 数据", detail: "在侧栏显示示例分组与示例对话") {
-        Toggle("", isOn: $loadMockData)
+        SwitchToggle(isOn: $loadMockData, label: "加载 Mock 数据")
           .labelsHidden()
-          .toggleStyle(.switch)
           .tint(Theme.Palette.accentStrong)
       }
       Divider().overlay(Theme.Palette.line)
       SettingsSectionRow("隐藏工具调用", detail: "对话里不显示工具调用和结果") {
-        Toggle("", isOn: $hideToolCalls)
+        SwitchToggle(isOn: $hideToolCalls, label: "隐藏工具调用")
           .labelsHidden()
-          .toggleStyle(.switch)
           .tint(Theme.Palette.accentStrong)
       }
       Divider().overlay(Theme.Palette.line)
@@ -249,13 +245,11 @@ public struct SettingsView: View {
       }
       Divider().overlay(Theme.Palette.line)
       SettingsSectionRow("启动 App 时自动运行", detail: "关掉后 daemon 只能手动启动") {
-        Toggle(
-          "",
-          isOn: Binding(
-            get: { daemon.autoStart }, set: { daemon.autoStart = $0 })
+        SwitchToggle(
+          isOn: Binding(get: { daemon.autoStart }, set: { daemon.autoStart = $0 }),
+          label: "启动 App 时自动运行"
         )
         .labelsHidden()
-        .toggleStyle(.switch)
         .tint(Theme.Palette.accentStrong)
       }
       if case .failed(let message) = daemon.status {
@@ -308,10 +302,11 @@ public struct SettingsView: View {
       }
     } body: {
       SettingsSectionRow("Core Prompt", detail: "它是谁、怎么做事") {
-        Toggle("", isOn: toolGroupBinding(SettingsViewModel.personaToolGroup))
-          .labelsHidden()
-          .toggleStyle(.switch)
-          .tint(Theme.Palette.accentStrong)
+        SwitchToggle(
+          isOn: toolGroupBinding(SettingsViewModel.personaToolGroup), label: "Core Prompt"
+        )
+        .labelsHidden()
+        .tint(Theme.Palette.accentStrong)
       }
       SettingsTextArea(
         "例如：你是一个务实、友好的 agent。先说结论，再给依据。",
@@ -330,10 +325,11 @@ public struct SettingsView: View {
         "Core Machine Prompt",
         detail: "这台机器的 AGENTS.md，只读；先找共享入口，再找 pi、Codex、Claude Code"
       ) {
-        Toggle("", isOn: toolGroupBinding(SettingsViewModel.machineToolGroup))
-          .labelsHidden()
-          .toggleStyle(.switch)
-          .tint(Theme.Palette.accentStrong)
+        SwitchToggle(
+          isOn: toolGroupBinding(SettingsViewModel.machineToolGroup), label: "Core Machine Prompt"
+        )
+        .labelsHidden()
+        .tint(Theme.Palette.accentStrong)
       }
       machinePromptPreview
       if let message = model.gatewayMessage {
@@ -449,9 +445,8 @@ public struct SettingsView: View {
         .accessibilityLabel("\(title)的工具")
         .accessibilityValue(expanded ? "已展开" : "已折叠")
         Spacer(minLength: 0)
-        Toggle("", isOn: alwaysOn ? .constant(true) : toolGroupBinding(group))
+        SwitchToggle(isOn: alwaysOn ? .constant(true) : toolGroupBinding(group), label: title)
           .labelsHidden()
-          .toggleStyle(.switch)
           .tint(Theme.Palette.accentStrong)
           .disabled(alwaysOn)
       }

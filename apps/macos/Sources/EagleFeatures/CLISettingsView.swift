@@ -48,9 +48,8 @@ public struct CLISettingsView: View {
           ) {
             HStack(spacing: 10) {
               if model.busy { SpinnerArc(size: 12) }
-              Toggle("", isOn: installBinding)
+              SwitchToggle(isOn: installBinding, label: "启用本机 CLI")
                 .labelsHidden()
-                .toggleStyle(.switch)
                 .tint(Theme.Palette.accentStrong)
                 .disabled(model.busy || (!model.installed && !model.canInstall))
                 .accessibilityIdentifier("cli.switch")
@@ -179,8 +178,7 @@ public struct CLISettingsView: View {
       }
       HStack(spacing: 16) {
         ForEach(["read", "write", "admin"], id: \.self) { scope in
-          Toggle(scope, isOn: scopeBinding(scope))
-            .toggleStyle(.switch)
+          SwitchToggle(isOn: scopeBinding(scope), label: scope)
             .tint(Theme.Palette.accentStrong)
             .font(Theme.TypeScale.note)
             .accessibilityIdentifier("cli.scope.\(scope)")

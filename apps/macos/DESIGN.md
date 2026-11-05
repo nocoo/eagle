@@ -9,12 +9,14 @@ fonts. UI typography uses the system font and CJK fallback.
 
 - **Implemented:** palette definitions and explicit font construction are centralized
   in `Sources/EagleDesign/Theme.swift`. The existing twelve manual Bot colors, eight
-  indexed colors and font values are preserved during extraction.
+  indexed colors and font values are preserved during extraction. Switches now use
+  `SwitchToggle`, and checkbox controls use `Checkbox`, both backed by native Toggle.
+  The Gallery reuses production settings rows rather than a separate drawn switch.
 - **Enforced:** `npm run check:design` parses every `Sources/**/*.swift` file with the
   selected Xcode toolchain's SwiftParser/SwiftSyntax. The pre-commit design check runs
   from a temporary Git-index snapshot; macOS CI runs the same check and its tests.
-- **Not yet enforced:** all spacing, radius, alpha, motion and control-construction
-  ownership. Some callsites still contain these styles. A clean color/font scan does
+- **Not yet enforced:** spacing, radius, alpha, motion and non-toggle control-construction
+  ownership. Some callsites still contain these styles. A clean ownership scan does
   not mean the entire design system is consolidated.
 - **Not yet redesigned:** eight candy identities with stable hashing, accessible
   solid/soft color pairs, the new spacing grid, reference-aligned shell and control
@@ -70,6 +72,10 @@ fixture executables and newly added Swift files are all scanned. The rules rejec
   font arguments, typed bindings/parameters/returns and `.font` assignments.
 - External `Theme.Palette` and `Theme.TypeScale` extensions, including qualified
   spellings, and aliases of those owners or the Theme root.
+- Raw `Toggle` construction, references and aliases outside the `body` of the exact
+  `SwitchToggle` and `Checkbox` declarations in their respective primitive files.
+  The exception is not file-wide and does not permit scattered colors or fonts in
+  the native control's label builder.
 
 This is a constrained syntax contract, not Swift type inference. It does not certify
 arbitrary generic helper APIs, derived alpha/weight, layout dimensions or all primitive
@@ -118,12 +124,19 @@ paint during refactoring would change hit testing.
 ## Shared components and behavior
 
 Reuse existing cards, settings rows/fields/actions, icon actions, tabs, conversation
-rows and Markdown primitives. The consolidation of remaining menu/switch variants is
-still pending. Being implemented in EagleDesign does not guarantee native semantics:
-the existing gallery-only drawn switch is a Button, while production settings use
-native Toggle. Preserve role/value, keyboard focus, disabled state, identifiers and
-async Binding behavior when converging those paths. Secret-card checkboxes remain
-checkboxes, not switches.
+rows and Markdown primitives. Menu and remaining style consolidation is still pending.
+`SwitchToggle` and `Checkbox` pass the original Binding directly to native Toggle,
+without optimistic state or a custom action handler. Callers retain labelsHidden,
+control size (including inspector mini), tint, disabled predicates and identifiers.
+Hidden controls receive their meaningful row title as the accessibility name.
+The drawn switch, its Size variant, unused shadow token and Gallery-only ToggleRow
+have been removed; the shared SpinnerArc remains.
+
+The owner accepted this control slice in the running Dev App. Native reference tests
+cover role/value/label/geometry, disabled controls and deferred Binding confirmation.
+The additional checkbox keyboard-driver experiment is not accepted evidence: it
+remains separate, uncommitted work, with its failures recorded in CHECKPOINTS.md.
+No system keyboard preference was changed and no new product key handler was added.
 
 Colors identify Bots but never certify success or device freshness. Unknown remains
 unknown; stale observations must not look newly confirmed. Empty state, unavailable

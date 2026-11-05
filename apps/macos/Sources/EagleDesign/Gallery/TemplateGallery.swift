@@ -136,8 +136,7 @@ public struct TemplateGallery: View {
           .foregroundStyle(Theme.Palette.textSecondary)
       }
       Spacer(minLength: 0)
-      Toggle("深色预览", isOn: $darkPreview)
-        .toggleStyle(.switch)
+      SwitchToggle(isOn: $darkPreview, label: "深色预览")
         .font(Theme.TypeScale.note)
         .fixedSize()
     }
@@ -257,8 +256,17 @@ public struct TemplateGallery: View {
           ChevronRow(
             systemName: "chevron.left.forwardslash.chevron.right", title: "deps 2026-10-24 sleepy"
           ) {}
-          ToggleRow(title: "每日依赖修复调度", detail: "每天 8:47", isOn: $toggleOne)
-          ToggleRow(title: "依赖修复进度 10-24", detail: "每小时，10月24日，10:00 – 20:00", isOn: $toggleTwo)
+          SettingsCard {
+            VStack(spacing: 0) {
+              SettingsSectionRow("每日依赖修复调度", detail: "每天 8:47") {
+                SwitchToggle(isOn: $toggleOne, label: "每日依赖修复调度").labelsHidden()
+              }
+              Divider().overlay(Theme.Palette.line)
+              SettingsSectionRow("依赖修复进度 10-24", detail: "每小时，10月24日，10:00 – 20:00") {
+                SwitchToggle(isOn: $toggleTwo, label: "依赖修复进度 10-24").labelsHidden()
+              }
+            }
+          }
         }
         .frame(maxWidth: 320)
       }

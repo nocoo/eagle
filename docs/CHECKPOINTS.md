@@ -1,5 +1,59 @@
 # 用户视角检查点
 
+## 2026-11-05 10:08 +08 — Owner accepted native boolean controls
+
+- The owner inspected the running Dev App/Gallery, accepted the control slice and
+  authorized atomic commits on main without another confirmation for each commit.
+  Commit the production SwitchToggle/Checkbox consolidation, Gallery reuse, AX tests
+  and Toggle ownership guard as one change. Recorded checks: 453 Swift tests and
+  67 design guard/gate cases passed; this is not a new whole-release verification.
+- Keep the unresolved keyboard-driver experiment separate and uncommitted:
+  `Sources/ComposerFocusFixture/NativeComposerFocus.swift`, its new
+  `NativeBooleanFocus.swift`, and `tests/native/composer-focus.test.ts`. Existing
+  committed composer acceptance is not weakened or replaced; no failing experiment
+  is presented as green. Additional keyboard-driver work is paused; the owner has
+  not authorized a system-preference change.
+- Dev App PID 38525 and daemon 38569 remain the manually reviewed build in the
+  right-side pane. No live device operation, production authentication, D1 or Herdr
+  collection was exercised. Next UI work is selection-menu/form-style consolidation,
+  not the eight-color or layout redesign.
+
+## 2026-11-05 09:44 +08 — Phase 1B keyboard acceptance unresolved
+
+- All 453 Swift tests pass when run separately from foreground keyboard acceptance;
+  all 67 parser/index-gate cases pass. The native switch/checkbox AX tests cover
+  role/value/label/geometry, disabled controls and deferred Binding confirmation.
+- The new isolated boolean-control keyboard scenario is still red on checkbox Space.
+  Native widget focus proxies and early AX frames were not valid input targets;
+  settled AX-frame mouse input now works. A process-local NSApplication keyboard
+  navigation override did not establish the remaining SwiftUI keyboard behavior.
+  The system keyboard-navigation setting is off; no system preference was changed.
+- Do not claim phase 1B complete or commit a green-CI claim. Selection menus and the
+  remaining style extraction have not started. The next decision is whether the
+  owner permits a temporary system keyboard-navigation change for a controlled
+  comparison, followed by restoration. Current changes remain in the working tree.
+  The current source was rebuilt and launched at 09:50 in the existing right-hand
+  pane: App PID 38525 owns daemon 38569; CLI health passes. No keyboard workaround
+  was added to the product; only the isolated acceptance driver is under diagnosis.
+- No real device service switch, pairing, credentials, production authentication,
+  D1 or Herdr collection was modified. Earlier root redaction performance remains
+  a separately recorded failure, not a reason to weaken any UI assertion.
+
+## 2026-11-05 09:01 +08 — Phase 1B native-control consolidation
+
+- Shared switches now wrap native Toggle directly; production callers retain their
+  original bindings, disabled predicates, tint, sizes and identifiers. The Gallery
+  uses production settings rows instead of the removed drawn-switch row. Secret
+  sharing retains a separate native checkbox path. Changes are not committed yet.
+- The old drawn switch failed native role/value/size assertions. Its replacement
+  passes the full Swift suite; new parser fixtures reject raw Toggle construction
+  outside the two standard control bodies. Keyboard acceptance passes regular/mini
+  switches but the checkbox Space case is still under investigation, not waived.
+- Dev App PID 70010 still runs the prior merged binary. No live service toggle,
+  pairing, production authentication, D1 or Herdr collection was exercised. The next
+  broken hop is completing checkbox keyboard evidence, then menu/style consolidation
+  and an updated foreground App. Root redaction performance remains separately red.
+
 ## 2026-11-05 08:33 +08 — Remote main integration
 
 - Merged remote source `e6ded9e` (53 remote-only commits) with local design work
