@@ -114,7 +114,7 @@ public struct SidebarPanel: View {
   /// the panel's first section sits one content inset under the controls rather than on the
   /// three-column grid the other panels use.
   private var header: some View {
-    HStack(spacing: 6) {
+    HStack(spacing: Theme.Sidebar.headerGap) {
       Spacer(minLength: 0)
       toolbar
     }
@@ -169,7 +169,7 @@ public struct SidebarPanel: View {
         }
         .padding(.horizontal, Theme.Metric.listCardInset)
         .padding(.top, Theme.Metric.contentInset)
-        .padding(.bottom, 8)
+        .padding(.bottom, Theme.Sidebar.listBottomInset)
       }
       .scrollIndicators(.never)
       .scrollEdgeFades(
@@ -178,7 +178,7 @@ public struct SidebarPanel: View {
       .overlay(alignment: .bottom) { unreadPill }
       .onChange(of: selection) {
         guard let selection else { return }
-        withAnimation(.easeOut(duration: 0.16)) {
+        withAnimation(Theme.Motion.selection) {
           proxy.scrollTo(selection, anchor: .center)
         }
       }
@@ -189,7 +189,7 @@ public struct SidebarPanel: View {
   /// header or anywhere inside the group.
   @ViewBuilder
   private func block(_ section: SidebarSection, isFirst: Bool) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
+    VStack(alignment: .leading, spacing: Theme.Sidebar.blockGap) {
       sectionHeader(section, isFirst: isFirst)
       if section.isExpanded {
         ForEach(section.items) { item in
@@ -198,8 +198,8 @@ public struct SidebarPanel: View {
         }
       }
     }
-    .padding(.vertical, 2)
-    .animation(.easeInOut(duration: 0.18), value: section.isExpanded)
+    .padding(.vertical, Theme.Sidebar.blockVerticalInset)
+    .animation(Theme.Motion.sectionExpansion, value: section.isExpanded)
   }
 
   @ViewBuilder
@@ -213,19 +213,22 @@ public struct SidebarPanel: View {
   }
 
   private func sectionHeaderContent(_ section: SidebarSection, isFirst: Bool) -> some View {
-    HStack(spacing: 6) {
+    HStack(spacing: Theme.Sidebar.groupContentGap) {
       Button {
-        withAnimation(.snappy(duration: 0.22)) { onToggleSection(section.id) }
+        withAnimation(Theme.Motion.disclosure) { onToggleSection(section.id) }
       } label: {
-        HStack(spacing: 5) {
+        HStack(spacing: Theme.Sidebar.disclosureGap) {
           Image(systemName: "chevron.right")
             .font(Theme.TypeScale.Glyph.groupChevron)
-            .foregroundStyle(Theme.Palette.textSecondary.opacity(0.75))
-            .rotationEffect(.degrees(section.isExpanded ? 90 : 0))
+            .foregroundStyle(Theme.Palette.disclosure)
+            .rotationEffect(.degrees(section.isExpanded ? Theme.Sidebar.disclosureAngle : 0))
             // The collapse control is always visible: a group's state should be readable
             // without hovering.
-            .opacity(section.isExpanded ? 0.8 : 0.5)
-            .frame(width: 9)
+            .opacity(
+              section.isExpanded
+                ? Theme.Sidebar.expandedDisclosureOpacity : Theme.Sidebar.collapsedDisclosureOpacity
+            )
+            .frame(width: Theme.Sidebar.disclosureWidth)
           if editingSection == section.id {
             TextField("", text: $draftTitle)
               .textFieldStyle(.plain)
@@ -245,8 +248,8 @@ public struct SidebarPanel: View {
     .frame(height: Theme.Metric.sectionHeaderHeight, alignment: .top)
     .padding(.top, isFirst ? 0 : Theme.Metric.sectionGap)
     .onHover { hoveringSection = $0 ? section.id : nil }
-    .animation(.easeOut(duration: 0.12), value: section.isExpanded)
-    .animation(.easeOut(duration: 0.12), value: hoveringSection)
+    .animation(Theme.Motion.hover, value: section.isExpanded)
+    .animation(Theme.Motion.hover, value: hoveringSection)
   }
 
   /// The section menu is what a group can be: a sample section is client-only, a daemon
@@ -300,7 +303,7 @@ public struct SidebarPanel: View {
   @ViewBuilder
   private func selectableRow(_ item: SidebarItem) -> some View {
     Button {
-      withAnimation(.easeOut(duration: 0.16)) { onSelect(item.id) }
+      withAnimation(Theme.Motion.selection) { onSelect(item.id) }
     } label: {
       if editingItem == item.id {
         TextField("", text: $draftTitle)
@@ -377,10 +380,12 @@ public struct SidebarPanel: View {
   private var unreadPill: some View {
     if unreadCount > 0 {
       Button(action: onUnread) {
-        HStack(spacing: 8) {
+        HStack(spacing: Theme.Sidebar.unreadContentGap) {
           Circle()
             .fill(Theme.Palette.unreadHighlight)
-            .frame(width: 18, height: 18)
+            .frame(
+              width: Theme.Sidebar.unreadHighlightSize, height: Theme.Sidebar.unreadHighlightSize
+            )
             .overlay {
               Image(systemName: "chevron.down")
                 .font(Theme.TypeScale.Glyph.unreadChevron)
@@ -390,10 +395,12 @@ public struct SidebarPanel: View {
             .font(Theme.TypeScale.activity)
             .foregroundStyle(Theme.Palette.onColor)
         }
-        .padding(.horizontal, 11)
+        .padding(.horizontal, Theme.Sidebar.unreadHorizontalInset)
         .frame(height: Theme.Metric.unreadPillHeight)
         .background(Capsule().fill(Theme.Palette.accent))
-        .shadow(color: Theme.Palette.accent.opacity(0.28), radius: 10, y: 3)
+        .shadow(
+          color: Theme.Palette.unreadShadow, radius: Theme.Sidebar.unreadShadowRadius,
+          y: Theme.Sidebar.unreadShadowY)
       }
       .buttonStyle(.plain)
       .frame(maxWidth: .infinity, alignment: .center)
@@ -414,7 +421,7 @@ public struct SidebarPanel: View {
             cornerRadius: Theme.Metric.productMarkRadius, style: .continuous)
         )
     } else {
-      Avatar(initial: "e", tint: Theme.Palette.avatarTint(2), size: Theme.Metric.avatarRow)
+      Avatar(initial: "e", tint: Theme.Palette.productFallback, size: Theme.Metric.avatarRow)
     }
   }
 

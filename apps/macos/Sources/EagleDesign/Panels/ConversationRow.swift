@@ -27,8 +27,8 @@ public struct ConversationRow: View {
           size: Theme.Metric.avatarRow
         )
       }
-      VStack(alignment: .leading, spacing: 3) {
-        HStack(spacing: 7) {
+      VStack(alignment: .leading, spacing: Theme.Sidebar.rowTextGap) {
+        HStack(spacing: Theme.Sidebar.rowMetaGap) {
           Text(item.title)
             .font(Theme.TypeScale.rowTitle)
             .foregroundStyle(Theme.Palette.textPrimary)
@@ -52,7 +52,7 @@ public struct ConversationRow: View {
       if item.unread {
         Circle()
           .fill(Theme.Palette.accent)
-          .frame(width: 7, height: 7)
+          .frame(width: Theme.Sidebar.unreadDot, height: Theme.Sidebar.unreadDot)
       }
     }
     .padding(.leading, Theme.Metric.rowContentInset)
@@ -69,8 +69,8 @@ public struct ConversationRow: View {
     )
     .contentShape(Rectangle())
     .onHover { hovering = $0 }
-    .animation(.easeOut(duration: 0.12), value: hovering)
-    .animation(.easeOut(duration: 0.14), value: selected)
+    .animation(Theme.Motion.hover, value: hovering)
+    .animation(Theme.Motion.rowSelection, value: selected)
     .accessibilityElement(children: .combine)
   }
 }

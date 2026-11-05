@@ -128,10 +128,10 @@ public struct InspectorColumn: View {
           content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(.easeOut(duration: 0.18), value: tab)
+        .animation(Theme.Motion.inspectorTab, value: tab)
         .padding(.horizontal, Theme.Metric.panelInset)
-        .padding(.top, 16)
-        .padding(.bottom, 20)
+        .padding(.top, Theme.Inspector.contentTopInset)
+        .padding(.bottom, Theme.Inspector.contentBottomInset)
       }
       .scrollEdgeFades(
         Theme.Palette.surface, top: Theme.Metric.edgeFadeHeight, bottom: Theme.Metric.edgeFadeHeight
@@ -194,11 +194,11 @@ private struct Identity: View {
   @FocusState private var labelFocused: Bool
 
   var body: some View {
-    VStack(spacing: 8) {
+    VStack(spacing: Theme.Inspector.identityGap) {
       avatar
-      VStack(spacing: 3) {
+      VStack(spacing: Theme.Inspector.nameGap) {
         nameView
-        HStack(spacing: 5) {
+        HStack(spacing: Theme.Inspector.labelGap) {
           if onCommitLabel != nil {
             labelView
             Text("·")
@@ -212,15 +212,15 @@ private struct Identity: View {
       }
     }
     .frame(maxWidth: .infinity)
-    .padding(.top, 16)
-    .padding(.bottom, 18)
+    .padding(.top, Theme.Inspector.identityTopInset)
+    .padding(.bottom, Theme.Inspector.identityBottomInset)
   }
 
   @ViewBuilder
   private var avatar: some View {
     if let face {
       BotFace(style: face, size: Theme.Metric.avatarInspector)
-        .modifier(BusyWhenWorking(active: isBusy, rise: 3))
+        .modifier(BusyWhenWorking(active: isBusy, rise: Theme.Inspector.busyAvatarRise))
         .overlay {
           if hoveringAvatar, onEditFace != nil {
             ZStack {
@@ -244,7 +244,7 @@ private struct Identity: View {
         size: Theme.Metric.avatarInspector,
         shape: .blob
       )
-      .modifier(BusyWhenWorking(active: isBusy, rise: 3))
+      .modifier(BusyWhenWorking(active: isBusy, rise: Theme.Inspector.busyAvatarRise))
     }
   }
 
@@ -259,17 +259,17 @@ private struct Identity: View {
         .onSubmit(commitName)
         .onExitCommand { editingName = false }
         .onChange(of: nameFocused) { if !nameFocused { commitName() } }
-        .padding(.horizontal, 8)
-        .frame(height: 30)
+        .padding(.horizontal, Theme.Inspector.nameInset)
+        .frame(height: Theme.Inspector.nameHeight)
         .background(
-          RoundedRectangle(cornerRadius: 7, style: .continuous)
+          RoundedRectangle(cornerRadius: Theme.Inspector.nameRadius, style: .continuous)
             .fill(Theme.Palette.canvas)
         )
         .overlay(
-          RoundedRectangle(cornerRadius: 7, style: .continuous)
-            .strokeBorder(Theme.Palette.accent.opacity(0.55), lineWidth: Theme.Metric.hairline)
+          RoundedRectangle(cornerRadius: Theme.Inspector.nameRadius, style: .continuous)
+            .strokeBorder(Theme.Palette.inlineEditFocus, lineWidth: Theme.Metric.hairline)
         )
-        .frame(maxWidth: 220)
+        .frame(maxWidth: Theme.Inspector.nameMaxWidth)
     } else {
       Text(name)
         .font(Theme.TypeScale.inspectorTitle)
@@ -297,17 +297,17 @@ private struct Identity: View {
         .onSubmit(commitLabel)
         .onExitCommand { editingLabel = false }
         .onChange(of: labelFocused) { if !labelFocused { commitLabel() } }
-        .padding(.horizontal, 7)
-        .frame(height: 24)
+        .padding(.horizontal, Theme.Inspector.labelInset)
+        .frame(height: Theme.Inspector.labelHeight)
         .background(
-          RoundedRectangle(cornerRadius: 6, style: .continuous)
+          RoundedRectangle(cornerRadius: Theme.Inspector.labelRadius, style: .continuous)
             .fill(Theme.Palette.canvas)
         )
         .overlay(
-          RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .strokeBorder(Theme.Palette.accent.opacity(0.55), lineWidth: Theme.Metric.hairline)
+          RoundedRectangle(cornerRadius: Theme.Inspector.labelRadius, style: .continuous)
+            .strokeBorder(Theme.Palette.inlineEditFocus, lineWidth: Theme.Metric.hairline)
         )
-        .frame(maxWidth: 150)
+        .frame(maxWidth: Theme.Inspector.labelMaxWidth)
     } else {
       Button {
         labelDraft = label ?? ""

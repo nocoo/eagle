@@ -17,7 +17,7 @@ public struct SegmentedTabs<Value: Hashable>: View {
   }
 
   public var body: some View {
-    HStack(spacing: 20) {
+    HStack(spacing: Theme.Inspector.tabsGap) {
       ForEach(values, id: \.self) { value in
         let selected = value == selection
         Button {
@@ -26,7 +26,7 @@ public struct SegmentedTabs<Value: Hashable>: View {
           Text(title(value))
             .font(selected ? Theme.TypeScale.noteStrong : Theme.TypeScale.note)
             .foregroundStyle(selected ? Theme.Palette.textPrimary : Theme.Palette.textSecondary)
-            .padding(.bottom, 6)
+            .padding(.bottom, Theme.Inspector.tabsBottomInset)
             .overlay(alignment: .bottom) {
               Rectangle()
                 .fill(selected ? Theme.Palette.textPrimary : .clear)

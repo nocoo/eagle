@@ -229,6 +229,46 @@ test("form tokens preserve runtime sizing, structural zeros and content counts",
   );
 });
 
+test("panel and column primitives reject scattered style values", () => {
+  for (const path of [
+    "EagleDesign/Panels/SidebarPanel.swift",
+    "EagleDesign/Panels/ConversationRow.swift",
+    "EagleDesign/Panels/InspectorColumn.swift",
+    "EagleDesign/Panels/ThreeColumnShell.swift",
+    "EagleDesign/Primitives/ResizeHandle.swift",
+    "EagleDesign/Primitives/SegmentedTabs.swift",
+  ]) {
+    assert(
+      check("", {
+        [path]: 'let gap = 13; Text("Row").padding(gap).opacity(0.45)',
+      }).some((item) => item.rule === "panel-style-ownership"),
+    );
+    assert.deepEqual(
+      check("", {
+        [path]:
+          "Text(name.prefix(1)).lineLimit(1).padding(Theme.Metric.contentInset)",
+      }),
+      [],
+    );
+  }
+  assert.deepEqual(
+    check("", {
+      "EagleDesign/Panels/SidebarPanel.swift": `
+    onMoveGroup(section.id, -1)
+    Button("Move") {}.disabled(index >= groups.count - 1)
+  `,
+    }),
+    [],
+  );
+  for (const name of ["Sidebar", "Inspector", "Motion", "Metric"]) {
+    assert(
+      check(`extension Theme.${name} { static let rogue = 13 }`).some(
+        (item) => item.rule === "panel-style-ownership",
+      ),
+    );
+  }
+});
+
 test("tracks type aliases across files rather than blessing local names", () => {
   const findings = check(
     "let fill = Paint.red; let title = Letter.system(size: 13)",

@@ -1,5 +1,26 @@
 # 用户视角检查点
 
+## 2026-11-05 11:24 +08 — Push completed; panel token slice
+
+- Remote main is verified at `9942b40`. The normal push gates passed: root check
+  309 tests, browser 191 passed with its 11 existing conditional skips, and 455 Swift
+  tests. The earlier redaction-performance failures remain historical evidence;
+  no redaction code or threshold was changed to obtain this run. GitHub Check and
+  Deploy workflows report completed/success for this exact revision; no separate
+  live/public acceptance was performed.
+- The first push was stopped by switch AX readiness timing. Its test-only repair
+  retains the two-second wait budget and all assertions, and reads/layouts current
+  nodes after suspension. No hook was bypassed; the full push gates ran again.
+- Continuing locally: sidebar rows/groups, inspector identity/editors/tabs and column
+  resize chrome now use centralized metrics, paints and motion with unchanged values.
+  The resize hit region remains 11 pt with 5 pt overhang. Numeric ownership expands
+  to these six component files, not the whole UI. The scoped guard has 72 passing
+  assertions and the App builds; UI acceptance remains manual.
+- No production authentication, D1, real device operation or Herdr collection was
+  exercised. Fresh Dev App PID 88676 owns daemon 88786 from this checkout; CLI
+  health passes. It remains in the existing right-side pane for owner inspection.
+  This local slice is not included in the already completed push.
+
 ## 2026-11-05 10:45 +08 — Selection menus and form tokens
 
 - Seven selection-menu presentations now share SelectionMenu; existing sizes,

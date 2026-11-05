@@ -7,10 +7,11 @@ The first implementation slice centralizes palette definitions and explicit font
 construction with a parser-based guard and staged-snapshot rejection tests. It preserves
 current appearance values and manual Bot choices. The next slice unifies native
 switches/checkboxes and their production/Gallery callers, with owner acceptance and
-AX/ownership tests. Selection menus and settings-primitive metrics are now centralized
-as another implementation slice awaiting owner UI acceptance. Remaining sidebar,
-conversation, panel/dialog styles and other control families are unfinished; passing
-these scoped checks is not completion of phase 1. An additional
+AX/ownership tests. The owner accepted the selection-menu/form slice, now pushed with
+the earlier work. Sidebar/inspector chrome, tabs and column-resize metrics are the next
+implemented slice awaiting manual acceptance. Remaining conversation, task/card,
+dialog/window-level styles and other control families are unfinished; passing these
+scoped checks is not completion of phase 1. An additional
 keyboard-driver experiment is archived locally outside the active source/test tree,
 not a passed gate; the committed composer acceptance remains unchanged.
 See `apps/macos/DESIGN.md` for the precise implemented contract. This document replaces the
@@ -33,8 +34,9 @@ these defects are fixed until the relevant phase is verified.
 
 The app's standard shared-control boundary is the existing **EagleDesign** layer,
 built on SwiftUI/AppKit. EagleFeatures composes these controls and supplies state/actions.
-Being in EagleDesign does not itself make a control native or accessible: the existing
-custom `SwitchToggle`, for example, is a drawn Button rather than a native Toggle.
+Being in EagleDesign does not itself make a control native or accessible: the former
+custom SwitchToggle was a drawn Button. The accepted slice has replaced it with a
+native Toggle wrapper.
 Prefer native behavior behind standard wrappers; approve custom exceptions only after
 verifying role/value, keyboard operation, focus and disabled-state semantics. This work
 does not introduce a second library, port web Basalt into Swift or create a general-purpose

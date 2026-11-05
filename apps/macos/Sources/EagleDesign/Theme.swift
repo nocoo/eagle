@@ -14,6 +14,7 @@ public enum Theme {
     public static let textSecondary = Color(light: 0x6C6C72, dark: 0xA6A6AE)
     public static let textMuted = Color(light: 0x9A9AA2, dark: 0x75757D)
     public static let taskGuide = textMuted.opacity(0.55)
+    public static let disclosure = textSecondary.opacity(0.75)
     public static let clear = Color.clear
     public static let onColor = Color.white
     public static let onColorSecondary = Color.white.opacity(0.72)
@@ -28,6 +29,9 @@ public enum Theme {
     public static let participantShadow = Color.black.opacity(Metric.participantShadowOpacity)
     public static let accent = Color(light: 0x0B84C4, dark: 0x4FC3F7)
     public static let fieldFocus = accent.opacity(0.65)
+    public static let inlineEditFocus = accent.opacity(0.55)
+    public static let unreadShadow = accent.opacity(0.28)
+    public static let productFallback = avatarTint(2)
     public static let accentFill = Color(light: 0x2FB457, dark: 0x2FB457)
     public static let accentStrong = Color(light: 0x2FB457, dark: 0x3DD068)
     public static let info = Color(light: 0x0B6FBE, dark: 0x7FC8FF)
@@ -79,6 +83,58 @@ public enum Theme {
       case .graphite: return Color(light: 0x6E6E76, dark: 0x8A8A93)
       }
     }
+  }
+
+  public enum Sidebar {
+    public static let headerGap: CGFloat = 6
+    public static let listBottomInset: CGFloat = 8
+    public static let blockGap: CGFloat = 2
+    public static let blockVerticalInset: CGFloat = 2
+    public static let groupContentGap: CGFloat = 6
+    public static let disclosureGap: CGFloat = 5
+    public static let disclosureWidth: CGFloat = 9
+    public static let disclosureAngle: Double = 90
+    public static let expandedDisclosureOpacity: Double = 0.8
+    public static let collapsedDisclosureOpacity: Double = 0.5
+    public static let rowTextGap: CGFloat = 3
+    public static let rowMetaGap: CGFloat = 7
+    public static let unreadDot: CGFloat = 7
+    public static let unreadContentGap: CGFloat = 8
+    public static let unreadHighlightSize: CGFloat = 18
+    public static let unreadHorizontalInset: CGFloat = 11
+    public static let unreadShadowRadius: CGFloat = 10
+    public static let unreadShadowY: CGFloat = 3
+  }
+
+  public enum Inspector {
+    public static let contentTopInset: CGFloat = 16
+    public static let contentBottomInset: CGFloat = 20
+    public static let identityGap: CGFloat = 8
+    public static let nameGap: CGFloat = 3
+    public static let labelGap: CGFloat = 5
+    public static let identityTopInset: CGFloat = 16
+    public static let identityBottomInset: CGFloat = 18
+    public static let busyAvatarRise: CGFloat = 3
+    public static let nameInset: CGFloat = 8
+    public static let nameHeight: CGFloat = 30
+    public static let nameRadius: CGFloat = 7
+    public static let nameMaxWidth: CGFloat = 220
+    public static let labelInset: CGFloat = 7
+    public static let labelHeight: CGFloat = 24
+    public static let labelRadius: CGFloat = 6
+    public static let labelMaxWidth: CGFloat = 150
+    public static let tabsGap: CGFloat = 20
+    public static let tabsBottomInset: CGFloat = 6
+  }
+
+  public enum Motion {
+    public static let hover = Animation.easeOut(duration: 0.12)
+    public static let rowSelection = Animation.easeOut(duration: 0.14)
+    public static let selection = Animation.easeOut(duration: 0.16)
+    public static let sectionExpansion = Animation.easeInOut(duration: 0.18)
+    public static let disclosure = Animation.snappy(duration: 0.22)
+    public static let inspectorTab = Animation.easeOut(duration: 0.18)
+    public static let columns = Animation.snappy(duration: Metric.collapseDuration)
   }
 
   public enum Form {
@@ -240,6 +296,8 @@ public enum Theme {
     public static let cardRadius: CGFloat = 12
     public static let controlRadius: CGFloat = 9
     public static let hairline: CGFloat = 1
+    public static let resizeHitWidth: CGFloat = 11
+    public static let resizeOverhang: CGFloat = (resizeHitWidth - hairline) / 2
 
     public static let collapseDuration: CGFloat = 0.28
     public static let conversationMaxContentWidth: CGFloat = 720

@@ -14,12 +14,15 @@ fonts. UI typography uses the system font and CJK fallback.
   The Gallery reuses production settings rows rather than a separate drawn switch.
   `SelectionMenu` now owns the seven existing selection-menu presentations;
   `Theme.Form` owns the extracted settings-primitive metrics without changing values.
+  Sidebar/inspector chrome and tabs now use Theme.Sidebar/Inspector, shared motion
+  recipes and palette paints. Column resize geometry is defined once in Theme.Metric.
 - **Enforced:** `npm run check:design` parses every `Sources/**/*.swift` file with the
   selected Xcode toolchain's SwiftParser/SwiftSyntax. The pre-commit design check runs
   from a temporary Git-index snapshot; macOS CI runs the same check and its tests.
 - **Not yet enforced:** global spacing/radius/alpha/motion ownership and construction
   of controls other than Toggle/Menu. Numeric style ownership is currently enforced
-  only in SettingsComponents.swift and SelectionMenu.swift. A clean ownership scan does
+  in the two form primitive files plus SidebarPanel, ConversationRow, InspectorColumn,
+  ThreeColumnShell, ResizeHandle and SegmentedTabs. A clean ownership scan does
   not mean the entire design system is consolidated.
 - **Not yet redesigned:** eight candy identities with stable hashing, accessible
   solid/soft color pairs, the new spacing grid, reference-aligned shell and control
@@ -39,7 +42,10 @@ lookup are defined here, not in the face renderer. `Theme.TypeScale` owns font
 construction, including settings, Markdown/code, symbols and the existing proportional
 avatar/button font helpers. `Theme.Metric` owns the currently extracted shell/layout
 metrics; `Theme.Form` owns settings rows, fields, actions and selection-menu metrics.
-These are the existing values, not the later grid redesign.
+Theme.Sidebar/Inspector own their component-specific metrics; Theme.Motion holds the
+extracted curves as well as durations. These are existing values, not the later grid
+redesign. In particular, the resize hit region stays 11 pt and its overhang is
+`(resizeHitWidth - hairline) / 2`, currently 5 pt.
 
 Views consume those definitions directly or receive a typed style from a shared
 component. Do not define colors/fonts in another `Theme` extension, local factory or
@@ -90,6 +96,11 @@ fixture executables and newly added Swift files are all scanned. The rules rejec
   identity opacity/scale are allowed. Other rendering files and arbitrary external
   value-helper dataflow are not certified by this bounded rule. External Theme.Form
   extensions and aliases are refused.
+- The same numeric-literal rule covers the six panel/column primitives listed above.
+  One-character content prefixes and the sidebar's one-step move/index predicates
+  remain data, not style tokens. External Sidebar/Inspector/Motion/Metric token-owner
+  extensions and aliases are refused. This does not certify arbitrary helper dataflow
+  or styles in the remaining conversation, task, card and window-level views.
 
 This is a constrained syntax contract, not Swift type inference. It does not certify
 arbitrary generic helper APIs, derived alpha/weight, layout dimensions or all primitive
@@ -144,7 +155,8 @@ their old fonts, dimensions, arrow treatments and native menu style. Callers sti
 own their Button actions, checkmarks, disabled options, help and identifiers. The
 policy recipe remains borderless; this is not a migration to Picker. PillSelect
 requires an explicit accessibility label and reuses the same shell.
-Remaining sidebar, conversation, panel and dialog styles are not yet consolidated.
+Remaining conversation, task/card, dialog, window-level and other primitive styles
+are not yet consolidated; extracting panel chrome does not complete phase 1.
 `SwitchToggle` and `Checkbox` pass the original Binding directly to native Toggle,
 without optimistic state or a custom action handler. Callers retain labelsHidden,
 control size (including inspector mini), tint, disabled predicates and identifiers.

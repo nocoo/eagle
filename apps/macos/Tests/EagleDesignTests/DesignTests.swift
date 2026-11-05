@@ -38,6 +38,18 @@ struct ThemeTests {
     #expect(Theme.Metric.inspectorRowHeight == 40)
     #expect(Theme.Metric.composerHeight == 54)
     #expect(Theme.Metric.cardRadius == 12)
+    #expect(Theme.Metric.resizeHitWidth == 11)
+    #expect(Theme.Metric.resizeOverhang == 5)
+    #expect(Theme.Sidebar.rowTextGap == 3)
+    #expect(Theme.Sidebar.rowMetaGap == 7)
+    #expect(Theme.Sidebar.unreadDot == 7)
+    #expect(Theme.Inspector.nameMaxWidth == 220)
+    #expect(Theme.Inspector.labelMaxWidth == 150)
+    #expect(Theme.Inspector.busyAvatarRise == 3)
+    #expect(Theme.Inspector.tabsGap == 20)
+    #expect(Theme.Motion.hover == Animation.easeOut(duration: 0.12))
+    #expect(Theme.Motion.sectionExpansion == Animation.easeInOut(duration: 0.18))
+    #expect(Theme.Motion.columns == Animation.snappy(duration: 0.28))
   }
 
   @Test("column clamps stay ordered")

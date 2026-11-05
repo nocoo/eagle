@@ -39,7 +39,7 @@ public struct ResizeHandle: View {
         .contentShape(Rectangle())
         .background(CursorRect(cursor: .resizeLeftRight))
     }
-    .frame(width: 11)
+    .frame(width: Theme.Metric.resizeHitWidth)
     .frame(maxHeight: .infinity)
     .gesture(
       DragGesture(minimumDistance: 0, coordinateSpace: .global)

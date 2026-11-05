@@ -53,7 +53,7 @@ public struct ThreeColumnShell<Sidebar: View, Conversation: View, Inspector: Vie
               maximum: Theme.Metric.sidebarMaxWidth,
               onChange: onResizeSidebar
             )
-            .offset(x: -5)
+            .offset(x: -Theme.Metric.resizeOverhang)
           }
         }
         .overlay(alignment: .trailing) {
@@ -65,7 +65,7 @@ public struct ThreeColumnShell<Sidebar: View, Conversation: View, Inspector: Vie
               inverted: true,
               onChange: onResizeInspector
             )
-            .offset(x: 5)
+            .offset(x: Theme.Metric.resizeOverhang)
           }
         }
 
@@ -77,7 +77,7 @@ public struct ThreeColumnShell<Sidebar: View, Conversation: View, Inspector: Vie
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Theme.Palette.surface)
-    .animation(.snappy(duration: Theme.Metric.collapseDuration), value: showsSidebar)
-    .animation(.snappy(duration: Theme.Metric.collapseDuration), value: showsInspector)
+    .animation(Theme.Motion.columns, value: showsSidebar)
+    .animation(Theme.Motion.columns, value: showsInspector)
   }
 }

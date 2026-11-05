@@ -44,6 +44,11 @@ func ownerFamily(_ name: String) -> String? {
     return "typography-ownership"
   }
   if name == "Theme.Form" || name.hasSuffix(".Theme.Form") { return "form-style-ownership" }
+  for namespace in ["Sidebar", "Inspector", "Motion", "Metric"] {
+    if name == "Theme.\(namespace)" || name.hasSuffix(".Theme.\(namespace)") {
+      return "panel-style-ownership"
+    }
+  }
   return nil
 }
 
@@ -159,13 +164,25 @@ final class Ownership: SyntaxVisitor {
     return false
   }
 
-  func checkFormNumber(_ text: String, node: some SyntaxProtocol) {
-    guard
-      [
-        "EagleDesign/Settings/SettingsComponents.swift",
-        "EagleDesign/Primitives/SelectionMenu.swift",
-      ].contains(path)
-    else { return }
+  func checkStyleNumber(_ text: String, node: some SyntaxProtocol) {
+    let rule: String
+    if [
+      "EagleDesign/Settings/SettingsComponents.swift",
+      "EagleDesign/Primitives/SelectionMenu.swift",
+    ].contains(path) {
+      rule = "form-style-ownership"
+    } else if [
+      "EagleDesign/Panels/SidebarPanel.swift",
+      "EagleDesign/Panels/ConversationRow.swift",
+      "EagleDesign/Panels/InspectorColumn.swift",
+      "EagleDesign/Panels/ThreeColumnShell.swift",
+      "EagleDesign/Primitives/ResizeHandle.swift",
+      "EagleDesign/Primitives/SegmentedTabs.swift",
+    ].contains(path) {
+      rule = "panel-style-ownership"
+    } else {
+      return
+    }
     if text == "0" || text == "0.0" { return }
     var parent = Syntax(node).parent
     while let current = parent {
@@ -174,21 +191,26 @@ final class Ownership: SyntaxVisitor {
           call.calledExpression.as(MemberAccessExprSyntax.self)?.declName.baseName.text
           ?? call.calledExpression.as(DeclReferenceExprSyntax.self)?.baseName.text
         if name == "Text" || name == "lineLimit" { return }
-        if text == "1", name == "opacity" || name == "scaleEffect" { return }
+        if text == "1", ["opacity", "scaleEffect", "prefix"].contains(name ?? "") { return }
+        if text == "1", path == "EagleDesign/Panels/SidebarPanel.swift",
+          name == "onMoveGroup" || name == "disabled"
+        {
+          return
+        }
         break
       }
       parent = current.parent
     }
-    report(node, "form-style-ownership")
+    report(node, rule)
   }
 
   override func visit(_ node: IntegerLiteralExprSyntax) -> SyntaxVisitorContinueKind {
-    checkFormNumber(node.literal.text, node: node)
+    checkStyleNumber(node.literal.text, node: node)
     return .visitChildren
   }
 
   override func visit(_ node: FloatLiteralExprSyntax) -> SyntaxVisitorContinueKind {
-    checkFormNumber(node.literal.text, node: node)
+    checkStyleNumber(node.literal.text, node: node)
     return .visitChildren
   }
 
