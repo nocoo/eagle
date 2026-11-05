@@ -934,19 +934,32 @@ public struct SettingsView: View {
 
   private var usageBots: some View {
     let bots = model.usageBotRows
-    return sectionCard("消耗最多", detail: "近 \(retentionDays) 天花得最多的 5 个 Bot") {
+    return sectionCard(
+      "消耗最多", detail: "近 \(retentionDays) 天花得最多的 5 个 Bot；删掉的合并成其他"
+    ) {
       if bots.isEmpty {
         SettingsStatusNote("近 \(retentionDays) 天还没有消耗")
       } else {
         ForEach(Array(bots.enumerated()), id: \.element.id) { index, bot in
           if index > 0 { Divider().overlay(Theme.Palette.line) }
           SettingsSectionRow(bot.title, detail: bot.detail) {
+            usageBotMark(bot)
+          } trailing: {
             Text(bot.value)
               .font(Theme.TypeScale.mono)
               .foregroundStyle(Theme.Palette.textPrimary)
           }
         }
       }
+    }
+  }
+
+  /// The bot's own face, and a neutral mark for the row that carries the deleted ones.
+  @ViewBuilder private func usageBotMark(_ row: UsageBotRow) -> some View {
+    if let face = row.face {
+      BotFace(style: face, size: Theme.Form.entityFace)
+    } else if row.aggregate {
+      Avatar(initial: "其", tint: Theme.Palette.avatarTint(0), size: Theme.Form.entityFace)
     }
   }
 

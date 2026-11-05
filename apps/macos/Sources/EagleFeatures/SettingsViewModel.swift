@@ -32,6 +32,9 @@ public final class SettingsViewModel: ObservableObject {
   /// The daemon's usage statistics; nil until the 用量 tab is opened.
   @Published public var usageReport: UsageReport?
   @Published public var usageBusy = false
+  /// The bots the catalog still lists, with the face each one draws; nil while the catalog has
+  /// not answered, so a failed read never calls a bot deleted.
+  private var usageBotFaces: [String: BotFace.Style]?
   /// The daemon's password records. The value is never in this state: only the metadata.
   @Published public var secrets: [Secret] = []
   /// A refused read belongs to the page: it says so instead of showing "no passwords".
@@ -589,15 +592,35 @@ public final class SettingsViewModel: ObservableObject {
     }
   }
 
-  /// The 消耗最多 card: a bot that only searched has calls and no tokens.
-  public var usageBotRows: [(id: String, title: String, detail: String, value: String)] {
+  /// The 消耗最多 card: a bot that only searched has calls and no tokens. A bot the catalog no
+  /// longer lists spent its tokens before it was deleted, so those shares add up to one 其他
+  /// row instead of naming bots that are gone.
+  public var usageBotRows: [UsageBotRow] {
     guard let report = usageReport else { return [] }
-    return report.bots.prefix(5).map { bot in
-      (
-        bot.botId, bot.title, "",
-        Self.usageLine(tokens: bot.totalTokens, calls: bot.calls, costUsd: bot.costUsd)
+    let faces = usageBotFaces
+    let listed = faces == nil ? report.bots : report.bots.filter { faces?[$0.botId] != nil }
+    let removed = faces == nil ? [] : report.bots.filter { faces?[$0.botId] == nil }
+    var rows = listed.prefix(5).map { bot in
+      UsageBotRow(
+        id: bot.botId, title: bot.title, detail: "",
+        value: Self.usageLine(tokens: bot.totalTokens, calls: bot.calls, costUsd: bot.costUsd),
+        face: faces?[bot.botId]
       )
     }
+    guard !removed.isEmpty else { return rows }
+    let calls = removed.compactMap(\.calls)
+    rows.append(
+      UsageBotRow(
+        id: "other", title: "其他", detail: "\(removed.count) 个已删除的 Bot",
+        value: Self.usageLine(
+          tokens: removed.reduce(0) { $0 + $1.totalTokens },
+          calls: calls.isEmpty ? nil : calls.reduce(0, +),
+          costUsd: removed.reduce(0) { $0 + $1.costUsd }
+        ),
+        aggregate: true
+      )
+    )
+    return rows
   }
 
   /// The 用量 sources card: models spend tokens, search spends calls.
@@ -631,6 +654,13 @@ public final class SettingsViewModel: ObservableObject {
     guard !usageBusy else { return }
     usageBusy = true
     defer { usageBusy = false }
+    let presenter = BotsPresenter()
+    usageBotFaces = nil
+    if let catalog = try? await client().load() {
+      usageBotFaces = Dictionary(
+        catalog.bots.map { ($0.id, presenter.faceStyle(for: $0)) },
+        uniquingKeysWith: { first, _ in first })
+    }
     do {
       usageReport = try await client().loadUsage(days: days)
     } catch {

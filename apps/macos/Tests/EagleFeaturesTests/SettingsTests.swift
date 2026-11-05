@@ -1120,6 +1120,7 @@ struct SettingsUsageTests {
     #expect(rows[0].value == "12.3k · 4 次 · $0.42")
     #expect(rows[1].value == "9 次")
     #expect(rows.allSatisfy { $0.detail.isEmpty })
+    #expect(rows.allSatisfy { $0.face == nil }, "a report set without a catalog draws no face")
   }
 
   @Test("sources read in Chinese, with calls for search and tokens for models")
