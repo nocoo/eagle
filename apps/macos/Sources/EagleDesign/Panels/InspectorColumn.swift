@@ -15,7 +15,6 @@ public struct InspectorColumn: View {
   private let name: String
   private let subtitle: String
   private let tintIndex: Int
-  private let width: CGFloat
   /// The reported pull requests the 编码 section shows.
   private let pulls: [InspectorPullRow]
   private let tasks: [InspectorTaskRow]
@@ -43,7 +42,6 @@ public struct InspectorColumn: View {
     name: String,
     subtitle: String,
     tintIndex: Int,
-    width: CGFloat = Theme.Metric.inspectorWidth,
     pulls: [InspectorPullRow] = [],
     tasks: [InspectorTaskRow] = [],
     usage: [InspectorUsageRow] = [],
@@ -67,7 +65,6 @@ public struct InspectorColumn: View {
     self.name = name
     self.subtitle = subtitle
     self.tintIndex = tintIndex
-    self.width = width
     self.pulls = pulls
     self.tasks = tasks
     self.usage = usage
@@ -137,8 +134,7 @@ public struct InspectorColumn: View {
         Theme.Palette.surface, top: Theme.Metric.edgeFadeHeight, bottom: Theme.Metric.edgeFadeHeight
       )
     }
-    .frame(width: width)
-    .frame(maxHeight: .infinity)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Theme.Palette.surface)
   }
 

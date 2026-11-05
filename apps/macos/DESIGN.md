@@ -6,11 +6,11 @@ library, private font asset or runtime theme generator is introduced.
 
 ## Status and source of truth
 
-Phase 1 was accepted by the owner. Its source ownership covers chat/Markdown/composer,
-all cards, peers, dialogs, panels, settings/page composition, Gallery and product
-windows. Phase 2 implements the eight-family palette, creation-time hash defaults,
-manual selection and shared grid scale below. **Phase-2 owner review is pending.**
-Reference-led page rearrangement and individual-control polish have not started.
+Phases 1 and 2 were accepted by the owner: global style ownership, the eight-family
+palette, creation-time hash defaults, manual overrides and the shared grid are in place.
+Phase 3 implements the reference-led composition below. **Phase-3 owner review is
+pending.** Individual-control polish is still phase 4; no new product action or data
+capability is introduced by this layout work.
 
 - `Sources/EagleDesign/Theme.swift` is the authoritative definition owner.
 - [Style coverage](../../docs/MACOS-STYLE-COVERAGE.md) lists covered surfaces, exact
@@ -124,9 +124,13 @@ neutral ramp, not old independent paints or storage normalization. Deploy/restar
 updated App and daemon together before shape-only creation; never retry an old daemon's
 refusal with green. Details and fixed vectors live in `docs/bots/PROTOCOL.md`.
 
-The Gallery's color page is the review matrix, with its existing light/dark switch.
-Pale role samples are explicit opaque pairs; applying those pale surfaces to additional
-rich-text/page contexts belongs to phase 3, not an implicit inversion of the pair.
+The Gallery's color page retains the accepted light/dark matrix. Chrome and prose use
+neutral surfaces; existing user messages and primary actions keep green solid/white
+pairs. Peer sender labels use small opaque soft/onSoft chips; their prose stays neutral,
+so Markdown does not inherit an incompatible dark-theme ink on a pale card. Unknown
+peers retain the neutral family. Selected/hovered sidebar previews and gray tags use
+textSecondary, checked against their actual gray backgrounds at 4.5:1. White-text
+unread pills/counts use the blue solid role; their standalone unread dots retain ink.
 
 ## Grid scale and preserved boundaries
 
@@ -143,9 +147,38 @@ line uses SwiftUI pixelLength (1 pt at 1×, 0.5 pt at 2×) and aligns its inner 
 shrinking the existing 11 pt drag hit region or changing drag/clamp behavior. Card/focus
 outlines retain their semantic widths, distinct from physical-pixel separators.
 
-Shell defaults remain 374 pt sidebar / 319 pt inspector and the existing window bounds;
-phase 2 does not recompose the three columns. Settings remain fixed at 1120 × 820 until
-the layout phase, so the known small-window clipping is still unresolved.
+## Reference-led composition
+
+The main window retains its declared 1280 × 760 content minimum and preferred size.
+Native titlebar/safe-area accounting can add outer height: the live AX window clamped
+to 1280 × 788 during this phase's minimum-size inspection.
+Side columns default to 320 / 300 pt. The window's pure resolver reserves a 560 pt center,
+allocating the sidebar preference first and then the inspector from the remaining budget.
+Hidden columns consume zero. Requested widths are not overwritten on window shrink;
+space returned to the inspector can restore its stored preference. Drag maxima use the
+other effective width. ThreeColumnShell alone frames the flexible side panels, and Peer
+overlays use the same effective sidebar edge. The inspector portrait is 64 pt and its
+12 pt tab gaps keep all five destinations at the supported side minimum.
+
+The settings envelope is at most 960 × 688 with 24 pt outer clearance, clamped to the
+actual host. No inner minimum can enlarge that envelope. The header/close remains outside
+the content scroller; the compact 32 pt navigation rows have their own scroller. Shared
+form rows use 12 pt vertical padding; the fields/buttons retain their accepted heights.
+This repairs modal clipping at supported short windows, not a promise that every fixed
+field remains usable in arbitrarily tiny hosts.
+
+Conversation content, waiting band and composer share a 960 pt maximum lane with 16 pt
+side insets. A message row's 636 pt cap is explicitly 600 pt bubble + 28 pt copy target +
+8 pt gutter, and shrinks under narrower parent proposals. User text expands vertically;
+its reading measure no longer grows with a wide window. Assistant/Peer maxWidth remains
+a wrapper bound including the copy gutter; the Peer override remains 560 pt. Tool cards
+keep a 600 pt cap, turns use 16 pt spacing, and hover never adds/removes the reserved copy
+slot. Peer dialogs inset their content by 24 pt. No entry regrouping or scroll-state
+architecture change is involved.
+
+Sidebar version text sits below the name to preserve both footer actions at narrow
+widths; full version remains in its help/accessibility text. Search/share/attachment/mic
+visibility and callbacks are unchanged, pending a separate owner decision.
 
 Do not change the secret minimum length/TTLs, asynchronous confirmation, skip/replay
 behavior, device/remote permission conditions, freshness provenance or unknown states
@@ -158,10 +191,20 @@ SwiftUI state. Preserve the existing scroll-cost checks and hover-only copy/sele
 machinery. New style organization must not change streaming, follow/unfollow, text
 selection, copy, code/table overflow or composer focus/keyboard behavior.
 
-SnapshotRenderer uses fixed synthetic content and offscreen windows for repeatability;
-its viewport matrix is fixture input, not a second style system. Actual View styling
-in the renderer and Gallery remains scanned. Real foreground App review is still
-required; a fixture capture does not prove live bindings or native window states.
+Use SnapshotRenderer's `--composition-only` path for this phase's synthetic review:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run --package-path apps/macos SnapshotRenderer .local/phase3-composition --composition-only
+```
+
+It uses design components instead of the production workspace/supervisor, a stub HTTP
+session, SnapshotDeviceControl and a unique cleaned UserDefaults suite (also injected
+into AppStorage). The matrix covers 1280 × 760, 1280 × 800, 1280 × 1410 and 1728 × 1082,
+light/dark, three/two/no-sidebar/drag-limit columns, settings and Peer dialogs. Viewport
+numbers are fixture inputs, not a second style system; actual View styling is scanned.
+Do not treat the default renderer path as isolated: it still includes production
+workspace/other operational paths. Real foreground App review remains required; captures
+do not certify live bindings, traffic lights, drag gestures or keyboard navigation.
 
 ## Validation and known boundary
 

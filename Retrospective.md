@@ -1,5 +1,28 @@
 # Retrospective
 
+## 2026-11-05 — Fixture isolation includes default view-model arguments
+
+The new composition renderer injected a stub settings HTTP session but omitted
+SettingsView's device argument. That eagerly constructed DeviceSettingsViewModel.shared:
+its initializer creates the real adapter, removes an obsolete key from standard
+preferences and reads saved state. No service start/device call was found on the
+providers capture path, and the renderer's defaults domain was not assumed to be the
+App's domain; earlier captures still were not fully isolated. The renderer now passes
+SnapshotDeviceControl with a unique, cleaned UserDefaults suite and applies that store
+to AppStorage too. Audit default constructor arguments before calling a fixture
+isolated; do not infer isolation from the absence of a network request or try to
+restore an unknown prior preference value.
+
+## 2026-11-05 — Measure bubbles with the real width proposal
+
+The first reading-cap regression used root-level fixedSize, asking SwiftUI for an
+unconstrained ideal width rather than a real conversation viewport. A capped outer
+frame could then report a small width while that artificial proposal still kept a
+single-line ideal height. Replace that probe with actual 1200/1600 pt host proposals:
+the uncapped production row failed the equal-reading-height assertion, then the cap
+passed it. Preserve vertical expansion, the copy gutter and performance thresholds;
+do not relax a layout assertion to compensate for a different sizing context.
+
 ## 2026-11-05 — Color-pair tests must follow real consumers
 
 Splitting the green token into solid fill and readable ink made the standalone

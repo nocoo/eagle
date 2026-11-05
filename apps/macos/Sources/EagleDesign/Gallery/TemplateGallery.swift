@@ -389,7 +389,7 @@ public struct TemplateGallery: View {
             onSelect: { _ in },
             unreadCount: 2
           )
-          .frame(height: Theme.Gallery.previewHeight)
+          .frame(width: Theme.Metric.sidebarWidth, height: Theme.Gallery.previewHeight)
           .overlay(alignment: .topTrailing) { cornerLabel("侧栏") }
 
           InspectorColumn(
@@ -419,7 +419,7 @@ public struct TemplateGallery: View {
             ],
             tab: .constant(.detail)
           )
-          .frame(height: Theme.Gallery.previewHeight)
+          .frame(width: Theme.Metric.inspectorWidth, height: Theme.Gallery.previewHeight)
           .overlay(alignment: .topTrailing) { cornerLabel("检查器") }
 
           InspectorColumn(
@@ -429,7 +429,7 @@ public struct TemplateGallery: View {
             pulls: [],
             tab: .constant(.detail)
           )
-          .frame(height: Theme.Gallery.previewHeight)
+          .frame(width: Theme.Metric.inspectorWidth, height: Theme.Gallery.previewHeight)
           .overlay(alignment: .topTrailing) { cornerLabel("空状态") }
         }
       }

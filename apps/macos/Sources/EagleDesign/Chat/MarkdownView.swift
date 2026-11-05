@@ -10,30 +10,21 @@ public struct AssistantBubble: View, Equatable {
   private let preparedBlocks: [RenderedMarkdownBlock]?
   private let cornerRadius: CGFloat
   private let maxWidth: CGFloat
-  /// Nil keeps the transcript's own card colour; a peer bubble passes its sender's tint.
-  private let fill: Color?
-  private let border: Color?
   @StateObject private var model = MarkdownViewModel()
   @State private var hovering = false
 
-  /// The assistant's card carries no accent: one neutral fill a shade apart from the column,
-  /// no border, no second colour behind the markdown. A peer bubble passes its sender's tint.
   public init(
     text: String,
     streaming: Bool = false,
     preparedBlocks: [RenderedMarkdownBlock]? = nil,
     cornerRadius: CGFloat = Theme.Chat.assistantRadius,
-    maxWidth: CGFloat = Theme.Chat.contentWidth,
-    fill: Color? = nil,
-    border: Color? = nil
+    maxWidth: CGFloat = Theme.Chat.rowMaxWidth
   ) {
     self.text = text
     self.streaming = streaming
     self.preparedBlocks = preparedBlocks
     self.cornerRadius = cornerRadius
     self.maxWidth = maxWidth
-    self.fill = fill
-    self.border = border
   }
 
   public var body: some View {
@@ -52,18 +43,7 @@ public struct AssistantBubble: View, Equatable {
         .background(
           RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(Theme.Palette.assistantFill)
-            .overlay {
-              if let fill {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(fill)
-              }
-            }
         )
-        .overlay {
-          if let border {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-              .strokeBorder(border, lineWidth: Theme.Metric.hairline)
-          }
-        }
         .messageCopyAlignment()
         copyAction
       }
@@ -206,6 +186,7 @@ public struct AssistantBubble: View, Equatable {
   public nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.text == rhs.text && lhs.streaming == rhs.streaming
       && lhs.preparedBlocks == rhs.preparedBlocks
+      && lhs.cornerRadius == rhs.cornerRadius && lhs.maxWidth == rhs.maxWidth
   }
 
   @ViewBuilder

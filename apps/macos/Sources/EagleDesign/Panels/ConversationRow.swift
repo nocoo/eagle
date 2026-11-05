@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// One conversation row on the 20 / 34 / 58 grid measured from the reference:
-/// 20 pt inset, 34 pt avatar, 58 pt pitch, text at 65 pt.
 public struct ConversationRow: View {
   private let item: SidebarItem
   private let selected: Bool
@@ -10,6 +8,10 @@ public struct ConversationRow: View {
   public init(item: SidebarItem, selected: Bool) {
     self.item = item
     self.selected = selected
+  }
+
+  var subtitleColor: Color {
+    selected || hovering ? Theme.Palette.textSecondary : Theme.Palette.textMuted
   }
 
   public var body: some View {
@@ -44,7 +46,7 @@ public struct ConversationRow: View {
         }
         Text(item.subtitle)
           .font(Theme.TypeScale.rowSubtitle)
-          .foregroundStyle(Theme.Palette.textMuted)
+          .foregroundStyle(subtitleColor)
           .lineLimit(1)
           .truncationMode(.tail)
       }

@@ -31,7 +31,6 @@ public struct SidebarPanel: View {
   private let onCopyId: (String) -> Void
   private let onHideItem: (String) -> Void
   private let onMoveGroup: (String, Int) -> Void
-  private let width: CGFloat
 
   @State private var editingSection: String?
   @State private var editingItem: String?
@@ -41,7 +40,6 @@ public struct SidebarPanel: View {
   public init(
     sections: [SidebarSection],
     selection: String?,
-    width: CGFloat = Theme.Metric.sidebarWidth,
     onSelect: @escaping (String) -> Void,
     onToggleSection: @escaping (String) -> Void = { _ in },
     onRenameSection: @escaping (String, String) -> Void = { _, _ in },
@@ -71,7 +69,6 @@ public struct SidebarPanel: View {
   ) {
     self.sections = sections
     self.selection = selection
-    self.width = width
     self.onSelect = onSelect
     self.onToggleSection = onToggleSection
     self.onRenameSection = onRenameSection
@@ -105,8 +102,7 @@ public struct SidebarPanel: View {
       list
       footer
     }
-    .frame(width: width)
-    .frame(maxHeight: .infinity)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Theme.Palette.canvas)
   }
 
@@ -397,7 +393,7 @@ public struct SidebarPanel: View {
         }
         .padding(.horizontal, Theme.Sidebar.unreadHorizontalInset)
         .frame(height: Theme.Metric.unreadPillHeight)
-        .background(Capsule().fill(Theme.Palette.accent))
+        .background(Capsule().fill(Theme.Palette.unreadFill))
         .shadow(
           color: Theme.Palette.unreadShadow, radius: Theme.Sidebar.unreadShadowRadius,
           y: Theme.Sidebar.unreadShadowY)
@@ -430,11 +426,19 @@ public struct SidebarPanel: View {
       Button(action: onAccount) {
         HStack(spacing: Theme.Metric.rowAvatarGap) {
           productMark
-          Text(userName)
-            .font(Theme.TypeScale.rowTitle)
-            .foregroundStyle(Theme.Palette.textPrimary)
-            .lineLimit(1)
-          if !productVersion.isEmpty { Tag(productVersion) }
+          VStack(alignment: .leading, spacing: Theme.Layout.microGap) {
+            Text(userName)
+              .font(Theme.TypeScale.rowTitle)
+              .foregroundStyle(Theme.Palette.textPrimary)
+              .lineLimit(1)
+            if !productVersion.isEmpty {
+              Text(productVersion)
+                .font(Theme.TypeScale.note)
+                .foregroundStyle(Theme.Palette.textSecondary)
+                .lineLimit(1)
+                .help(productVersion)
+            }
+          }
         }
         .contentShape(Rectangle())
       }

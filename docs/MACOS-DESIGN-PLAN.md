@@ -1,6 +1,6 @@
 # macOS design-system consolidation and refinement
 
-Status: **phase 1 accepted; phase-2 palette/defaults/shared grid implemented for owner review; phases 3–4 have not started**.
+Status: **phases 1–2 accepted; phase 3 implemented for owner review; phase 4 has not started**.
 Updated 2026-11-05 following the owner's requested order.
 
 The first implementation slice centralizes palette definitions and explicit font
@@ -145,9 +145,9 @@ record rewrite. Shape-only editing preserves any raw choice. Unknown peers stay 
 The App and daemon must be restarted/upgraded together; no green retry is allowed.
 
 `apps/macos/DESIGN.md` specifies the current implementation and its explicit grid
-exceptions. The Gallery's color page supplies the light/dark matrix and real form
-alignment specimen. Source/math checks are not a claim of manual visual acceptance.
-The sections below define the phase requirements; visual acceptance remains pending.
+exceptions. The Gallery's color page supplied the light/dark matrix and real form alignment
+specimen, accepted by the owner before phase 3 began. Source/math checks alone do
+not establish that acceptance. The sections below retain the phase requirements.
 
 ### 2A. One eight-color identity family
 
@@ -155,9 +155,9 @@ Use the **iPhone 5C candy-color character** as the starting point: bright, frien
 clear hues against restrained neutrals. This is an eight-color derivative palette,
 not a claim that Apple shipped eight original 5C colors.
 
-Proposed fixed order for review: **red, orange, yellow, green, teal, blue, violet, pink**.
-The exact sRGB values are a phase-2 deliverable after swatch/contrast review, not copied
-from the reference screenshot or declared approved here. Palette ordering becomes part
+Accepted fixed order: **red, orange, yellow, green, teal, blue, violet, pink**.
+The implemented sRGB table in Theme.swift was accepted with the phase-2 swatch matrix;
+it is not copied from the reference screenshot. Palette ordering becomes part
 of the deterministic identity-color contract; silently reordering it recolors entities.
 
 For each of the eight identities, define **complete pairs in both appearances**:
@@ -253,6 +253,20 @@ The ordinary spacing vocabulary starts at `0, 4, 8, 12, 16, 20, 24, 32, 40, 48, 
   available for owner review. The phase-1 anti-scatter guard remains green.
 
 ## Phase 3 — reference-led layout and color application
+
+Owner authorized this phase on 2026-11-05. Composition uses 320/flexible/300 defaults,
+a 560 pt center floor, and a 960 × 688 settings envelope clamped with 24 pt outer
+clearance. On window shrink the sidebar preference takes priority, then the inspector
+uses the remaining budget; a drag clamps only its side against the other's effective
+width. Hidden columns consume no budget. Requested widths are not overwritten on resize.
+Panel views no longer own a second fixed width. Peer-dialog placement uses the same
+resolved sidebar edge. The declared content minimum remains 1280 × 760; native outer-window height includes
+its titlebar/safe-area accounting (1280 × 788 in the live minimum-size inspection).
+
+The color map is explicit: neutral chrome and prose, existing green solid/white user
+messages and primary actions, Bot identity on faces/names and small soft/dark-ink Peer
+labels. No whole-card identity wash is required. Search/share/attachment/microphone
+availability is unchanged; their disabled/hidden treatment remains an owner decision.
 
 Only after phases 1–2 pass, compose real screens using the new shared tokens and controls.
 Do not import the reference's blue/teal samples as a second palette.

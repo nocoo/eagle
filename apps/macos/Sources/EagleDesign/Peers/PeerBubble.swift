@@ -1,24 +1,17 @@
 import SwiftUI
 
-/// One message of an exchange, drawn as the same card the transcript gives an answer: markdown,
-/// hairline, hover copy. Only the radius and the width differ, because this column is narrower.
+/// Peer prose keeps the same neutral reading surface as an assistant answer.
 public struct PeerBubble: View {
   private let text: String
-  /// The sender's own colour: two bots in one dialog must not look like one voice.
-  private let tint: Color
-
-  public init(text: String, tint: Color) {
+  public init(text: String) {
     self.text = text
-    self.tint = tint
   }
 
   public var body: some View {
     AssistantBubble(
       text: text,
       cornerRadius: Theme.Metric.peerBubbleRadius,
-      maxWidth: Theme.Metric.peerBubbleMaxWidth,
-      fill: Theme.Palette.softTint(tint),
-      border: Theme.Palette.peerBorder(tint)
+      maxWidth: Theme.Metric.peerBubbleMaxWidth
     )
   }
 }
@@ -39,10 +32,14 @@ public struct PeerMessageGroup: View {
       VStack(alignment: .leading, spacing: Theme.Metric.peerMessageGap) {
         Text(burst.sender.title)
           .font(Theme.TypeScale.activity)
-          .foregroundStyle(burst.sender.labelTint)
+          .foregroundStyle(burst.sender.colors.onSoft)
+          .lineLimit(1)
+          .padding(.horizontal, Theme.Layout.rowGap)
+          .padding(.vertical, Theme.Layout.microGap)
+          .background(burst.sender.colors.soft, in: Capsule())
           .padding(.leading, Theme.Metric.peerLabelGap)
         ForEach(burst.messages) { message in
-          PeerBubble(text: message.text, tint: burst.sender.labelTint)
+          PeerBubble(text: message.text)
         }
       }
     }
@@ -93,8 +90,8 @@ public struct PeerPairChip: View {
 }
 
 extension PeerRef {
-  var labelTint: Color {
-    if let face { return Theme.Palette.family(face.tint).ink }
-    return Theme.Palette.textSecondary
+  var colors: Theme.Palette.IdentityColors {
+    if let face { return Theme.Palette.family(face.tint) }
+    return Theme.Palette.neutralColors
   }
 }

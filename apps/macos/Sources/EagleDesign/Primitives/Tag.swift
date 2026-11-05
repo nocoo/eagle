@@ -8,10 +8,12 @@ public struct Tag: View {
     self.text = text
   }
 
+  var textColor: Color { Theme.Palette.textSecondary }
+
   public var body: some View {
     Text(text)
       .font(Theme.TypeScale.pill)
-      .foregroundStyle(Theme.Palette.textMuted)
+      .foregroundStyle(textColor)
       .padding(.horizontal, Theme.Layout.labelGap)
       .padding(.vertical, Theme.Layout.microGap)
       .background(
@@ -65,7 +67,7 @@ public struct SectionLabel: View {
           .padding(.horizontal, Theme.Metric.unreadBadgeInset)
           .frame(minWidth: Theme.Metric.unreadBadgeHeight)
           .frame(height: Theme.Metric.unreadBadgeHeight)
-          .background(Capsule().fill(Theme.Palette.accent))
+          .background(Capsule().fill(Theme.Palette.unreadFill))
           .fixedSize()
           .accessibilityLabel("\(unreadCount) 个未读会话")
       }

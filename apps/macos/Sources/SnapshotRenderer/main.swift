@@ -26,6 +26,11 @@ struct SnapshotRenderer {
 
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
+    if CommandLine.arguments.contains("--composition-only") {
+      captureComposition(in: directory)
+      print("wrote isolated composition snapshots to \(directory.path)")
+      return
+    }
     if CommandLine.arguments.contains("--herdr-only") {
       do { try await captureHerdr(in: directory) } catch {
         print("Herdr snapshot failed: \(error)")
@@ -539,6 +544,113 @@ struct SnapshotRenderer {
         appearance: scheme == .dark ? .darkAqua : .aqua)
       model.denyPendingApproval()
       _ = await pending.value
+    }
+  }
+
+  @MainActor
+  private static func captureComposition(in directory: URL) {
+    let fixture = snapshotBotsSettings()
+    let domain = "EagleCompositionSnapshots.\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: domain) else {
+      fatalError("isolated snapshot preferences are unavailable")
+    }
+    let devices = DeviceSettingsViewModel(
+      control: SnapshotDeviceControl(), defaults: defaults, requiresServiceAddress: false)
+    defer {
+      defaults.removePersistentDomain(forName: domain)
+      fixture.session.invalidateAndCancel()
+      try? FileManager.default.removeItem(at: fixture.settings.rootURL)
+    }
+    let face = BotFace.Style(shape: .blob, tint: Theme.Palette.BotTint.teal)
+    let sections =
+      [
+        SidebarSection(
+          id: "layout", title: "布局验收",
+          items: [
+            SidebarItem(
+              id: "b_layout", title: "中英文长标题 Layout review", subtitle: "长消息、代码与表格保持可读",
+              tag: "Synthetic", face: face)
+          ])
+      ] + MockWorkspace.groups.map { SidebarSection(id: $0.id, title: $0.title, items: $0.items) }
+    let messages: [TranscriptEntry] = [
+      .user(
+        id: "u_layout",
+        text: String(repeating: "检查长消息在两栏和三栏中的阅读宽度。 Keep the copy gutter stable. ", count: 6)),
+      .assistant(
+        id: "a_layout",
+        blocks: [
+          .paragraph(
+            """
+            ## 布局验收 · Synthetic content
+
+            中文与 English 共用阅读边界。消息可以换行，代码和表格保留横向滚动；这不是一次真实模型回答。
+
+            ```swift
+            let aLongIdentifierThatMustNotStretchTheConversation = "an intentionally long code sample for horizontal overflow"
+            ```
+
+            | Surface | Expected behavior | Evidence |
+            | --- | --- | --- |
+            | Conversation | Readable width and stable copy gutter | Synthetic fixture |
+            | Settings | Header and close remain inside the host | Synthetic fixture |
+            """)
+        ]),
+    ]
+    let sizes = [
+      CGSize(width: 1280, height: 760), CGSize(width: 1280, height: 800),
+      CGSize(width: 1280, height: 1410), CGSize(width: 1728, height: 1082),
+    ]
+    for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
+      capture(
+        PeerConversationDialog(exchange: MockWorkspace.vesExchange, onClose: {})
+          .preferredColorScheme(scheme),
+        size: CGSize(width: 900, height: 700), named: "composition-peer-\(name)",
+        in: directory, appearance: scheme == .dark ? .darkAqua : .aqua)
+      for size in sizes {
+        let suffix = "\(Int(size.width))x\(Int(size.height))-\(name)"
+        for (state, left, right, extreme) in [
+          ("three", true, true, false), ("two", true, false, false),
+          ("no-sidebar", false, true, false), ("drag-limit", true, true, true),
+        ] {
+          let columns = Theme.Metric.columnWidths(
+            available: size.width,
+            sidebar: extreme ? Theme.Metric.sidebarMaxWidth : Theme.Metric.sidebarWidth,
+            inspector: extreme ? Theme.Metric.inspectorMaxWidth : Theme.Metric.inspectorWidth,
+            showsSidebar: left, showsInspector: right)
+          capture(
+            ThreeColumnShell(
+              availableWidth: size.width, showsSidebar: left, showsInspector: right,
+              sidebarWidth: columns.sidebar, inspectorWidth: columns.inspector
+            ) {
+              SidebarPanel(
+                sections: sections, selection: "b_layout", onSelect: { _ in }, unreadCount: 3,
+                productVersion: "0.0.0-dev-layout-review")
+            } conversation: {
+              ConversationColumn(
+                title: "中英文长标题 Layout review", face: face, entries: messages,
+                draft: .constant(""), onSend: {}, showsSidebar: left, showsInspector: right)
+            } inspector: {
+              InspectorColumn(
+                name: "中英文长标题 Layout review", subtitle: "Synthetic", tintIndex: 0,
+                pulls: [], tab: .constant(.detail), face: face)
+            }
+            .preferredColorScheme(scheme), size: size, named: "composition-\(state)-\(suffix)",
+            in: directory, appearance: scheme == .dark ? .darkAqua : .aqua)
+        }
+        let model = SettingsViewModel(botsSettings: fixture.settings, urlSession: fixture.session)
+        model.selection = .providers
+        let modal = Theme.Metric.settingsSize(in: size)
+        capture(
+          ZStack {
+            Theme.Palette.canvas.overlay(Theme.Palette.modalScrim)
+            SettingsView(model: model, devices: devices, expandsProviderDetails: ["typesafe"])
+              .defaultAppStorage(defaults)
+              .frame(width: modal.width, height: modal.height)
+              .clipShape(RoundedRectangle(cornerRadius: Theme.Dialog.settingsRadius))
+          }
+          .preferredColorScheme(scheme), size: size, named: "composition-settings-\(suffix)",
+          in: directory, appearance: scheme == .dark ? .darkAqua : .aqua)
+      }
     }
   }
 

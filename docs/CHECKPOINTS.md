@@ -1,5 +1,63 @@
 # 用户视角检查点
 
+## 2026-11-05 15:14 +08 — Phase 3 foreground review ready
+
+- Three bounded review rounds are closed. Final source/index guard: 91 cases;
+  targeted layout/palette/shell/Peer/inspector checks: 36 cases. Existing scrolling,
+  row-cost and copy-alignment checks: 10 cases, with thresholds unchanged. App/test
+  targets compile, root typecheck and check-only lint pass. The 42 composition
+  captures were regenerated after isolation/contrast repairs.
+- Old App 59460 and owned daemon 59554 exited before restart. Fresh App 38785 owns
+  daemon 38836 from `apps/bots`; CLI health passes (8 Bots, deviceAccess null).
+  The existing synthetic conversation is selected and Settings is open in front.
+- The requested 1280 × 760 AX resize was constrained by the existing native minimum
+  to an outer 1280 × 788 frame at (442,171). Its close control is 36 × 36 at (1502,237),
+  fully inside that frame. This is native content/titlebar accounting, not an increase
+  to the declared 760 content minimum or a claim that outer 760 was achieved.
+- Owner visual acceptance remains pending. No new GUI/keyboard campaign, full native
+  suite, browser/release gate, CLI model-turn acceptance, production auth/D1 or active
+  collection/device/secret operation was triggered for this presentation-only slice.
+  No push or release. The original no-op actions and all permission/data semantics
+  remain unchanged; individual-control polish is still phase 4.
+
+## 2026-11-05 15:07 +08 — Phase 3 review and capture repairs
+
+- 42 composition images cover four viewport sizes, light/dark, default/two-column/
+  hidden-sidebar/drag-limit states, settings and Peer dialogs. Selected samples show
+  header/close containment and bounded code/table overflow; they are synthetic
+  fixtures, not proof of actual drag/keyboard/native traffic-light behavior.
+- Review found selected-preview contrast and an implicit shared device-model/defaults
+  dependency in the new renderer. The latter is recorded honestly in Retrospective;
+  the path now injects the existing fake device control, a cleaned unique defaults
+  suite and defaultAppStorage. Images were regenerated; no helper/service operation
+  was found on the earlier provider-only path.
+- Selected/hovered previews and gray tags now use their readable secondary role.
+  The same white-on-ink mismatch was reproduced for unread pills/counts and corrected
+  to blue solid; dots remain ink. All thresholds remain unchanged.
+- 36 affected layout/palette/model cases and 91 ownership/index cases passed before
+  the last unread-role repair; the existing scroll/copy checks passed 10 cases,
+  scroll minimum 0.94 (<4) and row minimum 1.67 (<2.5). Final checks/review and a
+  foreground App restart remain. No production auth/D1, model turn, real credential
+  or device action, full GUI/keyboard campaign, push or release was exercised.
+
+## 2026-11-05 14:36 +08 — Phase 3 viewport composition
+
+- Phases 1/2 are owner-accepted. Reference review established 320/flexible/300
+  columns, a 560 pt center floor, and a 960 × 688 settings envelope clamped to the
+  actual host with 24 pt clearance. The prior default/settings bounds failed first;
+  the new viewport/visibility/extreme-width arithmetic checks pass.
+- The window now resolves effective widths without overwriting requested widths;
+  side panels no longer impose duplicate fixed widths. Resize maxima and Peer
+  overlay placement use effective column sizes. Settings keep their header/close
+  outside scrolling content and no inner minimum defeats the parent clamp.
+- A real NSHostingView sizing regression demonstrates the unbounded long user
+  bubble. The next broken hop is the shared bubble/gutter cap, followed by isolated
+  composition captures and review. Scroll-follow logic is unchanged.
+- Source guard and App/test-target compilation pass for the initial layout changes.
+  The foreground App still runs the accepted phase-2 build. No new collection,
+  production authentication/D1, model turn, credential/device operation or keyboard
+  campaign has been performed. No push/release is authorized.
+
 ## 2026-11-05 14:14 +08 — Phase 2 ready for owner review
 
 - Native review closed after correcting solid/ink role use in the actual filled

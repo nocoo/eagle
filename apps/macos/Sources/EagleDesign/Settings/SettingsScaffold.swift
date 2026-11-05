@@ -40,44 +40,45 @@ public struct SettingsRail: View {
   }
 
   public var body: some View {
-    VStack(alignment: .leading, spacing: Theme.Layout.detailGap) {
-      ForEach(SettingsSection.allCases) { section in
-        Button {
-          selection = section
-        } label: {
-          HStack(spacing: Theme.Layout.controlGap) {
-            Image(systemName: section.symbol)
-              .font(Theme.TypeScale.fieldLabel)
-              .foregroundStyle(Theme.Palette.textPrimary)
-              .frame(width: Theme.Layout.glyphSlot)
-            Text(section.rawValue)
-              .font(section == selection ? Theme.TypeScale.cardTitle : Theme.TypeScale.fieldLabel)
-              .foregroundStyle(Theme.Palette.textPrimary)
-            Spacer(minLength: 0)
+    ScrollView {
+      VStack(alignment: .leading, spacing: Theme.Layout.detailGap) {
+        ForEach(SettingsSection.allCases) { section in
+          Button {
+            selection = section
+          } label: {
+            HStack(spacing: Theme.Layout.controlGap) {
+              Image(systemName: section.symbol)
+                .font(Theme.TypeScale.fieldLabel)
+                .foregroundStyle(Theme.Palette.textPrimary)
+                .frame(width: Theme.Layout.glyphSlot)
+              Text(section.rawValue)
+                .font(section == selection ? Theme.TypeScale.cardTitle : Theme.TypeScale.fieldLabel)
+                .foregroundStyle(Theme.Palette.textPrimary)
+              Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Theme.Layout.sectionGap)
+            .frame(height: Theme.Form.navigationRowHeight)
+            .background(
+              RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
+                .fill(section == selection ? Theme.Palette.selection : .clear)
+            )
+            .overlay(
+              RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
+                .strokeBorder(
+                  section == selection ? Theme.Palette.line : .clear,
+                  lineWidth: Theme.Metric.hairline)
+            )
+            .contentShape(Rectangle())
           }
-          .padding(.horizontal, Theme.Layout.sectionGap)
-          .frame(height: Theme.Card.headerHeight)
-          .background(
-            RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
-              .fill(section == selection ? Theme.Palette.selection : .clear)
-          )
-          .overlay(
-            RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
-              .strokeBorder(
-                section == selection ? Theme.Palette.line : .clear,
-                lineWidth: Theme.Metric.hairline)
-          )
-          .contentShape(Rectangle())
+          .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
       }
-      Spacer(minLength: 0)
+      .padding(.horizontal, Theme.Layout.sectionGap)
+      .padding(.vertical, Theme.Layout.sectionInset)
     }
-    .padding(.horizontal, Theme.Layout.sectionGap)
-    .padding(.top, Theme.Layout.sectionInset)
+    .scrollIndicators(.never)
     .frame(width: Theme.Metric.settingsRailWidth)
     .frame(maxHeight: .infinity, alignment: .top)
-    // The rail keeps the main window's own surface: grey field, white card for the open tab.
     .background(Theme.Palette.canvas)
   }
 }
@@ -137,7 +138,7 @@ public struct SettingsScaffold<Content: View>: View {
         .scrollIndicators(.never)
       }
     }
-    .frame(minWidth: Theme.Dialog.settingsMinWidth, minHeight: Theme.Dialog.settingsMinHeight)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Theme.Palette.surface)
   }
 }

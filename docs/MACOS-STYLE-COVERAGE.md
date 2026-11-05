@@ -1,10 +1,10 @@
 # macOS style ownership coverage
 
-Status: phase-1 ownership consolidation accepted by the owner. Its source-discovery
-and enforcement boundaries remain in force during phase 2; this is not an arbitrary
-Swift type-inference proof. The initial value-preserving slices were `dcdc99f` and
-`d473f92`. The subsequent eight-family/grid changes are specified in
-`apps/macos/DESIGN.md` and await their own visual acceptance.
+Status: phases 1–2 are owner-accepted. Their source-discovery/enforcement boundaries
+remain in force during phase 3; this is not an arbitrary Swift type-inference proof.
+The initial value-preserving slices were `dcdc99f` and `d473f92`; the eight-family/grid
+work is `322ed24` and `bdca848`. Current composition is specified in
+`apps/macos/DESIGN.md` and awaits phase-3 visual acceptance.
 
 ## Covered surfaces
 
@@ -88,11 +88,11 @@ API requires a rule/test when introduced. It cannot certify contrast, visual pol
 keyboard behavior or correct product data. These limitations must not be presented as
 unmigrated pages or as a claim of exhaustive compiler semantic analysis.
 
-Phase 1 deliberately preserved values. Phase 2 now changes the centralized palette
-and common grid scale, including white/green contrast; that implementation/evidence is
-recorded separately in `apps/macos/DESIGN.md`. Fixed settings height, reference-led
-layout and per-control polish are still later work. Ownership coverage alone never
-establishes that a consumer selected the correct solid/ink role.
+Phase 1 deliberately preserved values; phase 2 changed the palette/shared grid.
+Phase 3 now clamps settings and side columns, caps reading width and applies neutral
+surfaces/paired Peer labels. Their current contracts are in `apps/macos/DESIGN.md`.
+Per-control polish remains later work. Ownership coverage alone never establishes
+correct solid/ink use, selected-state contrast or absence of clipping.
 
 No archived keyboard experiment is part of this acceptance. Build/static/ownership checks
 are recorded separately from execution of Swift/browser/native interaction suites.

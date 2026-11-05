@@ -93,7 +93,7 @@ public struct ToolCallRow: View {
     .accessibilityLabel("工具 \(row.name)")
   }
 
-  private var contentWidth: CGFloat { Theme.Chat.contentWidth }
+  private var contentWidth: CGFloat { Theme.Chat.bubbleMaxWidth }
 
   private var preview: String? {
     guard let output = row.output else { return nil }
@@ -187,7 +187,7 @@ public struct ToolRunRow: View {
     self.rows = rows
   }
 
-  private var contentWidth: CGFloat { Theme.Chat.contentWidth }
+  private var contentWidth: CGFloat { Theme.Chat.bubbleMaxWidth }
 
   private var running: ToolRow? { rows.last { $0.isRunning } }
   private var failures: Int { rows.filter(\.isError).count }

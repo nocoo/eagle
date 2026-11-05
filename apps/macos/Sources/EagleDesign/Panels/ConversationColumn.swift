@@ -145,6 +145,7 @@ public struct ConversationColumn: View {
       }
       .frame(height: Theme.Metric.waitingBandHeight)
       .padding(.horizontal, Theme.Metric.conversationInset)
+      .frame(maxWidth: Theme.Chat.laneMaxWidth)
       .animation(Theme.Motion.waiting, value: isWaiting)
 
       Composer(
@@ -158,6 +159,7 @@ public struct ConversationColumn: View {
       )
       .fixedSize(horizontal: false, vertical: true)
       .padding(.horizontal, Theme.Metric.conversationInset)
+      .frame(maxWidth: Theme.Chat.laneMaxWidth)
       .padding(.bottom, Theme.Metric.composerBottomInset)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -215,8 +217,9 @@ public struct ConversationColumn: View {
             }
             Theme.Palette.clear.frame(height: Theme.Metric.hairline).id("bottom")
           }
-          .frame(maxWidth: .infinity, alignment: .leading)
           .padding(.horizontal, Theme.Metric.conversationInset)
+          .frame(maxWidth: Theme.Chat.laneMaxWidth)
+          .frame(maxWidth: .infinity)
           // Clear of the top edge fade: the first row must not start under it.
           .padding(.top, Theme.Metric.edgeFadeHeight + Theme.Chat.transcriptTopClearance)
           .padding(.bottom, Theme.Chat.transcriptBottomInset)

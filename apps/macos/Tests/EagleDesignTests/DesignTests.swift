@@ -6,12 +6,59 @@ import Testing
 
 @Suite("Design tokens")
 struct ThemeTests {
-  @Test("shared spacing follows the grid while shell bounds remain fixed")
+  @Test("reference composition leaves room for reading and short-window settings")
+  func compositionDefaults() {
+    #expect(Theme.Metric.sidebarWidth == 320)
+    #expect(Theme.Metric.inspectorWidth == 300)
+    #expect(Theme.Metric.settingsWidth == 960)
+    #expect(Theme.Metric.settingsHeight <= 760 - 48)
+  }
+
+  @Test("viewport allocation protects reading width across visibility and drag extremes")
+  func viewportBounds() {
+    for available: CGFloat in [1280, 1728] {
+      for visibleSidebar in [false, true] {
+        for visibleInspector in [false, true] {
+          for desired in [(320.0, 300.0), (440.0, 400.0), (9999.0, 9999.0)] {
+            let widths = Theme.Metric.columnWidths(
+              available: available, sidebar: desired.0, inspector: desired.1,
+              showsSidebar: visibleSidebar, showsInspector: visibleInspector)
+            #expect(
+              available - widths.sidebar - widths.inspector >= Theme.Metric.conversationMinWidth)
+            #expect(
+              visibleSidebar ? widths.sidebar >= Theme.Metric.sidebarMinWidth : widths.sidebar == 0)
+            #expect(
+              visibleInspector
+                ? widths.inspector >= Theme.Metric.inspectorMinWidth : widths.inspector == 0)
+            #expect(widths.sidebar <= Theme.Metric.sidebarMaxWidth)
+            #expect(widths.inspector <= Theme.Metric.inspectorMaxWidth)
+          }
+        }
+      }
+    }
+  }
+
+  @Test("settings bounds respect the available host instead of an inner minimum")
+  func settingsBounds() {
+    for available in [
+      CGSize(width: 1280, height: 760), CGSize(width: 1280, height: 800),
+      CGSize(width: 1280, height: 1410), CGSize(width: 1728, height: 1082),
+      CGSize(width: 480, height: 400),
+    ] {
+      let size = Theme.Metric.settingsSize(in: available)
+      #expect(size.width <= available.width - Theme.Dialog.outerClearance * 2)
+      #expect(size.height <= available.height - Theme.Dialog.outerClearance * 2)
+      #expect(size.width <= 960)
+      #expect(size.height <= 700)
+    }
+  }
+
+  @Test("shared spacing maintains native window clearances")
   func metrics() {
     #expect(Theme.Metric.windowWidth == 1728)
     #expect(Theme.Metric.windowHeight == 1082)
-    #expect(Theme.Metric.sidebarWidth == 374)
-    #expect(Theme.Metric.inspectorWidth == 319)
+    #expect(Theme.Metric.sidebarWidth == 320)
+    #expect(Theme.Metric.inspectorWidth == 300)
     #expect(Theme.Metric.contentInset == 20)
     #expect(Theme.Metric.rowHeight == 60)
     #expect(Theme.Metric.avatarRow == 36)
@@ -45,7 +92,7 @@ struct ThemeTests {
     #expect(Theme.Inspector.nameMaxWidth == 220)
     #expect(Theme.Inspector.labelMaxWidth == 150)
     #expect(Theme.Inspector.busyAvatarRise == 3)
-    #expect(Theme.Inspector.tabsGap == 20)
+    #expect(Theme.Inspector.tabsGap == 12)
     #expect(Theme.Motion.hover == Animation.easeOut(duration: 0.12))
     #expect(Theme.Motion.sectionExpansion == Animation.easeInOut(duration: 0.18))
     #expect(Theme.Motion.columns == Animation.snappy(duration: 0.28))
@@ -61,10 +108,10 @@ struct ThemeTests {
 
   @Test("neutral and semantic roles use the current token definitions")
   func palette() {
-    expectColor(Theme.Palette.canvas, 0xF2F2F7)
-    expectColor(Theme.Palette.surface, 0xFFFFFF)
+    expectColor(Theme.Palette.canvas, 0xF3F3F3)
+    expectColor(Theme.Palette.surface, 0xFCFCFC)
     expectColor(Theme.Palette.card, 0xFFFFFF)
-    expectColor(Theme.Palette.line, 0xE4E4E9)
+    expectColor(Theme.Palette.line, 0xE3E3E3)
     expectColor(Theme.Palette.textPrimary, 0x141416)
     expectColor(Theme.Palette.textSecondary, 0x62626B)
     expectColor(Theme.Palette.textMuted, 0x6E6E76)

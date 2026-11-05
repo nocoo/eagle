@@ -8,12 +8,14 @@ public struct ThreeColumnShell<Sidebar: View, Conversation: View, Inspector: Vie
   private let inspector: Inspector
   private let showsSidebar: Bool
   private let showsInspector: Bool
+  private let availableWidth: CGFloat
   private let sidebarWidth: CGFloat
   private let inspectorWidth: CGFloat
   private let onResizeSidebar: (CGFloat) -> Void
   private let onResizeInspector: (CGFloat) -> Void
 
   public init(
+    availableWidth: CGFloat,
     showsSidebar: Bool = true,
     showsInspector: Bool = true,
     sidebarWidth: CGFloat = Theme.Metric.sidebarWidth,
@@ -26,6 +28,7 @@ public struct ThreeColumnShell<Sidebar: View, Conversation: View, Inspector: Vie
   ) {
     self.showsSidebar = showsSidebar
     self.showsInspector = showsInspector
+    self.availableWidth = availableWidth
     self.sidebarWidth = sidebarWidth
     self.inspectorWidth = inspectorWidth
     self.onResizeSidebar = onResizeSidebar
@@ -50,7 +53,10 @@ public struct ThreeColumnShell<Sidebar: View, Conversation: View, Inspector: Vie
             ResizeHandle(
               width: sidebarWidth,
               minimum: Theme.Metric.sidebarMinWidth,
-              maximum: Theme.Metric.sidebarMaxWidth,
+              maximum: min(
+                Theme.Metric.sidebarMaxWidth,
+                availableWidth - Theme.Metric.conversationMinWidth
+                  - (showsInspector ? inspectorWidth : 0)),
               onChange: onResizeSidebar
             )
             .offset(x: -Theme.Metric.resizeOverhang)
@@ -61,7 +67,10 @@ public struct ThreeColumnShell<Sidebar: View, Conversation: View, Inspector: Vie
             ResizeHandle(
               width: inspectorWidth,
               minimum: Theme.Metric.inspectorMinWidth,
-              maximum: Theme.Metric.inspectorMaxWidth,
+              maximum: min(
+                Theme.Metric.inspectorMaxWidth,
+                availableWidth - Theme.Metric.conversationMinWidth
+                  - (showsSidebar ? sidebarWidth : 0)),
               inverted: true,
               onChange: onResizeInspector
             )

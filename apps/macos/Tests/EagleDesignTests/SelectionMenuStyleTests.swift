@@ -51,7 +51,7 @@ struct SelectionMenuStyleTests {
     #expect(Theme.Form.fieldInset == 12)
     #expect(Theme.Form.fieldPlaceholderInset == 12)
     #expect(Theme.Form.textAreaMinHeight == 88)
-    #expect(Theme.Form.rowVerticalInset == 16)
+    #expect(Theme.Form.rowVerticalInset == 12)
     #expect(Theme.Palette.fieldFocus == Theme.Palette.accent)
   }
 }

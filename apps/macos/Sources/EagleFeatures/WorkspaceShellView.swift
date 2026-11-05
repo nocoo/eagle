@@ -119,20 +119,29 @@ public struct WorkspaceShellView: View {
   }
 
   public var body: some View {
+    GeometryReader { viewport in
+      workspace(in: viewport.size)
+    }
+  }
+
+  private func workspace(in available: CGSize) -> some View {
     let item = list.selectedItem
-    ZStack(alignment: .bottomLeading) {
+    let columns = Theme.Metric.columnWidths(
+      available: available.width, sidebar: layout.sidebarWidth, inspector: layout.inspectorWidth,
+      showsSidebar: layout.showsSidebar, showsInspector: showsInspector)
+    return ZStack(alignment: .bottomLeading) {
       ThreeColumnShell(
+        availableWidth: available.width,
         showsSidebar: layout.showsSidebar,
         showsInspector: showsInspector,
-        sidebarWidth: layout.sidebarWidth,
-        inspectorWidth: layout.inspectorWidth,
+        sidebarWidth: columns.sidebar,
+        inspectorWidth: columns.inspector,
         onResizeSidebar: { layout.setSidebarWidth($0) },
         onResizeInspector: { layout.setInspectorWidth($0) }
       ) {
         SidebarPanel(
           sections: sidebarSections,
           selection: list.selection,
-          width: layout.sidebarWidth,
           onSelect: { id in
             chrome.markRead(id)
             if bots.owns(id) {
@@ -244,7 +253,6 @@ public struct WorkspaceShellView: View {
           name: selectedIsBot ? bots.title : (selectedIsMock ? (item?.title ?? "示例") : "未选择"),
           subtitle: selectedIsBot ? "Bots" : (selectedIsMock ? (item?.tag ?? "示例") : ""),
           tintIndex: item?.tintIndex ?? 2,
-          width: layout.inspectorWidth,
           pulls: selectedIsBot ? bots.pullRows : (selectedIsMock ? inspector.pulls : []),
           tasks: selectedIsBot ? bots.tasks : [],
           usage: selectedIsBot ? bots.usage : [],
@@ -352,7 +360,7 @@ public struct WorkspaceShellView: View {
         .padding(
           .leading,
           layout.showsSidebar
-            ? layout.sidebarWidth + Theme.Metric.contentInset : Theme.Metric.contentInset
+            ? columns.sidebar + Theme.Metric.contentInset : Theme.Metric.contentInset
         )
         .padding(.trailing, Theme.Dialog.peerOverlayTrailing)
         .padding(.vertical, Theme.Dialog.peerOverlayVertical)
@@ -381,7 +389,7 @@ public struct WorkspaceShellView: View {
     .animation(Theme.Motion.modal, value: showsSettings)
     .overlay {
       if showsSettings {
-        settingsOverlay
+        settingsOverlay(size: Theme.Metric.settingsSize(in: available))
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: .eagleToggleSettings)) { _ in
@@ -391,7 +399,7 @@ public struct WorkspaceShellView: View {
 
   /// Centred settings card over a blurred, dimmed copy of the window. The traffic lights are
   /// hidden while it is open so the card owns the chrome.
-  private var settingsOverlay: some View {
+  private func settingsOverlay(size: CGSize) -> some View {
     ZStack {
       // The blur lives on the window itself (a few points); this layer only dims.
       Theme.Palette.modalScrim
@@ -401,7 +409,7 @@ public struct WorkspaceShellView: View {
       SettingsView(
         model: settings, onClose: { showsSettings = false }, daemon: daemon, devices: devices
       )
-      .frame(width: Theme.Metric.settingsWidth, height: Theme.Metric.settingsHeight)
+      .frame(width: size.width, height: size.height)
       .background(
         RoundedRectangle(cornerRadius: Theme.Dialog.settingsRadius, style: .continuous)
           .fill(Theme.Palette.surface)

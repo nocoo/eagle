@@ -25,6 +25,7 @@ public struct PeerConversationDialog: View {
             PeerMessageGroup(burst: burst)
           }
         }
+        .padding(.horizontal, Theme.Metric.peerDialogInset)
         .frame(maxWidth: Theme.Metric.peerDialogColumnWidth, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .center)
         // Clear of the pair chip: the first turn must not start under it.

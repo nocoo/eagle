@@ -6,10 +6,10 @@ import SwiftUI
 /// iPhone 5C candy palette; surfaces stay neutral so the colour pops.
 public enum Theme {
   public enum Palette {
-    public static let canvas = Color(light: 0xF2F2F7, dark: 0x1B1B1D)
-    public static let surface = Color(light: 0xFFFFFF, dark: 0x121214)
+    public static let canvas = Color(light: 0xF3F3F3, dark: 0x1B1B1D)
+    public static let surface = Color(light: 0xFCFCFC, dark: 0x121214)
     public static let card = Color(light: 0xFFFFFF, dark: 0x1F1F22)
-    public static let line = Color(light: 0xE4E4E9, dark: 0x333338)
+    public static let line = Color(light: 0xE3E3E3, dark: 0x333338)
     public static let textPrimary = Color(light: 0x141416, dark: 0xF5F5F7)
     public static let textSecondary = Color(light: 0x62626B, dark: 0xBDBDC6)
     public static let textMuted = Color(light: 0x6E6E76, dark: 0xAAAAB4)
@@ -30,6 +30,7 @@ public enum Theme {
     public static let accent = family(.blue).ink
     public static let fieldFocus = accent
     public static let inlineEditFocus = accent
+    public static let unreadFill = family(.blue).solid
     public static let unreadShadow = accent.opacity(0.28)
     public static let productFallback = family(.green).identity
     public static let disabledAction = textMuted.opacity(0.4)
@@ -41,7 +42,6 @@ public enum Theme {
     public static let hoveredControlBorder = line.opacity(1.4)
 
     public static func softTint(_ tint: Color) -> Color { tint.opacity(0.12) }
-    public static func peerBorder(_ tint: Color) -> Color { tint.opacity(0.34) }
     public static func activityShadow(_ tint: Color, active: Bool) -> Color {
       tint.opacity(active ? 0.1 : 0)
     }
@@ -53,10 +53,10 @@ public enum Theme {
     public static let infoFill = Color(light: 0xE4F4FD, dark: 0x10293C)
     public static let destructive = Color(light: 0xB4232D, dark: 0xFF8F89)
     public static let hover = Color(light: 0x000000, dark: 0xFFFFFF).opacity(0.06)
-    public static let selection = Color(light: 0xFFFFFF, dark: 0x2A2A2E)
+    public static let selection = Color(light: 0xE5E5E7, dark: 0x2A2A2E)
     /// An assistant's turn: one neutral card, a shade apart from the column behind it. Answers
     /// carry no tint, so the bot's colour stays on its face and its name.
-    public static let assistantFill = Color(light: 0xF3F3F6, dark: 0x1D1D20)
+    public static let assistantFill = Color(light: 0xF0F0F0, dark: 0x1D1D20)
 
     public enum BotTint: String, CaseIterable, Hashable, Sendable {
       case paper, clay, red, orange, yellow, green, teal, sky, blue, violet, pink, graphite
@@ -185,17 +185,18 @@ public enum Theme {
   }
 
   public enum Chat {
-    public static let userLeadingSpace: CGFloat = 96
-    public static let assistantTrailingSpace: CGFloat = 40
+    public static let userLeadingSpace: CGFloat = 64
+    public static let assistantTrailingSpace: CGFloat = 32
     public static let actionGap: CGFloat = 8
     public static let bubbleHorizontalInset: CGFloat = 16
     public static let userVerticalInset: CGFloat = 8
     public static let userRadius: CGFloat = 16
     public static let assistantVerticalInset: CGFloat = 12
     public static let assistantRadius: CGFloat = 20
-    public static let contentWidthReserve: CGFloat = 120
-    public static let contentWidth: CGFloat =
-      Metric.conversationMaxContentWidth - contentWidthReserve
+    public static let bubbleMaxWidth: CGFloat = 600
+    public static let copyGutterWidth: CGFloat = Metric.hitTarget + Layout.rowGap
+    public static let rowMaxWidth: CGFloat = bubbleMaxWidth + copyGutterWidth
+    public static let laneMaxWidth: CGFloat = 960
     public static let blockGap: CGFloat = 10
     public static let headingLineSpacing: CGFloat = 4
     public static let bodyLineSpacing: CGFloat = 4
@@ -217,7 +218,7 @@ public enum Theme {
     public static let placeholderTurn: Double = 82
     public static let placeholderRise: CGFloat = 5
     public static let placeholderPerspective: CGFloat = 0.35
-    public static let transcriptTopClearance: CGFloat = 10
+    public static let transcriptTopClearance: CGFloat = 8
     public static let transcriptBottomInset: CGFloat = 12
     public static let messageEntryScale: CGFloat = 0.985
   }
@@ -306,12 +307,11 @@ public enum Theme {
     public static let approvalMinHeight: CGFloat = 260
     public static let approvalContentHeight: CGFloat = 420
     public static let approvalWindowHeight: CGFloat = 620
-    public static let settingsMinWidth: CGFloat = 760
-    public static let settingsMinHeight: CGFloat = 560
+    public static let outerClearance: CGFloat = 24
     public static let settingsRadius: CGFloat = 18
     public static let settingsShadowRadius: CGFloat = 40
     public static let settingsShadowY: CGFloat = 18
-    public static let backdropBlur: CGFloat = 5
+    public static let backdropBlur: CGFloat = 2
     public static let peerShadowRadius: CGFloat = 34
     public static let peerShadowY: CGFloat = 16
     public static let peerOverlayTrailing: CGFloat = 46
@@ -374,8 +374,8 @@ public enum Theme {
     public static let identityGap: CGFloat = 8
     public static let nameGap: CGFloat = 4
     public static let labelGap: CGFloat = 4
-    public static let identityTopInset: CGFloat = 16
-    public static let identityBottomInset: CGFloat = 18
+    public static let identityTopInset: CGFloat = 8
+    public static let identityBottomInset: CGFloat = 12
     public static let busyAvatarRise: CGFloat = 3
     public static let nameInset: CGFloat = 8
     public static let nameHeight: CGFloat = 32
@@ -385,7 +385,7 @@ public enum Theme {
     public static let labelHeight: CGFloat = 24
     public static let labelRadius: CGFloat = 6
     public static let labelMaxWidth: CGFloat = 150
-    public static let tabsGap: CGFloat = 20
+    public static let tabsGap: CGFloat = 12
     public static let tabsBottomInset: CGFloat = 6
   }
 
@@ -430,6 +430,7 @@ public enum Theme {
   }
 
   public enum Form {
+    public static let navigationRowHeight: CGFloat = 32
     public static let controlGap: CGFloat = 6
     public static let controlInset: CGFloat = 14
     public static let compactControlInset: CGFloat = 12
@@ -446,7 +447,7 @@ public enum Theme {
     public static let headingDetailGap: CGFloat = 4
     public static let rowContentGap: CGFloat = 16
     public static let rowDetailGap: CGFloat = 4
-    public static let rowVerticalInset: CGFloat = 16
+    public static let rowVerticalInset: CGFloat = 12
     public static let noteBottomInset: CGFloat = 12
     public static let bannerGap: CGFloat = 8
     public static let bannerHeight: CGFloat = 40
@@ -462,12 +463,13 @@ public enum Theme {
     public static let windowMinWidth: CGFloat = 1280
     public static let windowMinHeight: CGFloat = 760
     public static let windowHeight: CGFloat = 1082
-    public static let sidebarWidth: CGFloat = 374
-    public static let sidebarMinWidth: CGFloat = 300
-    public static let sidebarMaxWidth: CGFloat = 560
-    public static let inspectorWidth: CGFloat = 319
+    public static let sidebarWidth: CGFloat = 320
+    public static let sidebarMinWidth: CGFloat = 280
+    public static let sidebarMaxWidth: CGFloat = 440
+    public static let inspectorWidth: CGFloat = 300
     public static let inspectorMinWidth: CGFloat = 280
-    public static let inspectorMaxWidth: CGFloat = 460
+    public static let inspectorMaxWidth: CGFloat = 400
+    public static let conversationMinWidth: CGFloat = 560
 
     /// Traffic lights: three 13.5 pt circles from x 16 with a 23 pt pitch, in the window's own
     /// top-left corner. The brand row clears them rather than moving them.
@@ -559,10 +561,10 @@ public enum Theme {
     /// stretch a line across the window.
     public static let peerDialogColumnWidth: CGFloat = 900
     public static let peerDialogRadius: CGFloat = 18
-    public static let peerDialogInset: CGFloat = 22
+    public static let peerDialogInset: CGFloat = 24
     public static let peerDialogFooter: CGFloat = 56
-    public static let conversationInset: CGFloat = 24
-    public static let turnGap: CGFloat = 24
+    public static let conversationInset: CGFloat = 16
+    public static let turnGap: CGFloat = 16
     public static let inspectorRowHeight: CGFloat = 40
     public static let composerHeight: CGFloat = 56
     public static let composerVerticalInset: CGFloat = (composerHeight - hitTarget) / 2
@@ -582,7 +584,7 @@ public enum Theme {
     /// The footer's product mark is a scaled app icon: it takes the macOS icon corner, not none.
     public static let productMarkRadius: CGFloat = 8
     public static let avatarProfile: CGFloat = 56
-    public static let avatarInspector: CGFloat = 76
+    public static let avatarInspector: CGFloat = 64
     public static let avatarNote: CGFloat = 18
     public static let iconButton: CGFloat = 32
     public static let spinnerSize: CGFloat = 12
@@ -601,19 +603,40 @@ public enum Theme {
     }
 
     public static let collapseDuration: CGFloat = 0.28
-    public static let conversationMaxContentWidth: CGFloat = 720
 
-    public static let settingsRailWidth: CGFloat = 190
+    public static let settingsRailWidth: CGFloat = 176
     public static let settingsCardRadius: CGFloat = 16
     public static let settingsCardInset: CGFloat = 20
-    public static let settingsContentInset: CGFloat = 28
+    public static let settingsContentInset: CGFloat = 24
     public static let accountMenuWidth: CGFloat = 226
     public static let accountRowHeight: CGFloat = 40
     public static let galleryInset: CGFloat = 24
     public static let galleryRailWidth: CGFloat = 208
     public static let galleryRadius: CGFloat = 18
-    public static let settingsWidth: CGFloat = 1120
-    public static let settingsHeight: CGFloat = 820
+    public static let settingsWidth: CGFloat = 960
+    public static let settingsHeight: CGFloat = 688
+
+    public static func columnWidths(
+      available: CGFloat, sidebar: CGFloat, inspector: CGFloat,
+      showsSidebar: Bool, showsInspector: Bool
+    ) -> (sidebar: CGFloat, inspector: CGFloat) {
+      let budget = max(0, available - conversationMinWidth)
+      let rightMinimum = showsInspector ? inspectorMinWidth : 0
+      let left =
+        showsSidebar
+        ? min(max(sidebar, sidebarMinWidth), min(sidebarMaxWidth, max(0, budget - rightMinimum)))
+        : 0
+      let right =
+        showsInspector
+        ? min(max(inspector, inspectorMinWidth), min(inspectorMaxWidth, max(0, budget - left))) : 0
+      return (left, right)
+    }
+
+    public static func settingsSize(in available: CGSize) -> CGSize {
+      CGSize(
+        width: min(settingsWidth, max(0, available.width - Dialog.outerClearance * 2)),
+        height: min(settingsHeight, max(0, available.height - Dialog.outerClearance * 2)))
+    }
   }
 
   public enum TypeScale {

@@ -24,9 +24,9 @@ struct IdentityPaletteTests {
         }
       }
       let peer = PeerRef(id: "b_fixture", title: "Name", face: .init(shape: .blob, tint: tint))
-      #expect(peer.labelTint == colors.ink)
+      #expect(peer.colors.ink == colors.ink)
     }
-    #expect(PeerRef(id: "unknown", title: "Unknown").labelTint == Theme.Palette.textSecondary)
+    #expect(PeerRef(id: "unknown", title: "Unknown").colors.ink == Theme.Palette.textSecondary)
   }
 
   @Test("primary spacing and shared control boxes follow the four-point grid")
@@ -69,6 +69,18 @@ struct IdentityPaletteTests {
       #expect(try contrast(settings.textColor, settings.fillColor, appearance) >= 4.5)
       #expect(try contrast(card.textColor, card.fillColor, appearance) >= 4.5)
       #expect(try contrast(composer.sendTint, Theme.Palette.card, appearance) >= 3)
+    }
+  }
+
+  @Test("selected previews and gray tags use readable text roles")
+  func selectedText() throws {
+    let row = ConversationRow(
+      item: SidebarItem(id: "fixture", title: "Name", subtitle: "Preview"), selected: true)
+    let tag = Tag("Project")
+    for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+      #expect(try contrast(row.subtitleColor, Theme.Palette.selection, appearance) >= 4.5)
+      #expect(try contrast(tag.textColor, Theme.Palette.line, appearance) >= 4.5)
+      #expect(try contrast(Theme.Palette.onColor, Theme.Palette.unreadFill, appearance) >= 4.5)
     }
   }
 

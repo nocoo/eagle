@@ -19,7 +19,7 @@ public struct UserBubble: View {
   }
 
   public var body: some View {
-    HStack {
+    HStack(spacing: Theme.Layout.rowGap) {
       Spacer(minLength: Theme.Chat.userLeadingSpace)
       HStack(alignment: .bottom, spacing: Theme.Layout.rowGap) {
         copyAction
@@ -34,6 +34,7 @@ public struct UserBubble: View {
         )
         .messageCopyAlignment()
       }
+      .frame(maxWidth: Theme.Chat.rowMaxWidth, alignment: .trailing)
       .onHover { hovering = $0 }
     }
   }
@@ -58,6 +59,7 @@ public struct UserBubble: View {
     Text(text)
       .font(Theme.TypeScale.bubble)
       .foregroundStyle(Theme.Palette.onColor)
+      .fixedSize(horizontal: false, vertical: true)
   }
 
   /// Selection machinery is built only for the row under the pointer: it costs more
