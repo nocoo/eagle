@@ -9,7 +9,8 @@ current appearance values and manual Bot choices. The next slice unifies native
 switches/checkboxes and their production/Gallery callers, with owner acceptance and
 AX/ownership tests. Menus, other standard controls and spacing/alpha/motion ownership
 remain unfinished; passing these checks is not completion of phase 1. An additional
-keyboard-driver experiment remains separate uncommitted work, not a passed gate.
+keyboard-driver experiment is archived locally outside the active source/test tree,
+not a passed gate; the committed composer acceptance remains unchanged.
 See `apps/macos/DESIGN.md` for the precise implemented contract. This document replaces the
 execution sequence and color-choice proposals in `MACOS-DESIGN-REVIEW.md`; that review
 remains the source of measured current-state/reference evidence.

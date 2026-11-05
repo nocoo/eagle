@@ -134,9 +134,11 @@ have been removed; the shared SpinnerArc remains.
 
 The owner accepted this control slice in the running Dev App. Native reference tests
 cover role/value/label/geometry, disabled controls and deferred Binding confirmation.
-The additional checkbox keyboard-driver experiment is not accepted evidence: it
-remains separate, uncommitted work, with its failures recorded in CHECKPOINTS.md.
-No system keyboard preference was changed and no new product key handler was added.
+The additional checkbox keyboard-driver experiment is not accepted evidence. Its
+complete patch/source and diagnostic logs are archived locally under the ignored
+`.local/experiments/boolean-keyboard-2026-11-05/`; failures remain in CHECKPOINTS.md.
+The committed composer acceptance is unchanged. No system keyboard preference was
+changed and no new product key handler was added.
 
 Colors identify Bots but never certify success or device freshness. Unknown remains
 unknown; stale observations must not look newly confirmed. Empty state, unavailable

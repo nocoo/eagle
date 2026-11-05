@@ -1,5 +1,20 @@
 # 用户视角检查点
 
+## 2026-11-05 10:15 +08 — Accepted slice committed; experiment archived
+
+- `6666578` commits the owner-accepted native switch/checkbox slice on main. Its
+  normal pre-commit guard, guard tests, Biome and strict Swift format passed.
+  No push or release was performed; the reviewed development App remains running.
+- The complete unaccepted keyboard-driver patch, new scenario source and historical
+  diagnostic logs are preserved under ignored
+  `.local/experiments/boolean-keyboard-2026-11-05/`, with restoration instructions.
+  Only those owned experimental edits were removed from the active tree, after
+  byte-preserving archival. No published test or gate was deleted or weakened;
+  the original committed composer driver is unchanged. The experiment remains red,
+  not reclassified as passed or as a completed phase-1B requirement.
+- No new UI test campaign or system-preference change was performed. Next work is
+  the previously reviewed selection-menu/form-style slice, using atomic commits.
+
 ## 2026-11-05 10:08 +08 — Owner accepted native boolean controls
 
 - The owner inspected the running Dev App/Gallery, accepted the control slice and
