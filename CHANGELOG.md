@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## macOS v0.19.0 — 2026-11-05
+
+- Consolidate native colors, typography, spacing and controls in EagleDesign, with
+  syntax-based ownership checks and staged-snapshot commit enforcement.
+- Introduce one accessible eight-hue light/dark palette. New Bots get a stable
+  ID-based default color at creation; the picker offers eight manual overrides,
+  while existing stored choices remain intact.
+- Refine the three-column workspace: 320/300 pt side defaults, a protected reading
+  area, bounded message/copy gutters, compact inspector and neutral Peer prose
+  with paired identity labels. Settings now fit a clamped 960 × 688 pt envelope
+  instead of overflowing supported short windows.
+- Use shared native switches, checkboxes, menu shells, fields and actions while
+  preserving asynchronous bindings, disabled conditions and accessibility labels.
+- Make local device operation independent of relay configuration; preserve remote
+  authorization, pairing recovery and uncertain-operation safety across relay changes.
+- Renew device session references on existing sockets, refresh child-turn remote
+  tools from local configuration, and allow long remote-command deadlines.
+- Keep website/Worker and npm Agent releases independent. This App includes the
+  current bundled runtime; no npm onboarding pin changes are part of this release.
+
 ## macOS v0.18.0 — 2026-11-04
 
 - Add a decision tool group and configurable providers for structured judgments.
