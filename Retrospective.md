@@ -1,5 +1,16 @@
 # Retrospective
 
+## 2026-11-05 — Record the App release's intermittent redaction gate
+
+The documentation-only `b7f19fe` push was rejected at root test 308/309: styled
+lowercase bearer redaction measured 15.87/74.08 ms, ratio 4.67, against the unchanged
+`max(60, small * 3)` limit. The preceding `7ea6137` full push and exact-SHA CI were
+green, and the intervening diff contains only changelog/README/checkpoint changes.
+An isolated diagnostic run passed all six performance cases, with 11.80/21.96 ms
+for the same styled inputs. Preserve this failed run and use one bounded normal
+hook retry; do not lower limits, focus/skip a gate or change the redactor merely
+to hide machine-load variance. Final push evidence is recorded separately.
+
 ## 2026-11-05 — Fixture isolation includes default view-model arguments
 
 The new composition renderer injected a stub settings HTTP session but omitted
