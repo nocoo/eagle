@@ -528,12 +528,14 @@ final class StubCatalog: CatalogPort {
     bots[index].groupId = groupId
     return bots[index]
   }
-  func create(title: String, label: String?, appearance: BotAppearance) async throws -> BotSummary {
+  func create(
+    title: String, label: String?, appearance: BotCreationAppearance
+  ) async throws -> BotSummary {
     let bot = BotSummary(
       id: "b_new",
       title: title,
       label: label,
-      appearance: appearance,
+      appearance: BotAppearance(shape: appearance.shape, tint: appearance.tint ?? .violet),
       createdAt: "x",
       updatedAt: "x",
       model: ModelRef(provider: "p", modelId: "m"),

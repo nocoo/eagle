@@ -16,17 +16,20 @@ public struct CardActionButton: View {
     self.action = action
   }
 
+  var fillColor: Color { enabled ? Theme.Palette.accentFill : Theme.Palette.disabledAction }
+  var textColor: Color { style == .filled ? Theme.Palette.onColor : Theme.Palette.textSecondary }
+
   public var body: some View {
     Button(action: action) {
       Text(title)
         .font(Theme.TypeScale.noteEmphasis)
-        .foregroundStyle(style == .filled ? Theme.Palette.onColor : Theme.Palette.textSecondary)
+        .foregroundStyle(textColor)
         .padding(.horizontal, style == .filled ? Theme.Card.actionInset : Theme.Layout.sectionGap)
         .frame(height: Theme.Form.actionHeight)
         .background {
           if style == .filled {
             RoundedRectangle(cornerRadius: Theme.Form.actionRadius, style: .continuous)
-              .fill(enabled ? Theme.Palette.accentStrong : Theme.Palette.disabledAction)
+              .fill(fillColor)
           }
         }
     }

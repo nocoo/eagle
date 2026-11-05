@@ -38,7 +38,7 @@ struct BotFaceEditorSheet: View {
         VStack(spacing: Theme.Layout.sectionInset) {
           BotFace(style: BotFace.Style(shape: shape, tint: tint), size: Theme.Picker.previewFace)
             .padding(.top, Theme.Metric.contentInset)
-          BotFacePicker(shape: $shape, tint: $tint)
+          BotFacePicker(shape: $shape, tint: tint) { tint = $0 }
         }
         .padding(.horizontal, Theme.Metric.settingsCardInset)
         .padding(.bottom, Theme.Layout.groupGap)

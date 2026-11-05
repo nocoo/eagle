@@ -302,20 +302,21 @@ public struct SettingsActionButton: View {
     self.prominent = prominent
   }
 
+  var fillColor: Color {
+    prominent ? Theme.Palette.accentFill : (hovering ? Theme.Palette.line : Theme.Palette.canvas)
+  }
+  var textColor: Color { prominent ? Theme.Palette.onColor : Theme.Palette.textPrimary }
+
   public var body: some View {
     Button(action: action) {
       Text(title)
         .font(Theme.TypeScale.noteEmphasis)
-        .foregroundStyle(prominent ? Theme.Palette.onColor : Theme.Palette.textPrimary)
+        .foregroundStyle(textColor)
         .padding(.horizontal, Theme.Form.controlInset)
         .frame(height: Theme.Form.actionHeight)
         .background(
           RoundedRectangle(cornerRadius: Theme.Form.actionRadius, style: .continuous)
-            .fill(
-              prominent
-                ? Theme.Palette.accentStrong
-                : (hovering ? Theme.Palette.line : Theme.Palette.canvas)
-            )
+            .fill(fillColor)
         )
         .overlay(
           RoundedRectangle(cornerRadius: Theme.Form.actionRadius, style: .continuous)

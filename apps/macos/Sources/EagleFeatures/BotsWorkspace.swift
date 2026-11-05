@@ -65,7 +65,6 @@ final class BotsWorkspaceViewModel: ObservableObject {
   let composer = BotsComposerViewModel()
   @Published private(set) var title = "Bots"
   @Published private(set) var subtitle = "正在连接…"
-  @Published private(set) var tintIndex = 0
   @Published private(set) var selectedId: String?
   @Published private(set) var error: String?
   @Published private(set) var canRecover = false
@@ -489,7 +488,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
 
   /// A created bot is real immediately: the daemon writes it, the catalog returns it, and
   /// the sidebar selects it.
-  func createBot(title: String, label: String?, appearance: BotAppearance) async {
+  func createBot(title: String, label: String?, appearance: BotCreationAppearance) async {
     guard let app else { return }
     await app.createBot(title: title, label: label, appearance: appearance)
     if let created = app.selection {
@@ -701,8 +700,6 @@ final class BotsWorkspaceViewModel: ObservableObject {
       return
     }
     if title != selected.title { title = selected.title }
-    let nextTint = presenter.tintIndex(for: selected)
-    if tintIndex != nextTint { tintIndex = nextTint }
     let nextSubtitle = presenter.subtitle(
       for: conversation.state, connection: conversation.connection)
     if subtitle != nextSubtitle { subtitle = nextSubtitle }
@@ -929,19 +926,11 @@ struct BotsPresenter {
     )
   }
 
-  /// A participant with the bot's own face and tint, so two bots never look alike.
   func peerRef(id: String, title: String, bots: [BotSummary]) -> PeerRef {
     guard let bot = bots.first(where: { $0.id == id }) else {
-      return PeerRef(
-        id: id, title: title, face: nil,
-        tintIndex: abs(id.hashValue) % Theme.Palette.avatarTints.count)
+      return PeerRef(id: id, title: title)
     }
-    return PeerRef(
-      id: id,
-      title: bot.title,
-      face: faceStyle(for: bot),
-      tintIndex: tintIndex(for: bot)
-    )
+    return PeerRef(id: id, title: bot.title, face: faceStyle(for: bot))
   }
 
   private struct ToolResult {
@@ -1303,10 +1292,6 @@ struct BotsPresenter {
     }
   }
 
-  func tintIndex(for bot: BotSummary) -> Int {
-    abs(bot.id.hashValue) % Theme.Palette.avatarTints.count
-  }
-
   /// `running` overrides the catalog for the open bot: its own socket knows the run before the
   /// daemon's catalog round trip does, so every surface showing that bot moves together.
   /// The bot's own note wins: it is written for this row. A bot that never wrote one falls
@@ -1318,7 +1303,6 @@ struct BotsPresenter {
       title: bot.title,
       subtitle: note.isEmpty ? preview : note,
       tag: bot.label,
-      tintIndex: tintIndex(for: bot),
       face: faceStyle(for: bot),
       busy: running ?? (bot.state == .running)
     )

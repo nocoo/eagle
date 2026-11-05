@@ -13,6 +13,7 @@ public struct ResizeHandle: View {
   private let inverted: Bool
   private let onChange: (CGFloat) -> Void
 
+  @Environment(\.pixelLength) private var pixelLength
   @State private var startX: CGFloat?
   @State private var startWidth: CGFloat?
 
@@ -31,10 +32,11 @@ public struct ResizeHandle: View {
   }
 
   public var body: some View {
-    ZStack {
+    ZStack(alignment: .leading) {
       Rectangle()
         .fill(Theme.Palette.line)
-        .frame(width: Theme.Metric.hairline)
+        .frame(width: pixelLength)
+        .offset(x: Theme.Metric.resizeLineInset(pixelLength: pixelLength, inverted: inverted))
       Theme.Palette.clear
         .contentShape(Rectangle())
         .background(CursorRect(cursor: .resizeLeftRight))

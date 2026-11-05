@@ -93,12 +93,27 @@ final class CatalogHTTPClientTests: XCTestCase {
     }
     let loaded = try await client.load()
     XCTAssertEqual(loaded.bots.map(\.id), ["b_1"])
-    let created = try await client.create(title: "二", label: nil, appearance: .standard)
+    let created = try await client.create(title: "二", label: nil, appearance: .init())
     XCTAssertEqual(created.id, "b_2")
     let renamed = try await client.rename(id: "b_1", title: "改")
     XCTAssertEqual(renamed.title, "改")
     try await client.delete(id: "b_1")
     XCTAssertEqual(StubProtocol.lastAuthorization, "Bearer test-token-0123456789")
+  }
+
+  func testCreateOmitsDefaultTintAndSendsManualOverride() async throws {
+    var faces: [[String: String]] = []
+    StubProtocol.handler = { request in
+      let data = try XCTUnwrap(bodyData(request))
+      let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+      faces.append(try XCTUnwrap(body["appearance"] as? [String: String]))
+      return (201, Data("{\"bot\":\(self.bot("b_1", "fixture"))}".utf8))
+    }
+    _ = try await client.create(title: "Default", label: nil, appearance: .init())
+    _ = try await client.create(
+      title: "Manual", label: nil, appearance: .init(shape: .star, tint: .pink))
+    XCTAssertEqual(faces[0], ["shape": "blob"])
+    XCTAssertEqual(faces[1], ["shape": "star", "tint": "pink"])
   }
 
   func testUpdateSendsOnlyTheSpecifiedBotFields() async throws {

@@ -84,7 +84,7 @@ public protocol CatalogPort: AnyObject {
   func create(
     title: String,
     label: String?,
-    appearance: BotAppearance
+    appearance: BotCreationAppearance
   ) async throws -> BotSummary
   /// Edits a bot: a nil field is left alone; an empty label clears the stored one.
   func update(

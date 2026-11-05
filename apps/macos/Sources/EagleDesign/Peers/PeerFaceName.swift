@@ -32,7 +32,7 @@ public struct PeerFaceName: View {
   }
 }
 
-/// The bot's own face, or a tinted initial when the exchange did not carry one.
+/// Unknown appearances stay neutral rather than inventing a manual choice.
 public struct PeerFace: View {
   private let peer: PeerRef
   private let size: CGFloat
@@ -49,7 +49,7 @@ public struct PeerFace: View {
       } else {
         Avatar(
           initial: String(peer.title.prefix(1)),
-          tint: Theme.Palette.avatarTint(peer.tintIndex),
+          tint: Theme.Palette.neutralFace,
           size: size,
           shape: .blob
         )

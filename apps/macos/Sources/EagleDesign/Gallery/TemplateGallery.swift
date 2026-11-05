@@ -11,6 +11,7 @@ public struct TemplateGallery: View {
   @State private var toggleTwo = true
   @State private var draft = ""
   @State private var draftSteerable = ""
+  @State private var gridField = "共享前导线与控件高度"
   @State private var previewRunning = true
   @State private var previewInspector = false
   private let onShowSettings: () -> Void
@@ -147,7 +148,77 @@ public struct TemplateGallery: View {
   }
 
   private var paletteSection: some View {
-    GalleryCard(title: "配色") {
+    VStack(alignment: .leading, spacing: Theme.Layout.pageInset) {
+      GalleryCard(title: "八色身份 · light / dark 同一色相") {
+        VStack(spacing: Theme.Layout.rowGap) {
+          HStack(spacing: Theme.Layout.rowGap) {
+            Text("身份").frame(width: Theme.Gallery.identityLabelWidth, alignment: .leading)
+            ForEach(["糖果原色", "深底白字", "浅底深字", "彩色文字"], id: \.self) { role in
+              Text(role).frame(maxWidth: .infinity)
+            }
+          }
+          .font(Theme.TypeScale.note)
+          .foregroundStyle(Theme.Palette.textSecondary)
+          ForEach(Theme.Palette.BotTint.selectable, id: \.self) { tint in
+            let colors = Theme.Palette.family(tint)
+            HStack(spacing: Theme.Layout.rowGap) {
+              Text(tint.rawValue).font(Theme.TypeScale.note)
+                .frame(width: Theme.Gallery.identityLabelWidth, alignment: .leading)
+              paletteSample("Aa", background: colors.identity, foreground: Theme.Palette.darkInk)
+              paletteSample("Aa 白字", background: colors.solid, foreground: colors.onSolid)
+              paletteSample("Aa 深字", background: colors.soft, foreground: colors.onSoft)
+              paletteSample("Aa 色字", background: Theme.Palette.card, foreground: colors.ink)
+            }
+          }
+          Text("切换右上角外观预览。原色用于身份标记；正文使用配对色，不把颜色当作状态。")
+            .font(Theme.TypeScale.note).foregroundStyle(Theme.Palette.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+      GalleryCard(title: "4 pt 主栅格 · 2 pt 紧凑细分") {
+        VStack(alignment: .leading, spacing: Theme.Layout.sectionInset) {
+          HStack(alignment: .top, spacing: Theme.Layout.sectionInset) {
+            ForEach(
+              [
+                Theme.Layout.detailGap, Theme.Layout.rowGap, Theme.Layout.sectionGap,
+                Theme.Layout.sectionInset, Theme.Layout.pageInset, Theme.Layout.pageBottomInset,
+              ], id: \.self
+            ) { gap in
+              VStack(alignment: .leading, spacing: Theme.Layout.detailGap) {
+                Text("\(Int(gap)) pt").font(Theme.TypeScale.note)
+                RoundedRectangle(cornerRadius: Theme.Layout.badgeRadius)
+                  .fill(Theme.Palette.family(Theme.Palette.BotTint.blue).identity)
+                  .frame(width: gap, height: Theme.Form.actionHeight)
+              }
+              .frame(maxWidth: .infinity, alignment: .leading)
+            }
+          }
+          VStack(spacing: 0) {
+            SettingsSectionRow("字段", detail: "36 pt 高 · 12 pt 内容边距") {
+              SettingsTextField("输入样本", text: $gridField)
+            }
+            Divider().overlay(Theme.Palette.line)
+            SettingsSectionRow("动作", detail: "32 pt 高 · 相同前导线") {
+              SettingsActionButton("动作样本", prominent: true) {}
+                .frame(width: Theme.Form.fieldWidth, alignment: .leading)
+            }
+          }
+        }
+      }
+      neutralPalette
+    }
+  }
+
+  private func paletteSample(_ label: String, background: Color, foreground: Color) -> some View {
+    Text(label).font(Theme.TypeScale.noteEmphasis)
+      .foregroundStyle(foreground)
+      .frame(maxWidth: .infinity)
+      .frame(height: Theme.Form.fieldHeight)
+      .background(background, in: RoundedRectangle(cornerRadius: Theme.Metric.controlRadius))
+  }
+
+  private var neutralPalette: some View {
+    GalleryCard(title: "中性色与语义角色") {
       LazyVGrid(
         columns: Array(
           repeating: GridItem(.flexible(), spacing: Theme.Layout.sectionGap),
@@ -226,7 +297,8 @@ public struct TemplateGallery: View {
             initial: "监", tint: Theme.Palette.avatarTint(1), size: Theme.Metric.avatarProfile,
             badge: Theme.Palette.avatarTint(3))
           Avatar(
-            initial: "G", tint: Theme.Palette.accentStrong, size: Theme.Metric.avatarProfile,
+            initial: "G", tint: Theme.Palette.family(Theme.Palette.BotTint.green).identity,
+            size: Theme.Metric.avatarProfile,
             shape: .blob)
           ForEach(Array(Theme.Palette.avatarTints.enumerated()), id: \.offset) { index, tint in
             Avatar(initial: "依", tint: tint)

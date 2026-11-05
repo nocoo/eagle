@@ -6,10 +6,11 @@ library, private font asset or runtime theme generator is introduced.
 
 ## Status and source of truth
 
-The phase-1 implementation now covers chat/Markdown/composer, tool/question/password
-cards, peers, dialogs, sidebars/inspectors, settings/page composition, Gallery and
-product window dimensions. **Owner review is pending.** Existing values are retained;
-this is not the eight-color, grid or reference-layout redesign.
+Phase 1 was accepted by the owner. Its source ownership covers chat/Markdown/composer,
+all cards, peers, dialogs, panels, settings/page composition, Gallery and product
+windows. Phase 2 implements the eight-family palette, creation-time hash defaults,
+manual selection and shared grid scale below. **Phase-2 owner review is pending.**
+Reference-led page rearrangement and individual-control polish have not started.
 
 - `Sources/EagleDesign/Theme.swift` is the authoritative definition owner.
 - [Style coverage](../../docs/MACOS-STYLE-COVERAGE.md) lists covered surfaces, exact
@@ -98,18 +99,53 @@ prove rejection despite unstaged fixes/checker changes, renamed inputs, missing 
 and directory-link redirection. Other repository hooks retain their declared behavior;
 this guard is not a whole-repository quality certification.
 
-## Preserved baseline and behavior
+## Eight-family palette and identity
 
-Current shell defaults remain 374 pt sidebar / 319 pt inspector, 58 pt list rows with
-34 pt faces, 15 pt body text, 54 pt composer and a reserved 32 pt waiting band. The
-resize hit region remains 11 pt with `(resizeHitWidth - hairline) / 2` overhang (5 pt).
-Settings remain fixed at 1120 × 820 until the layout phase; the known small-window
-clipping is not fixed by relocating those values.
+The fixed selectable order is red, orange, yellow, green, teal, blue, violet, pink.
+One cached table supplies identity, solid/onSolid, soft/onSoft and ink roles in light
+and dark. OnSolid stays white and onSoft stays near-black even in dark mode. Identity
+fills use dark glyphs; colored labels use ink, not the bright face fill. All eight
+normal-text pairs and ink on canvas/surface/card are checked at 4.5:1 using resolved
+sRGB values. Focus outlines are opaque and checked at 3:1. User-origin text's white
+alpha is 0.9 and checked after compositing on the actual green bubble background.
+Semantic status roles remain separate from identity; a red Bot is not an error.
 
-The current light green user-bubble fill is still `#2FB457`; white text on it is only
-2.70:1. The next palette phase must test all declared foreground/background pairs and
-both appearances without lowering thresholds. Twelve saved manual Bot choices and the
-eight indexed tints are unchanged; stable hash assignment is still a later decision.
+The daemon hashes `SHA256(UTF8("bot:" + id))[0] % 8` only when creating a Bot without
+an explicit tint, then stores the complete appearance in the initial catalog write.
+The client never guesses defaults from names, applies Swift hashValue, rehashes saved
+colors or stores auto/manual metadata. Creation alone may omit tint; update stays
+complete. A neutral creation preview does not pretend to know the unallocated ID.
+Existing choices survive shape-only editing. Unknown peers stay neutral.
+
+Protocol v1 retains its twelve legal names. The picker offers only the eight canonical
+names; clay renders the orange family, sky the blue family, paper a light neutral and
+graphite a strong neutral with white eyes. These are mappings into the same table and
+neutral ramp, not old independent paints or storage normalization. Deploy/restart the
+updated App and daemon together before shape-only creation; never retry an old daemon's
+refusal with green. Details and fixed vectors live in `docs/bots/PROTOCOL.md`.
+
+The Gallery's color page is the review matrix, with its existing light/dark switch.
+Pale role samples are explicit opaque pairs; applying those pale surfaces to additional
+rich-text/page contexts belongs to phase 3, not an implicit inversion of the pair.
+
+## Grid scale and preserved boundaries
+
+Common spacing and control boxes use a 4 pt primary grid with 2 pt compact subdivisions.
+Rows are 60 pt with 36 pt faces; header buttons are 36 pt; fields are 36 pt with 12 pt
+insets; actions are 32 pt; composer/footer are 56 pt. Body typography stays 15 pt and
+the waiting band stays 32 pt. The Gallery includes gap specimens and actual shared
+field/action wrappers aligned by SettingsSectionRow.
+
+Explicit non-grid boundaries: native traffic-light measurements/nudges, TextEditor's
+intrinsic-inset correction, font/glyph metrics, vector proportions, shadow/motion
+recipes and semantic stroke widths are not padding-grid values. The physical resize
+line uses SwiftUI pixelLength (1 pt at 1×, 0.5 pt at 2×) and aligns its inner edge without
+shrinking the existing 11 pt drag hit region or changing drag/clamp behavior. Card/focus
+outlines retain their semantic widths, distinct from physical-pixel separators.
+
+Shell defaults remain 374 pt sidebar / 319 pt inspector and the existing window bounds;
+phase 2 does not recompose the three columns. Settings remain fixed at 1120 × 820 until
+the layout phase, so the known small-window clipping is still unresolved.
 
 Do not change the secret minimum length/TTLs, asynchronous confirmation, skip/replay
 behavior, device/remote permission conditions, freshness provenance or unknown states

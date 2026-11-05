@@ -46,7 +46,7 @@ public enum Skill {
       \(binaryName) whoami
       \(binaryName) bots list [--group G|-] [--json]
       \(binaryName) bots show <bot>
-      \(binaryName) bots create --title T [--label L] [--group G] [--shape S --tint C]
+      \(binaryName) bots create --title T [--label L] [--group G] [--shape S [--tint C]]
       \(binaryName) bots update <bot> [--title T] [--label L] [--group G|-] [--model M] [--thinking LEVEL]
       \(binaryName) bots move <bot> --group G|-
       \(binaryName) bots delete <bot> --yes

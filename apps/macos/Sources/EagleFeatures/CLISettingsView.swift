@@ -50,7 +50,7 @@ public struct CLISettingsView: View {
               if model.busy { SpinnerArc(size: Theme.Metric.spinnerSize) }
               SwitchToggle(isOn: installBinding, label: "启用本机 CLI")
                 .labelsHidden()
-                .tint(Theme.Palette.accentStrong)
+                .tint(Theme.Palette.accentFill)
                 .disabled(model.busy || (!model.installed && !model.canInstall))
                 .accessibilityIdentifier("cli.switch")
                 .accessibilityLabel("启用本机 CLI")
@@ -179,7 +179,7 @@ public struct CLISettingsView: View {
       HStack(spacing: Theme.Layout.sectionInset) {
         ForEach(["read", "write", "admin"], id: \.self) { scope in
           SwitchToggle(isOn: scopeBinding(scope), label: scope)
-            .tint(Theme.Palette.accentStrong)
+            .tint(Theme.Palette.accentFill)
             .font(Theme.TypeScale.note)
             .accessibilityIdentifier("cli.scope.\(scope)")
         }

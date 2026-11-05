@@ -1,9 +1,10 @@
 # macOS style ownership coverage
 
-Status: remaining-surface consolidation implemented; owner visual review pending.
-This ledger describes the current source, not a new color/grid redesign or an arbitrary
-Swift type-inference proof. The first chat/card slice is `dcdc99f`; subsequent changes
-complete the surfaces below without intentionally changing values or callbacks.
+Status: phase-1 ownership consolidation accepted by the owner. Its source-discovery
+and enforcement boundaries remain in force during phase 2; this is not an arbitrary
+Swift type-inference proof. The initial value-preserving slices were `dcdc99f` and
+`d473f92`. The subsequent eight-family/grid changes are specified in
+`apps/macos/DESIGN.md` and await their own visual acceptance.
 
 ## Covered surfaces
 
@@ -16,7 +17,7 @@ complete the surfaces below without intentionally changing values or callbacks.
 | Peer UI and dialogs | Central soft-tint/border recipes, chip geometry, shadow geometry and dialog insets; existing peer identity and history grouping remain unchanged. |
 | Sidebar / inspector / shell | Existing Theme.Sidebar/Inspector/Metric and motion; remaining section/device/empty-state details also use tokens. No changed freshness, task or device-policy semantics. |
 | Settings and page composition | Theme.Form/Page/Layout/Dialog; page spacing, row composition, field widths, usage chart dimensions, badge geometry and overlays. Main feature views no longer recreate plain/native action or text-entry primitives. |
-| Creation and profile editing | CreationTextField and native ActionControl variants preserve prompt/font/height, focus/submit and keyboard shortcuts. The pure BotFacePicker is now in EagleDesign; BotsCore persistence conversion stays in EagleFeatures. |
+| Creation and profile editing | CreationTextField and native ActionControl variants own prompt/font/height while retaining focus/submit and keyboard shortcuts. The pure BotFacePicker is now in EagleDesign; BotsCore persistence conversion stays in EagleFeatures. |
 | Native window bridges | App minimum window size, gallery window and approval window dimensions use tokens. Platform cursor/traffic-light coordination remains native. |
 | Gallery / snapshot UI | Gallery framing, cards, swatches, selection paint and layout use tokens. SnapshotRenderer's View padding uses the same tokens; capture viewport matrices remain fixture inputs. |
 
@@ -64,8 +65,8 @@ These are not postponed UI styles:
 - Interaction-fixture coordinates, event codes and deadlines; snapshot viewport matrices
   and scripted fixture data. Their actual View styling remains scanned.
 
-An independent SwiftSyntax argument inventory found **68 remaining nonzero numeric
-samples** in its visual/default-parameter catalog, confined to five files:
+The phase-1 independent SwiftSyntax argument inventory recorded **68 remaining nonzero
+numeric samples** in its visual/default-parameter catalog, confined to five files:
 
 | File | Classification |
 | --- | --- |
@@ -87,10 +88,11 @@ API requires a rule/test when introduced. It cannot certify contrast, visual pol
 keyboard behavior or correct product data. These limitations must not be presented as
 unmigrated pages or as a claim of exhaustive compiler semantic analysis.
 
-Values are deliberately preserved. Existing green/white contrast, fixed settings
-height and other design findings are not fixed by moving their definitions. The eight-color
-identity family, stable hashing, accessible foreground/background pairs and grid tuning
-remain phase 2; reference-led layout and per-control polish follow afterward.
+Phase 1 deliberately preserved values. Phase 2 now changes the centralized palette
+and common grid scale, including white/green contrast; that implementation/evidence is
+recorded separately in `apps/macos/DESIGN.md`. Fixed settings height, reference-led
+layout and per-control polish are still later work. Ownership coverage alone never
+establishes that a consumer selected the correct solid/ink role.
 
 No archived keyboard experiment is part of this acceptance. Build/static/ownership checks
 are recorded separately from execution of Swift/browser/native interaction suites.

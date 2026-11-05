@@ -88,7 +88,7 @@ come from the daemon; a bot may also be named by its exact title when that title
 | `eagle whoami` | read | `GET /v1/clients/me`: the credential name and its scopes |
 | `eagle bots list` | read | The catalog with id, title, label, group, face, state |
 | `eagle bots show <bot>` | read | One summary, plus its group title |
-| `eagle bots create --title T [--label L] [--shape S --tint C] [--group G]` | write | `POST /v1/bots` |
+| `eagle bots create --title T [--label L] [--shape S [--tint C]] [--group G]` | write | `POST /v1/bots` |
 | `eagle bots update <bot> [--title] [--label] [--shape --tint] [--group] [--model] [--thinking]` | write | `PATCH /v1/bots/:id`; `--group -` and `--label ""` clear their field |
 | `eagle bots move <bot> --group G` | write | The one-field form of `update --group` |
 | `eagle bots delete <bot> --yes` | admin | `DELETE /v1/bots/:id` |
@@ -193,7 +193,7 @@ eagle health
 eagle whoami
 eagle bots list [--group G|-] [--json]
 eagle bots show <bot>
-eagle bots create --title T [--label L] [--group G] [--shape S --tint C]
+eagle bots create --title T [--label L] [--group G] [--shape S [--tint C]]
 eagle bots update <bot> [--title T] [--label L] [--group G|-] [--model M] [--thinking LEVEL]
 eagle bots move <bot> --group G|-
 eagle bots delete <bot> --yes

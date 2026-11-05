@@ -79,25 +79,25 @@ public struct SettingsView: View {
       SettingsSectionRow("登录时自动启动", detail: "让 Eagle 在后台保持机器在线") {
         SwitchToggle(isOn: $model.launchAtLogin, label: "登录时自动启动")
           .labelsHidden()
-          .tint(Theme.Palette.accentStrong)
+          .tint(Theme.Palette.accentFill)
       }
       Divider().overlay(Theme.Palette.line)
       SettingsSectionRow("显示未聚焦的 Space", detail: "侧栏同时列出所有 Herdr 工作区") {
         SwitchToggle(isOn: $model.showUnfocusedSpaces, label: "显示未聚焦的 Space")
           .labelsHidden()
-          .tint(Theme.Palette.accentStrong)
+          .tint(Theme.Palette.accentFill)
       }
       Divider().overlay(Theme.Palette.line)
       SettingsSectionRow("加载 Mock 数据", detail: "在侧栏显示示例分组与示例对话") {
         SwitchToggle(isOn: $loadMockData, label: "加载 Mock 数据")
           .labelsHidden()
-          .tint(Theme.Palette.accentStrong)
+          .tint(Theme.Palette.accentFill)
       }
       Divider().overlay(Theme.Palette.line)
       SettingsSectionRow("隐藏工具调用", detail: "对话里不显示工具调用和结果") {
         SwitchToggle(isOn: $hideToolCalls, label: "隐藏工具调用")
           .labelsHidden()
-          .tint(Theme.Palette.accentStrong)
+          .tint(Theme.Palette.accentFill)
       }
       Divider().overlay(Theme.Palette.line)
       SettingsSectionRow("外观", detail: "浅色、深色或跟随系统") {
@@ -251,7 +251,7 @@ public struct SettingsView: View {
           label: "启动 App 时自动运行"
         )
         .labelsHidden()
-        .tint(Theme.Palette.accentStrong)
+        .tint(Theme.Palette.accentFill)
       }
       if case .failed(let message) = daemon.status {
         Divider().overlay(Theme.Palette.line)
@@ -282,7 +282,7 @@ public struct SettingsView: View {
   private func daemonStatusTint(_ daemon: BotsDaemonSupervisor) -> Color {
     switch daemon.status {
     case .stopped: return Theme.Palette.textMuted
-    case .starting: return Theme.Palette.avatarTint(3)
+    case .starting: return Theme.Palette.warning
     case .running: return Theme.Palette.accentStrong
     case .failed: return Theme.Palette.destructive
     }
@@ -307,7 +307,7 @@ public struct SettingsView: View {
           isOn: toolGroupBinding(SettingsViewModel.personaToolGroup), label: "Core Prompt"
         )
         .labelsHidden()
-        .tint(Theme.Palette.accentStrong)
+        .tint(Theme.Palette.accentFill)
       }
       SettingsTextArea(
         "例如：你是一个务实、友好的 agent。先说结论，再给依据。",
@@ -330,7 +330,7 @@ public struct SettingsView: View {
           isOn: toolGroupBinding(SettingsViewModel.machineToolGroup), label: "Core Machine Prompt"
         )
         .labelsHidden()
-        .tint(Theme.Palette.accentStrong)
+        .tint(Theme.Palette.accentFill)
       }
       machinePromptPreview
       if let message = model.gatewayMessage {
@@ -447,7 +447,7 @@ public struct SettingsView: View {
         Spacer(minLength: 0)
         SwitchToggle(isOn: alwaysOn ? .constant(true) : toolGroupBinding(group), label: title)
           .labelsHidden()
-          .tint(Theme.Palette.accentStrong)
+          .tint(Theme.Palette.accentFill)
           .disabled(alwaysOn)
       }
       .padding(.vertical, Theme.Layout.sectionInset)

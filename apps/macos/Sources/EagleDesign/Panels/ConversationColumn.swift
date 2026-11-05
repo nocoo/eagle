@@ -79,7 +79,7 @@ public struct ConversationColumn: View {
 
   public init(
     title: String,
-    tintIndex: Int,
+    tintIndex: Int = 0,
     face: BotFace.Style? = nil,
     entries: [TranscriptEntry],
     showsToolCalls: Bool = true,

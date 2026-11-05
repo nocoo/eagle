@@ -62,7 +62,7 @@ public struct DeviceSettingsView: View {
             .disabled(model.controlsBusy)
             SwitchToggle(isOn: serviceBinding, label: "设备服务")
               .labelsHidden()
-              .tint(Theme.Palette.accentStrong)
+              .tint(Theme.Palette.accentFill)
               .disabled(!model.canToggleService)
               .accessibilityIdentifier("devices.service")
               .accessibilityLabel("设备服务")

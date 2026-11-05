@@ -7,13 +7,11 @@ public struct PeerRef: Identifiable, Hashable, Sendable {
   public let title: String
   /// The bot's own face; nil falls back to a tinted initial.
   public let face: BotFace.Style?
-  public let tintIndex: Int
 
-  public init(id: String, title: String, face: BotFace.Style? = nil, tintIndex: Int = 0) {
+  public init(id: String, title: String, face: BotFace.Style? = nil) {
     self.id = id
     self.title = title
     self.face = face
-    self.tintIndex = tintIndex
   }
 }
 
@@ -130,6 +128,6 @@ public struct PeerExchange: Identifiable, Hashable, Sendable {
   }
 
   private func sender(of senderId: String) -> PeerRef {
-    participant(senderId) ?? PeerRef(id: senderId, title: senderId, face: nil, tintIndex: 0)
+    participant(senderId) ?? PeerRef(id: senderId, title: senderId)
   }
 }

@@ -259,7 +259,9 @@ public struct Commands: Sendable {
     var body: JSONObject = ["title": try arguments.required("title")]
     if let label = arguments.value("label") { body["label"] = label }
     if let group = arguments.value("group") { body["groupId"] = group }
-    if let appearance = try appearance(arguments) { body["appearance"] = appearance }
+    if let appearance = try appearance(arguments, creating: true) {
+      body["appearance"] = appearance
+    }
     let answer = try await client.request("POST", "v1/bots", body: body)
     guard let bot = answer["bot"] as? JSONObject else {
       throw CLIError.refused(kind: "invalid_response", message: "the daemon created no bot")
@@ -286,7 +288,9 @@ public struct Commands: Sendable {
     if let group = arguments.value("group") {
       patch["groupId"] = group == "-" ? NSNull() : group
     }
-    if let appearance = try appearance(arguments) { patch["appearance"] = appearance }
+    if let appearance = try appearance(arguments, creating: false) {
+      patch["appearance"] = appearance
+    }
     guard !patch.isEmpty else { throw CLIError.usage("nothing to update") }
     let id = bot["id"] as? String ?? name
     let answer = try await client.request("PATCH", "v1/bots/\(id)", body: patch)
@@ -326,12 +330,16 @@ public struct Commands: Sendable {
     printer.text("deleted \(bot["title"] as? String ?? id)")
   }
 
-  private func appearance(_ arguments: Arguments) throws -> JSONObject? {
+  private func appearance(_ arguments: Arguments, creating: Bool) throws -> JSONObject? {
     let shape = arguments.value("shape")
     let tint = arguments.value("tint")
     guard shape != nil || tint != nil else { return nil }
-    guard let shape, let tint else { throw CLIError.usage("--shape and --tint go together") }
-    return ["shape": shape, "tint": tint]
+    guard let shape, creating || tint != nil else {
+      throw CLIError.usage("--tint requires --shape; updates also require --tint")
+    }
+    var result: JSONObject = ["shape": shape]
+    if let tint { result["tint"] = tint }
+    return result
   }
 
   // MARK: - Groups

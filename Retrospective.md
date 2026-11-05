@@ -1,5 +1,15 @@
 # Retrospective
 
+## 2026-11-05 — Color-pair tests must follow real consumers
+
+Splitting the green token into solid fill and readable ink made the standalone
+palette matrix pass, but two existing white-text action wrappers still filled
+with the newly pale dark-mode ink; the send glyph consumed the solid background
+role. Review caught contrast regressions that table-only tests missed. Tests now
+exercise the actual action/glyph color recipes in both appearances. Audit all
+consumers whenever a token changes semantic meaning: native tint fills use solid,
+text/glyph/chart marks use ink, and lifecycle states must not index identity hues.
+
 ## 2026-11-05 — Restart evidence requires a fresh lifecycle owner
 
 An identity-color persistence test reused BotRegistry after shutdown. Its permanent

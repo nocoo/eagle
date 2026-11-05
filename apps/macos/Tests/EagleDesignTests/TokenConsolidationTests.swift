@@ -6,33 +6,33 @@ import Testing
 
 @Suite("Consolidated presentation tokens")
 struct TokenConsolidationTests {
-  @Test("manual Bot tints retain their order and light/dark colors")
+  @Test("wire tint names keep their order and resolve through the shared families")
   func botPalette() throws {
     let names = [
       "paper", "clay", "red", "orange", "yellow", "green", "teal", "sky", "blue", "violet", "pink",
       "graphite",
     ]
     let light: [UInt32] = [
-      0xFFFFFF, 0xA9713F, 0xE5484D, 0xF5752B, 0xF5B51B, 0x3DBB6A, 0x2FB7A3, 0x56B4E9,
-      0x3B7CF6, 0x8B5CF6, 0xF04FA0, 0x6E6E76,
+      0xFFFFFF, 0xFF9D50, 0xFF5A54, 0xFF9D50, 0xF7D451, 0x65C97A, 0x48C4B5, 0x4BB5EB,
+      0x4BB5EB, 0xAB8BE8, 0xF17CB2, 0x41414A,
     ]
     let dark: [UInt32] = [
-      0xF4F4F6, 0xB98052, 0xF4646A, 0xFF8C4D, 0xFFC63D, 0x4CD47C, 0x3FD0BC, 0x6FC8F5,
-      0x5A94FF, 0xA479FF, 0xFF6FB5, 0x8A8A93,
+      0xF4F4F6, 0xFFB46B, 0xFF746E, 0xFFB46B, 0xFFE276, 0x81D993, 0x6FD8CA, 0x78CBF2,
+      0x78CBF2, 0xC1A5F1, 0xF79AC5, 0x494952,
     ]
     #expect(Theme.Palette.BotTint.allCases.map(\.rawValue) == names)
     for (index, tint) in Theme.Palette.BotTint.allCases.enumerated() {
       try expectColor(Theme.Palette.botTint(tint), light[index], appearance: .aqua)
       try expectColor(Theme.Palette.botTint(tint), dark[index], appearance: .darkAqua)
     }
-    try expectColor(Theme.Palette.botEye, 0x2A2A2E, appearance: .aqua)
-    try expectColor(Theme.Palette.botEye, 0x1A1A1C, appearance: .darkAqua)
+    try expectColor(Theme.Palette.faceInk(.green), 0x1C1C1E, appearance: .aqua)
+    try expectColor(Theme.Palette.faceInk(.green), 0x1C1C1E, appearance: .darkAqua)
   }
 
   @Test("overlay tokens retain opacity including the nearly transparent hit surface")
   func overlays() throws {
     let white: [(Color, CGFloat)] = [
-      (Theme.Palette.onColor, 1), (Theme.Palette.onColorSecondary, 0.72),
+      (Theme.Palette.onColor, 1), (Theme.Palette.onColorSecondary, 0.9),
       (Theme.Palette.unreadHighlight, 0.22),
     ]
     let black: [(Color, CGFloat)] = [

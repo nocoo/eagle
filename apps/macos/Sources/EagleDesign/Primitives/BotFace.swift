@@ -47,7 +47,7 @@ public struct BotFace: View {
       RoundedRectangle(cornerRadius: eyeWidth / 2, style: .continuous)
         .frame(width: eyeWidth, height: eyeHeight)
     }
-    .foregroundStyle(Theme.Palette.botEye)
+    .foregroundStyle(Theme.Palette.faceInk(style.tint))
     .offset(y: size * 0.04)
   }
 }

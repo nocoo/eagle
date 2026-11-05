@@ -1,5 +1,46 @@
 # 用户视角检查点
 
+## 2026-11-05 14:14 +08 — Phase 2 ready for owner review
+
+- Native review closed after correcting solid/ink role use in the actual filled
+  actions and send glyph, with a failing-before-fix contrast regression. Same-root
+  switch/chart/status consumers are corrected without changing their actions or
+  permission predicates. The source/index ownership gate passes 91 cases, 73
+  affected native logic cases pass, and the App/test targets build. The separate
+  Swift client package tests and root typecheck/check-only lint also pass.
+- Two isolated Node processes exercised the production registry: the first created
+  all eight fixed-ID defaults; the second loaded their exact persisted choices.
+  The fixture used FakeRuntime, temporary storage and no network/model invocation.
+  Both processes exited successfully and the temporary root was removed.
+- Old Dev App 44203 and its owned daemon 44311 both exited before restart. Fresh
+  App 59460 owns daemon 59554 from this checkout; CLI health passes with deviceAccess
+  null. Live saved colors remain red=1, green=6, blue=1. The foreground Gallery is
+  open on the color-token matrix and spacing/form-alignment specimens.
+- Owner visual acceptance is pending. No new GUI/keyboard campaign, full native
+  suite, browser/release gate, live provider turn, real secret/device action,
+  production authentication, D1 or Herdr collection was exercised for this slice.
+  Reference-led layout, small-window settings clipping and per-control polish are
+  still later phases. Nothing has been pushed or released in this phase.
+
+## 2026-11-05 13:55 +08 — Phase 2 native wiring and review board
+
+- Stable creation defaults are committed as `322ed24`; Bots check passes 1,024
+  tests plus its existing type/lint/coverage gates. Fresh-registry and malformed
+  HTTP regressions were repaired without changing lifecycle rules or thresholds.
+- Swift creation uses a separate optional-tint request value; complete responses
+  and updates are unchanged. The client package tests pass. Native creation starts
+  with no tint, manual edits retain raw wire choices, and CLI shape-only creation
+  has a demonstrated red/green regression. No read-time hashing or mode field was
+  added. Unknown peers remain neutral.
+- The eight-family matrix passes resolved-sRGB normal-text contrast in both
+  appearances. Compositing exposed dim user-origin text and focus borders; these
+  are corrected centrally. Common spacing/control boxes now use 4 pt / compact
+  2 pt roles. The Gallery contains the color matrix and real form alignment sample.
+- Source guard passes before final formatting; full native build/affected checks
+  and code review are in progress. Existing App/daemon still run the old build.
+  Final hop: restart the owned pair and leave the Gallery ready for owner review.
+  No production auth, D1, real collection, secret submission or device operation.
+
 ## 2026-11-05 13:33 +08 — Phase 2 identity defaults and color pairs
 
 - Owner accepted phase 1 and chose hash defaults with eight manual overrides.

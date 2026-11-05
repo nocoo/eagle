@@ -93,9 +93,8 @@ public struct PeerPairChip: View {
 }
 
 extension PeerRef {
-  /// The bot's own colour, the one its face is filled with, for its name and its burst label.
   var labelTint: Color {
-    if let face { return Theme.Palette.botTint(face.tint) }
-    return Theme.Palette.avatarTint(tintIndex)
+    if let face { return Theme.Palette.family(face.tint).ink }
+    return Theme.Palette.textSecondary
   }
 }

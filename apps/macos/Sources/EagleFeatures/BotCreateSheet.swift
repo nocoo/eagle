@@ -5,13 +5,13 @@ import SwiftUI
 /// The create form: a name (required), an optional label, and the face the user picks.
 /// It is a sheet on the main window, not a second window.
 struct BotCreateSheet: View {
-  let onCreate: (String, String?, BotAppearance) -> Void
+  let onCreate: (String, String?, BotCreationAppearance) -> Void
   let onCancel: () -> Void
 
   @State private var name = ""
   @State private var label = ""
   @State private var shape: BotFace.Shape = .blob
-  @State private var tint: Theme.Palette.BotTint = Theme.Palette.BotTint.green
+  @State private var tint: Theme.Palette.BotTint?
   @FocusState private var nameFocused: Bool
 
   private var canCreate: Bool {
@@ -24,10 +24,17 @@ struct BotCreateSheet: View {
       Divider().overlay(Theme.Palette.line)
       ScrollView {
         VStack(spacing: Theme.Layout.sectionInset) {
-          BotFace(style: BotFace.Style(shape: shape, tint: tint), size: Theme.Picker.previewFace)
-            .padding(.top, Theme.Metric.contentInset)
+          BotFace(
+            style: BotFace.Style(shape: shape, tint: tint ?? .paper), size: Theme.Picker.previewFace
+          )
+          .padding(.top, Theme.Metric.contentInset)
           fields
-          BotFacePicker(shape: $shape, tint: $tint)
+          BotFacePicker(shape: $shape, tint: tint) { tint = $0 }
+          if tint == nil {
+            Text("创建时按固定 ID 分配颜色，也可以手选。")
+              .font(Theme.TypeScale.note)
+              .foregroundStyle(Theme.Palette.textSecondary)
+          }
         }
         .padding(.horizontal, Theme.Metric.settingsCardInset)
         .padding(.bottom, Theme.Layout.groupGap)
@@ -83,9 +90,9 @@ struct BotCreateSheet: View {
     onCreate(
       name.trimmingCharacters(in: .whitespacesAndNewlines),
       trimmedLabel.isEmpty ? nil : trimmedLabel,
-      BotAppearance(
+      BotCreationAppearance(
         shape: BotAppearance.Shape(rawValue: shape.rawValue) ?? .blob,
-        tint: BotAppearance.Tint(rawValue: tint.rawValue) ?? BotAppearance.Tint.green
+        tint: tint.flatMap { BotAppearance.Tint(rawValue: $0.rawValue) }
       )
     )
   }

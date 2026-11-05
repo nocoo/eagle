@@ -101,7 +101,7 @@ public struct DeliveryNote: View {
           .overlay(alignment: .center) {
             Image(systemName: index % 2 == 0 ? "person.fill" : "sparkle")
               .font(Theme.TypeScale.Glyph.delivery)
-              .foregroundStyle(Theme.Palette.onColor)
+              .foregroundStyle(Theme.Palette.darkInk)
           }
       }
       Text(text)

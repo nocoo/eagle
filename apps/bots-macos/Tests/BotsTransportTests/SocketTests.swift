@@ -25,7 +25,7 @@ final class SocketTests: XCTestCase {
     let created = try await catalog.create(
       title: "客户端自测",
       label: "自测",
-      appearance: BotAppearance(shape: .star, tint: .violet)
+      appearance: BotCreationAppearance(shape: .star, tint: .violet)
     )
     XCTAssertEqual(created.title, "客户端自测")
     XCTAssertEqual(created.label, "自测", "the daemon stores the label")
@@ -122,8 +122,8 @@ final class SocketTests: XCTestCase {
 
   func testCatalogIsAbsoluteAndSurvivesAReconnect() async throws {
     let catalog = CatalogHTTPClient(baseURL: fixture.baseURL, token: fixture.token)
-    let first = try await catalog.create(title: "一", label: nil, appearance: .standard)
-    let second = try await catalog.create(title: "二", label: nil, appearance: .standard)
+    let first = try await catalog.create(title: "一", label: nil, appearance: .init())
+    let second = try await catalog.create(title: "二", label: nil, appearance: .init())
     let created = try await catalog.load()
     XCTAssertEqual(Set(created.bots.map(\.id)), [first.id, second.id])
 
@@ -151,7 +151,7 @@ final class SocketTests: XCTestCase {
     let reordered = try await catalog.reorderGroups(ids: [research.id, work.id])
     XCTAssertEqual(reordered.map(\.id), [research.id, work.id], "the daemon answers the order")
 
-    let bot = try await catalog.create(title: "分组自测", label: nil, appearance: .standard)
+    let bot = try await catalog.create(title: "分组自测", label: nil, appearance: .init())
     let filed = try await catalog.moveBot(id: bot.id, groupId: work.id)
     XCTAssertEqual(filed.groupId, work.id, "the bot records its membership")
 
@@ -173,7 +173,7 @@ final class SocketTests: XCTestCase {
 extension SocketTests {
   func testASocketReconnectsAndRebuildsTheTranscript() async throws {
     let catalog = CatalogHTTPClient(baseURL: fixture.baseURL, token: fixture.token)
-    let bot = try await catalog.create(title: "重连", label: nil, appearance: .standard)
+    let bot = try await catalog.create(title: "重连", label: nil, appearance: .init())
     let first = ConversationSocket(
       baseURL: fixture.baseURL,
       token: fixture.token,
@@ -230,7 +230,7 @@ extension SocketTests {
 extension SocketTests {
   func testClosingASocketReleasesTheBotSubscriber() async throws {
     let catalog = CatalogHTTPClient(baseURL: fixture.baseURL, token: fixture.token)
-    let bot = try await catalog.create(title: "释放", label: nil, appearance: .standard)
+    let bot = try await catalog.create(title: "释放", label: nil, appearance: .init())
     // More cycles than the eight-subscriber cap: every closed socket must give its slot
     // back, or the ninth subscription would be refused.
     for index in 0..<9 {

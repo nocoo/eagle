@@ -301,6 +301,16 @@ public struct BotAppearance: Codable, Sendable, Equatable, Hashable {
   public static let standard = BotAppearance()
 }
 
+public struct BotCreationAppearance: Sendable, Equatable {
+  public var shape: BotAppearance.Shape
+  public var tint: BotAppearance.Tint?
+
+  public init(shape: BotAppearance.Shape = .blob, tint: BotAppearance.Tint? = nil) {
+    self.shape = shape
+    self.tint = tint
+  }
+}
+
 public struct BotSummary: Codable, Sendable, Equatable, Identifiable {
   public var id: String
   public var title: String

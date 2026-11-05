@@ -2,11 +2,16 @@ import SwiftUI
 
 public struct BotFacePicker: View {
   @Binding private var shape: BotFace.Shape
-  @Binding private var tint: Theme.Palette.BotTint
+  private let tint: Theme.Palette.BotTint?
+  private let onSelectTint: (Theme.Palette.BotTint) -> Void
 
-  public init(shape: Binding<BotFace.Shape>, tint: Binding<Theme.Palette.BotTint>) {
+  public init(
+    shape: Binding<BotFace.Shape>, tint: Theme.Palette.BotTint?,
+    onSelectTint: @escaping (Theme.Palette.BotTint) -> Void
+  ) {
     self._shape = shape
-    self._tint = tint
+    self.tint = tint
+    self.onSelectTint = onSelectTint
   }
 
   public var body: some View {
@@ -26,7 +31,8 @@ public struct BotFacePicker: View {
               shape = candidate
             } label: {
               BotFace(
-                style: BotFace.Style(shape: candidate, tint: tint), size: Theme.Picker.gridFace
+                style: BotFace.Style(shape: candidate, tint: tint ?? .paper),
+                size: Theme.Picker.gridFace
               )
               .padding(Theme.Layout.detailGap)
               .background(
@@ -51,9 +57,9 @@ public struct BotFacePicker: View {
             count: Theme.Picker.tintColumns),
           spacing: Theme.Layout.controlGap
         ) {
-          ForEach(Theme.Palette.BotTint.allCases, id: \.self) { candidate in
+          ForEach(Theme.Palette.BotTint.selectable, id: \.self) { candidate in
             Button {
-              tint = candidate
+              onSelectTint(candidate)
             } label: {
               Circle()
                 .fill(Theme.Palette.botTint(candidate))

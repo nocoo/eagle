@@ -42,6 +42,11 @@ public struct Composer: View {
     self.focusRequest = focusRequest
   }
 
+  var sendTint: Color {
+    text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? Theme.Palette.textSecondary : Theme.Palette.accentStrong
+  }
+
   public var body: some View {
     HStack(alignment: .bottom, spacing: Theme.Layout.rowGap) {
       IconButton(systemName: "plus", label: "添加附件", size: Theme.Metric.hitTarget, action: onAttach)
@@ -74,9 +79,7 @@ public struct Composer: View {
         systemName: "waveform",
         label: "发送",
         size: Theme.Metric.hitTarget,
-        tint: text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-          ? Theme.Palette.textSecondary
-          : Theme.Palette.accentFill,
+        tint: sendTint,
         action: onSend
       )
     }

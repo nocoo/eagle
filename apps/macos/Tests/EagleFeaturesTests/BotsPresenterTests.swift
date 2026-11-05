@@ -155,7 +155,7 @@ struct BotsPresenterTests {
     // A working bot animates its own face instead of wearing a tag.
     #expect(item.busy)
     #expect(item.tag != "回答中")
-    #expect((0..<Theme.Palette.avatarTints.count).contains(item.tintIndex))
+    #expect(item.face?.tint == .green)
   }
 
   private func noteText(_ entry: TranscriptEntry?) -> String? {

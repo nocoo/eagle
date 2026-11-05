@@ -39,6 +39,7 @@ final class CatalogTests: XCTestCase {
     await model.createBot()
 
     XCTAssertEqual(catalog.created, ["研究员"])
+    XCTAssertNil(catalog.faces.first?.tint, "creation leaves the default to the daemon")
     XCTAssertEqual(model.bots.map(\.title), ["研究员"])
     XCTAssertEqual(model.selection, catalog.bots.first?.id, "the new bot is selected")
     XCTAssertEqual(model.newBotTitle, "", "the field clears")
@@ -269,7 +270,7 @@ final class FakeCatalog: CatalogPort {
   var groups: [BotGroup] = []
   var created: [String] = []
   var labels: [String?] = []
-  var faces: [BotAppearance] = []
+  var faces: [BotCreationAppearance] = []
   var deleted: [String] = []
   var createdGroupTitles: [String] = []
   var renamedGroups: [(String, String)] = []
@@ -333,7 +334,7 @@ final class FakeCatalog: CatalogPort {
   func create(
     title: String,
     label: String?,
-    appearance: BotAppearance
+    appearance: BotCreationAppearance
   ) async throws -> BotSummary {
     created.append(title)
     labels.append(label)
@@ -342,7 +343,7 @@ final class FakeCatalog: CatalogPort {
       id: "b_\(UUID().uuidString.prefix(8))",
       title: title,
       label: label,
-      appearance: appearance,
+      appearance: BotAppearance(shape: appearance.shape, tint: appearance.tint ?? .violet),
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
       model: ModelRef(provider: "faux", modelId: "faux-1"),

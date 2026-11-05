@@ -5,7 +5,7 @@ import Testing
 
 @Suite("Selection menu recipes")
 struct SelectionMenuStyleTests {
-  @Test("consolidation preserves the seven existing menu presentations")
+  @Test("the seven menu roles use the shared control scale")
   func recipes() {
     typealias Style = SelectionMenu<EmptyView>.Style
     let recipes: [(Style, CGFloat?, CGFloat, CGFloat, Font, Font, Color)] = [
@@ -23,7 +23,7 @@ struct SelectionMenuStyleTests {
         Theme.Palette.textSecondary
       ),
       (
-        .action, 30, 14, 6, Theme.TypeScale.noteEmphasis, Theme.TypeScale.noteEmphasis,
+        .action, 32, 14, 6, Theme.TypeScale.noteEmphasis, Theme.TypeScale.noteEmphasis,
         Theme.Palette.textPrimary
       ),
       (
@@ -43,15 +43,15 @@ struct SelectionMenuStyleTests {
     }
   }
 
-  @Test("field and action extraction preserves the existing dimensions and focus paint")
+  @Test("fields and actions use grid dimensions and the opaque focus paint")
   func forms() {
-    #expect(Theme.Form.actionHeight == 30)
+    #expect(Theme.Form.actionHeight == 32)
     #expect(Theme.Form.actionRadius == 8)
-    #expect(Theme.Form.fieldHeight == 34)
-    #expect(Theme.Form.fieldInset == 11)
+    #expect(Theme.Form.fieldHeight == 36)
+    #expect(Theme.Form.fieldInset == 12)
     #expect(Theme.Form.fieldPlaceholderInset == 12)
     #expect(Theme.Form.textAreaMinHeight == 88)
     #expect(Theme.Form.rowVerticalInset == 16)
-    #expect(Theme.Palette.fieldFocus == Theme.Palette.accent.opacity(0.65))
+    #expect(Theme.Palette.fieldFocus == Theme.Palette.accent)
   }
 }

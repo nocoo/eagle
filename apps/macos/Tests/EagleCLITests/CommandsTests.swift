@@ -124,6 +124,23 @@ struct CommandsTests {
     ],"groups":[{"id":"g_1","title":"工作"}]}
     """#
 
+  @Test("only creation may omit the appearance tint")
+  func creationTint() async throws {
+    StubTransport.calls = []
+    StubTransport.answers = ["/v1/bots": (201, #"{"bot":{"id":"b_new","title":"Fixture"}}"#)]
+    let created = await run(["bots", "create", "--title", "Fixture", "--shape", "star", "--json"])
+    #expect(created.code == 0)
+    let body = try #require(StubTransport.calls.first?.body)
+    let json = try #require(JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any])
+    #expect(json["appearance"] as? [String: String] == ["shape": "star"])
+    let tintOnly = await run(["bots", "create", "--title", "Fixture", "--tint", "red"])
+    #expect(tintOnly.code != 0)
+    StubTransport.answers = ["/v1/bots": (200, Self.catalog)]
+    let update = await run(["bots", "update", "b_1", "--shape", "star"])
+    #expect(update.code != 0)
+    #expect(!StubTransport.calls.contains { $0.method == "PATCH" })
+  }
+
   @Test("bots list prints one line per bot and --json prints the daemon's own object")
   func listBots() async {
     StubTransport.calls = []

@@ -17,7 +17,7 @@ struct BotsConversationContent: View {
 
   var body: some View {
     ConversationColumn(
-      title: bots.title, tintIndex: bots.tintIndex,
+      title: bots.title,
       face: bots.selectedFace,
       entries: transcript.entries,
       showsToolCalls: !hideToolCalls,

@@ -5,8 +5,9 @@ import Testing
 
 @Suite("Peer exchange")
 struct PeerExchangeTests {
-  private let raven = PeerRef(id: "raven", title: "repo-raven", tintIndex: 1)
-  private let vps = PeerRef(id: "vps", title: "VPS管家", tintIndex: 2)
+  private let raven = PeerRef(
+    id: "raven", title: "repo-raven", face: .init(shape: .blob, tint: .blue))
+  private let vps = PeerRef(id: "vps", title: "VPS管家", face: .init(shape: .blob, tint: .green))
 
   private func exchange(_ messages: [PeerMessage]) -> PeerExchange {
     PeerExchange(id: "x1", participants: [raven, vps], messages: messages)

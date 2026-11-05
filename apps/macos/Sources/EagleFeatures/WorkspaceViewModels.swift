@@ -189,15 +189,15 @@ public enum MockWorkspace {
   /// messages, the shape the collapsed row and the dialog are built for.
   public static let ves = PeerRef(
     id: "ves", title: "VPS管家",
-    face: BotFace.Style(shape: .blob, tint: .sky), tintIndex: 1)
+    face: BotFace.Style(shape: .blob, tint: .sky))
 
   public static let depsExpert = PeerRef(
     id: "deps", title: "依赖修复专家",
-    face: BotFace.Style(shape: .pebble, tint: .violet), tintIndex: 4)
+    face: BotFace.Style(shape: .pebble, tint: .violet))
 
   public static let firefly = PeerRef(
     id: "firefly", title: "发布管家",
-    face: BotFace.Style(shape: .squircle, tint: Theme.Palette.BotTint.orange), tintIndex: 3)
+    face: BotFace.Style(shape: .squircle, tint: Theme.Palette.BotTint.orange))
 
   public static let fireflyExchange = PeerExchange(
     id: "x2",

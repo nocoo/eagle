@@ -129,13 +129,12 @@ public final class CatalogHTTPClient: CatalogPort, SecretPort, QuestionPort, Sen
   public func create(
     title: String,
     label: String?,
-    appearance: BotAppearance
+    appearance: BotCreationAppearance
   ) async throws -> BotSummary {
     struct Payload: Decodable { let bot: BotSummary }
-    var body: [String: Any] = [
-      "title": title,
-      "appearance": ["shape": appearance.shape.rawValue, "tint": appearance.tint.rawValue],
-    ]
+    var face = ["shape": appearance.shape.rawValue]
+    if let tint = appearance.tint { face["tint"] = tint.rawValue }
+    var body: [String: Any] = ["title": title, "appearance": face]
     if let label, !label.isEmpty { body["label"] = label }
     return try await request(path: "/v1/bots", method: "POST", body: body, as: Payload.self).bot
   }

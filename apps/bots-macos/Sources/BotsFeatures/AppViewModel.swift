@@ -98,14 +98,14 @@ public final class AppViewModel: ObservableObject {
   }
 
   public func createBot(title rawTitle: String) async {
-    await createBot(title: rawTitle, label: nil, appearance: .standard)
+    await createBot(title: rawTitle, label: nil, appearance: .init())
   }
 
   /// A bot is its name, an optional label and a face; everything else is the daemon's.
   public func createBot(
     title rawTitle: String,
     label: String?,
-    appearance: BotAppearance
+    appearance: BotCreationAppearance
   ) async {
     var title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     if title.isEmpty { title = "新 Bot" }

@@ -1,6 +1,6 @@
 # macOS design-system consolidation and refinement
 
-Status: **phase-1 source consolidation implemented, final owner review pending; phases 2–4 have not started**.
+Status: **phase 1 accepted; phase-2 palette/defaults/shared grid implemented for owner review; phases 3–4 have not started**.
 Updated 2026-11-05 following the owner's requested order.
 
 The first implementation slice centralizes palette definitions and explicit font
@@ -134,6 +134,21 @@ or that the whole repository's L1 standard has been completed.
 
 ## Phase 2 — optimize the centralized design tokens
 
+Implementation checkpoint (2026-11-05): the owner chose **B, hash defaults plus eight
+manual overrides**. Hashing is creation-time only and the resolved tint is persisted;
+no mode field or read-time recoloring is needed. The live read-only inventory contained
+red=1, green=6, blue=1, so no existing out-of-family record needed conversion. Protocol
+v1 remains additive: POST may omit tint, PATCH and response appearances remain complete.
+The four additional wire names render through the same family/neutral table (clay→orange,
+sky→blue, paper→light neutral, graphite→strong neutral), never a legacy palette or a
+record rewrite. Shape-only editing preserves any raw choice. Unknown peers stay neutral.
+The App and daemon must be restarted/upgraded together; no green retry is allowed.
+
+`apps/macos/DESIGN.md` specifies the current implementation and its explicit grid
+exceptions. The Gallery's color page supplies the light/dark matrix and real form
+alignment specimen. Source/math checks are not a claim of manual visual acceptance.
+The sections below define the phase requirements; visual acceptance remains pending.
+
 ### 2A. One eight-color identity family
 
 Use the **iPhone 5C candy-color character** as the starting point: bright, friendly,
@@ -172,38 +187,27 @@ reference informs surface hierarchy in phase 3, not the identity palette's hue c
 
 ### 2B. Stable hash assignment
 
-Current code uses `abs(id.hashValue)` at `BotsWorkspace.swift:937,1307`; Swift's seeded
-hash is not stable across processes, and signed absolute-value indexing is unnecessary.
+Both Swift `hashValue` paths and redundant Bot-specific tint-index state are removed.
+The implemented B contract is deliberately creation-time, not a second rendering rule:
 
-Recommended contract, pending the identity/manual-color decisions below:
+- The daemon allocates the ID once, uses built-in `node:crypto` SHA-256 over the exact
+  UTF-8 bytes `bot:<id>`, and indexes the fixed eight-name list with the first digest
+  byte modulo 8. No trimming, case folding, name, group, session or position enters it.
+- Explicit creation tint wins; an omitted tint is resolved before the existing size
+  check and single catalog write. A complete appearance remains the wire/storage truth.
+- Sidebar, participant, inspector and known peer faces use that saved choice. Labels
+  use its ink role. Unknown peers do not invent a hash color for an unknown manual choice.
+- Renaming, reordering, reconnecting and restarting do not change the saved value.
+  There is no mode field, read-time rehash or create-then-PATCH sequence.
+- Fixed vectors verify all eight slots. Separate processes verify persistence at restart.
+  Collisions are expected; color does not substitute for the name or shape.
 
-- Hash an immutable, namespaced identity such as `bot:<id>` or `device:<id>`, never a
-  display name, sidebar position, group membership, current session or array index.
-- Reuse platform CryptoKit (already used in the project), for example the first byte
-  of SHA-256 over the specified UTF-8 bytes modulo 8. Fix the exact input encoding,
-  namespace and palette order; this is visual assignment, not a security identity.
-- One resolver supplies the same slot to the sidebar, participant chip, inspector,
-  peer identity and any approved conversation accent.
-- Renaming, reordering, reconnecting and restarting do not change the color. Light/dark
-  selects a variant of the same identity, not a different slot.
-- Fixed vectors verify exact mappings; separate processes verify restart consistency.
-  Eight slots necessarily collide: assert valid coverage/range, not collision freedom.
-  A color never substitutes for the entity's name or shape.
-
-**Decision gate:** the product currently supports twelve persisted manual Bot tints via
-`BotAppearance`, not just computed decoration. Before implementation choose either:
-
-1. All identity colors become hash-assigned; explicitly approve the effect on existing
-   manual choices and removal of the color-picker path; or
-2. Hash supplies defaults and an explicitly chosen eight-color value can override it;
-   specify how existing out-of-family choices are treated before changing any data.
-
-The preferred hash input is immutable typed ID, but it is a proposal until confirmed.
-Do not silently rehash by name, silently discard manual choices, add a legacy palette
-fallback, or rewrite saved appearance records during a token cleanup. If removing or
-changing a persisted/API capability is required, review its product/protocol/fixture
-changes explicitly: Bots protocol v1 is additive-only. No implicit breaking wire change
-or coupling of BotsCore back to EagleDesign is allowed.
+The owner chose manual eight-color overrides. Existing raw values are not rewritten;
+all twelve v1 names stay legal. The four additional names use the family/neutral
+mappings stated above, not a legacy paint table. A shape edit retains its original tint.
+POST alone accepts a missing tint; PATCH remains complete. This is additive protocol
+behavior, with no dependency from BotsCore back to EagleDesign. It requires the updated
+daemon; an old-daemon rejection must not trigger a retry with a fabricated green choice.
 
 ### 2C. Grid and alignment
 
@@ -222,9 +226,10 @@ The ordinary spacing vocabulary starts at `0, 4, 8, 12, 16, 20, 24, 32, 40, 48, 
 - Grid-defined control boxes snap to the grid; font baselines and optical glyph centers
   follow typography metrics. Do not force glyph outlines or every text baseline to a
   global 4 pt coordinate at the expense of native text rendering.
-- Prefer 36 pt to an unexplained 35 pt circle and 60 pt to an unexplained 58 pt row when
-  evaluating the new scale. These are candidates, not phase-1 visual changes. Retain
-  a non-grid value only with a measured optical/native reason and a named exception.
+- The shared scale now uses 36 pt header controls/faces, 60 pt list rows and 56 pt
+  composer/footer bands. Native/optical corrections, font/glyph geometry, stroke and
+  motion recipes are explicit exceptions in `apps/macos/DESIGN.md`; do not turn
+  those into ordinary spacing values.
 - Physical hairlines use display-scale alignment: one physical pixel is 0.5 pt at 2×,
   1 pt at 1×. This is separate from semantic focus-ring thickness and from the 4 pt grid.
 - Responsive shell dimensions and drag positions use shared layout math; snap resting
