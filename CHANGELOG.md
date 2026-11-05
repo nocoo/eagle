@@ -6,19 +6,23 @@
 
 - Consolidate native colors, typography, spacing and controls in EagleDesign, with
   syntax-based ownership checks and staged-snapshot commit enforcement.
-- Introduce one accessible eight-hue light/dark palette. New Bots get a stable
+- Introduce one contrast-tested eight-hue light/dark palette. New Bots get a stable
   ID-based default color at creation; the picker offers eight manual overrides,
-  while existing stored choices remain intact.
+  while existing stored choices remain intact and render through the new palette.
 - Refine the three-column workspace: 320/300 pt side defaults, a protected reading
   area, bounded message/copy gutters, compact inspector and neutral Peer prose
   with paired identity labels. Settings now fit a clamped 960 × 688 pt envelope
   instead of overflowing supported short windows.
 - Use shared native switches, checkboxes, menu shells, fields and actions while
   preserving asynchronous bindings, disabled conditions and accessibility labels.
-- Make local device operation independent of relay configuration; preserve remote
-  authorization, pairing recovery and uncertain-operation safety across relay changes.
-- Renew device session references on existing sockets, refresh child-turn remote
-  tools from local configuration, and allow long remote-command deadlines.
+- Make local device operation independent of relay configuration; bind new remote
+  requests and recovery to their original relay without retargeting uncertain work.
+- Renew device session references on existing sockets with an upgraded device relay,
+  refresh child-turn remote tools from local configuration, and allow long
+  remote-command deadlines.
+- Upgrade the relay before the App: the bundled Agent requires `ready.expiresAt`, and
+  the local device port is v2. Older uncertain operations or pending pairings without
+  a recorded relay origin remain explicitly unavailable, not migrated or resubmitted.
 - Keep website/Worker and npm Agent releases independent. This App includes the
   current bundled runtime; no npm onboarding pin changes are part of this release.
 

@@ -1,5 +1,30 @@
 # 用户视角检查点
 
+## 2026-11-05 16:58 +08 — Authorized device relay before App 0.19
+
+- Owner requested macOS Y+1 publication/installation and then explicitly authorized
+  the independent device-service deployment after the compatibility blocker was
+  confirmed against the installed App's configured `eagle-devices.hexly.ai` origin.
+- Candidate `7ea6137` passed normal pre-push: root 309, browser 191 (11 existing
+  conditional exclusions), Swift 466. Exact-SHA Check and website Deploy succeeded
+  (runs 41994285715 / 41995029532); the public website/ingestion claim remains App
+  0.18 until a verified 0.19 download exists. Independent Bots check passed 1,024
+  tests plus its existing type/lint/coverage gates.
+- App 0.19 is built with official Node 26.9.0 from verified offline artifacts and
+  ad-hoc signed; deep/strict verification and bundled CLI version pass. The bundled
+  Agent is source 1.2.0, Bots 0.1.0; npm onboarding stays 1.0.0. No npm publication.
+- Independent Worker `eagle-devices` now serves exact revision `7ea6137`, Cloudflare
+  version `01af079f-f11a-47e8-9637-166af2a73d99`. Before/after inventory confirms both
+  DO namespace IDs and migration tag v1 unchanged. Public health is 200/no-store,
+  version 0.14.3; anonymous directory is 401 session_required/no-store. No fixture
+  device, data migration, secret upload or colleague relay change was performed.
+- This confirms deployment/authentication boundaries, not live pairing, same-socket
+  renewal or physical remote execution. Those remain unverified. Upgrade notes now
+  state relay ordering and origin-less legacy pending-record limits. DMG/tag/GitHub
+  publication, final candidate CI and exact-path installation/opening are next.
+  The installed 0.18 App and its data have not been replaced; unrelated Eagle.app
+  (tw.ogdesign.eagle) remains outside scope.
+
 ## 2026-11-05 15:14 +08 — Phase 3 foreground review ready
 
 - Three bounded review rounds are closed. Final source/index guard: 91 cases;

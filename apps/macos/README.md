@@ -33,9 +33,16 @@ which turns off Gatekeeper for every app on the Mac. The device service is a per
 background item, so approve **Eagle** under **System Settings → General → Login Items &
 Extensions** when it asks, or the App stays at "service not running".
 
-The App itself ships **no** device service address. After the first launch, open
+The App itself ships **no** relay address. It can start the guarded local device
+service without one; remote access stays unconfigured. For remote devices, open
 **设置 → 设备 → 服务地址** and enter the origin of the relay you run (HTTPS; `http` is accepted
-only for loopback). Until then the App registers no background service and contacts nothing.
+only for loopback). No remote relay is contacted until it is configured.
+
+For v0.19.0, upgrade the independent relay before the App: the bundled Agent requires
+`ready.expiresAt` and supports same-socket session renewal. The App/helper/Bots local port
+is v2 and must restart together. Older uncertain requests or pending pairings without a
+recorded relay origin remain unavailable rather than being guessed or resubmitted;
+keep the records and original IDs. A backup App bundle is not a rollback of its data.
 
 **Replacing an installed copy** (an upgrade, or a rebuild of the same version) must unregister
 the background service first, or macOS kills the new helper with a code-signing failure:
