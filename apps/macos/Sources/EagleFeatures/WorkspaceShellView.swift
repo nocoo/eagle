@@ -349,10 +349,14 @@ public struct WorkspaceShellView: View {
           openedPeerExchange = nil
           bots.closeExchange()
         }
-        .padding(.leading, layout.showsSidebar ? layout.sidebarWidth + 20 : 20)
-        .padding(.trailing, 46)
-        .padding(.vertical, 28)
-        .transition(.opacity.combined(with: .scale(scale: 0.995)))
+        .padding(
+          .leading,
+          layout.showsSidebar
+            ? layout.sidebarWidth + Theme.Metric.contentInset : Theme.Metric.contentInset
+        )
+        .padding(.trailing, Theme.Dialog.peerOverlayTrailing)
+        .padding(.vertical, Theme.Dialog.peerOverlayVertical)
+        .transition(.opacity.combined(with: .scale(scale: Theme.Motion.overlayEntryScale)))
       }
 
       if showsAccountMenu {
@@ -364,15 +368,17 @@ public struct WorkspaceShellView: View {
           if row.id == "settings" { showsSettings = true }
         }
         .padding(.leading, Theme.Metric.contentInset)
-        .padding(.bottom, Theme.Metric.footerHeight + Theme.Metric.footerBottom + 6)
+        .padding(
+          .bottom, Theme.Metric.footerHeight + Theme.Metric.footerBottom + Theme.Layout.labelGap
+        )
         .transition(.opacity.combined(with: .move(edge: .bottom)))
       }
     }
-    .animation(.snappy(duration: 0.18), value: showsAccountMenu)
-    .animation(.easeOut(duration: 0.16), value: openedPeerExchange)
+    .animation(Theme.Motion.account, value: showsAccountMenu)
+    .animation(Theme.Motion.selection, value: openedPeerExchange)
     // A small blur under the settings card: the window stays recognisable, only softened.
-    .blur(radius: showsSettings ? 5 : 0)
-    .animation(.easeOut(duration: 0.18), value: showsSettings)
+    .blur(radius: showsSettings ? Theme.Dialog.backdropBlur : 0)
+    .animation(Theme.Motion.modal, value: showsSettings)
     .overlay {
       if showsSettings {
         settingsOverlay
@@ -397,15 +403,18 @@ public struct WorkspaceShellView: View {
       )
       .frame(width: Theme.Metric.settingsWidth, height: Theme.Metric.settingsHeight)
       .background(
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
+        RoundedRectangle(cornerRadius: Theme.Dialog.settingsRadius, style: .continuous)
           .fill(Theme.Palette.surface)
       )
-      .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+      .clipShape(RoundedRectangle(cornerRadius: Theme.Dialog.settingsRadius, style: .continuous))
       .overlay(
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
+        RoundedRectangle(cornerRadius: Theme.Dialog.settingsRadius, style: .continuous)
           .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
       )
-      .shadow(color: Theme.Palette.modalShadow, radius: 40, y: 18)
+      .shadow(
+        color: Theme.Palette.modalShadow, radius: Theme.Dialog.settingsShadowRadius,
+        y: Theme.Dialog.settingsShadowY
+      )
       .background(TrafficLights(hidden: true))
     }
     .transition(.opacity)

@@ -13,7 +13,7 @@ struct EagleApp: App {
       WorkspaceShellView(onShowGallery: { openSettings in
         GalleryWindowController.shared.show(onShowSettings: openSettings)
       })
-      .frame(minWidth: 1280, minHeight: 760)
+      .frame(minWidth: Theme.Metric.windowMinWidth, minHeight: Theme.Metric.windowMinHeight)
       .ignoresSafeArea()
       .background(WindowConfigurator())
       .preferredColorScheme(scheme)

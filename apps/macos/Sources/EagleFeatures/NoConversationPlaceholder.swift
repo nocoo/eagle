@@ -13,7 +13,7 @@ struct NoConversationPlaceholder: View {
   var onRetry: (() -> Void)?
 
   var body: some View {
-    VStack(spacing: 10) {
+    VStack(spacing: Theme.Layout.controlGap) {
       Text(daemonMessage == nil ? "没有打开的对话" : "Bots daemon 未连接")
         .font(Theme.TypeScale.bodyEmphasis)
         .foregroundStyle(Theme.Palette.textPrimary)
@@ -21,20 +21,20 @@ struct NoConversationPlaceholder: View {
         .font(Theme.TypeScale.note)
         .foregroundStyle(Theme.Palette.textSecondary)
         .multilineTextAlignment(.center)
-        .frame(maxWidth: 360)
+        .frame(maxWidth: Theme.Page.emptyMaxWidth)
       if let onRetry {
         SettingsActionButton("重新连接", prominent: true, action: onRetry)
-          .padding(.top, 4)
+          .padding(.top, Theme.Layout.detailGap)
         SettingsActionButton("新建 Bot", action: onCreate)
       } else {
         SettingsActionButton("新建 Bot", prominent: true, action: onCreate)
-          .padding(.top, 4)
+          .padding(.top, Theme.Layout.detailGap)
       }
       if !showsSidebar {
         IconButton(
           systemName: "sidebar.left", label: "展开侧栏", style: .circled, action: onShowSidebar
         )
-        .padding(.top, 6)
+        .padding(.top, Theme.Layout.labelGap)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)

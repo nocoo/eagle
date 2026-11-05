@@ -2,71 +2,6 @@ import BotsCore
 import EagleDesign
 import SwiftUI
 
-/// The face grid shared by the create sheet and the profile editor: ten silhouettes and
-/// twelve tints, each rendered with the same BotFace the sidebar draws.
-struct BotFacePicker: View {
-  @Binding var shape: BotFace.Shape
-  @Binding var tint: Theme.Palette.BotTint
-
-  var body: some View {
-    VStack(spacing: 16) {
-      VStack(alignment: .leading, spacing: 8) {
-        Text("形状")
-          .font(Theme.TypeScale.sectionLabel)
-          .foregroundStyle(Theme.Palette.textSecondary)
-        LazyVGrid(
-          columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5),
-          spacing: 8
-        ) {
-          ForEach(BotFace.Shape.allCases, id: \.self) { candidate in
-            Button {
-              shape = candidate
-            } label: {
-              BotFace(style: BotFace.Style(shape: candidate, tint: tint), size: 52)
-                .padding(4)
-                .background(
-                  RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
-                    .strokeBorder(candidate == shape ? Theme.Palette.accent : .clear, lineWidth: 2)
-                )
-            }
-            .buttonStyle(.plain)
-            .help(candidate.rawValue)
-          }
-        }
-      }
-      VStack(alignment: .leading, spacing: 8) {
-        Text("颜色")
-          .font(Theme.TypeScale.sectionLabel)
-          .foregroundStyle(Theme.Palette.textSecondary)
-        LazyVGrid(
-          columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 6),
-          spacing: 10
-        ) {
-          ForEach(Theme.Palette.BotTint.allCases, id: \.self) { candidate in
-            Button {
-              tint = candidate
-            } label: {
-              Circle()
-                .fill(Theme.Palette.botTint(candidate))
-                .frame(width: 32, height: 32)
-                .padding(4)
-                .overlay(
-                  Circle()
-                    .strokeBorder(
-                      candidate == tint ? Theme.Palette.textPrimary.opacity(0.6) : .clear,
-                      lineWidth: 2
-                    )
-                )
-            }
-            .buttonStyle(.plain)
-            .help(candidate.rawValue)
-          }
-        }
-      }
-    }
-  }
-}
-
 /// Editing an existing bot's face: the same picker as creation, opened from the profile
 /// avatar. Apply writes the face to the daemon; the sidebar and inspector repaint from the
 /// catalog push.
@@ -94,22 +29,22 @@ struct BotFaceEditorSheet: View {
         Text("编辑头像")
           .font(Theme.TypeScale.inspectorTitle)
         Spacer()
-        IconButton(systemName: "xmark", label: "关闭", size: 28, action: onCancel)
+        IconButton(systemName: "xmark", label: "关闭", size: Theme.Metric.hitTarget, action: onCancel)
       }
       .padding(.horizontal, Theme.Metric.settingsCardInset)
-      .frame(height: 62)
+      .frame(height: Theme.Dialog.botHeaderHeight)
       Divider().overlay(Theme.Palette.line)
       ScrollView {
-        VStack(spacing: 16) {
-          BotFace(style: BotFace.Style(shape: shape, tint: tint), size: 132)
-            .padding(.top, 20)
+        VStack(spacing: Theme.Layout.sectionInset) {
+          BotFace(style: BotFace.Style(shape: shape, tint: tint), size: Theme.Picker.previewFace)
+            .padding(.top, Theme.Metric.contentInset)
           BotFacePicker(shape: $shape, tint: $tint)
         }
         .padding(.horizontal, Theme.Metric.settingsCardInset)
-        .padding(.bottom, 18)
+        .padding(.bottom, Theme.Layout.groupGap)
       }
       Divider().overlay(Theme.Palette.line)
-      HStack(spacing: 10) {
+      HStack(spacing: Theme.Layout.controlGap) {
         Spacer()
         SettingsActionButton("取消", action: onCancel)
         SettingsActionButton("保存", prominent: true) {
@@ -122,9 +57,9 @@ struct BotFaceEditorSheet: View {
         }
       }
       .padding(.horizontal, Theme.Metric.settingsCardInset)
-      .frame(height: 56)
+      .frame(height: Theme.Dialog.editFooterHeight)
     }
-    .frame(width: 560, height: 640)
+    .frame(width: Theme.Dialog.botWidth, height: Theme.Dialog.faceHeight)
     .background(Theme.Palette.surface)
   }
 }

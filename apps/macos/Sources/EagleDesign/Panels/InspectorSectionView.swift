@@ -38,7 +38,7 @@ public struct InspectorSectionView: View {
   private var rows: some View {
     switch section.rows {
     case .pulls(let pulls):
-      VStack(alignment: .leading, spacing: 2) {
+      VStack(alignment: .leading, spacing: Theme.Layout.microGap) {
         ForEach(pulls) { pull in
           InspectorPullRowView(row: pull)
         }
@@ -47,7 +47,7 @@ public struct InspectorSectionView: View {
       VStack(alignment: .leading, spacing: Theme.Metric.panelTaskRowGap) {
         ForEach(rows) { row in
           HStack(spacing: Theme.Metric.panelSectionRowGap) {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: Theme.Layout.minimumGap) {
               Text(row.name)
                 .font(Theme.TypeScale.pill)
                 .foregroundStyle(Theme.Palette.textPrimary)
@@ -57,7 +57,7 @@ public struct InspectorSectionView: View {
                 .foregroundStyle(Theme.Palette.textMuted)
                 .lineLimit(1)
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: Theme.Layout.rowGap)
             SwitchToggle(
               isOn: Binding(get: { row.isOn }, set: { onToggleTrigger(row.id, $0) }),
               label: row.name
@@ -76,7 +76,7 @@ public struct InspectorSectionView: View {
             Text(row.label)
               .font(Theme.TypeScale.pill)
               .foregroundStyle(Theme.Palette.textMuted)
-            Spacer(minLength: 8)
+            Spacer(minLength: Theme.Layout.rowGap)
             SelectionMenu(row.value, style: .inline) {
               ForEach(row.choices) { choice in
                 Button {
@@ -101,7 +101,7 @@ public struct InspectorSectionView: View {
             Text(row.label)
               .font(Theme.TypeScale.pill)
               .foregroundStyle(Theme.Palette.textMuted)
-            Spacer(minLength: 8)
+            Spacer(minLength: Theme.Layout.rowGap)
             Text(row.value)
               .font(Theme.TypeScale.mono)
               .foregroundStyle(Theme.Palette.textPrimary)
@@ -154,9 +154,9 @@ struct InspectorTaskRowView: View {
         .foregroundStyle(Theme.Palette.textPrimary)
         .lineLimit(1)
         .truncationMode(.tail)
-      Spacer(minLength: 6)
+      Spacer(minLength: Theme.Layout.labelGap)
       if row.isRunning {
-        SpinnerArc(size: Theme.Metric.panelTaskSpinner, lineWidth: 1.4)
+        SpinnerArc(size: Theme.Metric.panelTaskSpinner, lineWidth: Theme.Tool.detailSpinnerStroke)
       }
       Text(row.status)
         .font(Theme.TypeScale.pill)
@@ -169,7 +169,8 @@ struct InspectorTaskRowView: View {
         TextAction("重试", action: onRetry)
       } else if row.showsStop && hovering {
         IconButton(
-          systemName: "stop.circle", label: "停止", size: Theme.Metric.messageActionGlyph + 6,
+          systemName: "stop.circle", label: "停止",
+          size: Theme.Metric.messageActionGlyph + Theme.Layout.labelGap,
           glyphSize: Theme.Metric.messageActionGlyph, action: onStop
         )
       }
@@ -194,12 +195,12 @@ private struct InspectorPullRowView: View {
       guard let url = URL(string: row.url) else { return }
       NSWorkspace.shared.open(url)
     } label: {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
+      HStack(alignment: .firstTextBaseline, spacing: Theme.Layout.rowGap) {
         Image(systemName: row.appearance.symbol)
           .font(Theme.TypeScale.compactTitle)
           .foregroundStyle(row.appearance.tint)
           .frame(width: Theme.Metric.panelSectionGlyphWidth)
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Theme.Layout.microGap) {
           Text(row.title)
             .font(Theme.TypeScale.compactBody)
             .foregroundStyle(Theme.Palette.textPrimary)
@@ -209,17 +210,17 @@ private struct InspectorPullRowView: View {
             .foregroundStyle(row.appearance.tint)
             .lineLimit(1)
         }
-        Spacer(minLength: 4)
+        Spacer(minLength: Theme.Layout.detailGap)
         Image(systemName: "arrow.up.forward")
           .font(Theme.TypeScale.Glyph.chevron)
           .foregroundStyle(Theme.Palette.textMuted)
           .opacity(hovering ? 1 : 0)
       }
-      .padding(.vertical, 4)
-      .padding(.horizontal, 6)
+      .padding(.vertical, Theme.Layout.detailGap)
+      .padding(.horizontal, Theme.Layout.labelGap)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
+        RoundedRectangle(cornerRadius: Theme.Layout.selectionRadius, style: .continuous)
           .fill(hovering ? Theme.Palette.hover : .clear)
       )
       .contentShape(Rectangle())

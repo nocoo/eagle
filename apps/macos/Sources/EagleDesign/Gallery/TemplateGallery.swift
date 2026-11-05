@@ -35,44 +35,45 @@ public struct TemplateGallery: View {
         .background(Theme.Palette.canvas)
       }
     }
-    .frame(minWidth: 960, minHeight: 640)
+    .frame(minWidth: Theme.Gallery.minWidth, minHeight: Theme.Gallery.minHeight)
     .background(Theme.Palette.surface)
     .preferredColorScheme(darkPreview ? .dark : .light)
-    .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: section)
+    .animation(reduceMotion ? nil : Theme.Motion.sectionExpansion, value: section)
   }
 
   private var navigation: some View {
-    VStack(alignment: .leading, spacing: 24) {
-      HStack(spacing: 10) {
+    VStack(alignment: .leading, spacing: Theme.Layout.pageInset) {
+      HStack(spacing: Theme.Layout.controlGap) {
         Image(systemName: "square.stack.3d.up.fill")
           .font(Theme.TypeScale.gallerySymbol)
           .foregroundStyle(Theme.Palette.accentStrong)
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Theme.Layout.microGap) {
           Text("Eagle").font(Theme.TypeScale.brand)
           Text("原生设计工坊").font(Theme.TypeScale.note)
             .foregroundStyle(Theme.Palette.textSecondary)
         }
       }
-      VStack(spacing: 6) {
+      VStack(spacing: Theme.Layout.labelGap) {
         ForEach(GallerySection.allCases) { item in
           Button {
             section = item
           } label: {
-            HStack(spacing: 12) {
-              Image(systemName: item.symbol).frame(width: 20)
+            HStack(spacing: Theme.Layout.sectionGap) {
+              Image(systemName: item.symbol).frame(width: Theme.Layout.glyphSlot)
               Text(item.rawValue).font(Theme.TypeScale.cardTitle)
               Spacer(minLength: 0)
               if section == item {
-                Circle().fill(Theme.Palette.accentStrong).frame(width: 5, height: 5)
+                Circle().fill(Theme.Palette.accentStrong).frame(
+                  width: Theme.Gallery.activeMarker, height: Theme.Gallery.activeMarker)
               }
             }
             .foregroundStyle(
               section == item ? Theme.Palette.accentStrong : Theme.Palette.textSecondary
             )
-            .padding(12)
+            .padding(Theme.Layout.sectionGap)
             .background(
               RoundedRectangle(cornerRadius: Theme.Metric.controlRadius)
-                .fill(section == item ? Theme.Palette.accentFill.opacity(0.09) : .clear)
+                .fill(section == item ? Theme.Palette.gallerySelection : .clear)
             )
             .contentShape(Rectangle())
           }
@@ -81,22 +82,22 @@ public struct TemplateGallery: View {
         }
         Divider().overlay(Theme.Palette.line)
         Button(action: onShowSettings) {
-          HStack(spacing: 12) {
-            Image(systemName: "gearshape").frame(width: 20)
+          HStack(spacing: Theme.Layout.sectionGap) {
+            Image(systemName: "gearshape").frame(width: Theme.Layout.glyphSlot)
             Text("设置…").font(Theme.TypeScale.cardTitle)
             Spacer(minLength: 0)
             Text("⌘,").font(Theme.TypeScale.note)
           }
           .foregroundStyle(Theme.Palette.textSecondary)
-          .padding(12)
+          .padding(Theme.Layout.sectionGap)
           .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("设置…")
         .accessibilityIdentifier("eagle.gallery.settings")
       }
-      Spacer(minLength: 24)
-      VStack(alignment: .leading, spacing: 6) {
+      Spacer(minLength: Theme.Layout.pageInset)
+      VStack(alignment: .leading, spacing: Theme.Layout.labelGap) {
         Text("SWIFTUI / MACOS").font(Theme.TypeScale.mono)
         Text("真实组件 · 隔离预览")
           .font(Theme.TypeScale.note)
@@ -104,7 +105,7 @@ public struct TemplateGallery: View {
       .foregroundStyle(Theme.Palette.textMuted)
     }
     .padding(.horizontal, Theme.Metric.contentInset)
-    .padding(.top, 40)
+    .padding(.top, Theme.Gallery.navigationTop)
     .padding(.bottom, Theme.Metric.galleryInset)
     .frame(width: Theme.Metric.galleryRailWidth)
     .background(Theme.Palette.surface)
@@ -123,8 +124,8 @@ public struct TemplateGallery: View {
   }
 
   private var header: some View {
-    HStack(alignment: .center, spacing: 24) {
-      VStack(alignment: .leading, spacing: 6) {
+    HStack(alignment: .center, spacing: Theme.Layout.pageInset) {
+      VStack(alignment: .leading, spacing: Theme.Layout.labelGap) {
         Text("EAGLE / COMPONENT LIBRARY")
           .font(Theme.TypeScale.mono)
           .foregroundStyle(Theme.Palette.accentStrong)
@@ -141,14 +142,16 @@ public struct TemplateGallery: View {
         .fixedSize()
     }
     .padding(Theme.Metric.galleryInset)
-    .padding(.top, 12)
+    .padding(.top, Theme.Layout.sectionGap)
     .background(Theme.Palette.surface)
   }
 
   private var paletteSection: some View {
     GalleryCard(title: "配色") {
       LazyVGrid(
-        columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 5), spacing: 12
+        columns: Array(
+          repeating: GridItem(.flexible(), spacing: Theme.Layout.sectionGap),
+          count: Theme.Gallery.paletteColumns), spacing: Theme.Layout.sectionGap
       ) {
         swatch("canvas", Theme.Palette.canvas)
         swatch("surface", Theme.Palette.surface)
@@ -166,8 +169,8 @@ public struct TemplateGallery: View {
 
   private var activitySection: some View {
     GalleryCard(title: "会话状态 · 交互预览") {
-      VStack(alignment: .leading, spacing: 16) {
-        HStack(spacing: 24) {
+      VStack(alignment: .leading, spacing: Theme.Layout.sectionInset) {
+        HStack(spacing: Theme.Layout.pageInset) {
           ParticipantBubble(
             name: "研究员", tintIndex: 2,
             status: ParticipantStatus(
@@ -201,7 +204,7 @@ public struct TemplateGallery: View {
 
   private var typographySection: some View {
     GalleryCard(title: "字号") {
-      VStack(alignment: .leading, spacing: 10) {
+      VStack(alignment: .leading, spacing: Theme.Layout.controlGap) {
         row("行标题 · 15 medium", Theme.TypeScale.rowTitle)
         row("行副标题 · 13.5 regular", Theme.TypeScale.rowSubtitle)
         row("区块标签 · 13.5 medium", Theme.TypeScale.sectionLabel)
@@ -217,8 +220,8 @@ public struct TemplateGallery: View {
 
   private var primitivesSection: some View {
     GalleryCard(title: "基础控件") {
-      VStack(alignment: .leading, spacing: 18) {
-        HStack(spacing: 12) {
+      VStack(alignment: .leading, spacing: Theme.Layout.groupGap) {
+        HStack(spacing: Theme.Layout.sectionGap) {
           Avatar(
             initial: "监", tint: Theme.Palette.avatarTint(1), size: Theme.Metric.avatarProfile,
             badge: Theme.Palette.avatarTint(3))
@@ -231,14 +234,14 @@ public struct TemplateGallery: View {
           Spacer(minLength: 0)
         }
 
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.Layout.sectionGap) {
           Text("工作秘书").font(Theme.TypeScale.rowTitle).foregroundStyle(Theme.Palette.textPrimary)
           Tag("Personal")
           Tag("GitHub")
           Spacer(minLength: 0)
         }
 
-        HStack(spacing: 14) {
+        HStack(spacing: Theme.Layout.controlInset) {
           IconButton(systemName: "magnifyingglass", label: "搜索") {}
           IconButton(systemName: "plus", label: "新建会话") {}
           IconButton(systemName: "square.and.arrow.up", label: "分享") {}
@@ -250,9 +253,9 @@ public struct TemplateGallery: View {
         SectionLabel("新闻组", unreadCount: 2)
 
         SegmentedTabs(values: InspectorColumn.Tab.allCases, selection: $tab) { $0.rawValue }
-          .frame(maxWidth: 320)
+          .frame(maxWidth: Theme.Gallery.controlsWidth)
 
-        VStack(spacing: 8) {
+        VStack(spacing: Theme.Layout.rowGap) {
           ChevronRow(
             systemName: "chevron.left.forwardslash.chevron.right", title: "deps 2026-10-24 sleepy"
           ) {}
@@ -268,7 +271,7 @@ public struct TemplateGallery: View {
             }
           }
         }
-        .frame(maxWidth: 320)
+        .frame(maxWidth: Theme.Gallery.controlsWidth)
       }
     }
   }
@@ -291,7 +294,7 @@ public struct TemplateGallery: View {
   private var panelSection: some View {
     GalleryCard(title: "栏目") {
       ScrollView(.horizontal) {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: Theme.Layout.sectionInset) {
           SidebarPanel(
             sections: [
               SidebarSection(
@@ -314,7 +317,7 @@ public struct TemplateGallery: View {
             onSelect: { _ in },
             unreadCount: 2
           )
-          .frame(height: 620)
+          .frame(height: Theme.Gallery.previewHeight)
           .overlay(alignment: .topTrailing) { cornerLabel("侧栏") }
 
           InspectorColumn(
@@ -344,7 +347,7 @@ public struct TemplateGallery: View {
             ],
             tab: .constant(.detail)
           )
-          .frame(height: 620)
+          .frame(height: Theme.Gallery.previewHeight)
           .overlay(alignment: .topTrailing) { cornerLabel("检查器") }
 
           InspectorColumn(
@@ -354,7 +357,7 @@ public struct TemplateGallery: View {
             pulls: [],
             tab: .constant(.detail)
           )
-          .frame(height: 620)
+          .frame(height: Theme.Gallery.previewHeight)
           .overlay(alignment: .topTrailing) { cornerLabel("空状态") }
         }
       }
@@ -362,12 +365,12 @@ public struct TemplateGallery: View {
   }
 
   private func swatch(_ name: String, _ color: Color) -> some View {
-    VStack(alignment: .leading, spacing: 6) {
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
+    VStack(alignment: .leading, spacing: Theme.Layout.labelGap) {
+      RoundedRectangle(cornerRadius: Theme.Primitive.smallRadius, style: .continuous)
         .fill(color)
-        .frame(height: 44)
+        .frame(height: Theme.Gallery.swatchHeight)
         .overlay(
-          RoundedRectangle(cornerRadius: 8, style: .continuous)
+          RoundedRectangle(cornerRadius: Theme.Primitive.smallRadius, style: .continuous)
             .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
         )
       Text(name).font(Theme.TypeScale.note).foregroundStyle(Theme.Palette.textPrimary)
@@ -385,11 +388,11 @@ public struct TemplateGallery: View {
     Text(text)
       .font(Theme.TypeScale.pill)
       .foregroundStyle(Theme.Palette.textSecondary)
-      .padding(.horizontal, 6)
-      .padding(.vertical, 2)
+      .padding(.horizontal, Theme.Layout.labelGap)
+      .padding(.vertical, Theme.Layout.microGap)
       .background(Capsule().fill(Theme.Palette.card))
       .overlay(Capsule().strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline))
-      .padding(8)
+      .padding(Theme.Layout.rowGap)
   }
 }
 
@@ -403,11 +406,11 @@ private struct GalleryCard<Content: View>: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 24) {
-      HStack(spacing: 10) {
-        RoundedRectangle(cornerRadius: 2)
+    VStack(alignment: .leading, spacing: Theme.Layout.pageInset) {
+      HStack(spacing: Theme.Layout.controlGap) {
+        RoundedRectangle(cornerRadius: Theme.Gallery.sectionMarkerRadius)
           .fill(Theme.Palette.accentFill)
-          .frame(width: 4, height: 18)
+          .frame(width: Theme.Gallery.sectionMarkerWidth, height: Theme.Gallery.sectionMarkerHeight)
         Text(title).font(Theme.TypeScale.inspectorTitle)
           .foregroundStyle(Theme.Palette.textPrimary)
         Spacer(minLength: 0)

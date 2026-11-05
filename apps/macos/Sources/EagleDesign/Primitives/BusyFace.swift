@@ -10,7 +10,7 @@ public struct BusyFace<Content: View>: View {
 
   /// `rise` is how far the face lifts on its own scale; a large portrait needs more than a
   /// sidebar chip to read as the same motion.
-  public init(rise: CGFloat = 1.5, @ViewBuilder content: () -> Content) {
+  public init(rise: CGFloat = Theme.Motion.faceRise, @ViewBuilder content: () -> Content) {
     self.rise = rise
     self.content = content()
   }
@@ -19,11 +19,12 @@ public struct BusyFace<Content: View>: View {
     if reduceMotion {
       content
     } else {
-      TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
+      TimelineView(.animation(minimumInterval: Theme.Motion.frameInterval, paused: false)) {
+        context in
         let wave = wave(at: context.date)
         content
-          .scaleEffect(1 + 0.055 * (wave + 1) / 2)
-          .rotationEffect(.degrees(wave * 5))
+          .scaleEffect(1 + Theme.Motion.faceScale * (wave + 1) / 2)
+          .rotationEffect(.degrees(wave * Theme.Motion.faceSway))
           .offset(y: -wave * rise)
       }
     }
@@ -33,7 +34,7 @@ public struct BusyFace<Content: View>: View {
 
   /// A 2.2 s breath, so the eye catches it without it ever becoming a distraction.
   private func wave(at date: Date) -> Double {
-    sin(date.timeIntervalSinceReferenceDate * 2 * .pi / 2.2)
+    sin(date.timeIntervalSinceReferenceDate * 2 * .pi / Theme.Motion.facePeriod)
   }
 }
 
@@ -41,7 +42,7 @@ public struct BusyFace<Content: View>: View {
 /// still and every working face on screen moves in step.
 struct BusyWhenWorking: ViewModifier {
   let active: Bool
-  var rise: CGFloat = 1.5
+  var rise: CGFloat = Theme.Motion.faceRise
 
   func body(content: Content) -> some View {
     if active {

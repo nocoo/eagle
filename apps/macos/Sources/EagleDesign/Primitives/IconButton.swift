@@ -31,7 +31,7 @@ public struct IconButton: View {
     self.label = label
     self.size = size
     switch style {
-    case .plain: self.glyphSize = glyphSize ?? size * 0.55
+    case .plain: self.glyphSize = glyphSize ?? size * Theme.Primitive.plainGlyphRatio
     case .circled: self.glyphSize = glyphSize ?? size * Theme.Metric.roundGlyphRatio
     }
     self.tint = tint
@@ -80,7 +80,7 @@ struct RoundControlSurface: View {
       }
       .overlay {
         Circle().strokeBorder(
-          hovering ? Theme.Palette.line.opacity(1.4) : Theme.Palette.line,
+          hovering ? Theme.Palette.hoveredControlBorder : Theme.Palette.line,
           lineWidth: Theme.Metric.hairline
         )
       }

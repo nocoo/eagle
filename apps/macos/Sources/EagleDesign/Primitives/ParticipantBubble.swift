@@ -79,7 +79,7 @@ public struct ParticipantBubble: View {
         .foregroundStyle(Theme.Palette.destructive)
         .accessibilityLabel("查看 Bot 错误")
         .popover(isPresented: $showsError) {
-          VStack(alignment: .leading, spacing: 12) {
+          VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
             Text(error).font(Theme.TypeScale.note).textSelection(.enabled)
             Button("关闭提示") {
               showsError = false
@@ -87,7 +87,7 @@ public struct ParticipantBubble: View {
             }
           }
           .padding(Theme.Metric.contentInset)
-          .frame(maxWidth: 320)
+          .frame(maxWidth: Theme.Primitive.activityPopoverWidth)
         }
       }
       if status?.canRetry == true {
@@ -112,12 +112,14 @@ public struct ParticipantBubble: View {
           Image(systemName: "stop.fill")
             .font(Theme.TypeScale.pill)
             .frame(width: Theme.Metric.hitTarget, height: Theme.Metric.hitTarget)
-            .background(tint.opacity(0.12), in: Circle())
+            .background(Theme.Palette.softTint(tint), in: Circle())
         }
         .foregroundStyle(tint)
         .help("停止回答")
         .accessibilityLabel("停止回答")
-        .transition(reduceMotion ? .opacity : .scale(scale: 0.7).combined(with: .opacity))
+        .transition(
+          reduceMotion
+            ? .opacity : .scale(scale: Theme.Motion.stopEntryScale).combined(with: .opacity))
       }
     }
     .buttonStyle(.plain)
@@ -137,23 +139,26 @@ public struct ParticipantBubble: View {
     )
     .overlay {
       if status?.isActive == true {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+        TimelineView(.animation(minimumInterval: Theme.Motion.frameInterval, paused: reduceMotion))
+        { context in
           let turn =
             reduceMotion
             ? 0
-            : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.8) / 2.8
+            : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(
+              dividingBy: Theme.Motion.participantPeriod) / Theme.Motion.participantPeriod
           RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous)
             .strokeBorder(
               AngularGradient(
                 stops: [
-                  .init(color: tint.opacity(0.12), location: 0),
-                  .init(color: tint.opacity(0.12), location: 0.62),
-                  .init(color: tint, location: 0.88),
-                  .init(color: tint.opacity(0.12), location: 1),
+                  .init(color: Theme.Palette.softTint(tint), location: 0),
+                  .init(
+                    color: Theme.Palette.softTint(tint), location: Theme.Motion.participantTrail),
+                  .init(color: tint, location: Theme.Motion.participantPeak),
+                  .init(color: Theme.Palette.softTint(tint), location: 1),
                 ],
                 center: .center,
                 startAngle: .degrees(turn * 360), endAngle: .degrees(turn * 360 + 360)
-              ), lineWidth: 1.5
+              ), lineWidth: Theme.Primitive.activityStroke
             )
         }
         .accessibilityHidden(true)
@@ -164,9 +169,12 @@ public struct ParticipantBubble: View {
           .allowsHitTesting(false)
       }
     }
-    .shadow(color: tint.opacity(status?.isActive == true ? 0.1 : 0), radius: 8, y: 2)
+    .shadow(
+      color: Theme.Palette.activityShadow(tint, active: status?.isActive == true),
+      radius: Theme.Primitive.activityShadowRadius, y: Theme.Primitive.activityShadowY
+    )
     .onHover { hovering = $0 }
-    .animation(reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.82), value: status)
+    .animation(reduceMotion ? nil : Theme.Motion.participant, value: status)
     .accessibilityElement(children: .contain)
   }
 

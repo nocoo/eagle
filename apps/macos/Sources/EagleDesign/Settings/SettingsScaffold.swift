@@ -40,23 +40,23 @@ public struct SettingsRail: View {
   }
 
   public var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
+    VStack(alignment: .leading, spacing: Theme.Layout.detailGap) {
       ForEach(SettingsSection.allCases) { section in
         Button {
           selection = section
         } label: {
-          HStack(spacing: 10) {
+          HStack(spacing: Theme.Layout.controlGap) {
             Image(systemName: section.symbol)
               .font(Theme.TypeScale.fieldLabel)
               .foregroundStyle(Theme.Palette.textPrimary)
-              .frame(width: 20)
+              .frame(width: Theme.Layout.glyphSlot)
             Text(section.rawValue)
               .font(section == selection ? Theme.TypeScale.cardTitle : Theme.TypeScale.fieldLabel)
               .foregroundStyle(Theme.Palette.textPrimary)
             Spacer(minLength: 0)
           }
-          .padding(.horizontal, 12)
-          .frame(height: 40)
+          .padding(.horizontal, Theme.Layout.sectionGap)
+          .frame(height: Theme.Card.headerHeight)
           .background(
             RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
               .fill(section == selection ? Theme.Palette.selection : .clear)
@@ -73,8 +73,8 @@ public struct SettingsRail: View {
       }
       Spacer(minLength: 0)
     }
-    .padding(.horizontal, 12)
-    .padding(.top, 16)
+    .padding(.horizontal, Theme.Layout.sectionGap)
+    .padding(.top, Theme.Layout.sectionInset)
     .frame(width: Theme.Metric.settingsRailWidth)
     .frame(maxHeight: .infinity, alignment: .top)
     // The rail keeps the main window's own surface: grey field, white card for the open tab.
@@ -108,7 +108,7 @@ public struct SettingsScaffold<Content: View>: View {
         .fill(Theme.Palette.line)
         .frame(width: Theme.Metric.hairline)
       VStack(spacing: 0) {
-        HStack(spacing: 16) {
+        HStack(spacing: Theme.Layout.sectionInset) {
           Text(selection.rawValue)
             .font(Theme.TypeScale.settingsTitle)
             .foregroundStyle(Theme.Palette.textPrimary)
@@ -124,20 +124,20 @@ public struct SettingsScaffold<Content: View>: View {
           }
         }
         .padding(.horizontal, Theme.Metric.settingsContentInset)
-        .padding(.top, 16)
-        .padding(.bottom, 10)
+        .padding(.top, Theme.Layout.sectionInset)
+        .padding(.bottom, Theme.Layout.controlGap)
 
         ScrollView {
           content
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Theme.Metric.settingsContentInset)
-            .padding(.top, 6)
-            .padding(.bottom, 32)
+            .padding(.top, Theme.Layout.labelGap)
+            .padding(.bottom, Theme.Layout.pageBottomInset)
         }
         .scrollIndicators(.never)
       }
     }
-    .frame(minWidth: 760, minHeight: 560)
+    .frame(minWidth: Theme.Dialog.settingsMinWidth, minHeight: Theme.Dialog.settingsMinHeight)
     .background(Theme.Palette.surface)
   }
 }

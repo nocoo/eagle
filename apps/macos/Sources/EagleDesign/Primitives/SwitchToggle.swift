@@ -22,14 +22,16 @@ public struct SpinnerArc: View {
   private let lineWidth: CGFloat
   @State private var spinning = false
 
-  public init(size: CGFloat = 12, lineWidth: CGFloat = 1.6) {
+  public init(
+    size: CGFloat = Theme.Metric.spinnerSize, lineWidth: CGFloat = Theme.Metric.spinnerStroke
+  ) {
     self.size = size
     self.lineWidth = lineWidth
   }
 
   public var body: some View {
     Circle()
-      .trim(from: 0.12, to: 0.78)
+      .trim(from: Theme.Primitive.arcStart, to: Theme.Primitive.arcEnd)
       .stroke(
         Theme.Palette.accentStrong,
         style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
@@ -37,7 +39,7 @@ public struct SpinnerArc: View {
       .frame(width: size, height: size)
       .rotationEffect(.degrees(spinning ? 360 : 0))
       .animation(
-        .linear(duration: 0.9).repeatForever(autoreverses: false),
+        Theme.Motion.spinner,
         value: spinning
       )
       .onAppear { spinning = true }

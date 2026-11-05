@@ -220,7 +220,7 @@ struct SnapshotRenderer {
     let account = AccountMenuViewModel()
     capture(
       AccountMenu(rows: account.rows, onSelect: { _ in })
-        .padding(20)
+        .padding(Theme.Metric.contentInset)
         .background(Theme.Palette.canvas),
       size: CGSize(width: 266, height: 360),
       named: "account-menu",

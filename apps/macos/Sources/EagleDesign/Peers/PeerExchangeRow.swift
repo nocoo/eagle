@@ -14,7 +14,7 @@ public struct PeerExchangeRow: View {
 
   public var body: some View {
     Button(action: onOpen) {
-      HStack(spacing: 6) {
+      HStack(spacing: Theme.Layout.labelGap) {
         Spacer(minLength: 0)
         Text(exchange.summary)
           .font(Theme.TypeScale.note)
@@ -30,14 +30,14 @@ public struct PeerExchangeRow: View {
         }
         Spacer(minLength: 0)
       }
-      .padding(.vertical, 5)
-      .padding(.horizontal, 12)
+      .padding(.vertical, Theme.Primitive.peerExchangeVerticalInset)
+      .padding(.horizontal, Theme.Layout.sectionGap)
       .background(Capsule().fill(hovering ? Theme.Palette.hover : Theme.Palette.clear))
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .onHover { hovering = $0 }
-    .animation(.easeOut(duration: 0.12), value: hovering)
+    .animation(Theme.Motion.hover, value: hovering)
     .accessibilityLabel("\(exchange.summary)打开对话")
     .accessibilityAddTraits(.isButton)
   }
@@ -60,7 +60,7 @@ public struct PeerOriginRow: View {
     Button {
       if let id = origin.exchangeId { onOpen(id) }
     } label: {
-      HStack(spacing: 6) {
+      HStack(spacing: Theme.Layout.labelGap) {
         Spacer(minLength: 0)
         Text("消息来自")
           .font(Theme.TypeScale.note)
@@ -69,15 +69,15 @@ public struct PeerOriginRow: View {
           peer: origin.peer, font: Theme.TypeScale.note, tint: Theme.Palette.textSecondary)
         Spacer(minLength: 0)
       }
-      .padding(.vertical, 3)
-      .padding(.horizontal, 12)
+      .padding(.vertical, Theme.Layout.captionGap)
+      .padding(.horizontal, Theme.Layout.sectionGap)
       .background(Capsule().fill(hovering ? Theme.Palette.hover : Theme.Palette.clear))
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .disabled(origin.exchangeId == nil)
     .onHover { hovering = origin.exchangeId == nil ? false : $0 }
-    .animation(.easeOut(duration: 0.12), value: hovering)
+    .animation(Theme.Motion.hover, value: hovering)
     .accessibilityLabel("消息来自 \(origin.peer.title)")
   }
 }

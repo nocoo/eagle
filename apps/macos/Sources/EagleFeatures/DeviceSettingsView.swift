@@ -14,7 +14,7 @@ public struct DeviceSettingsView: View {
   }
 
   public var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
       connectionStatus
       serviceAddressCard
       SettingsCard {
@@ -24,7 +24,7 @@ public struct DeviceSettingsView: View {
           }
           Divider().overlay(Theme.Palette.line)
           pairingContent
-            .padding(.vertical, 16)
+            .padding(.vertical, Theme.Layout.sectionInset)
         }
       }
       directoryCard
@@ -51,8 +51,8 @@ public struct DeviceSettingsView: View {
     SettingsCard {
       VStack(spacing: 0) {
         SettingsSectionHeader("设备服务", detail: "这台 Mac 的执行服务，以及它和云端的连接") {
-          HStack(spacing: 10) {
-            if model.isStarting { SpinnerArc(size: 12) }
+          HStack(spacing: Theme.Layout.controlGap) {
+            if model.isStarting { SpinnerArc(size: Theme.Metric.spinnerSize) }
             SettingsActionButton("刷新") {
               Task {
                 await model.startIfNeeded()
@@ -82,7 +82,7 @@ public struct DeviceSettingsView: View {
         if hasServiceRecovery {
           Divider().overlay(Theme.Palette.line)
           serviceRecovery
-            .padding(.vertical, 16)
+            .padding(.vertical, Theme.Layout.sectionInset)
         }
       }
     }
@@ -122,11 +122,11 @@ public struct DeviceSettingsView: View {
         .accessibilityIdentifier("devices.serviceAddress")
         Divider().overlay(Theme.Palette.line)
         SettingsSectionRow("Relay 地址", detail: "例如 https://devices.example.com") {
-          HStack(spacing: 10) {
+          HStack(spacing: Theme.Layout.controlGap) {
             SettingsTextField(
               "https://devices.example.com", text: $model.serviceAddressDraft
             )
-            .frame(width: 300)
+            .frame(width: Theme.Form.fieldWidth)
             SettingsActionButton("保存", prominent: true) {
               Task { await model.saveServiceAddress() }
             }
@@ -139,13 +139,13 @@ public struct DeviceSettingsView: View {
   }
 
   @ViewBuilder private var serviceRecovery: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: Theme.Layout.controlGap) {
       if let message = model.errorMessage {
         SettingsSectionNote(message, destructive: true)
           .padding(.bottom, 0)
           .accessibilityIdentifier("devices.error")
         if model.needsBackgroundApproval {
-          HStack(spacing: 10) {
+          HStack(spacing: Theme.Layout.controlGap) {
             SettingsActionButton("打开系统设置") { model.openSystemSettings() }
             SettingsActionButton("已允许，重试") { Task { await model.startIfNeeded() } }
               .disabled(model.controlsBusy)
@@ -153,7 +153,7 @@ public struct DeviceSettingsView: View {
         }
       }
       if model.canRetryService {
-        HStack(spacing: 10) {
+        HStack(spacing: Theme.Layout.controlGap) {
           SettingsActionButton("重试") { Task { await model.retryService() } }
             .disabled(model.controlsBusy)
         }
@@ -209,17 +209,17 @@ public struct DeviceSettingsView: View {
   }
 
   private var pairingContent: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
       if let invitation = model.invitation {
         TimelineView(.periodic(from: .now, by: 1)) { context in
           let expiry = Date(timeIntervalSince1970: Double(invitation.expiresAt) / 1000)
-          VStack(alignment: .leading, spacing: 8) {
+          VStack(alignment: .leading, spacing: Theme.Layout.rowGap) {
             Text(invitation.code)
               .font(Theme.TypeScale.mono)
               .foregroundStyle(Theme.Palette.textPrimary)
               .textSelection(.enabled)
               .accessibilityLabel("本机配对码")
-            HStack(spacing: 10) {
+            HStack(spacing: Theme.Layout.controlGap) {
               Text(
                 context.date < expiry
                   ? "有效至 \(expiry.formatted(date: .omitted, time: .shortened)) · 仅可使用一次"
@@ -239,7 +239,7 @@ public struct DeviceSettingsView: View {
           }
         }
       } else {
-        HStack(spacing: 10) {
+        HStack(spacing: Theme.Layout.controlGap) {
           validityMenu
           Spacer(minLength: 0)
           SettingsActionButton("生成本机配对码", prominent: true) {
@@ -265,7 +265,7 @@ public struct DeviceSettingsView: View {
           Task { await model.recoverPairing() }
         }
         .disabled(model.controlsBusy || !model.canUseRemote)
-        HStack(spacing: 10) {
+        HStack(spacing: Theme.Layout.controlGap) {
           SettingsTextField("重新输入原配对码", text: $pairingCode)
             .frame(maxWidth: .infinity)
             .accessibilityLabel("原请求的配对码")
@@ -276,7 +276,7 @@ public struct DeviceSettingsView: View {
                 || pairingCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
       } else {
-        HStack(spacing: 10) {
+        HStack(spacing: Theme.Layout.controlGap) {
           SettingsTextField("输入另一台设备的配对码", text: $pairingCode)
             .frame(maxWidth: .infinity)
             .accessibilityLabel("另一台设备的配对码")
@@ -303,14 +303,14 @@ public struct DeviceSettingsView: View {
   }
 
   private var localDevicePlaceholder: some View {
-    HStack(alignment: .top, spacing: 12) {
-      HStack(alignment: .top, spacing: 10) {
+    HStack(alignment: .top, spacing: Theme.Layout.sectionGap) {
+      HStack(alignment: .top, spacing: Theme.Layout.controlGap) {
         Image(systemName: "desktopcomputer")
           .font(Theme.TypeScale.Glyph.device)
           .foregroundStyle(Theme.Palette.textMuted)
-          .frame(width: 20)
-        VStack(alignment: .leading, spacing: 5) {
-          HStack(spacing: 6) {
+          .frame(width: Theme.Layout.glyphSlot)
+        VStack(alignment: .leading, spacing: Theme.Page.deviceRowTextGap) {
+          HStack(spacing: Theme.Layout.labelGap) {
             Text(Host.current().localizedName ?? ProcessInfo.processInfo.hostName)
               .foregroundStyle(Theme.Palette.textPrimary)
             Text("本机").foregroundStyle(Theme.Palette.textMuted)
@@ -326,7 +326,7 @@ public struct DeviceSettingsView: View {
       .accessibilityElement(children: .combine)
       policyMenu()
     }
-    .padding(.vertical, 14)
+    .padding(.vertical, Theme.Layout.controlInset)
   }
 
   private var directoryCard: some View {
@@ -349,13 +349,13 @@ public struct DeviceSettingsView: View {
         }
         if let directory = model.directory {
           ForEach(directory.devices) { device in
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: Theme.Layout.sectionGap) {
               DeviceSummaryView(
                 device: device, isLocal: device.deviceId == directory.localDeviceId,
                 localReady: model.localReady, stale: model.directoryIsStale,
                 showsPolicy: false,
                 serviceEnabled: model.enabled)
-              HStack(spacing: 16) {
+              HStack(spacing: Theme.Layout.sectionInset) {
                 policyMenu(for: device)
                 if directory.groupId != nil {
                   SettingsActionButton("移除") {
@@ -367,7 +367,7 @@ public struct DeviceSettingsView: View {
                 }
               }
             }
-            .padding(.vertical, 16)
+            .padding(.vertical, Theme.Layout.sectionInset)
             if device.id != directory.devices.last?.id { Divider().overlay(Theme.Palette.line) }
           }
         }
@@ -387,13 +387,13 @@ struct DeviceSummaryView: View {
   var serviceEnabled = true
 
   var body: some View {
-    HStack(alignment: .top, spacing: 10) {
+    HStack(alignment: .top, spacing: Theme.Layout.controlGap) {
       Image(systemName: "desktopcomputer")
         .font(Theme.TypeScale.Glyph.device)
         .foregroundStyle(Theme.Palette.textMuted)
-        .frame(width: 20)
-      VStack(alignment: .leading, spacing: 5) {
-        HStack(spacing: 6) {
+        .frame(width: Theme.Layout.glyphSlot)
+      VStack(alignment: .leading, spacing: Theme.Page.deviceRowTextGap) {
+        HStack(spacing: Theme.Layout.labelGap) {
           Text(device.name).foregroundStyle(Theme.Palette.textPrimary)
           if isLocal { Text("本机").foregroundStyle(Theme.Palette.textMuted) }
         }
@@ -410,7 +410,7 @@ struct DeviceSummaryView: View {
         }
         if !compact {
           DisclosureGroup {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Theme.Layout.labelGap) {
               Text(device.deviceId)
                 .font(Theme.TypeScale.mono)
                 .textSelection(.enabled)
@@ -421,7 +421,7 @@ struct DeviceSummaryView: View {
                 Text("最近观察：\(Date(timeIntervalSince1970: Double(seen) / 1000).formatted())")
               }
             }
-            .padding(.top, 6)
+            .padding(.top, Theme.Layout.labelGap)
             .frame(maxWidth: .infinity, alignment: .leading)
           } label: {
             Text("详情").underline()
@@ -468,7 +468,7 @@ private struct DeviceStatusIcon: View {
     Image(systemName: online == true ? "circle.fill" : online == false ? "circle" : "circle.dashed")
       .font(Theme.TypeScale.Glyph.status)
       .foregroundStyle(online == true ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
-      .frame(width: 12, height: 20)
+      .frame(width: Theme.Page.deviceGlyphWidth, height: Theme.Page.deviceGlyphHeight)
       .help(label)
       .accessibilityLabel(label)
   }
@@ -480,17 +480,16 @@ private struct DeviceDetailsStyle: DisclosureGroupStyle {
 
   func makeBody(configuration: Configuration) -> some View {
     VStack(alignment: .leading, spacing: 0) {
-      HStack(spacing: 8) {
+      HStack(spacing: Theme.Layout.rowGap) {
         DeviceStatusIcon(online: online, label: statusLabel)
-        Button {
+        ActionControl {
           configuration.isExpanded.toggle()
         } label: {
           configuration.label
-            .padding(.vertical, 6)
-            .padding(.trailing, 8)
+            .padding(.vertical, Theme.Layout.labelGap)
+            .padding(.trailing, Theme.Layout.rowGap)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .accessibilityValue(configuration.isExpanded ? "已展开" : "已折叠")
       }
       if configuration.isExpanded { configuration.content }
@@ -502,20 +501,21 @@ private struct DeviceDetailsStyle: DisclosureGroupStyle {
 private struct DeviceDisclosureStyle: DisclosureGroupStyle {
   func makeBody(configuration: Configuration) -> some View {
     VStack(alignment: .leading, spacing: 0) {
-      Button {
+      ActionControl {
         configuration.isExpanded.toggle()
       } label: {
         HStack {
           configuration.label
-          Spacer(minLength: 12)
+          Spacer(minLength: Theme.Layout.sectionGap)
           Image(systemName: configuration.isExpanded ? "chevron.down" : "chevron.right")
             .accessibilityHidden(true)
         }
-        .padding(.horizontal, 4)
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .padding(.horizontal, Theme.Layout.detailGap)
+        .frame(
+          maxWidth: .infinity, minHeight: Theme.Page.deviceDisclosureHeight, alignment: .leading
+        )
         .contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
       .accessibilityValue(configuration.isExpanded ? "已展开" : "已折叠")
       if configuration.isExpanded { configuration.content }
     }

@@ -34,6 +34,17 @@ public enum Theme {
     public static let productFallback = avatarTint(2)
     public static let disabledAction = textMuted.opacity(0.4)
     public static let quietCaret = accent.opacity(0.12)
+    public static let pickerOutline = textPrimary.opacity(0.6)
+    public static let gallerySelection = accentFill.opacity(0.09)
+    public static let usageBar = accentFill.opacity(0.85)
+    public static let updateFill = accentStrong.opacity(0.10)
+    public static let hoveredControlBorder = line.opacity(1.4)
+
+    public static func softTint(_ tint: Color) -> Color { tint.opacity(0.12) }
+    public static func peerBorder(_ tint: Color) -> Color { tint.opacity(0.34) }
+    public static func activityShadow(_ tint: Color, active: Bool) -> Color {
+      tint.opacity(active ? 0.1 : 0)
+    }
     public static let accentFill = Color(light: 0x2FB457, dark: 0x2FB457)
     public static let accentStrong = Color(light: 0x2FB457, dark: 0x3DD068)
     public static let info = Color(light: 0x0B6FBE, dark: 0x7FC8FF)
@@ -88,6 +99,7 @@ public enum Theme {
   }
 
   public enum Layout {
+    public static let minimumGap: CGFloat = 1
     public static let microGap: CGFloat = 2
     public static let captionGap: CGFloat = 3
     public static let detailGap: CGFloat = 4
@@ -177,6 +189,102 @@ public enum Theme {
     public static let actionInset: CGFloat = 16
   }
 
+  public enum Primitive {
+    public static let smallRadius: CGFloat = 8
+    public static let chevronGap: CGFloat = 9
+    public static let edgeFadeDefault: CGFloat = 26
+    public static let avatarBlobRatio: CGFloat = 0.34
+    public static let avatarBadgeRatio: CGFloat = 0.28
+    public static let avatarBadgeStrokeRatio: CGFloat = 0.05
+    public static let avatarBadgeOffsetRatio: CGFloat = 0.04
+    public static let plainGlyphRatio: CGFloat = 0.55
+    public static let hoverContentOpacity: Double = 0.82
+    public static let activityStroke: CGFloat = 1.5
+    public static let activityShadowRadius: CGFloat = 8
+    public static let activityShadowY: CGFloat = 2
+    public static let activityPopoverWidth: CGFloat = 320
+    public static let peerChipVerticalInset: CGFloat = 7
+    public static let peerChipShadowRadius: CGFloat = 12
+    public static let peerChipShadowY: CGFloat = 4
+    public static let peerExchangeVerticalInset: CGFloat = 5
+    public static let arcStart: CGFloat = 0.12
+    public static let arcEnd: CGFloat = 0.78
+  }
+
+  public enum Page {
+    public static let toolNameWidth: CGFloat = 132
+    public static let providerAddressWidth: CGFloat = 240
+    public static let providerModelWidth: CGFloat = 220
+    public static let machinePromptMaxHeight: CGFloat = 150
+    public static let usageChartHeight: CGFloat = 56
+    public static let usageEmptyHeight: CGFloat = 2
+    public static let usageMinimumHeight: CGFloat = 3
+    public static let usageBarRadius: CGFloat = 2
+    public static let productIcon: CGFloat = 64
+    public static let deviceGlyphWidth: CGFloat = 12
+    public static let deviceGlyphHeight: CGFloat = 20
+    public static let deviceRowTextGap: CGFloat = 5
+    public static let deviceDisclosureHeight: CGFloat = 44
+    public static let emptyMaxWidth: CGFloat = 360
+    public static let setupBannerVerticalInset: CGFloat = 9
+    public static let deviceIconSlot: CGFloat = 16
+  }
+
+  public enum Dialog {
+    public static let botWidth: CGFloat = 560
+    public static let createHeight: CGFloat = 712
+    public static let faceHeight: CGFloat = 640
+    public static let botHeaderHeight: CGFloat = 62
+    public static let createFooterHeight: CGFloat = 46
+    public static let editFooterHeight: CGFloat = 56
+    public static let nameFieldHeight: CGFloat = 43
+    public static let labelFieldHeight: CGFloat = 36
+    public static let approvalMinWidth: CGFloat = 560
+    public static let approvalWidth: CGFloat = 640
+    public static let approvalMaxWidth: CGFloat = 760
+    public static let approvalMinHeight: CGFloat = 260
+    public static let approvalContentHeight: CGFloat = 420
+    public static let approvalWindowHeight: CGFloat = 620
+    public static let settingsMinWidth: CGFloat = 760
+    public static let settingsMinHeight: CGFloat = 560
+    public static let settingsRadius: CGFloat = 18
+    public static let settingsShadowRadius: CGFloat = 40
+    public static let settingsShadowY: CGFloat = 18
+    public static let backdropBlur: CGFloat = 5
+    public static let peerShadowRadius: CGFloat = 34
+    public static let peerShadowY: CGFloat = 16
+    public static let peerOverlayTrailing: CGFloat = 46
+    public static let peerTranscriptClearance: CGFloat = 22
+    public static let peerOverlayVertical: CGFloat = 28
+    public static let accountShadowRadius: CGFloat = 18
+    public static let accountShadowY: CGFloat = 6
+  }
+
+  public enum Picker {
+    public static let previewFace: CGFloat = 132
+    public static let gridFace: CGFloat = 52
+    public static let swatchSize: CGFloat = 32
+    public static let outlineWidth: CGFloat = 2
+    public static let shapeColumns = 5
+    public static let tintColumns = 6
+  }
+
+  public enum Gallery {
+    public static let minWidth: CGFloat = 960
+    public static let minHeight: CGFloat = 640
+    public static let windowWidth: CGFloat = 1180
+    public static let windowHeight: CGFloat = 900
+    public static let navigationTop: CGFloat = 40
+    public static let controlsWidth: CGFloat = 320
+    public static let previewHeight: CGFloat = 620
+    public static let swatchHeight: CGFloat = 44
+    public static let activeMarker: CGFloat = 5
+    public static let sectionMarkerWidth: CGFloat = 4
+    public static let sectionMarkerHeight: CGFloat = 18
+    public static let sectionMarkerRadius: CGFloat = 2
+    public static let paletteColumns = 5
+  }
+
   public enum Sidebar {
     public static let headerGap: CGFloat = 6
     public static let listBottomInset: CGFloat = 8
@@ -232,6 +340,31 @@ public enum Theme {
     public static let placeholderReduced = Animation.easeInOut(duration: 0.16)
     public static let placeholder = Animation.easeInOut(duration: 0.26)
     public static let caretInterval: TimeInterval = 0.62
+    public static let frameInterval: TimeInterval = 1.0 / 30.0
+    public static let faceRise: CGFloat = 1.5
+    public static let faceScale: Double = 0.055
+    public static let faceSway: Double = 5
+    public static let facePeriod: TimeInterval = 2.2
+    public static let waitingWordLift: CGFloat = 8
+    public static let waitingCycle: TimeInterval = 3.4
+    public static let waitingWordEnd: TimeInterval = 1.9
+    public static let waitingCrossEnd: TimeInterval = 2.1
+    public static let waitingDotsEnd: TimeInterval = 3.2
+    public static let waitingCrossDuration: TimeInterval = 0.2
+    public static let waitingDotPeriod: TimeInterval = 1.4
+    public static let waitingDotPhase: Double = 0.7
+    public static let waitingDotCount = 3
+    public static let waitingLabelGap: CGFloat = 7
+    public static let participantPeriod: TimeInterval = 2.8
+    public static let participantTrail: CGFloat = 0.62
+    public static let participantPeak: CGFloat = 0.88
+    public static let stopEntryScale: CGFloat = 0.7
+    public static let participant = Animation.spring(response: 0.38, dampingFraction: 0.82)
+    public static let accountHover = Animation.easeOut(duration: 0.1)
+    public static let account = Animation.snappy(duration: 0.18)
+    public static let overlayEntryScale: CGFloat = 0.995
+    public static let modal = Animation.easeOut(duration: 0.18)
+    public static let spinner = Animation.linear(duration: 0.9).repeatForever(autoreverses: false)
   }
 
   public enum Form {
@@ -244,6 +377,7 @@ public enum Theme {
     public static let actionHeight: CGFloat = 30
     public static let actionRadius: CGFloat = 8
     public static let fieldHeight: CGFloat = 34
+    public static let fieldWidth: CGFloat = 300
     public static let fieldInset: CGFloat = 11
     public static let fieldPlaceholderInset: CGFloat = 12
     public static let sectionContentGap: CGFloat = 12
@@ -263,6 +397,8 @@ public enum Theme {
 
   public enum Metric {
     public static let windowWidth: CGFloat = 1728
+    public static let windowMinWidth: CGFloat = 1280
+    public static let windowMinHeight: CGFloat = 760
     public static let windowHeight: CGFloat = 1082
     public static let sidebarWidth: CGFloat = 374
     public static let sidebarMinWidth: CGFloat = 300
@@ -389,6 +525,7 @@ public enum Theme {
     public static let iconButton: CGFloat = 32
     public static let spinnerSize: CGFloat = 12
     public static let spinnerStroke: CGFloat = 1.6
+    public static let compactGlyph: CGFloat = 12
     public static let hitTarget: CGFloat = 28
     public static let messageActionGlyph: CGFloat = 10
 
@@ -415,6 +552,7 @@ public enum Theme {
   }
 
   public enum TypeScale {
+    public static let sectionTracking: CGFloat = 0.2
     public static let rowTitle = Font.system(size: 15, weight: .medium)
     public static let rowSubtitle = Font.system(size: 13.5)
     public static let sectionLabel = Font.system(size: 13.5, weight: .medium)

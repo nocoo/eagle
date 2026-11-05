@@ -21,7 +21,7 @@ public struct PeerFaceName: View {
   }
 
   public var body: some View {
-    HStack(spacing: 6) {
+    HStack(spacing: Theme.Layout.labelGap) {
       PeerFace(peer: peer, size: size)
       Text(peer.title)
         .font(font)

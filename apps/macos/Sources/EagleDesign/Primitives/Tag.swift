@@ -12,10 +12,10 @@ public struct Tag: View {
     Text(text)
       .font(Theme.TypeScale.pill)
       .foregroundStyle(Theme.Palette.textMuted)
-      .padding(.horizontal, 6)
-      .padding(.vertical, 2)
+      .padding(.horizontal, Theme.Layout.labelGap)
+      .padding(.vertical, Theme.Layout.microGap)
       .background(
-        RoundedRectangle(cornerRadius: 5, style: .continuous)
+        RoundedRectangle(cornerRadius: Theme.Layout.badgeRadius, style: .continuous)
           .fill(Theme.Palette.line)
       )
       .fixedSize()
@@ -51,11 +51,11 @@ public struct SectionLabel: View {
   }
 
   public var body: some View {
-    HStack(spacing: 6) {
+    HStack(spacing: Theme.Layout.labelGap) {
       Text(text)
         .font(Theme.TypeScale.sectionLabel)
         .foregroundStyle(Theme.Palette.textSecondary)
-        .tracking(0.2)
+        .tracking(Theme.TypeScale.sectionTracking)
       Spacer(minLength: 0)
       if unreadCount > 0 {
         Text("\(unreadCount)")

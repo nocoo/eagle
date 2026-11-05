@@ -1,5 +1,37 @@
 # 用户视角检查点
 
+## 2026-11-05 13:02 +08 — Remaining styles ready for owner review
+
+- The requested chat, cards, dialogs, primitives and page-composition scope is
+  consolidated. All 110 production/fixture Swift files are discovered; the full
+  source scan is clean and unused numeric/control allowances fail. The coverage
+  ledger classifies retained business/geometry/fixture inputs and syntax limits.
+- Three read-only review rounds are closed. Reported Spacer, computed numeric
+  getter/helper, math-exemption and qualified-type gaps were demonstrated with
+  failing fixtures before repair. The final ownership/index gate passes 91 cases;
+  App and test targets compile, root typecheck and check-only lint pass.
+- No new UI/keyboard acceptance campaign, full Swift execution, browser suite or
+  release gate was run for this final slice. Existing keyboard experiments remain
+  archived. Fresh Dev App PID 44203 owns daemon 44311 from this checkout; CLI
+  health passes. It stays in the existing right-side pane for the owner's complete
+  manual review. No real secret/device action, production authentication, D1 or
+  Herdr collection was exercised.
+
+## 2026-11-05 12:45 +08 — Remaining-surface coverage ledger
+
+- Chat/cards were committed as `dcdc99f`; remaining surfaces are implemented in the
+  working tree. Shared ActionControl, CreationTextField and the moved pure BotFacePicker
+  keep page business logic and persistence conversion in EagleFeatures. Existing
+  values, async actions, roles, focus/submit and validation are intended unchanged.
+- The guard now discovers all 110 Swift source files, checks global visual arguments
+  and presentation bindings/defaults, covers raw standard controls and typed recipes,
+  and audits exact numeric/control allowances for staleness. Current source scan is
+  clean; an independent expression inventory leaves only fixture viewport/coordinate
+  inputs and protocol/model defaults. See docs/MACOS-STYLE-COVERAGE.md.
+- Code review is in progress. No new UI/keyboard test campaign, real secret, device
+  operation, production authentication, D1 or Herdr collection was exercised. The Dev
+  App still needs the final build/restart for the owner's complete review.
+
 ## 2026-11-05 12:00 +08 — Remaining UI consolidation in progress
 
 - The owner requested chat, tool/question/secret cards, dialogs and page composition

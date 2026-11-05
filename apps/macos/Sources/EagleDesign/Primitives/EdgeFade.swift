@@ -12,7 +12,7 @@ public struct EdgeFade: View {
   private let edge: Edge
   private let height: CGFloat
 
-  public init(color: Color, edge: Edge, height: CGFloat = 26) {
+  public init(color: Color, edge: Edge, height: CGFloat = Theme.Primitive.edgeFadeDefault) {
     self.color = color
     self.edge = edge
     self.height = height
@@ -35,8 +35,10 @@ public struct EdgeFade: View {
 
 extension View {
   /// Masks the top and bottom of a scroll view with panel-coloured gradients.
-  public func scrollEdgeFades(_ color: Color, top: CGFloat = 26, bottom: CGFloat = 26) -> some View
-  {
+  public func scrollEdgeFades(
+    _ color: Color, top: CGFloat = Theme.Primitive.edgeFadeDefault,
+    bottom: CGFloat = Theme.Primitive.edgeFadeDefault
+  ) -> some View {
     overlay(alignment: .top) { EdgeFade(color: color, edge: .top, height: top) }
       .overlay(alignment: .bottom) { EdgeFade(color: color, edge: .bottom, height: bottom) }
   }

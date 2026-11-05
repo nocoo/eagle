@@ -17,8 +17,8 @@ public struct PeerBubble: View {
       text: text,
       cornerRadius: Theme.Metric.peerBubbleRadius,
       maxWidth: Theme.Metric.peerBubbleMaxWidth,
-      fill: tint.opacity(0.12),
-      border: tint.opacity(0.34)
+      fill: Theme.Palette.softTint(tint),
+      border: Theme.Palette.peerBorder(tint)
     )
   }
 }
@@ -60,7 +60,7 @@ public struct PeerPairChip: View {
   }
 
   public var body: some View {
-    HStack(spacing: 8) {
+    HStack(spacing: Theme.Layout.rowGap) {
       ForEach(Array(exchange.participants.prefix(2).enumerated()), id: \.element.id) {
         index, peer in
         if index > 0 {
@@ -76,15 +76,18 @@ public struct PeerPairChip: View {
         )
       }
     }
-    .padding(.leading, 10)
-    .padding(.trailing, 14)
-    .padding(.vertical, 7)
+    .padding(.leading, Theme.Layout.controlGap)
+    .padding(.trailing, Theme.Layout.controlInset)
+    .padding(.vertical, Theme.Primitive.peerChipVerticalInset)
     .background(Capsule(style: .continuous).fill(Theme.Palette.card))
     .overlay(
       Capsule(style: .continuous)
         .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
     )
-    .shadow(color: Theme.Palette.peerAvatarShadow, radius: 12, y: 4)
+    .shadow(
+      color: Theme.Palette.peerAvatarShadow, radius: Theme.Primitive.peerChipShadowRadius,
+      y: Theme.Primitive.peerChipShadowY
+    )
     .accessibilityElement(children: .combine)
   }
 }

@@ -55,26 +55,26 @@ public struct AccountMenu: View {
           Rectangle()
             .fill(Theme.Palette.line)
             .frame(height: Theme.Metric.hairline)
-            .padding(.vertical, 4)
-            .padding(.horizontal, 12)
+            .padding(.vertical, Theme.Layout.detailGap)
+            .padding(.horizontal, Theme.Layout.sectionGap)
         }
         Button {
           onSelect(row)
         } label: {
-          HStack(spacing: 10) {
+          HStack(spacing: Theme.Layout.controlGap) {
             Image(systemName: row.systemName)
               .font(Theme.TypeScale.fieldLabel)
               .foregroundStyle(
                 row.destructive ? Theme.Palette.destructive : Theme.Palette.textPrimary
               )
-              .frame(width: 20)
+              .frame(width: Theme.Layout.glyphSlot)
             Text(row.title)
               .font(
                 row.kind == .plan ? Theme.TypeScale.sectionLabelStrong : Theme.TypeScale.rowSubtitle
               )
               .foregroundStyle(
                 row.destructive ? Theme.Palette.destructive : Theme.Palette.textPrimary)
-            Spacer(minLength: 8)
+            Spacer(minLength: Theme.Layout.rowGap)
             if let detail = row.detail {
               Text(detail)
                 .font(Theme.TypeScale.note)
@@ -86,12 +86,12 @@ public struct AccountMenu: View {
                 .foregroundStyle(Theme.Palette.textMuted)
             }
           }
-          .padding(.horizontal, 12)
+          .padding(.horizontal, Theme.Layout.sectionGap)
           .frame(height: Theme.Metric.accountRowHeight)
           .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.Layout.selectionRadius, style: .continuous)
               .fill(hovering == row.id ? Theme.Palette.hover : .clear)
-              .padding(.horizontal, 4)
+              .padding(.horizontal, Theme.Layout.detailGap)
           )
           .contentShape(Rectangle())
         }
@@ -99,8 +99,8 @@ public struct AccountMenu: View {
         .onHover { hovering = $0 ? row.id : (hovering == row.id ? nil : hovering) }
       }
     }
-    .animation(.easeOut(duration: 0.1), value: hovering)
-    .padding(.vertical, 6)
+    .animation(Theme.Motion.accountHover, value: hovering)
+    .padding(.vertical, Theme.Layout.labelGap)
     .frame(width: Theme.Metric.accountMenuWidth)
     .background(
       RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous)
@@ -110,6 +110,8 @@ public struct AccountMenu: View {
       RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous)
         .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
     )
-    .shadow(color: Theme.Palette.accountShadow, radius: 18, y: 6)
+    .shadow(
+      color: Theme.Palette.accountShadow, radius: Theme.Dialog.accountShadowRadius,
+      y: Theme.Dialog.accountShadowY)
   }
 }

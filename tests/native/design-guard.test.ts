@@ -255,7 +255,7 @@ test("panel and column primitives reject scattered style values", () => {
     check("", {
       "EagleDesign/Panels/SidebarPanel.swift": `
     onMoveGroup(section.id, -1)
-    Button("Move") {}.disabled(index >= groups.count - 1)
+    ActionControl("Move") {}.disabled(index >= groups.count - 1)
   `,
     }),
     [],
@@ -267,6 +267,166 @@ test("panel and column primitives reject scattered style values", () => {
       ),
     );
   }
+});
+
+test("new presentation files cannot introduce literal or locally hidden styles", () => {
+  for (const source of [
+    'struct NewView: View { var body: some View { Text("New").padding(13) } }',
+    'struct NewView: View { let gap = 13; var body: some View { Text("New").padding(gap) } }',
+    "struct NewView: View { init(gap: CGFloat = 13) {} }",
+    'struct NewView: View { var body: some View { Text("New").opacity(0.37) } }',
+    "struct NewStyle: ViewModifier { func body(content: Content) -> some View { content.offset(x: 13) } }",
+  ])
+    assert(
+      check(source).some(
+        (item) => item.rule === "presentation-style-ownership",
+      ),
+    );
+  assert(
+    check('Text("New").padding(13)', {
+      "SnapshotRenderer/New.swift": 'Text("New").padding(13)',
+    }).some(
+      (item) =>
+        item.rule === "presentation-style-ownership" &&
+        item.path === "SnapshotRenderer/New.swift",
+    ),
+  );
+  assert.deepEqual(
+    check("struct Model { let timeout = 13; let ttl = 3600 }"),
+    [],
+  );
+});
+
+test("all Theme namespaces are definition owners, not extension escape hatches", () => {
+  assert(check("extension Theme.Chat { static let rogue = 13 }").length > 0);
+  assert(check("typealias Hidden = Theme.Dialog").length > 0);
+});
+
+test("typographic derivatives must be defined with the type scale", () => {
+  for (const source of [
+    'Text("X").bold()',
+    'Text("X").italic()',
+    'Text("X").fontWeight(.semibold)',
+    'Text("X").font(Theme.TypeScale.note.weight(.bold))',
+  ]) {
+    assert(check(source).some((item) => item.rule === "typography-ownership"));
+  }
+});
+
+test("numeric data allowances cannot permit new direct styling", () => {
+  const path = "EagleDesign/Primitives/BotFace.swift";
+  assert.deepEqual(
+    check("", {
+      [path]:
+        "struct BotFace: View { var eyes: some View { RoundedRectangle(cornerRadius: eyeWidth / 2) } }",
+    }),
+    [],
+  );
+  assert(
+    check("", {
+      [path]:
+        'struct BotFace: View { var eyes: some View { Text("X").padding(2) } }',
+    }).some((item) => item.rule === "presentation-style-ownership"),
+  );
+  assert(
+    check("", { "EagleApp/EagleApp.swift": "struct EagleApp: App {}" }).some(
+      (item) => item.rule === "unused-numeric-allowance",
+    ),
+  );
+});
+
+test("feature controls use shared components, except real menu and alert builders", () => {
+  for (const source of [
+    'Button("Run") {}',
+    'TextField("Name", text: value)',
+    'SecureField("Secret", text: value)',
+    "TextEditor(text: value)",
+    "let make = SwiftUI.Button<Text>.init",
+    "typealias RawField = SwiftUI.TextField<Text>",
+  ])
+    assert(check(source).some((item) => item.rule === "control-ownership"));
+  assert.deepEqual(
+    check('SelectionMenu("Choice", style: .standard) { Button("Option") {} }'),
+    [],
+  );
+  assert.deepEqual(
+    check(
+      'view.alert("Confirm", isPresented: state) { Button("Cancel", role: .cancel) {} } message: { Text("Message") }',
+    ),
+    [],
+  );
+  assert(
+    check(
+      'view.alert("Confirm", isPresented: state) { Button("Cancel") {} } message: { Button("Wrong") {} }',
+    ).some((item) => item.rule === "control-ownership"),
+  );
+  assert(
+    check('Menu { Button("Option") {} } label: { Button("Wrong") {} }').some(
+      (item) => item.rule === "control-ownership",
+    ),
+  );
+});
+
+test("qualified presentation declarations, shape defaults and timeline recipes are covered", () => {
+  for (const source of [
+    'struct NewView: SwiftUI.View { let gap = 13; var body: some View { Text("X").padding(gap) } }',
+    "struct NewShape: Shape { let radius = 13; func path(in rect: CGRect) -> Path { Path() } }",
+    'TimelineView(.animation(minimumInterval: 0.37)) { _ in Text("X") }',
+    'Text("X").transition(.scale(scale: 0.87))',
+  ])
+    assert(
+      check(source).some(
+        (item) => item.rule === "presentation-style-ownership",
+      ),
+    );
+});
+
+test("raw-control and geometry owners cannot be impersonated by nested types", () => {
+  assert(
+    check("", {
+      "EagleDesign/Primitives/ActionControl.swift":
+        'enum Wrong { struct ActionControl: View { var button: some View { Button("Bad") {} } } }',
+    }).some((item) => item.rule === "control-ownership"),
+  );
+  assert(
+    check("", {
+      "EagleDesign/Primitives/BotFace.swift":
+        'enum Wrong { struct BotFace: View { var eyes: some View { let side = 0.085; Text("Bad").frame(width: side) } } }',
+    }).some((item) => item.rule === "presentation-style-ownership"),
+  );
+});
+
+test("spacers and computed presentation numbers cannot scatter styles", () => {
+  for (const source of [
+    "Spacer(minLength: 13)",
+    'struct NewView: View { var inset: CGFloat { 13 }; var body: some View { Text("X").padding(inset) } }',
+    'struct NewView: View { func inset() -> CGFloat { 13 }; var body: some View { Text("X").padding(inset()) } }',
+    'Text("X").scaleEffect(2)',
+    'Text("X").scaleEffect(360)',
+  ])
+    assert(
+      check(source).some(
+        (item) => item.rule === "presentation-style-ownership",
+      ),
+    );
+  assert(
+    check("", {
+      "EagleDesign/Primitives/BotFace.swift":
+        'struct BotFace: View { var eyes: some View { Text("Bad").padding(2 + 0) } }',
+    }).some((item) => item.rule === "presentation-style-ownership"),
+  );
+});
+
+test("qualified numeric getters and helpers retain presentation ownership", () => {
+  for (const source of [
+    'struct NewView: View { var inset: Swift.Double { 13 }; var body: some View { Text("X").padding(CGFloat(inset)) } }',
+    'struct NewView: View { func inset() -> Swift.Double { 13 }; var body: some View { Text("X").padding(CGFloat(inset())) } }',
+  ])
+    assert(
+      check(source).some(
+        (item) => item.rule === "presentation-style-ownership",
+      ),
+    );
 });
 
 test("tracks type aliases across files rather than blessing local names", () => {
@@ -322,9 +482,9 @@ var tint: Color { switch state { case .active: Theme.Palette.accent; default: Th
 Text("Title").font(row.kind == .plan ? Theme.TypeScale.body : Theme.TypeScale.note)
 Text("Color.red .font(.system(size: 15))").foregroundStyle(fill)
 Text("Title").font(title).frame(width: availableWidth)
-Theme.Palette.clear.frame(height: 1)
+Theme.Palette.clear.frame(height: Theme.Metric.hairline)
 Circle().strokeBorder(AngularGradient(stops: [.init(color: fill, location: 0)], center: .center))
-Circle().stroke(fill, style: .init(lineWidth: 1))
+Circle().stroke(fill, style: .init(lineWidth: Theme.Metric.hairline))
 Text("hello").background(alignment: .init(horizontal: .leading, vertical: .top)) { Text("World") }
 // Color(red: 1, green: 0, blue: 0)
 /* .font(.system(size: 15)) */

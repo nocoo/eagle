@@ -16,7 +16,7 @@ public struct SettingsView: View {
   private let daemon: BotsDaemonSupervisor?
   private let showsCloseButton: Bool
   /// The width every text field on a settings row takes, so the right column lines up.
-  private static let fieldWidth: CGFloat = 300
+  private static let fieldWidth: CGFloat = Theme.Form.fieldWidth
   /// Which tool groups are open; collapsed by default, the page reads as a list of switches.
   @State private var expandedToolGroups: Set<String> = []
   /// Which decision provider shows its address and model fields.
@@ -142,15 +142,15 @@ public struct SettingsView: View {
 
   /// Model gateway: the one place a person configures the bot's endpoint, key and model.
   private var bots: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
       if let daemon {
         daemonSection(daemon)
       }
       sectionCard(
         "模型网关", detail: "Bot 使用这台机器上的网关，保存后立即生效"
       ) {
-        HStack(spacing: 10) {
-          if model.gatewayBusy { SpinnerArc(size: 12) }
+        HStack(spacing: Theme.Layout.controlGap) {
+          if model.gatewayBusy { SpinnerArc(size: Theme.Metric.spinnerSize) }
           SettingsActionButton("测试连接") {
             Task { @MainActor in await model.testGateway() }
           }
@@ -201,7 +201,7 @@ public struct SettingsView: View {
   /// What the last probe or save answered, in the card that owns the action.
   @ViewBuilder private var gatewayProbeNote: some View {
     if let probe = model.gatewayProbe {
-      VStack(alignment: .leading, spacing: 6) {
+      VStack(alignment: .leading, spacing: Theme.Layout.labelGap) {
         Label(
           "\(probe.message) · \(probe.latencyMs) ms",
           systemImage: probe.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
@@ -220,7 +220,7 @@ public struct SettingsView: View {
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.vertical, 14)
+      .padding(.vertical, Theme.Layout.controlInset)
     } else if let message = model.gatewayMessage {
       SettingsSectionNote(message)
     } else if model.gateway?.configured == false {
@@ -235,10 +235,10 @@ public struct SettingsView: View {
       BotsDaemonActions(daemon: daemon)
     } body: {
       SettingsSectionRow("状态", detail: daemonStateDetail(daemon)) {
-        HStack(spacing: 8) {
+        HStack(spacing: Theme.Layout.rowGap) {
           Circle()
             .fill(daemonStatusTint(daemon))
-            .frame(width: 8, height: 8)
+            .frame(width: Theme.Layout.statusMarker, height: Theme.Layout.statusMarker)
           Text(daemonStatusText(daemon))
             .font(Theme.TypeScale.note)
             .foregroundStyle(Theme.Palette.textPrimary)
@@ -256,7 +256,7 @@ public struct SettingsView: View {
       if case .failed(let message) = daemon.status {
         Divider().overlay(Theme.Palette.line)
         SettingsSectionNote(message, destructive: true)
-          .padding(.top, 12)
+          .padding(.top, Theme.Layout.sectionGap)
       }
     }
   }
@@ -294,8 +294,8 @@ public struct SettingsView: View {
     sectionCard(
       "系统提示词", detail: "每个 Bot 的提示词都以这两段开头，改完从下一轮开始生效"
     ) {
-      HStack(spacing: 10) {
-        if model.gatewayBusy { SpinnerArc(size: 12) }
+      HStack(spacing: Theme.Layout.controlGap) {
+        if model.gatewayBusy { SpinnerArc(size: Theme.Metric.spinnerSize) }
         SettingsActionButton("保存", prominent: true) {
           Task { @MainActor in await model.savePrompts() }
         }
@@ -320,7 +320,7 @@ public struct SettingsView: View {
           }
         )
       )
-      .padding(.bottom, 16)
+      .padding(.bottom, Theme.Layout.sectionInset)
       Divider().overlay(Theme.Palette.line)
       SettingsSectionRow(
         "Core Machine Prompt",
@@ -336,7 +336,7 @@ public struct SettingsView: View {
       if let message = model.gatewayMessage {
         Divider().overlay(Theme.Palette.line)
         SettingsSectionNote(message)
-          .padding(.top, 12)
+          .padding(.top, Theme.Layout.sectionGap)
       }
     }
     .task { @MainActor in await model.loadGatewayIfNeeded() }
@@ -349,8 +349,8 @@ public struct SettingsView: View {
     sectionCard(
       "可用工具", detail: "Bot 能做的事，改完从下一轮开始生效"
     ) {
-      HStack(spacing: 10) {
-        if model.gatewayBusy { SpinnerArc(size: 12) }
+      HStack(spacing: Theme.Layout.controlGap) {
+        if model.gatewayBusy { SpinnerArc(size: Theme.Metric.spinnerSize) }
         SettingsActionButton("保存", prominent: true) {
           Task { @MainActor in await model.saveTools() }
         }
@@ -399,7 +399,7 @@ public struct SettingsView: View {
       if let message = model.gatewayMessage {
         Divider().overlay(Theme.Palette.line)
         SettingsSectionNote(message)
-          .padding(.top, 12)
+          .padding(.top, Theme.Layout.sectionGap)
       }
     }
     .task { @MainActor in await model.loadGatewayIfNeeded() }
@@ -415,9 +415,9 @@ public struct SettingsView: View {
   ) -> some View {
     let expanded = expandedToolGroups.contains(id)
     return VStack(alignment: .leading, spacing: 0) {
-      HStack(alignment: .center, spacing: 12) {
-        Button {
-          withAnimation(.easeOut(duration: 0.16)) {
+      HStack(alignment: .center, spacing: Theme.Layout.sectionGap) {
+        ActionControl {
+          withAnimation(Theme.Motion.selection) {
             if expanded {
               expandedToolGroups.remove(id)
             } else {
@@ -425,12 +425,12 @@ public struct SettingsView: View {
             }
           }
         } label: {
-          HStack(alignment: .center, spacing: 8) {
+          HStack(alignment: .center, spacing: Theme.Layout.rowGap) {
             Image(systemName: "chevron.right")
               .font(Theme.TypeScale.Glyph.action)
               .foregroundStyle(Theme.Palette.textMuted)
-              .rotationEffect(.degrees(expanded ? 90 : 0))
-            VStack(alignment: .leading, spacing: 3) {
+              .rotationEffect(.degrees(expanded ? Theme.Sidebar.disclosureAngle : 0))
+            VStack(alignment: .leading, spacing: Theme.Layout.captionGap) {
               Text(title)
                 .font(Theme.TypeScale.fieldLabel)
                 .foregroundStyle(Theme.Palette.textPrimary)
@@ -442,7 +442,6 @@ public struct SettingsView: View {
           }
           .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .accessibilityLabel("\(title)的工具")
         .accessibilityValue(expanded ? "已展开" : "已折叠")
         Spacer(minLength: 0)
@@ -451,10 +450,10 @@ public struct SettingsView: View {
           .tint(Theme.Palette.accentStrong)
           .disabled(alwaysOn)
       }
-      .padding(.vertical, 16)
+      .padding(.vertical, Theme.Layout.sectionInset)
       if expanded {
         toolList(for: group)
-          .padding(.bottom, 16)
+          .padding(.bottom, Theme.Layout.sectionInset)
       }
     }
   }
@@ -462,7 +461,7 @@ public struct SettingsView: View {
   /// What the daemon says the group holds right now, in its own words.
   @ViewBuilder private func toolList(for group: String) -> some View {
     let tools = model.toolCatalog.first { $0.group == group }?.tools ?? []
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: Theme.Layout.controlGap) {
       if model.toolCatalog.isEmpty {
         Text("还没有读到工具清单")
           .font(Theme.TypeScale.note)
@@ -473,11 +472,11 @@ public struct SettingsView: View {
           .foregroundStyle(Theme.Palette.textMuted)
       } else {
         ForEach(tools) { tool in
-          HStack(alignment: .firstTextBaseline, spacing: 10) {
+          HStack(alignment: .firstTextBaseline, spacing: Theme.Layout.controlGap) {
             Text(tool.name)
               .font(Theme.TypeScale.mono)
               .foregroundStyle(Theme.Palette.textPrimary)
-              .frame(width: 132, alignment: .leading)
+              .frame(width: Theme.Page.toolNameWidth, alignment: .leading)
             Text(tool.description)
               .font(Theme.TypeScale.note)
               .foregroundStyle(Theme.Palette.textSecondary)
@@ -487,12 +486,12 @@ public struct SettingsView: View {
         }
       }
     }
-    .padding(.leading, 18)
+    .padding(.leading, Theme.Layout.groupGap)
   }
 
   /// What the machine contributes, read-only: the file a person would open and what it says.
   @ViewBuilder private var machinePromptPreview: some View {
-    VStack(alignment: .leading, spacing: 6) {
+    VStack(alignment: .leading, spacing: Theme.Layout.labelGap) {
       if let machine = model.gatewayMachinePrompt {
         Text(machine.path)
           .font(Theme.TypeScale.monoCaption)
@@ -506,14 +505,14 @@ public struct SettingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .textSelection(.enabled)
         }
-        .frame(maxHeight: 150)
+        .frame(maxHeight: Theme.Page.machinePromptMaxHeight)
       } else {
         Text("没有找到机器指令文件：~/.agents、~/.pi/agent、~/.codex、~/.claude 下的 AGENTS.md")
           .font(Theme.TypeScale.note)
           .foregroundStyle(Theme.Palette.textMuted)
       }
     }
-    .padding(.bottom, 16)
+    .padding(.bottom, Theme.Layout.sectionInset)
   }
 
   private func toolGroupBinding(_ name: String) -> Binding<Bool> {
@@ -533,10 +532,10 @@ public struct SettingsView: View {
   }
 
   private var providersPage: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
       if let error = model.providerLoadError {
         SettingsSectionNote(error, destructive: true)
-          .padding(.horizontal, 4)
+          .padding(.horizontal, Theme.Layout.detailGap)
       }
       providerSection(
         ProviderSettings.searchService,
@@ -562,8 +561,8 @@ public struct SettingsView: View {
   ) -> some View {
     let listed = model.providers(in: service)
     return sectionCard(title, detail: detail) {
-      HStack(spacing: 10) {
-        if model.providerBusy { SpinnerArc(size: 12) }
+      HStack(spacing: Theme.Layout.controlGap) {
+        if model.providerBusy { SpinnerArc(size: Theme.Metric.spinnerSize) }
         providerMenu(service: service, listed: listed, offLabel: offLabel)
       }
     } body: {
@@ -576,7 +575,7 @@ public struct SettingsView: View {
       {
         Divider().overlay(Theme.Palette.line)
         SettingsSectionNote(message)
-          .padding(.top, 12)
+          .padding(.top, Theme.Layout.sectionGap)
       }
     }
   }
@@ -584,10 +583,10 @@ public struct SettingsView: View {
   /// The 密码 page: the records the daemon stores, and the three things a person may do with
   /// one of them. A value is read only when a person asks for it.
   private var passwords: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
       if let error = model.secretLoadError {
         SettingsSectionNote(error, destructive: true)
-          .padding(.horizontal, 4)
+          .padding(.horizontal, Theme.Layout.detailGap)
       }
       secretSection(
         title: "本机共享",
@@ -605,7 +604,7 @@ public struct SettingsView: View {
       )
       if let message = model.secretMessage {
         SettingsSectionNote(message)
-          .padding(.horizontal, 4)
+          .padding(.horizontal, Theme.Layout.detailGap)
       }
     }
     .task { await model.loadSecrets() }
@@ -636,8 +635,8 @@ public struct SettingsView: View {
     showsRefresh: Bool
   ) -> some View {
     sectionCard(title, detail: detail) {
-      HStack(spacing: 10) {
-        if model.secretBusy { SpinnerArc(size: 12) }
+      HStack(spacing: Theme.Layout.controlGap) {
+        if model.secretBusy { SpinnerArc(size: Theme.Metric.spinnerSize) }
         if showsRefresh {
           SettingsActionButton("刷新") {
             Task { await model.loadSecrets() }
@@ -648,7 +647,7 @@ public struct SettingsView: View {
     } body: {
       if model.secretLoadError == nil && secrets.isEmpty {
         SettingsSectionNote(empty)
-          .padding(.top, 14)
+          .padding(.top, Theme.Layout.controlInset)
       } else {
         ForEach(Array(secrets.enumerated()), id: \.element.id) { index, secret in
           if index > 0 { Divider().overlay(Theme.Palette.line) }
@@ -660,8 +659,8 @@ public struct SettingsView: View {
 
   /// One record: what it is, who made it and the three actions a person may take.
   private func secretRow(_ secret: Secret) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(alignment: .firstTextBaseline, spacing: 10) {
+    VStack(alignment: .leading, spacing: Theme.Layout.rowGap) {
+      HStack(alignment: .firstTextBaseline, spacing: Theme.Layout.controlGap) {
         Text(secret.key)
           .font(Theme.TypeScale.mono)
           .foregroundStyle(Theme.Palette.textPrimary)
@@ -704,7 +703,7 @@ public struct SettingsView: View {
           .textSelection(.enabled)
       }
     }
-    .padding(.vertical, 16)
+    .padding(.vertical, Theme.Layout.sectionInset)
   }
 
   private func providerMenu(
@@ -738,8 +737,8 @@ public struct SettingsView: View {
   private func providerRow(_ provider: ProviderSettings) -> some View {
     let hasDraft = model.providerHasChanges(provider)
     let expanded = expandedProviderDetails.contains(provider.id)
-    return VStack(alignment: .leading, spacing: 10) {
-      HStack(spacing: 8) {
+    return VStack(alignment: .leading, spacing: Theme.Layout.controlGap) {
+      HStack(spacing: Theme.Layout.rowGap) {
         Text(provider.title)
           .font(Theme.TypeScale.cardTitle)
           .foregroundStyle(Theme.Palette.textPrimary)
@@ -748,8 +747,8 @@ public struct SettingsView: View {
           .foregroundStyle(provider.enabled ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
         Spacer(minLength: 0)
         if provider.isDecision {
-          Button {
-            withAnimation(.easeOut(duration: 0.16)) {
+          ActionControl {
+            withAnimation(Theme.Motion.selection) {
               if expanded {
                 expandedProviderDetails.remove(provider.id)
               } else {
@@ -757,17 +756,16 @@ public struct SettingsView: View {
               }
             }
           } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: Theme.Layout.detailGap) {
               Image(systemName: "chevron.right")
                 .font(Theme.TypeScale.Glyph.chevron)
-                .rotationEffect(.degrees(expanded ? 90 : 0))
+                .rotationEffect(.degrees(expanded ? Theme.Sidebar.disclosureAngle : 0))
               Text("地址与模型")
             }
             .font(Theme.TypeScale.note)
             .foregroundStyle(Theme.Palette.textSecondary)
             .contentShape(Rectangle())
           }
-          .buttonStyle(.plain)
           .accessibilityLabel("\(provider.title)的地址与模型")
           .accessibilityValue(expanded ? "已展开" : "已折叠")
         }
@@ -777,7 +775,7 @@ public struct SettingsView: View {
             .foregroundStyle(Theme.Palette.textSecondary)
         }
       }
-      HStack(spacing: 8) {
+      HStack(spacing: Theme.Layout.rowGap) {
         SettingsTextField(
           providerKeyPlaceholder(provider),
           text: keyBinding(provider.id), secure: true
@@ -820,7 +818,7 @@ public struct SettingsView: View {
         .foregroundStyle(probe.ok ? Theme.Palette.accentStrong : Theme.Palette.destructive)
       }
     }
-    .padding(.vertical, 16)
+    .padding(.vertical, Theme.Layout.sectionInset)
   }
 
   private func providerKeyPlaceholder(_ provider: ProviderSettings) -> String {
@@ -832,8 +830,8 @@ public struct SettingsView: View {
   /// A decision provider's address and model are overridable without a release: an empty field
   /// asks the daemon for the catalogue value again.
   private func providerAddressFields(_ provider: ProviderSettings) -> some View {
-    HStack(alignment: .bottom, spacing: 8) {
-      VStack(alignment: .leading, spacing: 4) {
+    HStack(alignment: .bottom, spacing: Theme.Layout.rowGap) {
+      VStack(alignment: .leading, spacing: Theme.Layout.detailGap) {
         Text("地址")
           .font(Theme.TypeScale.note)
           .foregroundStyle(Theme.Palette.textSecondary)
@@ -841,10 +839,10 @@ public struct SettingsView: View {
           "默认 \(provider.defaults.baseUrl)",
           text: providerAddressBinding(provider.id)
         )
-        .frame(width: 240)
+        .frame(width: Theme.Page.providerAddressWidth)
         .disabled(model.providerBusy)
       }
-      VStack(alignment: .leading, spacing: 4) {
+      VStack(alignment: .leading, spacing: Theme.Layout.detailGap) {
         Text("模型")
           .font(Theme.TypeScale.note)
           .foregroundStyle(Theme.Palette.textSecondary)
@@ -852,7 +850,7 @@ public struct SettingsView: View {
           "默认 \(provider.defaults.model)",
           text: providerModelBinding(provider.id)
         )
-        .frame(width: 220)
+        .frame(width: Theme.Page.providerModelWidth)
         .disabled(model.providerBusy)
       }
       Spacer(minLength: 0)
@@ -881,11 +879,11 @@ public struct SettingsView: View {
   }
 
   private var usage: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
       if model.usageReport == nil {
         sectionCard("用量", detail: "所有 Bot 的 token、调用与花费") {
           SettingsSectionNote(model.usageBusy ? "正在读取用量…" : "还没有用量数据")
-            .padding(.top, 14)
+            .padding(.top, Theme.Layout.controlInset)
         }
       } else {
         sectionCard("用量", detail: "所有 Bot 的 token、调用与花费") {
@@ -901,7 +899,7 @@ public struct SettingsView: View {
           }
           Divider().overlay(Theme.Palette.line)
           SettingsSectionNote("保留 \(retentionDays) 天，按本机日期切分")
-            .padding(.top, 12)
+            .padding(.top, Theme.Layout.sectionGap)
         }
         usageChart
         usageSources
@@ -921,7 +919,7 @@ public struct SettingsView: View {
     return sectionCard("来源", detail: "模型花 token，搜索花调用") {
       if rows.isEmpty {
         SettingsSectionNote("还没有消耗记录")
-          .padding(.top, 14)
+          .padding(.top, Theme.Layout.controlInset)
       } else {
         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
           if index > 0 { Divider().overlay(Theme.Palette.line) }
@@ -940,27 +938,28 @@ public struct SettingsView: View {
     let days = model.usageReport?.days ?? []
     let peak = days.map(\.totalTokens).max() ?? 0
     return sectionCard("近 30 天", detail: "每天一条，最忙的一天填满卡片") {
-      HStack(alignment: .bottom, spacing: 3) {
+      HStack(alignment: .bottom, spacing: Theme.Layout.captionGap) {
         ForEach(days) { day in
-          RoundedRectangle(cornerRadius: 2, style: .continuous)
+          RoundedRectangle(cornerRadius: Theme.Page.usageBarRadius, style: .continuous)
             .fill(
               day.totalTokens == 0
                 ? Theme.Palette.line
-                : Theme.Palette.accentFill.opacity(0.85)
+                : Theme.Palette.usageBar
             )
             .frame(height: barHeight(day.totalTokens, peak: peak))
             .frame(maxWidth: .infinity)
             .help("\(UsageFormat.shortDay(day.day)) · \(UsageFormat.tokens(day.totalTokens))")
         }
       }
-      .frame(height: 56, alignment: .bottom)
-      .padding(.vertical, 16)
+      .frame(height: Theme.Page.usageChartHeight, alignment: .bottom)
+      .padding(.vertical, Theme.Layout.sectionInset)
     }
   }
 
   private func barHeight(_ tokens: Int, peak: Int) -> CGFloat {
-    guard peak > 0, tokens > 0 else { return 2 }
-    return max(3, 56 * CGFloat(tokens) / CGFloat(peak))
+    guard peak > 0, tokens > 0 else { return Theme.Page.usageEmptyHeight }
+    return max(
+      Theme.Page.usageMinimumHeight, Theme.Page.usageChartHeight * CGFloat(tokens) / CGFloat(peak))
   }
 
   private var usageBots: some View {
@@ -968,7 +967,7 @@ public struct SettingsView: View {
     return sectionCard("消耗最多", detail: "近 \(retentionDays) 天花得最多的 5 个 Bot") {
       if bots.isEmpty {
         SettingsSectionNote("近 \(retentionDays) 天还没有消耗")
-          .padding(.top, 14)
+          .padding(.top, Theme.Layout.controlInset)
       } else {
         ForEach(Array(bots.enumerated()), id: \.element.id) { index, bot in
           if index > 0 { Divider().overlay(Theme.Palette.line) }
@@ -990,7 +989,7 @@ public struct SettingsView: View {
         .font(Theme.TypeScale.note)
         .foregroundStyle(Theme.Palette.textSecondary)
     case .checking:
-      HStack(spacing: 10) {
+      HStack(spacing: Theme.Layout.controlGap) {
         SpinnerArc()
         Text("正在检查更新…")
           .font(Theme.TypeScale.note)
@@ -999,11 +998,11 @@ public struct SettingsView: View {
     case .current(let version):
       InfoBanner("已是最新版本 \(version)")
     case .available(let latest, let release):
-      HStack(spacing: 12) {
+      HStack(spacing: Theme.Layout.sectionGap) {
         Image(systemName: "arrow.down.circle.fill")
           .font(Theme.TypeScale.sectionTitle)
           .foregroundStyle(Theme.Palette.accentStrong)
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Theme.Layout.microGap) {
           Text("有新版本 \(latest)")
             .font(Theme.TypeScale.cardTitleStrong)
             .foregroundStyle(Theme.Palette.textPrimary)
@@ -1018,10 +1017,10 @@ public struct SettingsView: View {
           }
         }
       }
-      .padding(12)
+      .padding(Theme.Layout.sectionGap)
       .background(
         RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
-          .fill(Theme.Palette.accentStrong.opacity(0.10))
+          .fill(Theme.Palette.updateFill)
       )
     case .development(let version):
       InfoBanner("已是最新版本 \(version)")
@@ -1034,7 +1033,7 @@ public struct SettingsView: View {
 
   /// Identity, the update check and where to get the code; the app's own versions below.
   private var about: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
       SettingsCard {
         VStack(spacing: 0) {
           SettingsSectionHeader(
@@ -1045,13 +1044,13 @@ public struct SettingsView: View {
             }
           }
           Divider().overlay(Theme.Palette.line)
-          HStack(alignment: .center, spacing: 18) {
+          HStack(alignment: .center, spacing: Theme.Layout.groupGap) {
             aboutMark
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Theme.Layout.detailGap) {
               Text(DevAppIdentity.currentDisplayName)
                 .font(Theme.TypeScale.dialogTitle)
                 .foregroundStyle(Theme.Palette.textPrimary)
-              HStack(spacing: 8) {
+              HStack(spacing: Theme.Layout.rowGap) {
                 Text(model.appVersion.display)
                   .font(Theme.TypeScale.mono)
                   .foregroundStyle(Theme.Palette.textSecondary)
@@ -1060,10 +1059,10 @@ public struct SettingsView: View {
                   Text("开发版")
                     .font(Theme.TypeScale.compactBadge)
                     .foregroundStyle(Theme.Palette.textMuted)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, Theme.Layout.labelGap)
+                    .padding(.vertical, Theme.Layout.microGap)
                     .background(
-                      RoundedRectangle(cornerRadius: 5, style: .continuous)
+                      RoundedRectangle(cornerRadius: Theme.Layout.badgeRadius, style: .continuous)
                         .fill(Theme.Palette.canvas)
                     )
                 }
@@ -1071,10 +1070,10 @@ public struct SettingsView: View {
             }
             Spacer(minLength: 0)
           }
-          .padding(.vertical, 20)
+          .padding(.vertical, Theme.Metric.contentInset)
           Divider().overlay(Theme.Palette.line)
           updateSummary
-            .padding(.vertical, 14)
+            .padding(.vertical, Theme.Layout.controlInset)
         }
       }
 
@@ -1116,7 +1115,7 @@ public struct SettingsView: View {
       Text("\(String(Calendar.current.component(.year, from: Date()))) Eagle · 数据保留在这台机器上")
         .font(Theme.TypeScale.note)
         .foregroundStyle(Theme.Palette.textMuted)
-        .padding(.leading, 4)
+        .padding(.leading, Theme.Layout.detailGap)
     }
     .task { await model.checkForUpdatesIfNeeded() }
   }
@@ -1127,12 +1126,12 @@ public struct SettingsView: View {
       Image(nsImage: icon)
         .resizable()
         .interpolation(.high)
-        .frame(width: 64, height: 64)
+        .frame(width: Theme.Page.productIcon, height: Theme.Page.productIcon)
     } else {
       Image(systemName: "bird")
         .font(Theme.TypeScale.aboutTitle)
         .foregroundStyle(Theme.Palette.textPrimary)
-        .frame(width: 64, height: 64)
+        .frame(width: Theme.Page.productIcon, height: Theme.Page.productIcon)
     }
   }
 
@@ -1174,14 +1173,14 @@ private struct BotsDaemonActions: View {
   var body: some View {
     switch daemon.status {
     case .starting:
-      SpinnerArc(size: 12)
+      SpinnerArc(size: Theme.Metric.spinnerSize)
     case .running(_, _, let external):
       if external {
         Text("由外部启动，不随 App 退出")
           .font(Theme.TypeScale.note)
           .foregroundStyle(Theme.Palette.textMuted)
       } else {
-        HStack(spacing: 10) {
+        HStack(spacing: Theme.Layout.controlGap) {
           SettingsActionButton("重启") { Task { await daemon.restart() } }
           SettingsActionButton("停止") { Task { await daemon.stop() } }
         }

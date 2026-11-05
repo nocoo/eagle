@@ -30,7 +30,8 @@ public final class GalleryWindowController {
       return
     }
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 1180, height: 900),
+      contentRect: NSRect(
+        x: 0, y: 0, width: Theme.Gallery.windowWidth, height: Theme.Gallery.windowHeight),
       styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
       backing: .buffered, defer: false
     )

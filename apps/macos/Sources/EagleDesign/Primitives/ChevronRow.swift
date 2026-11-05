@@ -17,22 +17,22 @@ public struct ChevronRow: View {
     Button {
       action?()
     } label: {
-      HStack(spacing: 9) {
+      HStack(spacing: Theme.Primitive.chevronGap) {
         Image(systemName: systemName)
           .font(Theme.TypeScale.activity)
           .foregroundStyle(Theme.Palette.textSecondary)
-          .frame(width: 20)
+          .frame(width: Theme.Layout.glyphSlot)
         Text(title)
           .font(Theme.TypeScale.cardTitle)
           .foregroundStyle(Theme.Palette.textPrimary)
           .lineLimit(1)
           .truncationMode(.middle)
-        Spacer(minLength: 8)
+        Spacer(minLength: Theme.Layout.rowGap)
         Image(systemName: "chevron.right")
           .font(Theme.TypeScale.Glyph.action)
           .foregroundStyle(Theme.Palette.textSecondary)
       }
-      .padding(.horizontal, 14)
+      .padding(.horizontal, Theme.Layout.controlInset)
       .frame(height: Theme.Metric.inspectorRowHeight)
       .background(
         RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous)
@@ -42,7 +42,7 @@ public struct ChevronRow: View {
         RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous)
           .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
       )
-      .opacity(hovering ? 0.82 : 1)
+      .opacity(hovering ? Theme.Primitive.hoverContentOpacity : 1)
     }
     .buttonStyle(.plain)
     .disabled(action == nil)

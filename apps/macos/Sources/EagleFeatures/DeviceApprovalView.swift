@@ -13,7 +13,7 @@ public struct DeviceApprovalView: View {
   }
 
   public var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
+    VStack(alignment: .leading, spacing: Theme.Layout.sectionInset) {
       if let request = model.pendingApproval {
         let summary = DeviceApprovalPresentation(operation: request.operation)
         Text("允许这次\(summary.title)？")
@@ -23,11 +23,11 @@ public struct DeviceApprovalView: View {
           .font(Theme.TypeScale.note)
           .foregroundStyle(Theme.Palette.textSecondary)
         ScrollView {
-          VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 16) {
+          VStack(alignment: .leading, spacing: Theme.Layout.sectionInset) {
+            HStack(alignment: .top, spacing: Theme.Layout.sectionInset) {
               field("发起设备", deviceName(request.sourceDeviceId), monospaced: false)
               Image(systemName: "arrow.right").foregroundStyle(Theme.Palette.textMuted)
-                .padding(.top, 20)
+                .padding(.top, Theme.Metric.contentInset)
               field("执行设备", deviceName(request.targetDeviceId), monospaced: false)
             }
             Divider().overlay(Theme.Palette.line)
@@ -38,7 +38,7 @@ public struct DeviceApprovalView: View {
               "有效至", Date(timeIntervalSince1970: Double(request.expiresAt) / 1000).formatted(),
               monospaced: false)
             DisclosureGroup("技术详情") {
-              VStack(alignment: .leading, spacing: 12) {
+              VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
                 field("发起设备 ID", request.sourceDeviceId)
                 field("执行设备 ID", request.targetDeviceId)
                 field("操作 ID", request.operationId)
@@ -47,14 +47,14 @@ public struct DeviceApprovalView: View {
                 field("参数摘要 SHA-256", request.digest)
                 field("完整操作 JSON", DeviceApprovalPresentation.json(request.operation))
               }
-              .padding(.top, 12)
+              .padding(.top, Theme.Layout.sectionGap)
             }
             .font(Theme.TypeScale.note)
             .foregroundStyle(Theme.Palette.textSecondary)
           }
           .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: 420)
+        .frame(maxHeight: Theme.Dialog.approvalContentHeight)
         TimelineView(.periodic(from: .now, by: 1)) { context in
           let expired = Int64(context.date.timeIntervalSince1970 * 1000) >= request.expiresAt
           HStack {
@@ -64,8 +64,10 @@ public struct DeviceApprovalView: View {
                 .foregroundStyle(Theme.Palette.destructive)
             }
             Spacer(minLength: 0)
-            Button("拒绝", role: .cancel) { model.respondToApproval(false, requestId: request.id) }
-              .keyboardShortcut(.cancelAction)
+            ActionControl("拒绝", role: .cancel, style: .automatic) {
+              model.respondToApproval(false, requestId: request.id)
+            }
+            .keyboardShortcut(.cancelAction)
             SettingsActionButton("允许此次操作", prominent: true) {
               model.respondToApproval(true, requestId: request.id)
             }
@@ -77,8 +79,11 @@ public struct DeviceApprovalView: View {
           .foregroundStyle(Theme.Palette.textSecondary)
       }
     }
-    .padding(24)
-    .frame(minWidth: 560, idealWidth: 640, maxWidth: 760, minHeight: 260)
+    .padding(Theme.Layout.pageInset)
+    .frame(
+      minWidth: Theme.Dialog.approvalMinWidth, idealWidth: Theme.Dialog.approvalWidth,
+      maxWidth: Theme.Dialog.approvalMaxWidth, minHeight: Theme.Dialog.approvalMinHeight
+    )
     .background(Theme.Palette.surface)
     .preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
     .onAppear { displayedRequestId = model.pendingApproval?.id }
@@ -92,7 +97,7 @@ public struct DeviceApprovalView: View {
   }
 
   private func field(_ title: String, _ value: String, monospaced: Bool = true) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
+    VStack(alignment: .leading, spacing: Theme.Layout.detailGap) {
       Text(title).font(Theme.TypeScale.note).foregroundStyle(Theme.Palette.textSecondary)
       Text(value)
         .font(monospaced ? Theme.TypeScale.mono : Theme.TypeScale.note)

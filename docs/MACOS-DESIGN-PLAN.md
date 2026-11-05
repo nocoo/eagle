@@ -1,6 +1,6 @@
 # macOS design-system consolidation and refinement
 
-Status: **phase 1 in progress; phases 2–4 have not started**.
+Status: **phase-1 source consolidation implemented, final owner review pending; phases 2–4 have not started**.
 Updated 2026-11-05 following the owner's requested order.
 
 The first implementation slice centralizes palette definitions and explicit font
@@ -8,10 +8,11 @@ construction with a parser-based guard and staged-snapshot rejection tests. It p
 current appearance values and manual Bot choices. The next slice unifies native
 switches/checkboxes and their production/Gallery callers, with owner acceptance and
 AX/ownership tests. The owner accepted the selection-menu/form slice, now pushed with
-the earlier work. Sidebar/inspector chrome, tabs and column-resize metrics are the next
-implemented slice awaiting manual acceptance. Remaining conversation, task/card,
-dialog/window-level styles and other control families are unfinished; passing these
-scoped checks is not completion of phase 1. An additional
+the earlier work. Sidebar/inspector chrome and resize metrics were accepted next. The owner then
+requested the remaining chat, cards, dialogs and page-composition work together.
+That implementation and its global source coverage inventory are now complete for
+review; see `docs/MACOS-STYLE-COVERAGE.md`. Source checks are not a substitute for
+owner visual acceptance, and the ledger explicitly bounds the syntax guarantee. An additional
 keyboard-driver experiment is archived locally outside the active source/test tree,
 not a passed gate; the committed composer acceptance remains unchanged.
 See `apps/macos/DESIGN.md` for the precise implemented contract. This document replaces the

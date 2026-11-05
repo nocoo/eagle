@@ -23,14 +23,14 @@ struct BotCreateSheet: View {
       header
       Divider().overlay(Theme.Palette.line)
       ScrollView {
-        VStack(spacing: 16) {
-          BotFace(style: BotFace.Style(shape: shape, tint: tint), size: 132)
-            .padding(.top, 20)
+        VStack(spacing: Theme.Layout.sectionInset) {
+          BotFace(style: BotFace.Style(shape: shape, tint: tint), size: Theme.Picker.previewFace)
+            .padding(.top, Theme.Metric.contentInset)
           fields
           BotFacePicker(shape: $shape, tint: $tint)
         }
         .padding(.horizontal, Theme.Metric.settingsCardInset)
-        .padding(.bottom, 18)
+        .padding(.bottom, Theme.Layout.groupGap)
       }
       Divider().overlay(Theme.Palette.line)
       footer
@@ -38,7 +38,7 @@ struct BotCreateSheet: View {
     // Proportions measured from the reference dialog: 879 × 1 116 at 560 wide keeps its
     // header, preview, two field rows, the shape grid, the swatches and the footer in the
     // same rhythm.
-    .frame(width: 560, height: 712)
+    .frame(width: Theme.Dialog.botWidth, height: Theme.Dialog.createHeight)
     .background(Theme.Palette.surface)
     .onAppear { nameFocused = true }
   }
@@ -48,63 +48,33 @@ struct BotCreateSheet: View {
       Text("创建新 Bot")
         .font(Theme.TypeScale.inspectorTitle)
       Spacer()
-      IconButton(systemName: "xmark", label: "关闭", size: 28, action: onCancel)
+      IconButton(systemName: "xmark", label: "关闭", size: Theme.Metric.hitTarget, action: onCancel)
     }
     .padding(.horizontal, Theme.Metric.settingsCardInset)
-    .frame(height: 62)
+    .frame(height: Theme.Dialog.botHeaderHeight)
   }
 
   private var fields: some View {
-    VStack(spacing: 8) {
-      TextField(
-        "",
-        text: $name,
-        prompt: Text("给你的 Bot 起个名字").foregroundStyle(Theme.Palette.textSecondary)
-      )
-      .textFieldStyle(.plain)
-      .font(Theme.TypeScale.body)
-      .focused($nameFocused)
-      .padding(.horizontal, 14)
-      .frame(height: 43)
-      .background(fieldBackground)
-      .onSubmit { create() }
-
-      TextField(
-        "",
-        text: $label,
-        prompt: Text("标签（可选）").foregroundStyle(Theme.Palette.textSecondary)
-      )
-      .textFieldStyle(.plain)
-      .font(Theme.TypeScale.note)
-      .padding(.horizontal, 14)
-      .frame(height: 36)
-      .background(fieldBackground)
+    VStack(spacing: Theme.Layout.rowGap) {
+      CreationTextField("给你的 Bot 起个名字", text: $name, kind: .name)
+        .focused($nameFocused)
+        .onSubmit { create() }
+      CreationTextField("标签（可选）", text: $label, kind: .label)
     }
   }
 
   private var footer: some View {
     HStack {
       Spacer()
-      Button("取消", action: onCancel)
-        .buttonStyle(.bordered)
+      ActionControl("取消", style: .bordered, action: onCancel)
         .keyboardShortcut(.cancelAction)
-      Button("创建") { create() }
-        .buttonStyle(.borderedProminent)
+      ActionControl("创建", style: .prominent) { create() }
         .tint(Theme.Palette.accentFill)
         .disabled(!canCreate)
         .keyboardShortcut(.defaultAction)
     }
     .padding(.horizontal, Theme.Metric.settingsCardInset)
-    .frame(height: 46)
-  }
-
-  private var fieldBackground: some View {
-    RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
-      .fill(Theme.Palette.card)
-      .overlay(
-        RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
-          .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
-      )
+    .frame(height: Theme.Dialog.createFooterHeight)
   }
 
   private func create() {

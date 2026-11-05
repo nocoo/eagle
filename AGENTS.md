@@ -46,9 +46,10 @@ scripts           live verification and deployment entry points
 Workspace scripts at the root delegate to `@eagle/web`; run them from the root.
 `apps/macos` builds with Command Line Tools alone: no SwiftUI macros
 (`@State`, `@Observable`, `#Preview`), no XCTest and no Swift Testing, so it
-uses `ObservableObject` and the `LocalState` shim. Palette/font, native Toggle/Menu
-ownership and scoped form-primitive metrics are checked by `npm run check:design`
-with Xcode's bundled SwiftParser/SwiftSyntax; `npm run test:design`
+uses `ObservableObject` and the `LocalState` shim. Palette/type/control ownership
+and global visual-argument/presentation-value rules are checked by `npm run check:design`
+with Xcode's bundled SwiftParser/SwiftSyntax; exact geometry/data/native-builder
+boundaries are recorded in `docs/MACOS-STYLE-COVERAGE.md`. `npm run test:design`
 proves accepted/rejected syntax and real index-snapshot commit rejection. The precise
 scope and remaining style categories are in `apps/macos/DESIGN.md`. Tests, strict `swift
 format` lint and the 90% logic-coverage gate need the Xcode toolchain, which

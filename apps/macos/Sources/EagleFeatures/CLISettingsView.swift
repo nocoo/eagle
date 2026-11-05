@@ -16,7 +16,7 @@ public struct CLISettingsView: View {
   }
 
   public var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
       serviceCard
       if let token = model.issuedToken {
         issuedCard(token)
@@ -25,19 +25,19 @@ public struct CLISettingsView: View {
       skillCard
       if let failure = model.failure {
         SettingsSectionNote(failure, destructive: true)
-          .padding(.leading, 4)
+          .padding(.leading, Theme.Layout.detailGap)
           .accessibilityIdentifier("cli.failure")
       }
       if let message = model.message {
         SettingsSectionNote(message)
-          .padding(.leading, 4)
+          .padding(.leading, Theme.Layout.detailGap)
       }
     }
     .task { await model.load() }
   }
 
   private var serviceCard: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
       SettingsCard {
         VStack(spacing: 0) {
           SettingsSectionHeader(
@@ -46,8 +46,8 @@ public struct CLISettingsView: View {
               ? "让其他 agent 用 \(model.commandName) 管理 Bot 并和它们对话"
               : "源码运行时没有内置 CLI，只能查看与撤销凭据"
           ) {
-            HStack(spacing: 10) {
-              if model.busy { SpinnerArc(size: 12) }
+            HStack(spacing: Theme.Layout.controlGap) {
+              if model.busy { SpinnerArc(size: Theme.Metric.spinnerSize) }
               SwitchToggle(isOn: installBinding, label: "启用本机 CLI")
                 .labelsHidden()
                 .tint(Theme.Palette.accentStrong)
@@ -76,7 +76,7 @@ public struct CLISettingsView: View {
               .foregroundStyle(Theme.Palette.textMuted)
               .textSelection(.enabled)
               .frame(maxWidth: .infinity, alignment: .leading)
-              .padding(.vertical, 14)
+              .padding(.vertical, Theme.Layout.controlInset)
               .accessibilityIdentifier("cli.pathHint")
           }
         }
@@ -109,7 +109,7 @@ public struct CLISettingsView: View {
         SettingsSectionHeader(
           "新凭据", detail: "只显示这一次，请立刻复制给要使用它的 agent"
         ) {
-          HStack(spacing: 10) {
+          HStack(spacing: Theme.Layout.controlGap) {
             SettingsActionButton(copiedToken ? "已复制" : "复制") {
               copy(token, feedback: $copiedToken)
             }
@@ -126,7 +126,7 @@ public struct CLISettingsView: View {
           .lineLimit(1)
           .truncationMode(.middle)
           .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.vertical, 16)
+          .padding(.vertical, Theme.Layout.sectionInset)
           .accessibilityIdentifier("cli.token")
       }
     }
@@ -149,7 +149,7 @@ public struct CLISettingsView: View {
         }
         if model.clients.isEmpty {
           SettingsSectionNote("还没有 CLI 凭据")
-            .padding(.top, 14)
+            .padding(.top, Theme.Layout.controlInset)
         }
         ForEach(Array(model.clients.enumerated()), id: \.element.id) { index, client in
           if index > 0 { Divider().overlay(Theme.Palette.line) }
@@ -160,8 +160,8 @@ public struct CLISettingsView: View {
   }
 
   private var issueRow: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      HStack(spacing: 10) {
+    VStack(alignment: .leading, spacing: Theme.Layout.controlGap) {
+      HStack(spacing: Theme.Layout.controlGap) {
         SettingsTextField("名称，例如 claude-code", text: $newName)
           .frame(maxWidth: .infinity)
           .accessibilityLabel("凭据名称")
@@ -176,7 +176,7 @@ public struct CLISettingsView: View {
         }
         .disabled(model.busy || newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
       }
-      HStack(spacing: 16) {
+      HStack(spacing: Theme.Layout.sectionInset) {
         ForEach(["read", "write", "admin"], id: \.self) { scope in
           SwitchToggle(isOn: scopeBinding(scope), label: scope)
             .tint(Theme.Palette.accentStrong)
@@ -189,7 +189,7 @@ public struct CLISettingsView: View {
           .foregroundStyle(Theme.Palette.textMuted)
       }
     }
-    .padding(.vertical, 16)
+    .padding(.vertical, Theme.Layout.sectionInset)
   }
 
   private func scopeBinding(_ scope: String) -> Binding<Bool> {
@@ -210,9 +210,9 @@ public struct CLISettingsView: View {
   }
 
   private func row(_ client: CLIClient) -> some View {
-    HStack(spacing: 12) {
-      VStack(alignment: .leading, spacing: 3) {
-        HStack(spacing: 8) {
+    HStack(spacing: Theme.Layout.sectionGap) {
+      VStack(alignment: .leading, spacing: Theme.Layout.captionGap) {
+        HStack(spacing: Theme.Layout.rowGap) {
           Text(client.name)
             .font(Theme.TypeScale.fieldLabel)
             .foregroundStyle(Theme.Palette.textPrimary)
@@ -240,7 +240,7 @@ public struct CLISettingsView: View {
         .accessibilityIdentifier("cli.revoke.\(client.name)")
       }
     }
-    .padding(.vertical, 16)
+    .padding(.vertical, Theme.Layout.sectionInset)
   }
 
   private func detail(_ client: CLIClient) -> String {
@@ -281,7 +281,7 @@ public struct CLISettingsView: View {
           .font(Theme.TypeScale.mono)
           .foregroundStyle(Theme.Palette.textPrimary)
           .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.vertical, 16)
+          .padding(.vertical, Theme.Layout.sectionInset)
       }
     }
   }

@@ -21,10 +21,10 @@ public struct PanelSectionHeader: View {
       Text(title)
         .font(Theme.TypeScale.sectionLabel)
         .foregroundStyle(Theme.Palette.textSecondary)
-        .tracking(0.2)
+        .tracking(Theme.TypeScale.sectionTracking)
         .fixedSize()
       PanelDivider()
-        .padding(.leading, 2)
+        .padding(.leading, Theme.Layout.microGap)
     }
     .frame(height: Theme.Metric.sectionHeaderHeight)
     .accessibilityElement(children: .combine)

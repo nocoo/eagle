@@ -1572,11 +1572,11 @@ struct BotsModelSetupBanner: View {
   let onDismiss: () -> Void
 
   var body: some View {
-    HStack(spacing: 10) {
+    HStack(spacing: Theme.Layout.controlGap) {
       Image(systemName: "sparkles")
         .font(Theme.TypeScale.noteEmphasis)
         .foregroundStyle(Theme.Palette.info)
-      VStack(alignment: .leading, spacing: 2) {
+      VStack(alignment: .leading, spacing: Theme.Layout.microGap) {
         Text("还没有配置模型网关")
           .font(Theme.TypeScale.sectionLabelStrong)
           .foregroundStyle(Theme.Palette.textPrimary)
@@ -1584,15 +1584,16 @@ struct BotsModelSetupBanner: View {
           .font(Theme.TypeScale.note)
           .foregroundStyle(Theme.Palette.textSecondary)
       }
-      Spacer(minLength: 8)
-      Button("去设置", action: onOpen)
-        .buttonStyle(.plain)
+      Spacer(minLength: Theme.Layout.rowGap)
+      ActionControl("去设置", action: onOpen)
         .font(Theme.TypeScale.noteEmphasis)
         .foregroundStyle(Theme.Palette.info)
-      IconButton(systemName: "xmark", label: "关闭提示", size: 20, style: .plain, action: onDismiss)
+      IconButton(
+        systemName: "xmark", label: "关闭提示", size: Theme.Layout.glyphSlot, style: .plain,
+        action: onDismiss)
     }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 9)
+    .padding(.horizontal, Theme.Layout.sectionInset)
+    .padding(.vertical, Theme.Page.setupBannerVerticalInset)
     .background(Theme.Palette.infoFill)
   }
 }

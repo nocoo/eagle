@@ -28,7 +28,7 @@ public struct PeerConversationDialog: View {
         .frame(maxWidth: Theme.Metric.peerDialogColumnWidth, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .center)
         // Clear of the pair chip: the first turn must not start under it.
-        .padding(.top, Theme.Metric.peerDialogInset + 22)
+        .padding(.top, Theme.Metric.peerDialogInset + Theme.Dialog.peerTranscriptClearance)
         .padding(.bottom, Theme.Metric.peerDialogInset)
       }
       .scrollIndicators(.automatic)
@@ -44,9 +44,11 @@ public struct PeerConversationDialog: View {
     .overlay(alignment: .topTrailing) {
       PeerPairChip(exchange: exchange)
         .padding(.trailing, Theme.Metric.peerDialogInset)
-        .padding(.top, 14)
+        .padding(.top, Theme.Layout.controlInset)
     }
-    .shadow(color: Theme.Palette.modalShadow, radius: 34, y: 16)
+    .shadow(
+      color: Theme.Palette.modalShadow, radius: Theme.Dialog.peerShadowRadius,
+      y: Theme.Dialog.peerShadowY)
   }
 
   private var footer: some View {
@@ -56,8 +58,8 @@ public struct PeerConversationDialog: View {
         Text("关闭聊天")
           .font(Theme.TypeScale.note)
           .foregroundStyle(Theme.Palette.textPrimary)
-          .padding(.horizontal, 18)
-          .padding(.vertical, 8)
+          .padding(.horizontal, Theme.Layout.groupGap)
+          .padding(.vertical, Theme.Layout.rowGap)
           .background(Capsule(style: .continuous).fill(Theme.Palette.card))
           .overlay(
             Capsule(style: .continuous)

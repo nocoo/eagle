@@ -35,7 +35,8 @@ public struct Avatar: View {
         case .circle:
           Circle().fill(tint)
         case .blob:
-          RoundedRectangle(cornerRadius: size * 0.34, style: .continuous).fill(tint)
+          RoundedRectangle(cornerRadius: size * Theme.Primitive.avatarBlobRatio, style: .continuous)
+            .fill(tint)
         }
       }
       .frame(width: size, height: size)
@@ -48,12 +49,18 @@ public struct Avatar: View {
       if let badge {
         Circle()
           .fill(badge)
-          .frame(width: size * 0.28, height: size * 0.28)
+          .frame(
+            width: size * Theme.Primitive.avatarBadgeRatio,
+            height: size * Theme.Primitive.avatarBadgeRatio
+          )
           .overlay {
             Circle()
-              .strokeBorder(Theme.Palette.canvas, lineWidth: size * 0.05)
+              .strokeBorder(
+                Theme.Palette.canvas, lineWidth: size * Theme.Primitive.avatarBadgeStrokeRatio)
           }
-          .offset(x: size * 0.04, y: size * 0.04)
+          .offset(
+            x: size * Theme.Primitive.avatarBadgeOffsetRatio,
+            y: size * Theme.Primitive.avatarBadgeOffsetRatio)
       }
     }
     .frame(width: size, height: size)

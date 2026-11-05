@@ -18,7 +18,7 @@ public struct HerdrTeamsView: View {
           .font(Theme.TypeScale.Glyph.section)
           .frame(width: Theme.Metric.panelSectionGlyphWidth)
         Text("Herdr")
-          .font(Theme.TypeScale.sectionLabel.weight(.semibold))
+          .font(Theme.TypeScale.sectionLabelStrong)
           .foregroundStyle(Theme.Palette.textPrimary)
         Spacer(minLength: 0)
         Text(countLabel).font(Theme.TypeScale.pill).monospacedDigit()
@@ -27,9 +27,11 @@ public struct HerdrTeamsView: View {
             .font(Theme.TypeScale.Glyph.notice).foregroundStyle(Theme.Palette.warning)
             .accessibilityLabel("读取失败").help(error.message)
         } else if !model.isStale && runningTeams > 0 {
-          Circle().fill(Theme.Palette.info).frame(width: 6, height: 6)
-            .accessibilityLabel("\(runningTeams) 个团队运行中")
-            .help("\(runningTeams) 个团队运行中")
+          Circle().fill(Theme.Palette.info).frame(
+            width: Theme.Layout.statusDot, height: Theme.Layout.statusDot
+          )
+          .accessibilityLabel("\(runningTeams) 个团队运行中")
+          .help("\(runningTeams) 个团队运行中")
         }
       }
       .foregroundStyle(Theme.Palette.textSecondary)
@@ -69,7 +71,7 @@ public struct HerdrTeamsView: View {
             teamRows(team)
           }
           if model.additionalTeamCount > 0 {
-            Button {
+            ActionControl {
               model.showsAllTeams.toggle()
             } label: {
               HStack {
@@ -80,10 +82,11 @@ public struct HerdrTeamsView: View {
               }
               .font(Theme.TypeScale.pill)
               .foregroundStyle(Theme.Palette.accent)
-              .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+              .frame(
+                maxWidth: .infinity, minHeight: Theme.Metric.panelTaskRowHeight, alignment: .leading
+              )
               .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
             .accessibilityIdentifier("herdr.more-teams")
           }
         }
@@ -93,7 +96,7 @@ public struct HerdrTeamsView: View {
           .foregroundStyle(Theme.Palette.textSecondary)
       }
 
-      HStack(spacing: 4) {
+      HStack(spacing: Theme.Layout.detailGap) {
         if let updatedAt = model.updatedAt {
           Text(model.isStale ? "上次读取" : "更新于")
           Text(updatedAt, style: .time)
@@ -102,7 +105,8 @@ public struct HerdrTeamsView: View {
         Spacer(minLength: 0)
         IconButton(
           systemName: "arrow.clockwise", label: "刷新本机 Herdr 团队",
-          size: Theme.Metric.hitTarget, glyphSize: 12, tint: Theme.Palette.textSecondary
+          size: Theme.Metric.hitTarget, glyphSize: Theme.Metric.compactGlyph,
+          tint: Theme.Palette.textSecondary
         ) { Task { await model.refresh() } }
         .accessibilityIdentifier("herdr.refresh")
       }
@@ -121,7 +125,7 @@ public struct HerdrTeamsView: View {
           .accessibilityElement(children: .combine)
           .accessibilityIdentifier("herdr.team.\(team.id)")
       } else {
-        Button {
+        ActionControl {
           if expanded {
             model.expandedTeamIDs.remove(team.id)
           } else {
@@ -130,7 +134,6 @@ public struct HerdrTeamsView: View {
         } label: {
           teamHeader(team, expanded: expanded)
         }
-        .buttonStyle(.plain)
         .accessibilityLabel("\(team.name)，\(summary(team))")
         .accessibilityValue(expanded ? "已展开" : "已折叠")
         .accessibilityIdentifier("herdr.team.\(team.id)")
@@ -138,15 +141,15 @@ public struct HerdrTeamsView: View {
       }
       if expanded {
         ForEach(team.members) { member in
-          HStack(alignment: .top, spacing: 8) {
+          HStack(alignment: .top, spacing: Theme.Layout.rowGap) {
             Image(systemName: "terminal")
               .font(Theme.TypeScale.pill)
               .frame(width: Theme.Metric.panelSectionGlyphWidth)
               .foregroundStyle(Theme.Palette.textSecondary)
-              .padding(.top, 2)
+              .padding(.top, Theme.Layout.microGap)
               .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-              HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: Theme.Layout.detailGap) {
+              HStack(spacing: Theme.Layout.rowGap) {
                 Text(member.name)
                   .font(Theme.TypeScale.note)
                   .foregroundStyle(Theme.Palette.textPrimary)
@@ -167,7 +170,7 @@ public struct HerdrTeamsView: View {
                 .help(member.configurationHelp)
             }
           }
-          .padding(.vertical, 8)
+          .padding(.vertical, Theme.Layout.rowGap)
           .padding(.leading, Theme.Metric.panelTaskIndent / 2)
           .accessibilityElement(children: .combine)
           .accessibilityIdentifier("herdr.member.\(team.id).\(member.id)")
@@ -178,7 +181,7 @@ public struct HerdrTeamsView: View {
   }
 
   private func teamHeader(_ team: HerdrTeam, expanded: Bool) -> some View {
-    HStack(spacing: 8) {
+    HStack(spacing: Theme.Layout.rowGap) {
       Image(systemName: "person.2")
         .frame(width: Theme.Metric.panelSectionGlyphWidth)
         .foregroundStyle(Theme.Palette.textSecondary)
@@ -186,8 +189,10 @@ public struct HerdrTeamsView: View {
       Text(team.name).lineLimit(2).help(team.name)
       Spacer(minLength: 0)
       if !model.isStale && team.members.contains(where: { $0.status == .working }) {
-        Circle().fill(Theme.Palette.info).frame(width: 6, height: 6)
-          .accessibilityLabel("运行中")
+        Circle().fill(Theme.Palette.info).frame(
+          width: Theme.Layout.statusDot, height: Theme.Layout.statusDot
+        )
+        .accessibilityLabel("运行中")
       }
       Text("\(team.members.count) 成员")
         .font(Theme.TypeScale.pill)
@@ -196,16 +201,18 @@ public struct HerdrTeamsView: View {
       if !team.members.isEmpty {
         Image(systemName: expanded ? "chevron.down" : "chevron.right")
           .font(Theme.TypeScale.Glyph.chevron)
-          .frame(width: 10)
+          .frame(width: Theme.Layout.disclosureSlot)
           .foregroundStyle(Theme.Palette.textSecondary)
           .accessibilityHidden(true)
       } else {
-        Theme.Palette.clear.frame(width: 10, height: 10).accessibilityHidden(true)
+        Theme.Palette.clear.frame(
+          width: Theme.Layout.disclosureSlot, height: Theme.Layout.disclosureSlot
+        ).accessibilityHidden(true)
       }
     }
     .font(Theme.TypeScale.note)
     .foregroundStyle(Theme.Palette.textPrimary)
-    .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+    .frame(maxWidth: .infinity, minHeight: Theme.Layout.compactRowHeight, alignment: .leading)
     .contentShape(Rectangle())
   }
 
@@ -233,21 +240,20 @@ public struct HerdrTeamsView: View {
 private struct HerdrDisclosureStyle: DisclosureGroupStyle {
   func makeBody(configuration: Configuration) -> some View {
     VStack(alignment: .leading, spacing: 0) {
-      Button {
+      ActionControl {
         configuration.isExpanded.toggle()
       } label: {
-        HStack(spacing: 6) {
+        HStack(spacing: Theme.Layout.labelGap) {
           Image(systemName: configuration.isExpanded ? "chevron.down" : "chevron.right")
             .font(Theme.TypeScale.Glyph.chevron)
             .foregroundStyle(Theme.Palette.textSecondary)
-            .frame(width: 10)
+            .frame(width: Theme.Layout.disclosureSlot)
             .accessibilityHidden(true)
           configuration.label
         }
-        .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: Theme.Layout.compactRowHeight, alignment: .leading)
         .contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
       .accessibilityValue(configuration.isExpanded ? "已展开" : "已折叠")
       .accessibilityIdentifier("herdr.disclosure")
       if configuration.isExpanded {

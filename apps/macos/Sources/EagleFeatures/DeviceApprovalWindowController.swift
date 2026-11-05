@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import EagleDesign
 import SwiftUI
 
 /// The App owns one confirmation window even when no workspace window remains.
@@ -39,7 +40,8 @@ public final class DeviceApprovalWindowController: NSObject, NSWindowDelegate {
     }
     dismiss()
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 640, height: 620),
+      contentRect: NSRect(
+        x: 0, y: 0, width: Theme.Dialog.approvalWidth, height: Theme.Dialog.approvalWindowHeight),
       styleMask: [.titled, .closable], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.title = "确认设备操作"
