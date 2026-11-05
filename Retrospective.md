@@ -1,5 +1,16 @@
 # Retrospective
 
+## 2026-11-05 — Poll readiness after MainActor suspension
+
+A normal push passed the root and browser gates, then the regular-switch AX test
+reported a timeout when concurrent rendering benchmarks occupied MainActor for
+about thirteen seconds. Its two-second helper checked the clock before checking
+readiness again, so a ready control could be rejected on resumption. Poll/layout
+before deciding to stop waiting, and re-query the AX node after model changes.
+The two-second deadline, 10ms wait and all behavioral/geometry assertions remain
+unchanged. The full 455-test Swift run passed after this test-only repair; no
+production behavior, gate threshold or test selection was changed.
+
 ## 2026-11-05 — Native control acceptance needs real input readiness
 
 The new checkbox keyboard fixture initially targeted a native focus-ring proxy as

@@ -42,11 +42,8 @@ struct SwitchToggleTests {
     #expect(!state.value)
     #expect(attribute(standard, "accessibilityValue") as? Int == 0)
     state.value = true
-    try await waitUntil {
-      let current = entries(host).first {
-        attribute($0, "accessibilityIdentifier") as? String == "standard"
-      }
-      return current.map { attribute($0, "accessibilityValue") as? Int == 1 } ?? false
+    _ = try await element("standard", in: host) {
+      attribute($0, "accessibilityValue") as? Int == 1
     }
   }
 
@@ -64,8 +61,10 @@ struct SwitchToggleTests {
     _ = try invoke(standard, "accessibilityPerformPress")
     #expect(state.requests.isEmpty)
     state.disabled = false
-    try await waitUntil { try invoke(standard, "isAccessibilityEnabled") }
-    #expect(try invoke(standard, "accessibilityPerformPress"))
+    let enabled = try await element("standard", in: host) {
+      try invoke($0, "isAccessibilityEnabled")
+    }
+    #expect(try invoke(enabled, "accessibilityPerformPress"))
     #expect(state.requests == [true])
     #expect(!state.value, "a request is not a confirmed state transition")
   }
@@ -88,23 +87,28 @@ struct SwitchToggleTests {
     return (host, window)
   }
 
-  private func element(_ id: String, in host: NSView) async throws -> NSObject {
+  private func element(
+    _ id: String, in host: NSView, where matches: (NSObject) throws -> Bool = { _ in true }
+  ) async throws -> NSObject {
     var result: NSObject?
     try await waitUntil {
       host.layoutSubtreeIfNeeded()
       result = entries(host).first { attribute($0, "accessibilityIdentifier") as? String == id }
-      return result != nil
+      return try result.map(matches) ?? false
     }
     return try #require(result)
   }
 
   private func waitUntil(_ condition: () throws -> Bool) async throws {
     let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-    while ContinuousClock.now < deadline {
+    while true {
+      // Another UI suite can occupy MainActor while this task is suspended.
       if try condition() { return }
+      guard ContinuousClock.now < deadline else {
+        throw NSError(domain: "SwitchToggleTests", code: 1)
+      }
       try await Task.sleep(for: .milliseconds(10))
     }
-    throw NSError(domain: "SwitchToggleTests", code: 1)
   }
 
   private func attribute(_ node: NSObject, _ name: String) -> Any? {
