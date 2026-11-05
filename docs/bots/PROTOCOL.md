@@ -43,7 +43,7 @@ Runtime details live in [RUNTIME.md](RUNTIME.md), layers in
 | `bot.note` (HTTP and `note_set`) | 120 characters after trimming and whitespace collapse, optional | HTTP `400`, or the tool returns an error |
 | `group.title` (HTTP) | 1–40 characters after trimming | HTTP `400` |
 | Groups | 50 per catalog | `POST /v1/groups` answers `limit_exceeded` |
-| `bot.appearance` (HTTP) | one shape and one tint from the closed sets | HTTP `400` |
+| `bot.appearance` (HTTP) | valid shape; POST permits an omitted tint, PATCH requires a valid tint | HTTP `400` |
 | Any HTTP body | 256 KiB, measured as received (the shared frame cap) | HTTP `500` before the body is parsed |
 | `settings.corePrompt` (HTTP) | 4 000 characters after trimming | HTTP `400` |
 | Any single frame | 256 KiB, measured on the **encoded** frame | Close `1008`; a daemon-produced frame that cannot fit is dropped and the socket closes `1008`, because the client cannot decode it either |
@@ -101,7 +101,7 @@ version, the instance id, the pid and a bot count, never bot content.
 | --- | --- | --- | --- |
 | `GET` | `/v1/health` | — | `{ "version", "protocolVersion", "instance", "pid", "bots", "deviceAccess" }` |
 | `GET` | `/v1/bots` | — | `{ "bots": [BotSummary] }` |
-| `POST` | `/v1/bots` | `{ "title", "label"?, "appearance"? }` — `appearance` is `{ "shape", "tint" }` | `201 { "bot": BotSummary }` |
+| `POST` | `/v1/bots` | `{ "title", "label"?, "appearance"? }` — creation `appearance` is `{ "shape", "tint"? }` | `201 { "bot": BotSummary }` |
 | `PATCH` | `/v1/bots/:id` | `{ "title"?, "label"?, "note"?, "appearance"?, "groupId"?, "model"?, "thinkingLevel"? }` — a label of `""`, a note of `null` and a `groupId` of `null` clear their field | `{ "bot": BotSummary }` |
 | `DELETE` | `/v1/bots/:id` | — | `204` |
 | `POST` | `/v1/groups` | `{ "title" }` | `{ "group": BotGroup }` |
@@ -576,6 +576,19 @@ state rather than three zeros.
 The `usage` capability is `true`.
 
 ## Entities
+
+Creation resolves a complete appearance before the single catalog write. A missing
+appearance selects shape `blob`; a supplied appearance requires a valid shape and
+may omit `tint`. Omitted tint selects index `SHA256(UTF8("bot:" + id))[0] % 8` from
+`[red, orange, yellow, green, teal, blue, violet, pink]`, using the first digest byte,
+with no ID normalization. Fixed vectors are `b_color0→violet`, `b_color1→blue`,
+`b_color2→pink`, `b_color4→red`, `b_color5→orange`, `b_color6→teal`,
+`b_color14→yellow`, `b_color32→green`. Names/group order never enter this hash.
+Explicit tints retain the full v1 closed set below. Null/unknown tints and tint-only
+creation are invalid. PATCH still requires both fields when appearance is supplied.
+Responses/events/storage remain complete, and existing records are never rehashed.
+There is no persisted auto/manual mode or create-then-PATCH sequence. Shape-only
+creation requires the updated daemon; clients must not retry a refusal with green.
 
 ```jsonc
 // BotSummary

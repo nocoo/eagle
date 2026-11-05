@@ -1,12 +1,13 @@
 // Bot lifecycle (docs/bots/ARCHITECTURE.md "Bot lifecycle"): the catalog, the one in-flight
 // open per bot, idle close, quarantine with its retry, the startup recovery scan and
 // delete. The registry owns state; the service owns routing; the adapter owns the Harness.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { declareEvent } from "../log/events.ts";
 import type { Log } from "../log/log.ts";
 import type { BotConfig, BotDirectory } from "./BotDirectory.ts";
 import {
   type BotAppearance,
+  type BotCreationAppearance,
   type BotGroup,
   type BotState,
   type BotSummary,
@@ -16,6 +17,7 @@ import {
   DEFAULT_TOOL_GROUPS,
   type ErrorKind,
   type Failure,
+  IDENTITY_TINTS,
   resolveToolGroups,
   type ToolGroup,
 } from "./domain.ts";
@@ -497,7 +499,7 @@ export class BotRegistry {
     trace: string,
     extras: {
       readonly label?: string;
-      readonly appearance?: BotAppearance;
+      readonly appearance?: BotCreationAppearance;
       /** Files the bot at creation, so a group is never a second write that can fail alone. */
       readonly groupId?: string;
     } = {},
@@ -518,7 +520,7 @@ export class BotRegistry {
     trace: string,
     extras: {
       readonly label?: string;
-      readonly appearance?: BotAppearance;
+      readonly appearance?: BotCreationAppearance;
       readonly groupId?: string;
     },
   ): Promise<BotSummary> {
@@ -526,12 +528,26 @@ export class BotRegistry {
       throw new ClassifiedFailure(newFailure("limit_exceeded"), "not_admitted", "catalog is full");
     }
     const at = (this.#options.now?.() ?? new Date()).toISOString();
+    const id = (this.#options.newBotId ?? (() => newBotId()))();
+    const slot = (createHash("sha256").update(`bot:${id}`, "utf8").digest().readUInt8(0) % 8) as
+      | 0
+      | 1
+      | 2
+      | 3
+      | 4
+      | 5
+      | 6
+      | 7;
+    const defaultTint = IDENTITY_TINTS[slot];
     const config: BotConfig = {
-      id: (this.#options.newBotId ?? (() => newBotId()))(),
+      id,
       title,
       ...(extras.label === undefined ? {} : { label: extras.label }),
       ...(extras.groupId === undefined ? {} : { groupId: extras.groupId }),
-      appearance: extras.appearance ?? DEFAULT_APPEARANCE,
+      appearance: {
+        shape: extras.appearance?.shape ?? "blob",
+        tint: extras.appearance?.tint ?? defaultTint,
+      },
       createdAt: at,
       updatedAt: at,
       model: this.#defaultModel,

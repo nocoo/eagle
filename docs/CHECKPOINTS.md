@@ -1,5 +1,23 @@
 # 用户视角检查点
 
+## 2026-11-05 13:33 +08 — Phase 2 identity defaults and color pairs
+
+- Owner accepted phase 1 and chose hash defaults with eight manual overrides.
+  The read-only live catalog inventory is red=1, green=6, blue=1. No record was
+  rewritten, no conversation sent and no device/secret action taken.
+- Creation-only optional tint was demonstrated failing over real local test HTTP,
+  then implemented before the single catalog write. All 12 protocol values remain
+  valid. Bots check passed after removing prohibited non-null assertions; review
+  identified a reused stopped-registry test, now being replaced by fresh-instance
+  restart evidence. Production lifecycle code is unchanged.
+- Existing white/green and muted-text contrast failures were reproduced in both
+  appearances. The candidate eight-family token table is implemented; matrix checks,
+  native create/CLI wiring, gallery specimens and grid work remain in progress.
+- The foreground App still runs the prior accepted build. Actual collection,
+  production authentication and D1 were not exercised. Next broken hop: creation
+  forms still always send an explicit green tint; final review requires restarting
+  both the source App and its owned daemon together.
+
 ## 2026-11-05 13:02 +08 — Remaining styles ready for owner review
 
 - The requested chat, cards, dialogs, primitives and page-composition scope is

@@ -314,10 +314,10 @@ const groupChange = (body: unknown): { readonly value: string | null } | undefin
 /** The optional label and face a create request may carry. */
 const extras = (
   body: unknown,
-): { label?: string; appearance?: { shape: BotShape; tint: BotTint } } | undefined => {
+): { label?: string; appearance?: { shape: BotShape; tint?: BotTint } } | undefined => {
   if (typeof body !== "object" || body === null) return undefined;
   const raw = body as { label?: unknown; appearance?: unknown };
-  const result: { label?: string; appearance?: { shape: BotShape; tint: BotTint } } = {};
+  const result: { label?: string; appearance?: { shape: BotShape; tint?: BotTint } } = {};
   if (raw.label !== undefined) {
     if (typeof raw.label !== "string") return undefined;
     const label = raw.label.trim();
@@ -331,12 +331,15 @@ const extras = (
     if (
       typeof face.shape !== "string" ||
       !(BOT_SHAPES as readonly string[]).includes(face.shape) ||
-      typeof face.tint !== "string" ||
-      !(BOT_TINTS as readonly string[]).includes(face.tint)
+      (face.tint !== undefined &&
+        (typeof face.tint !== "string" || !(BOT_TINTS as readonly string[]).includes(face.tint)))
     ) {
       return undefined;
     }
-    result.appearance = { shape: face.shape as BotShape, tint: face.tint as BotTint };
+    result.appearance = {
+      shape: face.shape as BotShape,
+      ...(face.tint === undefined ? {} : { tint: face.tint as BotTint }),
+    };
   }
   return result;
 };

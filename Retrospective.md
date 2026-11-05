@@ -1,5 +1,16 @@
 # Retrospective
 
+## 2026-11-05 — Restart evidence requires a fresh lifecycle owner
+
+An identity-color persistence test reused BotRegistry after shutdown. Its permanent
+stopping flag correctly rejects opens; rename assertions alone still passed and
+misrepresented healthy restart evidence. Use a fresh registry/runtime on the same
+directory and assert loaded summaries before mutations. Do not relax lifecycle
+semantics for tests. The repair also caught a guessed `list()` API; inspect the
+actual `summaries()` signature before writing assertions. The first daemon check
+separately rejected non-null assertions; use the bounded digest-byte index and
+explicit test assertions instead of silencing lint.
+
 ## 2026-11-05 — Poll readiness after MainActor suspension
 
 A normal push passed the root and browser gates, then the regular-switch AX test

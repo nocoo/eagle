@@ -1,6 +1,7 @@
 // Ladder row 41: create, rename and delete over HTTP keep the catalog absolute, and every
 // change reaches a connected client as one `bots` event.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,6 +37,73 @@ const api = (stack: { port: number; token: string }) => {
       }),
   };
 };
+
+test("creation hashes omitted tints once and preserves explicit choices", async () => {
+  const stack = await startStack();
+  const colors = ["red", "orange", "yellow", "green", "teal", "blue", "violet", "pink"];
+  const create = (appearance?: unknown) =>
+    fetch(`http://127.0.0.1:${stack.port}/v1/bots`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${stack.token}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Identity fixture",
+        ...(appearance === undefined ? {} : { appearance }),
+      }),
+    });
+  try {
+    for (const shape of [undefined, "star"]) {
+      const response = await create(shape === undefined ? undefined : { shape });
+      assert.equal(response.status, 201);
+      const { bot } = (await response.json()) as { bot: BotSummary };
+      const expected =
+        colors[createHash("sha256").update(`bot:${bot.id}`, "utf8").digest().readUInt8(0) % 8];
+      assert.deepEqual(bot.appearance, { shape: shape ?? "blob", tint: expected });
+      assert.deepEqual(
+        (await stack.directory.load()).find((record) => record.id === bot.id)?.appearance,
+        bot.appearance,
+      );
+      const renamed = await api(stack).rename(bot.id, "A different name");
+      assert.deepEqual(
+        ((await renamed.json()) as { bot: BotSummary }).bot.appearance,
+        bot.appearance,
+      );
+      const beforePatch = await stack.directory.load();
+      const refused = await api(stack).patch(bot.id, { appearance: { shape: "heart" } });
+      assert.equal(refused.status, 400);
+      assert.equal(
+        ((await refused.json()) as { error: { kind: string } }).error.kind,
+        "invalid_command",
+      );
+      assert.deepEqual(await stack.directory.load(), beforePatch);
+    }
+    for (const tint of [...colors, "paper", "clay", "sky", "graphite"]) {
+      const response = await create({ shape: "flower", tint });
+      assert.equal(response.status, 201);
+      assert.deepEqual(((await response.json()) as { bot: BotSummary }).bot.appearance, {
+        shape: "flower",
+        tint,
+      });
+    }
+    const before = await stack.directory.load();
+    for (const appearance of [
+      null,
+      { tint: "red" },
+      { shape: "invalid" },
+      { shape: "star", tint: null },
+      { shape: "star", tint: "invalid" },
+    ]) {
+      const refused = await create(appearance);
+      assert.equal(refused.status, 400);
+      assert.equal(
+        ((await refused.json()) as { error: { kind: string } }).error.kind,
+        "invalid_command",
+      );
+      assert.deepEqual(await stack.directory.load(), before);
+    }
+  } finally {
+    await stack.close();
+  }
+});
 
 test("create, rename and delete keep the catalog absolute", async () => {
   const stack = await startStack();

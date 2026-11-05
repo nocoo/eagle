@@ -44,6 +44,7 @@ const settle = async (times = 8): Promise<void> => {
 const bench = async (
   options: {
     busy?: readonly string[];
+    newBotId?: () => string;
     closeOutcome?: "closed" | "timeout" | "rejected";
     bots?: readonly string[];
     /** Held open, so a close or a warm-up open can be observed in flight. */
@@ -129,6 +130,7 @@ const bench = async (
     closeDeadlineMs: 40,
     setTimer: timers.setTimer,
     bootTrace: () => "tr_boot_probe",
+    ...(options.newBotId === undefined ? {} : { newBotId: options.newBotId }),
   });
   return {
     root,
@@ -154,6 +156,79 @@ const bench = async (
     cleanup: () => rm(root, { recursive: true, force: true }),
   };
 };
+
+test("fixed identity vectors persist once across restart and rename", async () => {
+  const vectors = [
+    ["b_color0", "violet"],
+    ["b_color1", "blue"],
+    ["b_color2", "pink"],
+    ["b_color4", "red"],
+    ["b_color5", "orange"],
+    ["b_color6", "teal"],
+    ["b_color14", "yellow"],
+    ["b_color32", "green"],
+  ] as const;
+  let next = 0;
+  const setup = await bench({
+    bots: ["Existing appearance-absent bot"],
+    newBotId: () => {
+      const vector = vectors[next++];
+      assert.ok(vector);
+      return vector[0];
+    },
+  });
+  try {
+    await setup.registry.start();
+    for (const [id, tint] of vectors) {
+      const bot = await setup.registry.create("Same name", "tr_color_create");
+      assert.equal(bot.id, id);
+      assert.deepEqual(bot.appearance, { shape: "blob", tint });
+    }
+    await setup.registry.update(
+      "b_color4",
+      { appearance: { shape: "heart", tint: "graphite" } },
+      "tr_color_manual",
+    );
+    await setup.registry.update(
+      "b_color1",
+      { appearance: { shape: "star", tint: "green" } },
+      "tr_color_manual",
+    );
+    const saved = await setup.directory.load();
+    await setup.registry.shutdown();
+    const runtime = new FakeRuntime();
+    const restarted = new BotRegistry({
+      directory: setup.directory,
+      openRuntime: (spec) => runtime.open(spec),
+      model: { provider: "faux", modelId: "faux-1" },
+      log: captureLog().log,
+      idleCloseMs: 1_000,
+      quarantineRetryMs: 5_000,
+      closeDeadlineMs: 40,
+    });
+    try {
+      await restarted.start();
+      for (const record of saved) {
+        const expected = record.appearance ?? { shape: "blob", tint: "green" };
+        assert.deepEqual(
+          restarted.summaries().find((bot) => bot.id === record.id)?.appearance,
+          expected,
+        );
+        const renamed = await restarted.rename(record.id, "Another name", "tr_color_rename");
+        assert.deepEqual(renamed.appearance, expected);
+      }
+      assert.equal(
+        (await setup.directory.load()).find((bot) => bot.id === "b_bot0")?.appearance,
+        undefined,
+      );
+    } finally {
+      await restarted.shutdown();
+    }
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
 
 test("a bot's stored thinking level reaches the runtime spec", async () => {
   const setup = await bench();

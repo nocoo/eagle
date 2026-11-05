@@ -50,6 +50,15 @@ tools and bot-to-bot conversation can be added later without reworking any layer
 
 1. **Create.** The user picks "New Bot", types a name, confirms. The bot appears
    in the sidebar immediately and is ready to receive a message.
+   New bots without an explicit tint receive a stable eight-hue default from their
+   immutable ID. The native picker offers red, orange, yellow, green, teal, blue,
+   violet and pink; a manual choice overrides the creation default. The daemon
+   stores the resolved complete appearance once, not an auto/manual mode. Renaming,
+   reordering and restarting never recompute saved colors. Existing choices are
+   not rewritten. Shape-only creation is additive; a later appearance update still
+   supplies both shape and tint. The App and daemon must be upgraded/restarted
+   together before using shape-only creation; an older daemon's refusal is an error,
+   never a silent retry with green.
 2. **Rename.** Inline rename from the sidebar; the new name survives a daemon
    restart.
 3. **Delete.** Deletion removes the bot from the sidebar at once. The daemon

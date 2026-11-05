@@ -280,6 +280,22 @@ export type BotAppearance = {
   readonly tint: BotTint;
 };
 
+export type BotCreationAppearance = {
+  readonly shape: BotShape;
+  readonly tint?: BotTint;
+};
+
+export const IDENTITY_TINTS = [
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "teal",
+  "blue",
+  "violet",
+  "pink",
+] as const;
+
 export const DEFAULT_APPEARANCE: BotAppearance = { shape: "blob", tint: "green" };
 
 /** A sidebar group real bots are filed under; groups live beside the catalog. */
