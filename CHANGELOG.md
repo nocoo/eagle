@@ -23,6 +23,8 @@
 - Upgrade the relay before the App: the bundled Agent requires `ready.expiresAt`, and
   the local device port is v2. Older uncertain operations or pending pairings without
   a recorded relay origin remain explicitly unavailable, not migrated or resubmitted.
+- Avoid redundant per-character reconstruction after terminal redaction when no
+  additional wrapped masking is needed; retain all matching and marker normalization.
 - Keep website/Worker and npm Agent releases independent. This App includes the
   current bundled runtime; no npm onboarding pin changes are part of this release.
 

@@ -3,6 +3,15 @@ import { test } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { redactScreen, terminalScreen } from "../packages/agent/realtime.ts";
 
+test("an empty additional mask preserves star normalization and Unicode", () => {
+  assert.equal(
+    redactScreen("公开 😀 ******** status ***\n", []),
+    "公开 😀 [REDACTED] status ***\n",
+  );
+  assert.equal(redactScreen("bearer fixture;\n", []), "bearer [REDACTED];\n");
+  assert.equal(redactScreen("", []), "");
+});
+
 test("screen redaction preserves status labels instead of joining words into secret names", () => {
   for (const label of [
     "Token usage",

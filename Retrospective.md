@@ -9,7 +9,13 @@ green, and the intervening diff contains only changelog/README/checkpoint change
 An isolated diagnostic run passed all six performance cases, with 11.80/21.96 ms
 for the same styled inputs. Preserve this failed run and use one bounded normal
 hook retry; do not lower limits, focus/skip a gate or change the redactor merely
-to hide machine-load variance. Final push evidence is recorded separately.
+to hide machine-load variance. The bounded retry also failed at 16.22/73.51 ms.
+Stage timing localized most cost to redaction, not restyling. After all matching
+passes, an empty additional mask now avoids the identity split/map/join while
+retaining star normalization. The full root suite then passed 310 cases with
+12.71/23.04 ms for the styled inputs; a new Unicode/star/bearer witness and existing
+wrapped-secret/style cases preserve outputs. Thresholds and timing methodology are
+unchanged. Final push evidence is recorded separately.
 
 ## 2026-11-05 — Fixture isolation includes default view-model arguments
 

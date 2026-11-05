@@ -97,11 +97,14 @@ export function redactScreen(value: string, secrets: string[]) {
     assignmentEnd = end + 1 + value.length;
     mask(start + sensitive, assignmentEnd - start - sensitive);
   }
-  return text
-    .split("")
-    .map((c, i) => (masked.has(i) ? "*" : c))
-    .join("")
-    .replace(/\*{8,}/g, "[REDACTED]");
+  const safe =
+    masked.size === 0
+      ? text
+      : text
+          .split("")
+          .map((c, i) => (masked.has(i) ? "*" : c))
+          .join("");
+  return safe.replace(/\*{8,}/g, "[REDACTED]");
 }
 
 export function terminalScreen(
