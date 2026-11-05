@@ -54,8 +54,9 @@ or mathematical geometry into presentation tokens.
   SettingsStatusNote stays for what a page says until its state changes: an empty list, a
   refused read, a provider probe, the device service error. InfoBanner and SettingsSectionNote
   are gone.
-- The 工具 page keeps no save button. Leaving it — another tab or a closed window — writes the
-switches a person flipped once, and never the standing-instruction draft the 提示词 page owns.
+- The 工具 page keeps no save button: each switch writes itself through one queued request and
+  reports that switch ("已开启 搜索"), so a flip never lands an older set behind a newer one. A
+  switch keeps the standing instruction the 提示词 page owns instead of committing its draft.
 - CardActionButton owns the existing filled/text card actions; callers retain the
   completion/password validity and submission/skip guards.
 - ActionControl forwards a native Button role/action with plain, bordered, prominent or

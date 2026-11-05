@@ -5,67 +5,83 @@ import Testing
 
 @testable import EagleFeatures
 
-/// The 工具 page has no save button: leaving it writes the switches a person flipped, and a page
-/// that was only opened writes nothing.
-@Suite("Settings tools autosave", .serialized)
+/// The 工具 page has no save button: each switch writes itself and reports that one switch.
+@Suite("Settings tools switches", .serialized)
 @MainActor
-struct SettingsToolsAutosaveTests {
-  @Test("leaving the page writes the switches a person flipped")
-  func savesOnLeave() async throws {
-    let fixture = try toolsFixture(corePrompt: "存过的人格")
+struct SettingsToolsToggleTests {
+  @Test("a flipped switch writes itself at once and reports that switch")
+  func writesOnFlip() async throws {
+    let fixture = try toolsFixture()
     let model = SettingsViewModel(botsSettings: fixture.settings, urlSession: fixture.session)
     await model.loadGateway()
-    model.setToolGroup(SettingsViewModel.searchToolGroup, isOn: true)
-    await model.leaveToolsPage()
+    model.commitToolGroup(SettingsViewModel.searchToolGroup, title: "搜索", isOn: true)
+    await model.awaitToolSaves()
     let body = try #require(fixture.puts.first)
-    #expect(body["toolGroups"] as? [String] == ["persona", "machine", "core", "coding", "search"])
-    #expect(body["baseUrl"] == nil, "the tools page never rewrites the gateway")
-    #expect(model.toasts.toast?.notice == .success("已保存，工具从下一轮开始生效"))
+    #expect(
+      body["toolGroups"] as? [String]
+        == ["persona", "machine", "core", "coding", "memory", "search"])
+    #expect(body["baseUrl"] == nil, "a switch never rewrites the gateway")
+    #expect(model.toasts.toast?.notice == .success("已开启 搜索"))
   }
 
-  @Test("the standing instruction stays as the 提示词 page stored it")
-  func keepsPromptDraft() async throws {
-    let fixture = try toolsFixture(corePrompt: "存过的人格")
+  @Test("switching a group off reports the off state")
+  func reportsOff() async throws {
+    let fixture = try toolsFixture()
     let model = SettingsViewModel(botsSettings: fixture.settings, urlSession: fixture.session)
     await model.loadGateway()
-    model.gatewayCorePrompt = "还没保存的草稿"
-    model.setToolGroup(SettingsViewModel.searchToolGroup, isOn: true)
-    await model.leaveToolsPage()
+    model.commitToolGroup(SettingsViewModel.memoryToolGroup, title: "记忆", isOn: false)
+    await model.awaitToolSaves()
     let body = try #require(fixture.puts.first)
-    #expect(body["corePrompt"] as? String == "存过的人格")
-    #expect(model.gatewayCorePrompt == "还没保存的草稿", "a draft belongs to the page that owns it")
+    #expect(body["toolGroups"] as? [String] == ["persona", "machine", "core", "coding"])
+    #expect(model.toasts.toast?.notice == .success("已关闭 记忆"))
   }
 
-  @Test("a page that was only opened writes nothing")
+  @Test("two flips are two writes, and the newer set is the one left behind")
+  func twoFlips() async throws {
+    let fixture = try toolsFixture()
+    let model = SettingsViewModel(botsSettings: fixture.settings, urlSession: fixture.session)
+    await model.loadGateway()
+    model.commitToolGroup(SettingsViewModel.searchToolGroup, title: "搜索", isOn: true)
+    model.commitToolGroup(SettingsViewModel.decisionToolGroup, title: "决策", isOn: true)
+    await model.awaitToolSaves()
+    #expect(fixture.puts.count == 2, "each switch is its own write")
+    #expect(
+      fixture.puts.last?["toolGroups"] as? [String]
+        == ["persona", "machine", "core", "coding", "memory", "search", "decision"])
+    #expect(model.toasts.toast?.notice == .success("已开启 决策"))
+  }
+
+  @Test("a refused write keeps the switch as a draft and says why")
+  func refusalKeepsDraft() async throws {
+    let fixture = try toolsFixture(refusesSave: true)
+    let model = SettingsViewModel(botsSettings: fixture.settings, urlSession: fixture.session)
+    await model.loadGateway()
+    model.commitToolGroup(SettingsViewModel.searchToolGroup, title: "搜索", isOn: true)
+    await model.awaitToolSaves()
+    #expect(model.toasts.toast?.notice == .failure("设置被拒绝"))
+    #expect(model.isToolGroupEnabled(SettingsViewModel.searchToolGroup))
+  }
+
+  @Test("opening the page writes nothing")
   func openedOnly() async throws {
-    let fixture = try toolsFixture(corePrompt: "存过的人格")
+    let fixture = try toolsFixture()
     let model = SettingsViewModel(botsSettings: fixture.settings, urlSession: fixture.session)
     await model.loadGateway()
-    await model.leaveToolsPage()
+    await model.awaitToolSaves()
     #expect(fixture.puts.isEmpty)
     #expect(model.toasts.toast == nil, "no action means no result line")
   }
 
-  @Test("a second visit after a save writes nothing more")
-  func savesOnce() async throws {
-    let fixture = try toolsFixture(corePrompt: "存过的人格")
+  @Test("a switch keeps the standing instruction as the 提示词 page stored it")
+  func keepsPromptDraft() async throws {
+    let fixture = try toolsFixture()
     let model = SettingsViewModel(botsSettings: fixture.settings, urlSession: fixture.session)
     await model.loadGateway()
-    model.setToolGroup(SettingsViewModel.searchToolGroup, isOn: true)
-    await model.leaveToolsPage()
-    await model.leaveToolsPage()
-    #expect(fixture.puts.count == 1)
-  }
-
-  @Test("a refused save keeps the switches as drafts and says why")
-  func failureKeepsDraft() async throws {
-    let fixture = try toolsFixture(corePrompt: "存过的人格", refusesSave: true)
-    let model = SettingsViewModel(botsSettings: fixture.settings, urlSession: fixture.session)
-    await model.loadGateway()
-    model.setToolGroup(SettingsViewModel.searchToolGroup, isOn: true)
-    await model.leaveToolsPage()
-    #expect(model.toasts.toast?.notice == .failure("设置被拒绝"))
-    #expect(model.isToolGroupEnabled(SettingsViewModel.searchToolGroup))
+    model.gatewayCorePrompt = "还没保存的草稿"
+    model.commitToolGroup(SettingsViewModel.searchToolGroup, title: "搜索", isOn: true)
+    await model.awaitToolSaves()
+    #expect(fixture.puts.first?["corePrompt"] as? String == "存过的人格")
+    #expect(model.gatewayCorePrompt == "还没保存的草稿", "a draft belongs to the page that owns it")
   }
 }
 
@@ -78,12 +94,13 @@ private struct ToolsFixture {
 final class RequestBodies {
   var all: [[String: Any]] = []
   var first: [String: Any]? { all.first }
+  var last: [String: Any]? { all.last }
   var isEmpty: Bool { all.isEmpty }
   var count: Int { all.count }
 }
 
 @MainActor
-private func toolsFixture(corePrompt: String, refusesSave: Bool = false) throws -> ToolsFixture {
+private func toolsFixture(refusesSave: Bool = false) throws -> ToolsFixture {
   let root = FileManager.default.temporaryDirectory
     .appendingPathComponent("eagle-tools-\(UUID().uuidString)", isDirectory: true)
   try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -93,11 +110,10 @@ private func toolsFixture(corePrompt: String, refusesSave: Bool = false) throws 
   try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: token.path)
 
   let recorder = RequestBodies()
-  ToolsAutosaveStub.refuses = refusesSave
-  ToolsAutosaveStub.corePrompt = corePrompt
-  ToolsAutosaveStub.recorder = recorder
+  ToolsSwitchStub.refuses = refusesSave
+  ToolsSwitchStub.recorder = recorder
   let configuration = URLSessionConfiguration.ephemeral
-  configuration.protocolClasses = [ToolsAutosaveStub.self]
+  configuration.protocolClasses = [ToolsSwitchStub.self]
   return ToolsFixture(
     settings: BotsSettings(environment: ["BOTS_ROOT": root.path, "BOTS_PORT": "43117"]),
     session: URLSession(configuration: configuration), puts: recorder)
@@ -105,19 +121,13 @@ private func toolsFixture(corePrompt: String, refusesSave: Bool = false) throws 
 
 /// Answers the settings read and records what the page wrote, so this suite never shares a stub
 /// with another one running in parallel.
-final class ToolsAutosaveStub: URLProtocol {
+final class ToolsSwitchStub: URLProtocol {
   private final class Storage: @unchecked Sendable {
-    var corePrompt = ""
     var refuses = false
     var recorder: RequestBodies?
   }
 
   private static let storage = Storage()
-
-  static var corePrompt: String {
-    get { storage.corePrompt }
-    set { storage.corePrompt = newValue }
-  }
 
   static var refuses: Bool {
     get { storage.refuses }
@@ -138,7 +148,7 @@ final class ToolsAutosaveStub: URLProtocol {
     switch (request.httpMethod, request.url?.path) {
     case ("GET", "/v1/settings"):
       status = 200
-      body = Self.snapshot(corePrompt: Self.corePrompt, toolGroups: Self.storedGroups)
+      body = Self.snapshot(corePrompt: "存过的人格", toolGroups: Self.storedGroups)
     case ("PUT", "/v1/settings"):
       let payload = gatewayHTTPBody(request) ?? Data()
       let parsed = (try? JSONSerialization.jsonObject(with: payload)) as? [String: Any] ?? [:]
@@ -166,7 +176,7 @@ final class ToolsAutosaveStub: URLProtocol {
 
   override func stopLoading() {}
 
-  private static let storedGroups = ["persona", "machine", "core", "coding"]
+  private static let storedGroups = ["persona", "machine", "core", "coding", "memory"]
 
   private static func snapshot(corePrompt: String, toolGroups: [String]) -> String {
     let groups = toolGroups.map { "\"\($0)\"" }.joined(separator: ",")

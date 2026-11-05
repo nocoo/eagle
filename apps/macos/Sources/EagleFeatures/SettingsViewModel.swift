@@ -103,6 +103,8 @@ public final class SettingsViewModel: ObservableObject {
   public static let peersToolGroup = "peers"
   private var gatewayThinkingLevelChosen = false
   private var gatewayToolGroupsChosen = false
+  /// The queue of switch writes; the page flips faster than the daemon answers.
+  private var toolSave: Task<Void, Never>?
   private var gatewayLoaded = false
   private let botsSettings: BotsSettings
   private let urlSession: URLSession
@@ -238,12 +240,28 @@ public final class SettingsViewModel: ObservableObject {
     toasts.show(.success("已保存，提示词从下一轮开始生效"))
   }
 
-  /// Leaving the 工具 page writes the switches a person flipped. The standing instruction
-  /// belongs to the 提示词 page, so this save keeps the stored one instead of a draft.
-  public func leaveToolsPage() async {
-    guard gatewayToolGroupsChosen, let storedPrompt = gateway?.corePrompt else { return }
+  /// The 工具 page writes each switch on its own and reports that one switch. The daemon stores
+  /// the whole set, so one queued write at a time keeps the order a person flipped them and
+  /// never lands an older set after a newer one. The standing instruction belongs to the 提示词
+  /// page, so a switch keeps the stored one instead of its draft.
+  public func commitToolGroup(_ name: String, title: String, isOn: Bool) {
+    setToolGroup(name, isOn: isOn)
+    let previous = toolSave
+    toolSave = Task { [weak self] in
+      await previous?.value
+      await self?.writeToolGroups(tool: title, isOn: isOn)
+    }
+  }
+
+  /// Tests wait for every queued write; a page never needs to.
+  func awaitToolSaves() async {
+    await toolSave?.value
+  }
+
+  private func writeToolGroups(tool: String, isOn: Bool) async {
+    guard let storedPrompt = gateway?.corePrompt else { return }
     guard await saveToolSettings(corePrompt: storedPrompt) != nil else { return }
-    toasts.show(.success("已保存，工具从下一轮开始生效"))
+    toasts.show(.success(isOn ? "已开启 \(tool)" : "已关闭 \(tool)"))
   }
 
   private func saveToolSettings(corePrompt: String) async -> GatewaySettings? {
@@ -255,7 +273,8 @@ public final class SettingsViewModel: ObservableObject {
       gateway = snapshot.settings
       gatewayMachinePrompt = snapshot.machinePrompt
       if let tools = snapshot.tools { toolCatalog = tools }
-      gatewayToolGroups = Self.normalizeToolGroups(snapshot.settings.toolGroups)
+      // The answer is the set that was just sent: a switch flipped while the write was in
+      // flight is the newer draft, and the queued write behind this one carries it.
       gatewayToolGroupsChosen = false
       gatewayLoaded = true
       NotificationCenter.default.post(name: .botsGatewayChanged, object: nil)

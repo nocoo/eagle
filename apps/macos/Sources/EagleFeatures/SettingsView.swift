@@ -349,12 +349,11 @@ public struct SettingsView: View {
       toolsCard
     }
     .task { @MainActor in await model.loadGatewayIfNeeded() }
-    .onDisappear { Task { @MainActor in await model.leaveToolsPage() } }
   }
 
   private var toolsCard: some View {
     sectionCard(
-      "可用工具", detail: "Bot 能做的事；离开本页时自动保存，从下一轮开始生效"
+      "可用工具", detail: "Bot 能做的事；每个开关立即保存，从下一轮开始生效"
     ) {
       if model.gatewayBusy { SpinnerArc(size: Theme.Metric.spinnerSize) }
     } body: {
@@ -440,10 +439,13 @@ public struct SettingsView: View {
         .accessibilityLabel("\(title)的工具")
         .accessibilityValue(expanded ? "已展开" : "已折叠")
         Spacer(minLength: 0)
-        SwitchToggle(isOn: alwaysOn ? .constant(true) : toolGroupBinding(group), label: title)
-          .labelsHidden()
-          .tint(Theme.Palette.accentFill)
-          .disabled(alwaysOn)
+        SwitchToggle(
+          isOn: alwaysOn ? .constant(true) : committedToolGroupBinding(group, title: title),
+          label: title
+        )
+        .labelsHidden()
+        .tint(Theme.Palette.accentFill)
+        .disabled(alwaysOn)
       }
       .padding(.vertical, Theme.Layout.sectionInset)
       if expanded {
@@ -510,10 +512,18 @@ public struct SettingsView: View {
     .padding(.bottom, Theme.Layout.sectionInset)
   }
 
+  /// The 提示词 page's switches are drafts; the 工具 page writes each one as it is flipped.
   private func toolGroupBinding(_ name: String) -> Binding<Bool> {
     Binding(
       get: { model.isToolGroupEnabled(name) },
       set: { model.setToolGroup(name, isOn: $0) }
+    )
+  }
+
+  private func committedToolGroupBinding(_ name: String, title: String) -> Binding<Bool> {
+    Binding(
+      get: { model.isToolGroupEnabled(name) },
+      set: { model.commitToolGroup(name, title: title, isOn: $0) }
     )
   }
 

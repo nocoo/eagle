@@ -12,26 +12,25 @@ import Testing
 @Suite("Settings toasts", .serialized)
 @MainActor
 struct SettingsToastTests {
-  @Test("the tools page keeps no line and no button: leaving reports once, then the toast goes")
-  func toolsAutosaveToast() async throws {
+  @Test("the tools page keeps no line and no button: a flip reports, then the toast goes")
+  func toolsToggleToast() async throws {
     let (model, window) = try await toastFixture(section: .tools)
     defer { window.orderOut(nil) }
     var nodes = entries(try #require(window.contentView))
-    #expect(!nodes.contains { title($0) == "保存" }, "the page saves when it is left")
+    #expect(!nodes.contains { title($0) == "保存" }, "the switch writes itself")
     #expect(!nodes.contains { title($0)?.contains("✅") == true }, "nothing happened yet")
 
-    model.setToolGroup(SettingsViewModel.searchToolGroup, isOn: true)
-    model.selection = .general
+    model.commitToolGroup(SettingsViewModel.searchToolGroup, title: "搜索", isOn: true)
     try await settle { model.toasts.toast != nil }
     window.contentView?.layoutSubtreeIfNeeded()
     nodes = entries(try #require(window.contentView))
     #expect(nodes.contains { title($0)?.contains("✅") == true })
-    #expect(nodes.contains { title($0)?.contains("已保存，工具从下一轮开始生效") == true })
+    #expect(nodes.contains { title($0)?.contains("已开启 搜索") == true })
 
     try await settle { model.toasts.toast == nil }
     window.contentView?.layoutSubtreeIfNeeded()
     nodes = entries(try #require(window.contentView))
-    #expect(!nodes.contains { title($0)?.contains("已保存，工具从下一轮开始生效") == true })
+    #expect(!nodes.contains { title($0)?.contains("已开启 搜索") == true })
   }
 
   @Test("the prompts page says nothing before the person saves")
