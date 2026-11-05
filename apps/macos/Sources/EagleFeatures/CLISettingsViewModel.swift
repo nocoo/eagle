@@ -1,5 +1,6 @@
 import BotsCore
 import BotsTransport
+import EagleDesign
 import Foundation
 
 /// Settings → CLI: the one switch that installs the command line client, and the list of
@@ -17,13 +18,14 @@ public final class CLISettingsViewModel: ObservableObject {
 
   @Published public private(set) var clients: [CLIClient] = []
   @Published public private(set) var busy = false
-  @Published public private(set) var message: String?
   @Published public private(set) var failure: String?
   /// The one chance to copy a new secret; cleared as soon as the sheet closes.
   @Published public private(set) var issuedToken: String?
   @Published public private(set) var installed = false
   @Published public private(set) var pathReady = false
 
+  /// What installing or disabling the command said, for a moment.
+  public let toasts: ToastCenter
   private let baseURL: URL
   private let rootURL: URL
   private let port: String
@@ -36,6 +38,7 @@ public final class CLISettingsViewModel: ObservableObject {
   public init(
     appVersion: AppVersion = .current(),
     botsSettings: BotsSettings = BotsSettings(),
+    toasts: ToastCenter = ToastCenter(),
     session: URLSession = .shared,
     fileManager: FileManager = .default,
     home: URL = FileManager.default.homeDirectoryForCurrentUser,
@@ -44,6 +47,7 @@ public final class CLISettingsViewModel: ObservableObject {
     environment: [String: String] = ProcessInfo.processInfo.environment
   ) {
     self.commandName = appVersion.isRelease ? "eagle" : "eagle-dev"
+    self.toasts = toasts
     self.binaryURL = binaryURL
     self.baseURL = botsSettings.baseURL
     self.rootURL = botsSettings.rootURL
@@ -148,7 +152,7 @@ public final class CLISettingsViewModel: ObservableObject {
       installed = true
       pathReady = pathReady || pathContainsBin
       failure = nil
-      message = "已安装 \(commandName)：\(linkURL.path)"
+      toasts.show(.success("已安装 \(commandName)：\(linkURL.path)"))
     } catch {
       failure = "\(error)"
     }
@@ -173,7 +177,7 @@ public final class CLISettingsViewModel: ObservableObject {
       installed = false
       issuedToken = nil
       failure = nil
-      message = "已停用 \(commandName)"
+      toasts.show(.success("已停用 \(commandName)"))
     } catch {
       failure = "\(error)"
     }

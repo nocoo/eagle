@@ -103,7 +103,7 @@ struct SettingsGatewayTests {
     #expect(model.gateway?.configured == true)
     #expect(model.gatewayBaseURL == "http://gw/v1")
     #expect(model.gatewayModel == "m1")
-    #expect(model.gatewayNotice == nil, "reading the form is not an action result")
+    #expect(model.toasts.toast == nil, "reading the form is not an action result")
     #expect(model.gatewayBusy == false)
     GatewayHTTPStub.handler = nil
   }
@@ -122,7 +122,7 @@ struct SettingsGatewayTests {
     let model = SettingsViewModel(botsSettings: settings, urlSession: session)
     await model.loadGateway()
     #expect(model.gateway?.configured == false)
-    #expect(model.gatewayNotice == nil)
+    #expect(model.toasts.toast == nil)
     GatewayHTTPStub.handler = nil
   }
 
@@ -132,7 +132,7 @@ struct SettingsGatewayTests {
     GatewayHTTPStub.handler = { _ in (401, Data()) }
     let model = SettingsViewModel(botsSettings: settings, urlSession: session)
     await model.loadGateway()
-    #expect(model.gatewayNotice?.text.contains("无法读取 Bots 设置") == true)
+    #expect(model.gatewayLoadError?.contains("无法读取 Bots 设置") == true)
     GatewayHTTPStub.handler = nil
   }
 
@@ -152,7 +152,7 @@ struct SettingsGatewayTests {
     GatewayHTTPStub.handler = { _ in (401, Data()) }
     await model.loadProviders()
     #expect(model.providerLoadError != nil, "a refused read is a page-level failure")
-    #expect(model.providerNotice == nil)
+    #expect(model.toasts.toast == nil)
     GatewayHTTPStub.handler = nil
   }
 
@@ -178,7 +178,7 @@ struct SettingsGatewayTests {
     #expect(body["apiKey"] as? String == "sk-typed")
     #expect(body["enabled"] == nil, "saving the key leaves the switch alone")
     #expect(model.providerKeys["deepseek-search"] == "")
-    #expect(model.providerNotice == .success("已保存"))
+    #expect(model.toasts.toast?.notice == .success("已保存"))
     #expect(model.providers.first?.hasApiKey == true)
     GatewayHTTPStub.handler = nil
   }
@@ -195,14 +195,14 @@ struct SettingsGatewayTests {
     ]
     await model.setProviderEnabled("deepseek-search", true)
     #expect(model.providers.first?.enabled == true, "the saved state is the server's answer")
-    #expect(model.providerNotice == nil)
+    #expect(model.toasts.toast == nil)
 
     GatewayHTTPStub.handler = { _ in
       (400, Data(#"{"error":{"kind":"invalid_command","message":"拒绝"}}"#.utf8))
     }
     await model.setProviderEnabled("deepseek-search", false)
     #expect(model.providers.first?.enabled == true, "a refused save keeps the stored flag")
-    #expect(model.providerNotice?.text.contains("拒绝") == true)
+    #expect(model.toasts.toast?.notice.text.contains("拒绝") == true)
     await model.setProviderEnabled("unknown", true)
     GatewayHTTPStub.handler = nil
   }
@@ -244,7 +244,7 @@ struct SettingsGatewayTests {
     }
     await model.setProviderEnabled("deepseek-search", true)
     #expect(model.selectedSearchProvider?.id == "tavily-search")
-    #expect(model.providerNotice == .failure("拒绝切换"))
+    #expect(model.toasts.toast?.notice == .failure("拒绝切换"))
     GatewayHTTPStub.handler = nil
   }
 
@@ -260,14 +260,14 @@ struct SettingsGatewayTests {
     #expect(model.selectedSearchProvider == nil)
     await model.setProviderEnabled("tavily-search", true)
     #expect(model.selectedSearchProvider == nil)
-    #expect(model.providerNotice?.text.contains("先保存") == true)
-    model.providerNotice = nil
+    #expect(model.toasts.toast?.notice.text.contains("先保存") == true)
+    let reported = model.toasts.toast
     model.providerBusy = true
     await model.loadProviders()
     await model.saveProvider("tavily-search")
     await model.testProvider("tavily-search")
     await model.setProviderEnabled("tavily-search", true)
-    #expect(model.providerNotice == nil)
+    #expect(model.toasts.toast == reported, "a busy guard reports nothing new")
     #expect(model.providerKeys.isEmpty)
     model.providerBusy = false
     model.providers[0].hasApiKey = true
@@ -296,7 +296,7 @@ struct SettingsGatewayTests {
 
     GatewayHTTPStub.handler = { _ in (500, Data()) }
     await model.testProvider("deepseek-search")
-    #expect(model.providerNotice != nil)
+    #expect(model.toasts.toast != nil)
     GatewayHTTPStub.handler = nil
   }
 
@@ -361,8 +361,7 @@ struct SettingsGatewayTests {
     #expect(
       model.providerAddresses["falcon"] == "http://127.0.0.1:19999",
       "the drafts take the daemon's normalized answer")
-    #expect(model.providerNotice == .success("已保存"))
-    #expect(model.providerNoticeService == ProviderSettings.decisionService)
+    #expect(model.toasts.toast?.notice == .success("已保存"))
     GatewayHTTPStub.handler = nil
   }
 
@@ -429,7 +428,7 @@ struct SettingsGatewayTests {
     await model.testProvider("jev-relay")
     #expect(model.providerProbe["jev-relay"]?.ok == true)
     #expect(model.providerProbe["jev-relay"]?.resolvedModel == "jev-1.14.0")
-    #expect(model.providerNotice == nil)
+    #expect(model.toasts.toast == nil)
     GatewayHTTPStub.handler = nil
   }
 
@@ -459,7 +458,7 @@ struct SettingsGatewayTests {
     await model.clearProviderKey("jev-relay")
     #expect(body["apiKey"] as? String == "", "an empty key is the way back to no key")
     #expect(model.providers.first?.hasApiKey == false)
-    #expect(model.providerNotice == .success("已清除 Key"))
+    #expect(model.toasts.toast?.notice == .success("已清除 Key"))
     await model.clearProviderKey("unknown")
     GatewayHTTPStub.handler = nil
   }
@@ -479,13 +478,12 @@ struct SettingsGatewayTests {
     ]
     model.providerKeys["falcon"] = "falcon_key"
     await model.saveProvider("falcon")
-    #expect(model.providerNoticeService == ProviderSettings.decisionService)
-
     GatewayHTTPStub.handler = { _ in (401, Data()) }
     await model.loadProviders()
     #expect(model.providerLoadError != nil)
-    #expect(model.providerNotice == nil, "a read is not an action result")
-    #expect(model.providerNoticeService == nil, "the read belongs to neither card")
+    #expect(
+      model.toasts.toast?.notice == .success("已保存"),
+      "a read neither reports nor clears what the last action said")
     GatewayHTTPStub.handler = nil
   }
 
@@ -732,7 +730,7 @@ struct SettingsGatewayTests {
     model.gatewayModel = "m1"
     await model.testGateway()
     #expect(model.gatewayProbe == nil)
-    #expect(model.gatewayNotice != nil)
+    #expect(model.toasts.toast != nil)
     GatewayHTTPStub.handler = nil
   }
 
@@ -784,7 +782,7 @@ struct SettingsGatewayTests {
     #expect(model.gateway?.model == "m2")
     #expect(model.gatewayAPIKey.isEmpty)
     #expect(model.gatewayProbe == nil)
-    #expect(model.gatewayNotice == .success("已保存，Bot 会使用这个网关"))
+    #expect(model.toasts.toast?.notice == .success("已保存，Bot 会使用这个网关"))
     #expect(notified.value)
     GatewayHTTPStub.handler = nil
   }
@@ -809,7 +807,7 @@ struct SettingsGatewayTests {
     model.gatewayModel = "m1"
     model.setGatewayThinkingLevel("high")
     await model.saveGateway()
-    #expect(model.gatewayNotice == .success("已保存，Bot 会使用这个网关"))
+    #expect(model.toasts.toast?.notice == .success("已保存，Bot 会使用这个网关"))
     GatewayHTTPStub.handler = nil
   }
 
@@ -836,7 +834,7 @@ struct SettingsGatewayTests {
     model.gatewayBaseURL = "http://gw/v1"
     model.gatewayModel = "m1"
     await model.saveGateway()
-    #expect(model.gatewayNotice == .success("已保存，Bot 会使用这个网关"))
+    #expect(model.toasts.toast?.notice == .success("已保存，Bot 会使用这个网关"))
     GatewayHTTPStub.handler = nil
   }
 
@@ -930,7 +928,7 @@ struct SettingsGatewayTests {
     model.gatewayBaseURL = "http://gw/v1"
     model.gatewayModel = "m1"
     await model.saveGateway()
-    #expect(model.gatewayNotice == .failure("bad gateway"))
+    #expect(model.toasts.toast?.notice == .failure("bad gateway"))
     GatewayHTTPStub.handler = nil
   }
 
@@ -977,7 +975,7 @@ struct SettingsGatewayTests {
     #expect(body?["baseUrl"] == nil, "the prompts page never rewrites the gateway")
     #expect(model.gatewayCorePrompt == "只说结论。")
     #expect(model.gatewayMachinePrompt?.path == "/m/AGENTS.md")
-    #expect(model.gatewayNotice == .success("已保存，提示词从下一轮开始生效"))
+    #expect(model.toasts.toast?.notice == .success("已保存，提示词从下一轮开始生效"))
     GatewayHTTPStub.handler = nil
   }
 

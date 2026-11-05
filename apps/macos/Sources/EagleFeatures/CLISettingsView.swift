@@ -27,9 +27,6 @@ public struct CLISettingsView: View {
         SettingsStatusNote(failure, kind: .failure)
           .accessibilityIdentifier("cli.failure")
       }
-      if let message = model.message {
-        SettingsStatusNote(message, kind: .success)
-      }
     }
     .task { await model.load() }
   }

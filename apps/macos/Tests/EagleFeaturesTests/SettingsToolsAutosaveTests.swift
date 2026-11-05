@@ -20,7 +20,7 @@ struct SettingsToolsAutosaveTests {
     let body = try #require(fixture.puts.first)
     #expect(body["toolGroups"] as? [String] == ["persona", "machine", "core", "coding", "search"])
     #expect(body["baseUrl"] == nil, "the tools page never rewrites the gateway")
-    #expect(model.gatewayNotice == .success("已保存，工具从下一轮开始生效"))
+    #expect(model.toasts.toast?.notice == .success("已保存，工具从下一轮开始生效"))
   }
 
   @Test("the standing instruction stays as the 提示词 page stored it")
@@ -43,7 +43,7 @@ struct SettingsToolsAutosaveTests {
     await model.loadGateway()
     await model.leaveToolsPage()
     #expect(fixture.puts.isEmpty)
-    #expect(model.gatewayNotice == nil, "no action means no result line")
+    #expect(model.toasts.toast == nil, "no action means no result line")
   }
 
   @Test("a second visit after a save writes nothing more")
@@ -64,7 +64,7 @@ struct SettingsToolsAutosaveTests {
     await model.loadGateway()
     model.setToolGroup(SettingsViewModel.searchToolGroup, isOn: true)
     await model.leaveToolsPage()
-    #expect(model.gatewayNotice == .failure("设置被拒绝"))
+    #expect(model.toasts.toast?.notice == .failure("设置被拒绝"))
     #expect(model.isToolGroupEnabled(SettingsViewModel.searchToolGroup))
   }
 }

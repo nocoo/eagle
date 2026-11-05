@@ -7,7 +7,7 @@ public struct SettingsView: View {
   @StateObject private var model: SettingsViewModel
   /// The CLI page keeps its switch state, credentials and error message across redraws: a
   /// fresh view model per render silently discarded all three.
-  @StateObject private var cli = CLISettingsViewModel()
+  @StateObject private var cli: CLISettingsViewModel
   @ObservedObject private var devices: DeviceSettingsViewModel
   @AppStorage("eagle.appearance") private var appearance = "system"
   @AppStorage("eagle.hideToolCalls") private var hideToolCalls = false
@@ -34,6 +34,7 @@ public struct SettingsView: View {
     expandsProviderDetails: Set<String> = []
   ) {
     _model = StateObject(wrappedValue: model)
+    _cli = StateObject(wrappedValue: CLISettingsViewModel(toasts: model.toasts))
     _expandedToolGroups = State(initialValue: expandsToolGroups)
     _expandedProviderDetails = State(initialValue: expandsProviderDetails)
     self.onClose = onClose
@@ -44,7 +45,8 @@ public struct SettingsView: View {
 
   public var body: some View {
     SettingsScaffold(
-      selection: $model.selection, onClose: onClose, showsCloseButton: showsCloseButton
+      selection: $model.selection, onClose: onClose, showsCloseButton: showsCloseButton,
+      toasts: model.toasts
     ) {
       switch model.selection {
       case .general:
@@ -143,6 +145,9 @@ public struct SettingsView: View {
   /// Model gateway: the one place a person configures the bot's endpoint, key and model.
   private var bots: some View {
     VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
+      if let error = model.gatewayLoadError {
+        SettingsStatusNote(error, kind: .failure)
+      }
       if let daemon {
         daemonSection(daemon)
       }
@@ -211,8 +216,6 @@ public struct SettingsView: View {
           SettingsStatusNote("该地址没有 /api/live，已用 /models 探测")
         }
       }
-    } else if let notice = model.gatewayNotice {
-      SettingsStatusNote(notice)
     } else if model.gateway?.configured == false {
       SettingsStatusNote("尚未配置：填好地址与模型后保存")
     }
@@ -280,6 +283,16 @@ public struct SettingsView: View {
   /// The 提示词 page: the two core prompts, because they are the first sections of every
   /// bot's system prompt.
   private var prompts: some View {
+    VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
+      if let error = model.gatewayLoadError {
+        SettingsStatusNote(error, kind: .failure)
+      }
+      promptCard
+    }
+    .task { @MainActor in await model.loadGatewayIfNeeded() }
+  }
+
+  private var promptCard: some View {
     sectionCard(
       "系统提示词", detail: "每个 Bot 的提示词都以这两段开头，改完从下一轮开始生效"
     ) {
@@ -322,18 +335,24 @@ public struct SettingsView: View {
         .tint(Theme.Palette.accentFill)
       }
       machinePromptPreview
-      if let notice = model.gatewayNotice {
-        Divider().overlay(Theme.Palette.line)
-        SettingsStatusNote(notice)
-      }
     }
-    .task { @MainActor in await model.loadGatewayIfNeeded() }
   }
 
   /// The 工具 page: every group a person can switch, one row each, and the tools it gives one
   /// chevron away. Group lines say what the group is for, never which tools it holds: the list
   /// under the row is the daemon's own answer, and it changes without a new App release.
   private var tools: some View {
+    VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
+      if let error = model.gatewayLoadError {
+        SettingsStatusNote(error, kind: .failure)
+      }
+      toolsCard
+    }
+    .task { @MainActor in await model.loadGatewayIfNeeded() }
+    .onDisappear { Task { @MainActor in await model.leaveToolsPage() } }
+  }
+
+  private var toolsCard: some View {
     sectionCard(
       "可用工具", detail: "Bot 能做的事；离开本页时自动保存，从下一轮开始生效"
     ) {
@@ -378,13 +397,7 @@ public struct SettingsView: View {
       toolGroupRow(
         "peers", "Bot 互通", detail: "让 Bot 之间一对一对话，每个来回都有上限",
         group: SettingsViewModel.peersToolGroup)
-      if let notice = model.gatewayNotice {
-        Divider().overlay(Theme.Palette.line)
-        SettingsStatusNote(notice)
-      }
     }
-    .task { @MainActor in await model.loadGatewayIfNeeded() }
-    .onDisappear { Task { @MainActor in await model.leaveToolsPage() } }
   }
 
   /// One tool group: its name, what it is for, its switch, and its own tools when opened.
@@ -551,12 +564,6 @@ public struct SettingsView: View {
         if index > 0 { Divider().overlay(Theme.Palette.line) }
         providerRow(provider)
       }
-      if let notice = model.providerNotice,
-        model.providerNoticeService == nil || model.providerNoticeService == service
-      {
-        Divider().overlay(Theme.Palette.line)
-        SettingsStatusNote(notice)
-      }
     }
   }
 
@@ -581,9 +588,6 @@ public struct SettingsView: View {
         secrets: model.botSecrets,
         showsRefresh: false
       )
-      if let notice = model.secretNotice {
-        SettingsStatusNote(notice)
-      }
     }
     .task { await model.loadSecrets() }
     .onDisappear { model.leaveSecrets() }

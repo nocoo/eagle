@@ -181,7 +181,7 @@ struct SecretSettingsTests {
     await model.deleteSecret(secret)
     #expect(deleted == ["/v1/secrets/shared/github-pat"])
     #expect(model.secrets.isEmpty)
-    #expect(model.secretNotice == .success("已删除 github-pat"))
+    #expect(model.toasts.toast?.notice == .success("已删除 github-pat"))
     SecretHTTPStub.handler = nil
   }
 
@@ -202,7 +202,7 @@ struct SecretSettingsTests {
     await model.loadSecrets()
     let secret = try #require(model.secrets.first)
     await model.copySecret(secret)
-    #expect(model.secretNotice == .failure("没有权限"))
+    #expect(model.toasts.toast?.notice == .failure("没有权限"))
     #expect(model.revealedSecrets[secret.id] == nil)
     SecretHTTPStub.handler = nil
   }

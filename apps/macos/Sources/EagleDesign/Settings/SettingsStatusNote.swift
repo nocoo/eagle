@@ -39,31 +39,15 @@ public struct SettingsStatusNote: View {
     self.notice = notice
   }
 
-  private var marker: String? {
-    switch notice.kind {
-    case .neutral: return nil
-    case .success: return "✅"
-    case .failure: return "⚠️"
-    }
-  }
-
-  private var tint: Color {
-    switch notice.kind {
-    case .neutral: return Theme.Palette.textSecondary
-    case .success: return Theme.Palette.accentStrong
-    case .failure: return Theme.Palette.destructive
-    }
-  }
-
   public var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: Theme.Form.noteMarkerGap) {
-      if let marker {
+      if let marker = notice.marker {
         Text(marker)
           .font(Theme.TypeScale.note)
       }
       Text(notice.text)
         .font(Theme.TypeScale.note)
-        .foregroundStyle(tint)
+        .foregroundStyle(notice.tint)
         .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: 0)
     }

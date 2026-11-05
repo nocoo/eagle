@@ -86,6 +86,7 @@ public struct SettingsRail: View {
 /// Two-column settings window: rail, scrollable content, close button.
 public struct SettingsScaffold<Content: View>: View {
   @Binding private var selection: SettingsSection
+  @ObservedObject private var toasts: ToastCenter
   private let content: Content
   private let onClose: () -> Void
   private let showsCloseButton: Bool
@@ -94,9 +95,11 @@ public struct SettingsScaffold<Content: View>: View {
     selection: Binding<SettingsSection>,
     onClose: @escaping () -> Void = {},
     showsCloseButton: Bool = true,
+    toasts: ToastCenter,
     @ViewBuilder content: () -> Content
   ) {
     self._selection = selection
+    self._toasts = ObservedObject(wrappedValue: toasts)
     self.content = content()
     self.onClose = onClose
     self.showsCloseButton = showsCloseButton
@@ -136,6 +139,14 @@ public struct SettingsScaffold<Content: View>: View {
             .padding(.bottom, Theme.Layout.pageBottomInset)
         }
         .scrollIndicators(.never)
+        .overlay(alignment: .bottom) {
+          if let toast = toasts.toast {
+            SettingsToast(toast.notice)
+              .padding(.bottom, Theme.Layout.sectionGap)
+              .allowsHitTesting(false)
+              .transition(.move(edge: .bottom).combined(with: .opacity))
+          }
+        }
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)

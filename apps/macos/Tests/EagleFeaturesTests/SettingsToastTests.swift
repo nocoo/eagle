@@ -7,38 +7,64 @@ import Testing
 
 @testable import EagleFeatures
 
-/// The result lines a settings page ends with, as a person meets them: a marker, the sentence and
-/// the card's own inset. The pages own the behaviour; this suite asserts what is on screen.
-@Suite("Settings status notes", .serialized)
+/// What a settings page reports, as a person meets it: no result line inside a card, and a toast
+/// that arrives when something happened and leaves on its own.
+@Suite("Settings toasts", .serialized)
 @MainActor
-struct SettingsNotesLayoutTests {
-  @Test("the tools page keeps no save button and reports the save it makes when left")
-  func toolsAutosaveNote() async throws {
-    let (model, window) = try await notesFixture(section: .tools)
+struct SettingsToastTests {
+  @Test("the tools page keeps no line and no button: leaving reports once, then the toast goes")
+  func toolsAutosaveToast() async throws {
+    let (model, window) = try await toastFixture(section: .tools)
     defer { window.orderOut(nil) }
     var nodes = entries(try #require(window.contentView))
     #expect(!nodes.contains { title($0) == "保存" }, "the page saves when it is left")
+    #expect(!nodes.contains { title($0)?.contains("✅") == true }, "nothing happened yet")
 
     model.setToolGroup(SettingsViewModel.searchToolGroup, isOn: true)
     model.selection = .general
-    try await settle { model.gatewayNotice != nil }
-    model.selection = .tools
+    try await settle { model.toasts.toast != nil }
     window.contentView?.layoutSubtreeIfNeeded()
-
     nodes = entries(try #require(window.contentView))
     #expect(nodes.contains { title($0)?.contains("✅") == true })
     #expect(nodes.contains { title($0)?.contains("已保存，工具从下一轮开始生效") == true })
+
+    try await settle { model.toasts.toast == nil }
+    window.contentView?.layoutSubtreeIfNeeded()
+    nodes = entries(try #require(window.contentView))
+    #expect(!nodes.contains { title($0)?.contains("已保存，工具从下一轮开始生效") == true })
   }
 
-  @Test("the model page ends its card with a marked save result")
-  func gatewaySaveNote() async throws {
-    let (model, window) = try await notesFixture(section: .bots)
+  @Test("the prompts page says nothing before the person saves")
+  func promptsToast() async throws {
+    let (model, window) = try await toastFixture(section: .prompts)
+    defer { window.orderOut(nil) }
+    var nodes = entries(try #require(window.contentView))
+    #expect(nodes.contains { title($0) == "保存" }, "the page still saves on demand")
+    #expect(
+      !nodes.contains { title($0)?.contains("✅") == true }, "an untouched page reports nothing")
+
+    await model.savePrompts()
+    window.contentView?.layoutSubtreeIfNeeded()
+    nodes = entries(try #require(window.contentView))
+    #expect(nodes.contains { title($0)?.contains("✅") == true })
+    #expect(nodes.contains { title($0)?.contains("已保存，提示词从下一轮开始生效") == true })
+    try await settle { model.toasts.toast == nil }
+  }
+
+  @Test("the model page reports its save through the toast, not inside the card")
+  func gatewayToast() async throws {
+    let (model, window) = try await toastFixture(section: .bots)
     defer { window.orderOut(nil) }
     await model.saveGateway()
     window.contentView?.layoutSubtreeIfNeeded()
-    let nodes = entries(try #require(window.contentView))
+    var nodes = entries(try #require(window.contentView))
     #expect(nodes.contains { title($0)?.contains("✅") == true })
     #expect(nodes.contains { title($0)?.contains("已保存，Bot 会使用这个网关") == true })
+
+    try await settle { model.toasts.toast == nil }
+    window.contentView?.layoutSubtreeIfNeeded()
+    nodes = entries(try #require(window.contentView))
+    #expect(!nodes.contains { title($0)?.contains("已保存，Bot 会使用这个网关") == true })
   }
 
   private func settle(_ condition: () -> Bool) async throws {
@@ -49,14 +75,17 @@ struct SettingsNotesLayoutTests {
     Issue.record("the page never settled")
   }
 
-  private func notesFixture(section: SettingsSection) async throws -> (SettingsViewModel, NSWindow)
+  private func toastFixture(section: SettingsSection) async throws -> (SettingsViewModel, NSWindow)
   {
     let (settings, _) = try settingsGatewayFixture()
-    NotesHTTPStub.answerSettings()
+    ToastHTTPStub.answerSettings()
     let configuration = URLSessionConfiguration.ephemeral
-    configuration.protocolClasses = [NotesHTTPStub.self]
+    configuration.protocolClasses = [ToastHTTPStub.self]
+    // The window's own dwell is three seconds; a test reads the same toast without waiting.
     let model = SettingsViewModel(
-      botsSettings: settings, urlSession: URLSession(configuration: configuration))
+      botsSettings: settings,
+      urlSession: URLSession(configuration: configuration),
+      toasts: ToastCenter(dwell: .milliseconds(80)))
     model.selection = section
     NSApplication.shared.setActivationPolicy(.prohibited)
     NSApplication.shared.perform(
@@ -110,7 +139,7 @@ struct SettingsNotesLayoutTests {
 
 /// Answers the settings read, the gateway probe and the tools save, so a layout test never asks
 /// the machine's own daemon or a real token.
-final class NotesHTTPStub: URLProtocol {
+final class ToastHTTPStub: URLProtocol {
   private final class Storage: @unchecked Sendable {
     var savedToolGroups: [String] = ["persona", "machine", "core", "coding"]
   }

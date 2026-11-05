@@ -427,6 +427,9 @@ public enum Theme {
     public static let overlayEntryScale: CGFloat = 0.995
     public static let modal = Animation.easeOut(duration: 0.18)
     public static let spinner = Animation.linear(duration: 0.9).repeatForever(autoreverses: false)
+    /// A settings toast rises, reads, and leaves without moving the page under it.
+    public static let toast = Animation.easeOut(duration: 0.2)
+    public static let toastDwell: TimeInterval = 3
   }
 
   public enum Form {
@@ -503,6 +506,9 @@ public enum Theme {
     /// over the shadow and it reads as cut off.
     public static let roundShadowBleed: CGFloat =
       roundShadowRadius + roundShadowY
+    /// A toast floats over the page, so its shadow is softer than a header control's.
+    public static let toastShadowRadius: CGFloat = 14
+    public static let toastShadowY: CGFloat = 5
     /// Gap between header circles, measured from the reference: 9 pt of air between rings.
     public static let headerControlGap: CGFloat = 8
     public static let participantHeight: CGFloat = 40

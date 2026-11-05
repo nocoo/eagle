@@ -47,11 +47,13 @@ or mathematical geometry into presentation tokens.
   explicit accessibility label and reuses this shell.
 - SettingsCard/SectionRow/Header, SettingsTextField/TextArea and SettingsActionButton
   remain the standard form primitives. SettingsSectionRow's optional leading slot carries
-the mark a row names (a bot's face in 用量); rows without one are unchanged.
-- SettingsStatusNote is the one result line a settings card ends with: neutral, ✅ success or
-⚠️ failure, on the row's own vertical inset. Pages publish a `SettingsNotice` when only the
-page knows whether an action worked, and pass a kind for a plain string. InfoBanner and
-SettingsSectionNote are gone: a page reports through this control or not at all.
+  the mark a row names (a bot's face in 用量); rows without one are unchanged.
+- A transient answer is a toast, not a card row: ToastCenter holds one SettingsNotice (✅, ⚠️
+  or neutral), SettingsScaffold floats it over the content and retires it after
+  `Theme.Motion.toastDwell`, so saving never changes the height of the page that produced it.
+  SettingsStatusNote stays for what a page says until its state changes: an empty list, a
+  refused read, a provider probe, the device service error. InfoBanner and SettingsSectionNote
+  are gone.
 - The 工具 page keeps no save button. Leaving it — another tab or a closed window — writes the
 switches a person flipped once, and never the standing-instruction draft the 提示词 page owns.
 - CardActionButton owns the existing filled/text card actions; callers retain the
