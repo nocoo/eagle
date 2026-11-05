@@ -201,30 +201,20 @@ public struct SettingsView: View {
   /// What the last probe or save answered, in the card that owns the action.
   @ViewBuilder private var gatewayProbeNote: some View {
     if let probe = model.gatewayProbe {
-      VStack(alignment: .leading, spacing: Theme.Layout.labelGap) {
-        Label(
-          "\(probe.message) · \(probe.latencyMs) ms",
-          systemImage: probe.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-        )
-        .font(Theme.TypeScale.note)
-        .foregroundStyle(probe.ok ? Theme.Palette.accentStrong : Theme.Palette.destructive)
+      VStack(alignment: .leading, spacing: 0) {
+        SettingsStatusNote(
+          "\(probe.message) · \(probe.latencyMs) ms", kind: probe.ok ? .success : .failure)
         // The gateway's own live endpoint names the build behind the address.
         if let health = probe.health, health.ok {
-          Text(health.version.map { "live 报告 \($0)" } ?? "live 报告正常")
-            .font(Theme.TypeScale.note)
-            .foregroundStyle(Theme.Palette.textSecondary)
+          SettingsStatusNote(health.version.map { "live 报告 \($0)" } ?? "live 报告正常")
         } else if probe.health?.status == 404 {
-          Text("该地址没有 /api/live，已用 /models 探测")
-            .font(Theme.TypeScale.note)
-            .foregroundStyle(Theme.Palette.textMuted)
+          SettingsStatusNote("该地址没有 /api/live，已用 /models 探测")
         }
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.vertical, Theme.Layout.controlInset)
-    } else if let message = model.gatewayMessage {
-      SettingsSectionNote(message)
+    } else if let notice = model.gatewayNotice {
+      SettingsStatusNote(notice)
     } else if model.gateway?.configured == false {
-      SettingsSectionNote("尚未配置：填好地址与模型后保存")
+      SettingsStatusNote("尚未配置：填好地址与模型后保存")
     }
   }
 
@@ -255,8 +245,7 @@ public struct SettingsView: View {
       }
       if case .failed(let message) = daemon.status {
         Divider().overlay(Theme.Palette.line)
-        SettingsSectionNote(message, destructive: true)
-          .padding(.top, Theme.Layout.sectionGap)
+        SettingsStatusNote(message, kind: .failure)
       }
     }
   }
@@ -333,10 +322,9 @@ public struct SettingsView: View {
         .tint(Theme.Palette.accentFill)
       }
       machinePromptPreview
-      if let message = model.gatewayMessage {
+      if let notice = model.gatewayNotice {
         Divider().overlay(Theme.Palette.line)
-        SettingsSectionNote(message)
-          .padding(.top, Theme.Layout.sectionGap)
+        SettingsStatusNote(notice)
       }
     }
     .task { @MainActor in await model.loadGatewayIfNeeded() }
@@ -347,15 +335,9 @@ public struct SettingsView: View {
   /// under the row is the daemon's own answer, and it changes without a new App release.
   private var tools: some View {
     sectionCard(
-      "可用工具", detail: "Bot 能做的事，改完从下一轮开始生效"
+      "可用工具", detail: "Bot 能做的事；离开本页时自动保存，从下一轮开始生效"
     ) {
-      HStack(spacing: Theme.Layout.controlGap) {
-        if model.gatewayBusy { SpinnerArc(size: Theme.Metric.spinnerSize) }
-        SettingsActionButton("保存", prominent: true) {
-          Task { @MainActor in await model.saveTools() }
-        }
-        .disabled(model.gatewayBusy)
-      }
+      if model.gatewayBusy { SpinnerArc(size: Theme.Metric.spinnerSize) }
     } body: {
       toolGroupRow(
         "core", "Core 基础工具", detail: "工作区的文件浏览，和 Bot 在侧栏里的那一行状态",
@@ -396,13 +378,13 @@ public struct SettingsView: View {
       toolGroupRow(
         "peers", "Bot 互通", detail: "让 Bot 之间一对一对话，每个来回都有上限",
         group: SettingsViewModel.peersToolGroup)
-      if let message = model.gatewayMessage {
+      if let notice = model.gatewayNotice {
         Divider().overlay(Theme.Palette.line)
-        SettingsSectionNote(message)
-          .padding(.top, Theme.Layout.sectionGap)
+        SettingsStatusNote(notice)
       }
     }
     .task { @MainActor in await model.loadGatewayIfNeeded() }
+    .onDisappear { Task { @MainActor in await model.leaveToolsPage() } }
   }
 
   /// One tool group: its name, what it is for, its switch, and its own tools when opened.
@@ -534,8 +516,7 @@ public struct SettingsView: View {
   private var providersPage: some View {
     VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
       if let error = model.providerLoadError {
-        SettingsSectionNote(error, destructive: true)
-          .padding(.horizontal, Theme.Layout.detailGap)
+        SettingsStatusNote(error, kind: .failure)
       }
       providerSection(
         ProviderSettings.searchService,
@@ -570,12 +551,11 @@ public struct SettingsView: View {
         if index > 0 { Divider().overlay(Theme.Palette.line) }
         providerRow(provider)
       }
-      if let message = model.providerMessage,
-        model.providerMessageService == nil || model.providerMessageService == service
+      if let notice = model.providerNotice,
+        model.providerNoticeService == nil || model.providerNoticeService == service
       {
         Divider().overlay(Theme.Palette.line)
-        SettingsSectionNote(message)
-          .padding(.top, Theme.Layout.sectionGap)
+        SettingsStatusNote(notice)
       }
     }
   }
@@ -585,8 +565,7 @@ public struct SettingsView: View {
   private var passwords: some View {
     VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
       if let error = model.secretLoadError {
-        SettingsSectionNote(error, destructive: true)
-          .padding(.horizontal, Theme.Layout.detailGap)
+        SettingsStatusNote(error, kind: .failure)
       }
       secretSection(
         title: "本机共享",
@@ -602,9 +581,8 @@ public struct SettingsView: View {
         secrets: model.botSecrets,
         showsRefresh: false
       )
-      if let message = model.secretMessage {
-        SettingsSectionNote(message)
-          .padding(.horizontal, Theme.Layout.detailGap)
+      if let notice = model.secretNotice {
+        SettingsStatusNote(notice)
       }
     }
     .task { await model.loadSecrets() }
@@ -646,8 +624,7 @@ public struct SettingsView: View {
       }
     } body: {
       if model.secretLoadError == nil && secrets.isEmpty {
-        SettingsSectionNote(empty)
-          .padding(.top, Theme.Layout.controlInset)
+        SettingsStatusNote(empty)
       } else {
         ForEach(Array(secrets.enumerated()), id: \.element.id) { index, secret in
           if index > 0 { Divider().overlay(Theme.Palette.line) }
@@ -810,12 +787,8 @@ public struct SettingsView: View {
       }
       if expanded { providerAddressFields(provider) }
       if let probe = model.providerProbe[provider.id] {
-        Label(
-          "\(probe.message) · \(probe.latencyMs) ms",
-          systemImage: probe.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-        )
-        .font(Theme.TypeScale.note)
-        .foregroundStyle(probe.ok ? Theme.Palette.accentStrong : Theme.Palette.destructive)
+        SettingsStatusNote(
+          "\(probe.message) · \(probe.latencyMs) ms", kind: probe.ok ? .success : .failure)
       }
     }
     .padding(.vertical, Theme.Layout.sectionInset)
@@ -882,8 +855,7 @@ public struct SettingsView: View {
     VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
       if model.usageReport == nil {
         sectionCard("用量", detail: "所有 Bot 的 token、调用与花费") {
-          SettingsSectionNote(model.usageBusy ? "正在读取用量…" : "还没有用量数据")
-            .padding(.top, Theme.Layout.controlInset)
+          SettingsStatusNote(model.usageBusy ? "正在读取用量…" : "还没有用量数据")
         }
       } else {
         sectionCard("用量", detail: "所有 Bot 的 token、调用与花费") {
@@ -898,8 +870,7 @@ public struct SettingsView: View {
             }
           }
           Divider().overlay(Theme.Palette.line)
-          SettingsSectionNote("保留 \(retentionDays) 天，按本机日期切分")
-            .padding(.top, Theme.Layout.sectionGap)
+          SettingsStatusNote("保留 \(retentionDays) 天，按本机日期切分")
         }
         usageChart
         usageSources
@@ -918,8 +889,7 @@ public struct SettingsView: View {
     let rows = model.usageSourceRows
     return sectionCard("来源", detail: "模型花 token，搜索花调用") {
       if rows.isEmpty {
-        SettingsSectionNote("还没有消耗记录")
-          .padding(.top, Theme.Layout.controlInset)
+        SettingsStatusNote("还没有消耗记录")
       } else {
         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
           if index > 0 { Divider().overlay(Theme.Palette.line) }
@@ -966,8 +936,7 @@ public struct SettingsView: View {
     let bots = model.usageBotRows
     return sectionCard("消耗最多", detail: "近 \(retentionDays) 天花得最多的 5 个 Bot") {
       if bots.isEmpty {
-        SettingsSectionNote("近 \(retentionDays) 天还没有消耗")
-          .padding(.top, Theme.Layout.controlInset)
+        SettingsStatusNote("近 \(retentionDays) 天还没有消耗")
       } else {
         ForEach(Array(bots.enumerated()), id: \.element.id) { index, bot in
           if index > 0 { Divider().overlay(Theme.Palette.line) }
@@ -985,18 +954,14 @@ public struct SettingsView: View {
   @ViewBuilder private var updateSummary: some View {
     switch model.updateState {
     case .idle:
-      Text("没有检查过。检查会读取公开的版本信息，不会上传本机数据。")
-        .font(Theme.TypeScale.note)
-        .foregroundStyle(Theme.Palette.textSecondary)
+      SettingsStatusNote("没有检查过。检查会读取公开的版本信息，不会上传本机数据。")
     case .checking:
       HStack(spacing: Theme.Layout.controlGap) {
         SpinnerArc()
-        Text("正在检查更新…")
-          .font(Theme.TypeScale.note)
-          .foregroundStyle(Theme.Palette.textSecondary)
+        SettingsStatusNote("正在检查更新…")
       }
     case .current(let version):
-      InfoBanner("已是最新版本 \(version)")
+      SettingsStatusNote("已是最新版本 \(version)", kind: .success)
     case .available(let latest, let release):
       HStack(spacing: Theme.Layout.sectionGap) {
         Image(systemName: "arrow.down.circle.fill")
@@ -1023,11 +988,9 @@ public struct SettingsView: View {
           .fill(Theme.Palette.updateFill)
       )
     case .development(let version):
-      InfoBanner("已是最新版本 \(version)")
+      SettingsStatusNote("已是最新版本 \(version)", kind: .success)
     case .unavailable:
-      Text("这一版没有可用的版本信息。")
-        .font(Theme.TypeScale.note)
-        .foregroundStyle(Theme.Palette.textSecondary)
+      SettingsStatusNote("这一版没有可用的版本信息。")
     }
   }
 

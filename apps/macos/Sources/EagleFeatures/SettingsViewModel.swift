@@ -24,9 +24,9 @@ public final class SettingsViewModel: ObservableObject {
   @Published public var providerModels: [String: String] = [:]
   @Published public var providerBusy = false
   @Published public var providerProbe: [String: ProviderProbe] = [:]
-  @Published public var providerMessage: String?
+  @Published public var providerNotice: SettingsNotice?
   /// Which card the last result line belongs to, so one card's action never reports in the other.
-  @Published public var providerMessageService: String?
+  @Published public var providerNoticeService: String?
   /// A failed read of the whole list, which belongs to neither card.
   @Published public var providerLoadError: String?
   /// The daemon's usage statistics; nil until the 用量 tab is opened.
@@ -37,7 +37,7 @@ public final class SettingsViewModel: ObservableObject {
   /// A refused read belongs to the page: it says so instead of showing "no passwords".
   @Published public var secretLoadError: String?
   /// What the last action on a record said.
-  @Published public var secretMessage: String?
+  @Published public var secretNotice: SettingsNotice?
   @Published public var secretBusy = false
   /// The values a person asked to see; a second click hides them again.
   @Published public var revealedSecrets: [String: String] = [:]
@@ -69,7 +69,9 @@ public final class SettingsViewModel: ObservableObject {
   @Published public var toolCatalog: [ToolGroupCatalog] = []
   @Published public var gatewayProbe: GatewayProbe?
   @Published public var gatewayBusy = false
-  @Published public var gatewayMessage: String?
+  /// What the last read, probe or save of the shared gateway form said. The 模型, 工具 and 提示词
+  /// pages all write it, so each one shows the result of the action it owns.
+  @Published public var gatewayNotice: SettingsNotice?
   /// The daemon's reasoning levels, in increasing effort, as the menu lists them.
   public let thinkingLevels: [(value: String, label: String)] = [
     ("off", "关闭"), ("minimal", "极低"), ("low", "低"), ("medium", "中"),
@@ -141,9 +143,9 @@ public final class SettingsViewModel: ObservableObject {
       if !gatewayCorePromptChosen { gatewayCorePrompt = settings.corePrompt }
       // Reading the form is not an action: only a save or a probe writes a result line, so a
       // page that merely opened never shows state as if the person had just done something.
-      gatewayMessage = nil
+      gatewayNotice = nil
     } catch {
-      gatewayMessage = "无法读取 Bots 设置：\(error.localizedDescription)"
+      gatewayNotice = .failure("无法读取 Bots 设置：\(error.localizedDescription)")
     }
   }
 
@@ -197,7 +199,7 @@ public final class SettingsViewModel: ObservableObject {
         apiKey: gatewayAPIKey
       )
     } catch {
-      gatewayMessage = error.localizedDescription
+      gatewayNotice = .failure(error.localizedDescription)
     }
   }
 
@@ -217,41 +219,47 @@ public final class SettingsViewModel: ObservableObject {
       gatewayLoaded = true
       gatewayAPIKey = ""
       gatewayProbe = nil
-      gatewayMessage = "已保存，Bot 会使用这个网关"
+      gatewayNotice = .success("已保存，Bot 会使用这个网关")
       NotificationCenter.default.post(name: .botsGatewayChanged, object: nil)
     } catch {
-      gatewayMessage = (error as? ClientError)?.message ?? error.localizedDescription
+      gatewayNotice = .failure((error as? ClientError)?.message ?? error.localizedDescription)
     }
   }
 
   /// The 提示词 page's save: the standing instruction and the two prompt switches. The page
   /// owns the persona and machine groups, so it saves the whole group set with them.
   public func savePrompts() async {
-    await saveToolSettings(message: "已保存，提示词从下一轮开始生效")
+    guard let saved = await saveToolSettings(corePrompt: gatewayCorePrompt) else { return }
+    gatewayCorePrompt = saved.corePrompt
+    gatewayCorePromptChosen = false
+    gatewayNotice = .success("已保存，提示词从下一轮开始生效")
   }
 
-  /// The 工具 page's own save: the group switches, without touching the gateway fields the
-  /// 模型 page owns.
-  public func saveTools() async {
-    await saveToolSettings(message: "已保存，工具从下一轮开始生效")
+  /// Leaving the 工具 page writes the switches a person flipped. The standing instruction
+  /// belongs to the 提示词 page, so this save keeps the stored one instead of a draft.
+  public func leaveToolsPage() async {
+    guard gatewayToolGroupsChosen, let storedPrompt = gateway?.corePrompt else { return }
+    guard await saveToolSettings(corePrompt: storedPrompt) != nil else { return }
+    gatewayNotice = .success("已保存，工具从下一轮开始生效")
   }
 
-  private func saveToolSettings(message: String) async {
+  private func saveToolSettings(corePrompt: String) async -> GatewaySettings? {
     gatewayBusy = true
     defer { gatewayBusy = false }
     do {
       let snapshot = try await client().saveToolSettings(
-        corePrompt: gatewayCorePrompt, toolGroups: resolvedToolGroups)
+        corePrompt: corePrompt, toolGroups: resolvedToolGroups)
       gateway = snapshot.settings
       gatewayMachinePrompt = snapshot.machinePrompt
       if let tools = snapshot.tools { toolCatalog = tools }
-      gatewayCorePrompt = snapshot.settings.corePrompt
-      gatewayCorePromptChosen = false
+      gatewayToolGroups = Self.normalizeToolGroups(snapshot.settings.toolGroups)
+      gatewayToolGroupsChosen = false
       gatewayLoaded = true
-      gatewayMessage = message
       NotificationCenter.default.post(name: .botsGatewayChanged, object: nil)
+      return snapshot.settings
     } catch {
-      gatewayMessage = (error as? ClientError)?.message ?? error.localizedDescription
+      gatewayNotice = .failure((error as? ClientError)?.message ?? error.localizedDescription)
+      return nil
     }
   }
 
@@ -294,7 +302,7 @@ public final class SettingsViewModel: ObservableObject {
   public func leaveSecrets() {
     secretsGeneration += 1
     revealedSecrets.removeAll()
-    secretMessage = nil
+    secretNotice = nil
   }
 
   /// The records every Bot on this machine reads.
@@ -319,9 +327,9 @@ public final class SettingsViewModel: ObservableObject {
       // The page may have been left while this was in flight: a late value must not appear.
       guard generation == secretsGeneration else { return }
       revealedSecrets[secret.id] = value
-      secretMessage = nil
+      secretNotice = nil
     } catch {
-      secretMessage = (error as? ClientError)?.message ?? error.localizedDescription
+      secretNotice = .failure((error as? ClientError)?.message ?? error.localizedDescription)
     }
   }
 
@@ -335,9 +343,9 @@ public final class SettingsViewModel: ObservableObject {
         key: secret.key, scope: secret.scope, botId: secret.botId)
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(value, forType: .string)
-      secretMessage = "已复制 \(secret.key)"
+      secretNotice = .success("已复制 \(secret.key)")
     } catch {
-      secretMessage = (error as? ClientError)?.message ?? error.localizedDescription
+      secretNotice = .failure((error as? ClientError)?.message ?? error.localizedDescription)
     }
   }
 
@@ -351,9 +359,9 @@ public final class SettingsViewModel: ObservableObject {
         key: secret.key, scope: secret.scope, botId: secret.botId)
       revealedSecrets.removeValue(forKey: secret.id)
       secrets.removeAll { $0.id == secret.id }
-      secretMessage = "已删除 \(secret.key)"
+      secretNotice = .success("已删除 \(secret.key)")
     } catch {
-      secretMessage = (error as? ClientError)?.message ?? error.localizedDescription
+      secretNotice = .failure((error as? ClientError)?.message ?? error.localizedDescription)
     }
   }
 
@@ -415,8 +423,8 @@ public final class SettingsViewModel: ObservableObject {
     defer { providerBusy = false }
     // A read replaces whatever the last action said, and it belongs to neither card.
     providerLoadError = nil
-    providerMessage = nil
-    providerMessageService = nil
+    providerNotice = nil
+    providerNoticeService = nil
     do {
       providers = try await client().loadProviders()
       for provider in providers where provider.isDecision {
@@ -484,7 +492,7 @@ public final class SettingsViewModel: ObservableObject {
     guard !providerBusy else { return }
     guard let provider = providers.first(where: { $0.id == id }) else { return }
     providerBusy = true
-    providerMessage = nil
+    providerNotice = nil
     defer { providerBusy = false }
     let typed = (providerKeys[id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     let address =
@@ -505,11 +513,11 @@ public final class SettingsViewModel: ObservableObject {
         providerModels[id] = saved.model
       }
       providerProbe[id] = nil
-      providerMessageService = provider.service
-      providerMessage = "已保存"
+      providerNoticeService = provider.service
+      providerNotice = .success("已保存")
     } catch {
-      providerMessageService = provider.service
-      providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
+      providerNoticeService = provider.service
+      providerNotice = .failure((error as? ClientError)?.message ?? error.localizedDescription)
     }
   }
 
@@ -520,7 +528,7 @@ public final class SettingsViewModel: ObservableObject {
       return
     }
     providerBusy = true
-    providerMessage = nil
+    providerNotice = nil
     defer { providerBusy = false }
     do {
       let saved = try await client().saveProvider(
@@ -528,11 +536,11 @@ public final class SettingsViewModel: ObservableObject {
       providers = providers.map { $0.id == id ? saved : $0 }
       providerKeys[id] = ""
       providerProbe[id] = nil
-      providerMessageService = provider.service
-      providerMessage = "已清除 Key"
+      providerNoticeService = provider.service
+      providerNotice = .success("已清除 Key")
     } catch {
-      providerMessageService = provider.service
-      providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
+      providerNoticeService = provider.service
+      providerNotice = .failure((error as? ClientError)?.message ?? error.localizedDescription)
     }
   }
 
@@ -540,8 +548,8 @@ public final class SettingsViewModel: ObservableObject {
     guard !providerBusy else { return }
     guard let provider = providers.first(where: { $0.id == id }) else { return }
     if enabled && provider.keyRequired && !provider.hasApiKey {
-      providerMessageService = provider.service
-      providerMessage = "请先保存这个服务商的 API Key"
+      providerNoticeService = provider.service
+      providerNotice = .failure("请先保存这个服务商的 API Key")
       return
     }
     guard enabled ? selectedProvider(in: provider.service)?.id != id : provider.enabled else {
@@ -559,10 +567,10 @@ public final class SettingsViewModel: ObservableObject {
         if saved.enabled && other.service == provider.service { updated.enabled = false }
         return updated
       }
-      providerMessage = nil
+      providerNotice = nil
     } catch {
-      providerMessageService = provider.service
-      providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
+      providerNoticeService = provider.service
+      providerNotice = .failure((error as? ClientError)?.message ?? error.localizedDescription)
     }
   }
 
@@ -570,14 +578,14 @@ public final class SettingsViewModel: ObservableObject {
     guard !providerBusy else { return }
     let service = providers.first(where: { $0.id == id })?.service
     providerBusy = true
-    providerMessage = nil
+    providerNotice = nil
     providerProbe[id] = nil
     defer { providerBusy = false }
     do {
       providerProbe[id] = try await client().testProvider(id: id)
     } catch {
-      providerMessageService = service
-      providerMessage = (error as? ClientError)?.message ?? error.localizedDescription
+      providerNoticeService = service
+      providerNotice = .failure((error as? ClientError)?.message ?? error.localizedDescription)
     }
   }
 

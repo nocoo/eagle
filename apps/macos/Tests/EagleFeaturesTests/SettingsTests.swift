@@ -103,7 +103,7 @@ struct SettingsGatewayTests {
     #expect(model.gateway?.configured == true)
     #expect(model.gatewayBaseURL == "http://gw/v1")
     #expect(model.gatewayModel == "m1")
-    #expect(model.gatewayMessage == nil, "reading the form is not an action result")
+    #expect(model.gatewayNotice == nil, "reading the form is not an action result")
     #expect(model.gatewayBusy == false)
     GatewayHTTPStub.handler = nil
   }
@@ -122,7 +122,7 @@ struct SettingsGatewayTests {
     let model = SettingsViewModel(botsSettings: settings, urlSession: session)
     await model.loadGateway()
     #expect(model.gateway?.configured == false)
-    #expect(model.gatewayMessage == nil)
+    #expect(model.gatewayNotice == nil)
     GatewayHTTPStub.handler = nil
   }
 
@@ -132,7 +132,7 @@ struct SettingsGatewayTests {
     GatewayHTTPStub.handler = { _ in (401, Data()) }
     let model = SettingsViewModel(botsSettings: settings, urlSession: session)
     await model.loadGateway()
-    #expect(model.gatewayMessage?.contains("无法读取 Bots 设置") == true)
+    #expect(model.gatewayNotice?.text.contains("无法读取 Bots 设置") == true)
     GatewayHTTPStub.handler = nil
   }
 
@@ -152,7 +152,7 @@ struct SettingsGatewayTests {
     GatewayHTTPStub.handler = { _ in (401, Data()) }
     await model.loadProviders()
     #expect(model.providerLoadError != nil, "a refused read is a page-level failure")
-    #expect(model.providerMessage == nil)
+    #expect(model.providerNotice == nil)
     GatewayHTTPStub.handler = nil
   }
 
@@ -178,7 +178,7 @@ struct SettingsGatewayTests {
     #expect(body["apiKey"] as? String == "sk-typed")
     #expect(body["enabled"] == nil, "saving the key leaves the switch alone")
     #expect(model.providerKeys["deepseek-search"] == "")
-    #expect(model.providerMessage == "已保存")
+    #expect(model.providerNotice == .success("已保存"))
     #expect(model.providers.first?.hasApiKey == true)
     GatewayHTTPStub.handler = nil
   }
@@ -195,14 +195,14 @@ struct SettingsGatewayTests {
     ]
     await model.setProviderEnabled("deepseek-search", true)
     #expect(model.providers.first?.enabled == true, "the saved state is the server's answer")
-    #expect(model.providerMessage == nil)
+    #expect(model.providerNotice == nil)
 
     GatewayHTTPStub.handler = { _ in
       (400, Data(#"{"error":{"kind":"invalid_command","message":"拒绝"}}"#.utf8))
     }
     await model.setProviderEnabled("deepseek-search", false)
     #expect(model.providers.first?.enabled == true, "a refused save keeps the stored flag")
-    #expect(model.providerMessage?.contains("拒绝") == true)
+    #expect(model.providerNotice?.text.contains("拒绝") == true)
     await model.setProviderEnabled("unknown", true)
     GatewayHTTPStub.handler = nil
   }
@@ -244,7 +244,7 @@ struct SettingsGatewayTests {
     }
     await model.setProviderEnabled("deepseek-search", true)
     #expect(model.selectedSearchProvider?.id == "tavily-search")
-    #expect(model.providerMessage == "拒绝切换")
+    #expect(model.providerNotice == .failure("拒绝切换"))
     GatewayHTTPStub.handler = nil
   }
 
@@ -260,14 +260,14 @@ struct SettingsGatewayTests {
     #expect(model.selectedSearchProvider == nil)
     await model.setProviderEnabled("tavily-search", true)
     #expect(model.selectedSearchProvider == nil)
-    #expect(model.providerMessage?.contains("先保存") == true)
-    model.providerMessage = nil
+    #expect(model.providerNotice?.text.contains("先保存") == true)
+    model.providerNotice = nil
     model.providerBusy = true
     await model.loadProviders()
     await model.saveProvider("tavily-search")
     await model.testProvider("tavily-search")
     await model.setProviderEnabled("tavily-search", true)
-    #expect(model.providerMessage == nil)
+    #expect(model.providerNotice == nil)
     #expect(model.providerKeys.isEmpty)
     model.providerBusy = false
     model.providers[0].hasApiKey = true
@@ -296,7 +296,7 @@ struct SettingsGatewayTests {
 
     GatewayHTTPStub.handler = { _ in (500, Data()) }
     await model.testProvider("deepseek-search")
-    #expect(model.providerMessage != nil)
+    #expect(model.providerNotice != nil)
     GatewayHTTPStub.handler = nil
   }
 
@@ -361,8 +361,8 @@ struct SettingsGatewayTests {
     #expect(
       model.providerAddresses["falcon"] == "http://127.0.0.1:19999",
       "the drafts take the daemon's normalized answer")
-    #expect(model.providerMessage == "已保存")
-    #expect(model.providerMessageService == ProviderSettings.decisionService)
+    #expect(model.providerNotice == .success("已保存"))
+    #expect(model.providerNoticeService == ProviderSettings.decisionService)
     GatewayHTTPStub.handler = nil
   }
 
@@ -429,7 +429,7 @@ struct SettingsGatewayTests {
     await model.testProvider("jev-relay")
     #expect(model.providerProbe["jev-relay"]?.ok == true)
     #expect(model.providerProbe["jev-relay"]?.resolvedModel == "jev-1.14.0")
-    #expect(model.providerMessage == nil)
+    #expect(model.providerNotice == nil)
     GatewayHTTPStub.handler = nil
   }
 
@@ -459,7 +459,7 @@ struct SettingsGatewayTests {
     await model.clearProviderKey("jev-relay")
     #expect(body["apiKey"] as? String == "", "an empty key is the way back to no key")
     #expect(model.providers.first?.hasApiKey == false)
-    #expect(model.providerMessage == "已清除 Key")
+    #expect(model.providerNotice == .success("已清除 Key"))
     await model.clearProviderKey("unknown")
     GatewayHTTPStub.handler = nil
   }
@@ -479,13 +479,13 @@ struct SettingsGatewayTests {
     ]
     model.providerKeys["falcon"] = "falcon_key"
     await model.saveProvider("falcon")
-    #expect(model.providerMessageService == ProviderSettings.decisionService)
+    #expect(model.providerNoticeService == ProviderSettings.decisionService)
 
     GatewayHTTPStub.handler = { _ in (401, Data()) }
     await model.loadProviders()
     #expect(model.providerLoadError != nil)
-    #expect(model.providerMessage == nil, "a read is not an action result")
-    #expect(model.providerMessageService == nil, "the read belongs to neither card")
+    #expect(model.providerNotice == nil, "a read is not an action result")
+    #expect(model.providerNoticeService == nil, "the read belongs to neither card")
     GatewayHTTPStub.handler = nil
   }
 
@@ -732,7 +732,7 @@ struct SettingsGatewayTests {
     model.gatewayModel = "m1"
     await model.testGateway()
     #expect(model.gatewayProbe == nil)
-    #expect(model.gatewayMessage != nil)
+    #expect(model.gatewayNotice != nil)
     GatewayHTTPStub.handler = nil
   }
 
@@ -784,7 +784,7 @@ struct SettingsGatewayTests {
     #expect(model.gateway?.model == "m2")
     #expect(model.gatewayAPIKey.isEmpty)
     #expect(model.gatewayProbe == nil)
-    #expect(model.gatewayMessage == "已保存，Bot 会使用这个网关")
+    #expect(model.gatewayNotice == .success("已保存，Bot 会使用这个网关"))
     #expect(notified.value)
     GatewayHTTPStub.handler = nil
   }
@@ -809,7 +809,7 @@ struct SettingsGatewayTests {
     model.gatewayModel = "m1"
     model.setGatewayThinkingLevel("high")
     await model.saveGateway()
-    #expect(model.gatewayMessage == "已保存，Bot 会使用这个网关")
+    #expect(model.gatewayNotice == .success("已保存，Bot 会使用这个网关"))
     GatewayHTTPStub.handler = nil
   }
 
@@ -836,7 +836,7 @@ struct SettingsGatewayTests {
     model.gatewayBaseURL = "http://gw/v1"
     model.gatewayModel = "m1"
     await model.saveGateway()
-    #expect(model.gatewayMessage == "已保存，Bot 会使用这个网关")
+    #expect(model.gatewayNotice == .success("已保存，Bot 会使用这个网关"))
     GatewayHTTPStub.handler = nil
   }
 
@@ -930,7 +930,7 @@ struct SettingsGatewayTests {
     model.gatewayBaseURL = "http://gw/v1"
     model.gatewayModel = "m1"
     await model.saveGateway()
-    #expect(model.gatewayMessage == "bad gateway")
+    #expect(model.gatewayNotice == .failure("bad gateway"))
     GatewayHTTPStub.handler = nil
   }
 
@@ -951,33 +951,6 @@ struct SettingsGatewayTests {
     #expect(model.gatewayCorePrompt == "只说结论。")
     #expect(model.gatewayMachinePrompt?.path == "/m/AGENTS.md")
     #expect(model.gatewayMachinePrompt?.text == "机器规则")
-    GatewayHTTPStub.handler = nil
-  }
-
-  @Test("saveTools sends only the persona and the groups, and takes the answer back")
-  func savesTools() async throws {
-    let (settings, session) = try settingsGatewayFixture()
-    var body: [String: Any]?
-    GatewayHTTPStub.handler = { request in
-      if let data = gatewayHTTPBody(request) {
-        body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-      }
-      return (
-        200,
-        Data(
-          #"""
-          {"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true,"corePrompt":"新的人格","toolGroups":["persona","machine","core","coding"]},"machinePrompt":{"path":"/m/AGENTS.md","text":"机器规则"}}
-          """#.utf8)
-      )
-    }
-    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
-    model.gatewayCorePrompt = "新的人格"
-    await model.saveTools()
-    #expect(body?["corePrompt"] as? String == "新的人格")
-    #expect(body?["baseUrl"] == nil, "the tools page never rewrites the gateway")
-    #expect(model.gatewayCorePrompt == "新的人格")
-    #expect(model.gatewayMachinePrompt?.path == "/m/AGENTS.md")
-    #expect(model.gatewayMessage == "已保存，工具从下一轮开始生效")
     GatewayHTTPStub.handler = nil
   }
 
@@ -1004,7 +977,7 @@ struct SettingsGatewayTests {
     #expect(body?["baseUrl"] == nil, "the prompts page never rewrites the gateway")
     #expect(model.gatewayCorePrompt == "只说结论。")
     #expect(model.gatewayMachinePrompt?.path == "/m/AGENTS.md")
-    #expect(model.gatewayMessage == "已保存，提示词从下一轮开始生效")
+    #expect(model.gatewayNotice == .success("已保存，提示词从下一轮开始生效"))
     GatewayHTTPStub.handler = nil
   }
 

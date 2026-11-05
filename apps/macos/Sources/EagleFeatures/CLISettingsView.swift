@@ -24,13 +24,11 @@ public struct CLISettingsView: View {
       credentialsCard
       skillCard
       if let failure = model.failure {
-        SettingsSectionNote(failure, destructive: true)
-          .padding(.leading, Theme.Layout.detailGap)
+        SettingsStatusNote(failure, kind: .failure)
           .accessibilityIdentifier("cli.failure")
       }
       if let message = model.message {
-        SettingsSectionNote(message)
-          .padding(.leading, Theme.Layout.detailGap)
+        SettingsStatusNote(message, kind: .success)
       }
     }
     .task { await model.load() }
@@ -148,7 +146,7 @@ public struct CLISettingsView: View {
           Divider().overlay(Theme.Palette.line)
         }
         if model.clients.isEmpty {
-          SettingsSectionNote("还没有 CLI 凭据")
+          SettingsStatusNote("还没有 CLI 凭据")
             .padding(.top, Theme.Layout.controlInset)
         }
         ForEach(Array(model.clients.enumerated()), id: \.element.id) { index, client in

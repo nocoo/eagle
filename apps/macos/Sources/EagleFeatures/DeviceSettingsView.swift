@@ -141,8 +141,7 @@ public struct DeviceSettingsView: View {
   @ViewBuilder private var serviceRecovery: some View {
     VStack(alignment: .leading, spacing: Theme.Layout.controlGap) {
       if let message = model.errorMessage {
-        SettingsSectionNote(message, destructive: true)
-          .padding(.bottom, 0)
+        SettingsStatusNote(message, kind: .failure)
           .accessibilityIdentifier("devices.error")
         if model.needsBackgroundApproval {
           HStack(spacing: Theme.Layout.controlGap) {

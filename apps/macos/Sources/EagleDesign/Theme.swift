@@ -448,9 +448,10 @@ public enum Theme {
     public static let rowContentGap: CGFloat = 16
     public static let rowDetailGap: CGFloat = 4
     public static let rowVerticalInset: CGFloat = 12
-    public static let noteBottomInset: CGFloat = 12
-    public static let bannerGap: CGFloat = 8
-    public static let bannerHeight: CGFloat = 40
+    public static let noteInset: CGFloat = 12
+    /// The face a settings row draws beside a bot's name, smaller than a sidebar row.
+    public static let entityFace: CGFloat = 24
+    public static let noteMarkerGap: CGFloat = 8
     public static let textAreaMinHeight: CGFloat = 88
     public static let textAreaPlaceholderInset: CGFloat = 6
     public static let textAreaEditorHorizontalInset: CGFloat = 3

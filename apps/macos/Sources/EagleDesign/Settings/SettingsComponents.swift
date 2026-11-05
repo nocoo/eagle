@@ -64,33 +64,6 @@ public struct PillSelect<Value: Hashable>: View {
   }
 }
 
-/// Light blue confirmation strip with a check icon.
-public struct InfoBanner: View {
-  private let text: String
-
-  public init(_ text: String) {
-    self.text = text
-  }
-
-  public var body: some View {
-    HStack(spacing: Theme.Form.bannerGap) {
-      Image(systemName: "checkmark.circle")
-        .font(Theme.TypeScale.cardTitle)
-        .foregroundStyle(Theme.Palette.info)
-      Text(text)
-        .font(Theme.TypeScale.noteEmphasis)
-        .foregroundStyle(Theme.Palette.info)
-      Spacer(minLength: 0)
-    }
-    .padding(.horizontal, Theme.Form.controlInset)
-    .frame(height: Theme.Form.bannerHeight)
-    .background(
-      RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
-        .fill(Theme.Palette.infoFill)
-    )
-  }
-}
-
 /// Section header inside a card: title, one line of what it covers, and the control that
 /// belongs to the section on the right. The 服务 page set this shape; every page follows it.
 public struct SettingsSectionHeader<Trailing: View>: View {
@@ -124,56 +97,52 @@ public struct SettingsSectionHeader<Trailing: View>: View {
   }
 }
 
-/// A row at the section rhythm: label and detail on the left, one control on the right.
-public struct SettingsSectionRow<Trailing: View>: View {
+/// A row at the section rhythm: label and detail on the left, one control on the right. A row
+/// that names something a person recognises carries that mark in a leading slot.
+public struct SettingsSectionRow<Leading: View, Trailing: View>: View {
   private let title: String
   private let detail: String?
+  private let leading: Leading
   private let trailing: Trailing
 
-  public init(_ title: String, detail: String? = nil, @ViewBuilder trailing: () -> Trailing) {
+  public init(
+    _ title: String, detail: String? = nil, @ViewBuilder trailing: () -> Trailing
+  ) where Leading == EmptyView {
+    self.init(title, detail: detail, leading: { EmptyView() }, trailing: trailing)
+  }
+
+  public init(
+    _ title: String,
+    detail: String? = nil,
+    @ViewBuilder leading: () -> Leading,
+    @ViewBuilder trailing: () -> Trailing
+  ) {
     self.title = title
     self.detail = detail
+    self.leading = leading()
     self.trailing = trailing()
   }
 
   public var body: some View {
     HStack(alignment: .center, spacing: Theme.Form.rowContentGap) {
-      VStack(alignment: .leading, spacing: Theme.Form.rowDetailGap) {
-        Text(title)
-          .font(Theme.TypeScale.fieldLabel)
-          .foregroundStyle(Theme.Palette.textPrimary)
-        if let detail {
-          Text(detail)
-            .font(Theme.TypeScale.note)
-            .foregroundStyle(Theme.Palette.textSecondary)
-            .fixedSize(horizontal: false, vertical: true)
+      HStack(alignment: .center, spacing: Theme.Metric.rowAvatarGap) {
+        leading
+        VStack(alignment: .leading, spacing: Theme.Form.rowDetailGap) {
+          Text(title)
+            .font(Theme.TypeScale.fieldLabel)
+            .foregroundStyle(Theme.Palette.textPrimary)
+          if let detail {
+            Text(detail)
+              .font(Theme.TypeScale.note)
+              .foregroundStyle(Theme.Palette.textSecondary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
         }
       }
       Spacer(minLength: 0)
       trailing
     }
     .padding(.vertical, Theme.Form.rowVerticalInset)
-  }
-}
-
-/// What a section says after an action: the save's result, or why it failed. It closes the
-/// card the action lives in, so the answer sits under the control that produced it.
-public struct SettingsSectionNote: View {
-  private let text: String
-  private let destructive: Bool
-
-  public init(_ text: String, destructive: Bool = false) {
-    self.text = text
-    self.destructive = destructive
-  }
-
-  public var body: some View {
-    Text(text)
-      .font(Theme.TypeScale.note)
-      .foregroundStyle(destructive ? Theme.Palette.destructive : Theme.Palette.textSecondary)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.bottom, Theme.Form.noteBottomInset)
   }
 }
 
