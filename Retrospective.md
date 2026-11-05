@@ -1,5 +1,25 @@
 # Retrospective
 
+## 2026-11-05 — App launch and configured port do not prove helper readiness
+
+The published 0.19.0 DMG matched its local SHA-256, mounted bundle and deep/strict
+signature. Installation preserved the signed 0.18 backup and used its maintenance
+entry before replacement. The new UI and Bots daemon opened, but the first device
+registration repeatedly ended EX_CONFIG: launchd reported it could not find/execute
+the relative BundleProgram. No helper-side failure log or specific OS root cause
+was established. After quitting that installed UI and its owned daemon, one normal
+maintenance/unregister cycle from the current installed bundle and reopening made
+the helper run. Kernel executable path and UI local/cloud readiness were then
+verified. No re-signing, global LaunchServices reset, security-policy change,
+identity reset or data copy was used. A v2 health binding is configuration evidence,
+not proof that launchd admitted its helper.
+
+The release's three-round CLI wrapper also exhausted its aggregate 600-second tool
+budget during round three. The two completed 24-case runs were retained, the partial
+run was not called green, no runner remained, and a separate complete third run
+passed all 24 cases with unchanged case deadlines. Give each full run its own tool
+budget rather than inferring success from a partially printed log.
+
 ## 2026-11-05 — Record the App release's intermittent redaction gate
 
 The documentation-only `b7f19fe` push was rejected at root test 308/309: styled

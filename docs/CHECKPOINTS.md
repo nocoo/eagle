@@ -1,5 +1,33 @@
 # 用户视角检查点
 
+## 2026-11-05 18:03 +08 — Published and installed macOS 0.19.0
+
+- Artifact/tag source is `8bb86ef` (`macos-v0.19.0`), with exact-SHA Check/Deploy
+  success (42000725909 / 42001600938). Normal branch and tag pre-push gates pass:
+  root 310, browser 191 (11 existing conditional exclusions), Swift 466. The earlier
+  two performance rejections and the equivalent allocation fix remain recorded.
+- Bots check passed 1,024; client logic coverage is 2206/2434 = 90.6% (floor90).
+  Three completed full CLI/eval runs each passed 24 cases. An additional partial
+  third attempt hit the aggregate tool timeout and was not counted as success.
+- GitHub Release `https://github.com/nocoo/eagle/releases/tag/macos-v0.19.0` contains
+  the DMG and SHA256SUMS. A fresh GitHub download matched the mounted/tested local
+  DMG: `81e3c4bcc1ef191a776e5b57bda9521e7af00a7cab19deb451f7f207ef6473d3`.
+  The arm64 App is ad-hoc signed, not notarized, and includes the final redaction fix.
+- Installed exact path: `/Applications/Eagle for Mac.app`, version0.19.0. Signed
+  0.18 backup: `/Applications/.eagle-release-install.Ken45w/previous/Eagle for Mac.app`.
+  No identity, credential, history, pairing or journal directory was copied/cleared.
+  The unrelated `/Applications/Eagle.app` is untouched; the source Dev App is stopped.
+- First helper registration failed EX_CONFIG; one current-bundle maintenance cycle
+  resolved it without policy/signature changes. Release App PID92853 and helper92879
+  resolve to the installed bundle; UI reports local ready and cloud connected. Bots
+  health is200 with8 Bots and device-port version2. These do not prove a remote command,
+  physical pairing or same-socket renewal through expiry.
+- Device Worker remains authorized revision7ea6137, version01af079f-f11a-47e8-9637-166af2a73d99;
+  its namespaces/tagv1 are unchanged. This publication claim now advances macos.latest
+  to0.19.0 with the exact asset release URL. Root/site0.14.3, Agent source1.2.0 and npm
+  onboarding1.0.0 are unchanged; the lock requires no dependency/version change.
+  The claim commit's normal push/CI/deploy and exact public health checks are next.
+
 ## 2026-11-05 16:58 +08 — Authorized device relay before App 0.19
 
 - Owner requested macOS Y+1 publication/installation and then explicitly authorized
