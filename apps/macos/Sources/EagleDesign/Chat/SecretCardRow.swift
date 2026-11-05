@@ -287,28 +287,11 @@ public struct SecretCardRow: View {
   }
 
   private var expiryMenu: some View {
-    Menu {
+    SelectionMenu(expiryTitle(expiry), style: .compact) {
       ForEach(expiryOptions) { option in
         Button(option.title) { expiry = option.expiry }
       }
-    } label: {
-      HStack(spacing: 6) {
-        Text(expiryTitle(expiry))
-          .font(Theme.TypeScale.compactEmphasis)
-          .foregroundStyle(Theme.Palette.textPrimary)
-        Image(systemName: "chevron.down")
-          .font(Theme.TypeScale.Glyph.chevron)
-          .foregroundStyle(Theme.Palette.textSecondary)
-      }
-      .padding(.horizontal, 12)
-      .frame(height: 26)
-      .background(Capsule().fill(Theme.Palette.canvas))
-      .overlay(Capsule().strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline))
     }
-    .menuStyle(.button)
-    .buttonStyle(.plain)
-    .menuIndicator(.hidden)
-    .fixedSize()
     .accessibilityLabel("有效期")
   }
 

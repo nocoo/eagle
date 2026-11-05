@@ -7,8 +7,10 @@ The first implementation slice centralizes palette definitions and explicit font
 construction with a parser-based guard and staged-snapshot rejection tests. It preserves
 current appearance values and manual Bot choices. The next slice unifies native
 switches/checkboxes and their production/Gallery callers, with owner acceptance and
-AX/ownership tests. Menus, other standard controls and spacing/alpha/motion ownership
-remain unfinished; passing these checks is not completion of phase 1. An additional
+AX/ownership tests. Selection menus and settings-primitive metrics are now centralized
+as another implementation slice awaiting owner UI acceptance. Remaining sidebar,
+conversation, panel/dialog styles and other control families are unfinished; passing
+these scoped checks is not completion of phase 1. An additional
 keyboard-driver experiment is archived locally outside the active source/test tree,
 not a passed gate; the committed composer acceptance remains unchanged.
 See `apps/macos/DESIGN.md` for the precise implemented contract. This document replaces the

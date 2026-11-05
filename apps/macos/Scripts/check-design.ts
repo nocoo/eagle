@@ -92,7 +92,7 @@ function main(): void {
         `apps/macos/Sources/${item.path}:${item.line}: ${item.rule}`,
       );
     if (findings.length) process.exitCode = 1;
-    else console.log("design-guard: palette and typography ownership passed");
+    else console.log("design-guard: presentation ownership passed");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

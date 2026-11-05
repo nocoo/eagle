@@ -36,17 +36,18 @@ public struct PillSelect<Value: Hashable>: View {
     }
   }
 
+  private let label: String
   private let options: [Option]
   @Binding private var selection: Value
-  @State private var hovering = false
 
-  public init(options: [Option], selection: Binding<Value>) {
+  public init(_ label: String, options: [Option], selection: Binding<Value>) {
+    self.label = label
     self.options = options
     self._selection = selection
   }
 
   public var body: some View {
-    Menu {
+    SelectionMenu(options.first { $0.id == selection }?.title ?? "", style: .surface) {
       ForEach(options) { option in
         Button {
           selection = option.id
@@ -58,26 +59,8 @@ public struct PillSelect<Value: Hashable>: View {
           }
         }
       }
-    } label: {
-      HStack(spacing: 6) {
-        Text(options.first { $0.id == selection }?.title ?? "")
-          .font(Theme.TypeScale.noteEmphasis)
-          .foregroundStyle(Theme.Palette.textPrimary)
-        Image(systemName: "chevron.down")
-          .font(Theme.TypeScale.Glyph.chevron)
-          .foregroundStyle(Theme.Palette.textSecondary)
-      }
-      .padding(.horizontal, 14)
-      .frame(height: 32)
-      .background(Capsule().fill(hovering ? Theme.Palette.canvas : Theme.Palette.card))
-      .overlay(Capsule().strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline))
     }
-    .menuStyle(.button)
-    .buttonStyle(.plain)
-    .menuIndicator(.hidden)
-    .fixedSize()
-    .onHover { hovering = $0 }
-    .accessibilityLabel("外观")
+    .accessibilityLabel(label)
   }
 }
 
@@ -90,7 +73,7 @@ public struct InfoBanner: View {
   }
 
   public var body: some View {
-    HStack(spacing: 8) {
+    HStack(spacing: Theme.Form.bannerGap) {
       Image(systemName: "checkmark.circle")
         .font(Theme.TypeScale.cardTitle)
         .foregroundStyle(Theme.Palette.info)
@@ -99,8 +82,8 @@ public struct InfoBanner: View {
         .foregroundStyle(Theme.Palette.info)
       Spacer(minLength: 0)
     }
-    .padding(.horizontal, 14)
-    .frame(height: 40)
+    .padding(.horizontal, Theme.Form.controlInset)
+    .frame(height: Theme.Form.bannerHeight)
     .background(
       RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
         .fill(Theme.Palette.infoFill)
@@ -122,8 +105,8 @@ public struct SettingsSectionHeader<Trailing: View>: View {
   }
 
   public var body: some View {
-    HStack(alignment: .center, spacing: 12) {
-      VStack(alignment: .leading, spacing: 4) {
+    HStack(alignment: .center, spacing: Theme.Form.sectionContentGap) {
+      VStack(alignment: .leading, spacing: Theme.Form.headingDetailGap) {
         Text(title)
           .font(Theme.TypeScale.sectionTitle)
           .foregroundStyle(Theme.Palette.textPrimary)
@@ -137,7 +120,7 @@ public struct SettingsSectionHeader<Trailing: View>: View {
       Spacer(minLength: 0)
       trailing
     }
-    .padding(.vertical, 16)
+    .padding(.vertical, Theme.Form.rowVerticalInset)
   }
 }
 
@@ -154,8 +137,8 @@ public struct SettingsSectionRow<Trailing: View>: View {
   }
 
   public var body: some View {
-    HStack(alignment: .center, spacing: 16) {
-      VStack(alignment: .leading, spacing: 3) {
+    HStack(alignment: .center, spacing: Theme.Form.rowContentGap) {
+      VStack(alignment: .leading, spacing: Theme.Form.rowDetailGap) {
         Text(title)
           .font(Theme.TypeScale.fieldLabel)
           .foregroundStyle(Theme.Palette.textPrimary)
@@ -169,7 +152,7 @@ public struct SettingsSectionRow<Trailing: View>: View {
       Spacer(minLength: 0)
       trailing
     }
-    .padding(.vertical, 16)
+    .padding(.vertical, Theme.Form.rowVerticalInset)
   }
 }
 
@@ -190,7 +173,7 @@ public struct SettingsSectionNote: View {
       .foregroundStyle(destructive ? Theme.Palette.destructive : Theme.Palette.textSecondary)
       .fixedSize(horizontal: false, vertical: true)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.bottom, 12)
+      .padding(.bottom, Theme.Form.noteBottomInset)
   }
 }
 
@@ -203,7 +186,9 @@ public struct SettingsTextArea: View {
   @Binding private var text: String
   private let minHeight: CGFloat
 
-  public init(_ placeholder: String, text: Binding<String>, minHeight: CGFloat = 88) {
+  public init(
+    _ placeholder: String, text: Binding<String>, minHeight: CGFloat = Theme.Form.textAreaMinHeight
+  ) {
     self.placeholder = placeholder
     self._text = text
     self.minHeight = minHeight
@@ -215,20 +200,20 @@ public struct SettingsTextArea: View {
         Text(placeholder)
           .font(Theme.TypeScale.rowSubtitle)
           .foregroundStyle(Theme.Palette.textSecondary)
-          .padding(.horizontal, 6)
-          .padding(.vertical, 6)
+          .padding(.horizontal, Theme.Form.textAreaPlaceholderInset)
+          .padding(.vertical, Theme.Form.textAreaPlaceholderInset)
           .allowsHitTesting(false)
       }
       TextEditor(text: $text)
         .font(Theme.TypeScale.rowSubtitle)
         .foregroundStyle(Theme.Palette.textPrimary)
         .scrollContentBackground(.hidden)
-        .padding(.horizontal, 3)
-        .padding(.vertical, 2)
+        .padding(.horizontal, Theme.Form.textAreaEditorHorizontalInset)
+        .padding(.vertical, Theme.Form.textAreaEditorVerticalInset)
         .frame(minHeight: minHeight)
         .accessibilityLabel(placeholder)
     }
-    .padding(.horizontal, 4)
+    .padding(.horizontal, Theme.Form.textAreaOuterInset)
     .background(
       RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
         .fill(Theme.Palette.canvas)
@@ -253,7 +238,7 @@ public struct SettingsTextField: View {
   }
 
   public var body: some View {
-    HStack(spacing: 6) {
+    HStack(spacing: Theme.Form.controlGap) {
       Group {
         if secure {
           SecureField("", text: $text)
@@ -277,16 +262,16 @@ public struct SettingsTextField: View {
         .accessibilityLabel("清除")
       }
     }
-    .padding(.horizontal, 11)
-    .frame(height: 34)
+    .padding(.horizontal, Theme.Form.fieldInset)
+    .frame(height: Theme.Form.fieldHeight)
     .background(
-      RoundedRectangle(cornerRadius: 9, style: .continuous)
+      RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
         .fill(Theme.Palette.canvas)
     )
     .overlay(
-      RoundedRectangle(cornerRadius: 9, style: .continuous)
+      RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
         .strokeBorder(
-          focused ? Theme.Palette.accent.opacity(0.65) : Theme.Palette.line,
+          focused ? Theme.Palette.fieldFocus : Theme.Palette.line,
           lineWidth: Theme.Metric.hairline
         )
     )
@@ -295,7 +280,7 @@ public struct SettingsTextField: View {
         Text(placeholder)
           .font(Theme.TypeScale.rowSubtitle)
           .foregroundStyle(Theme.Palette.textMuted)
-          .padding(.leading, 12)
+          .padding(.leading, Theme.Form.fieldPlaceholderInset)
           .allowsHitTesting(false)
       }
     }
@@ -322,10 +307,10 @@ public struct SettingsActionButton: View {
       Text(title)
         .font(Theme.TypeScale.noteEmphasis)
         .foregroundStyle(prominent ? Theme.Palette.onColor : Theme.Palette.textPrimary)
-        .padding(.horizontal, 14)
-        .frame(height: 30)
+        .padding(.horizontal, Theme.Form.controlInset)
+        .frame(height: Theme.Form.actionHeight)
         .background(
-          RoundedRectangle(cornerRadius: 8, style: .continuous)
+          RoundedRectangle(cornerRadius: Theme.Form.actionRadius, style: .continuous)
             .fill(
               prominent
                 ? Theme.Palette.accentStrong
@@ -333,7 +318,7 @@ public struct SettingsActionButton: View {
             )
         )
         .overlay(
-          RoundedRectangle(cornerRadius: 8, style: .continuous)
+          RoundedRectangle(cornerRadius: Theme.Form.actionRadius, style: .continuous)
             .strokeBorder(prominent ? .clear : Theme.Palette.line, lineWidth: Theme.Metric.hairline)
         )
     }

@@ -12,11 +12,14 @@ fonts. UI typography uses the system font and CJK fallback.
   indexed colors and font values are preserved during extraction. Switches now use
   `SwitchToggle`, and checkbox controls use `Checkbox`, both backed by native Toggle.
   The Gallery reuses production settings rows rather than a separate drawn switch.
+  `SelectionMenu` now owns the seven existing selection-menu presentations;
+  `Theme.Form` owns the extracted settings-primitive metrics without changing values.
 - **Enforced:** `npm run check:design` parses every `Sources/**/*.swift` file with the
   selected Xcode toolchain's SwiftParser/SwiftSyntax. The pre-commit design check runs
   from a temporary Git-index snapshot; macOS CI runs the same check and its tests.
-- **Not yet enforced:** spacing, radius, alpha, motion and non-toggle control-construction
-  ownership. Some callsites still contain these styles. A clean ownership scan does
+- **Not yet enforced:** global spacing/radius/alpha/motion ownership and construction
+  of controls other than Toggle/Menu. Numeric style ownership is currently enforced
+  only in SettingsComponents.swift and SelectionMenu.swift. A clean ownership scan does
   not mean the entire design system is consolidated.
 - **Not yet redesigned:** eight candy identities with stable hashing, accessible
   solid/soft color pairs, the new spacing grid, reference-aligned shell and control
@@ -34,7 +37,9 @@ planned token, guard or layout change already exists.
 on colored surfaces, scrims and shadow colors. The Bot face's tint enumeration and
 lookup are defined here, not in the face renderer. `Theme.TypeScale` owns font
 construction, including settings, Markdown/code, symbols and the existing proportional
-avatar/button font helpers. `Theme.Metric` owns the currently extracted layout metrics.
+avatar/button font helpers. `Theme.Metric` owns the currently extracted shell/layout
+metrics; `Theme.Form` owns settings rows, fields, actions and selection-menu metrics.
+These are the existing values, not the later grid redesign.
 
 Views consume those definitions directly or receive a typed style from a shared
 component. Do not define colors/fonts in another `Theme` extension, local factory or
@@ -76,6 +81,15 @@ fixture executables and newly added Swift files are all scanned. The rules rejec
   `SwitchToggle` and `Checkbox` declarations in their respective primitive files.
   The exception is not file-wide and does not permit scattered colors or fonts in
   the native control's label builder.
+- Raw `Menu` construction/references/aliases outside the exact top-level
+  `SelectionMenu.menu`, `MenuIconButton.body` and `SidebarPanel.itemMenu` members
+  in their owning files. The sidebar exception is its native context submenu,
+  not another selection-control implementation.
+- Numeric style literals and local numeric defaults in SettingsComponents.swift
+  and SelectionMenu.swift. Structural zero, content values in Text/lineLimit and
+  identity opacity/scale are allowed. Other rendering files and arbitrary external
+  value-helper dataflow are not certified by this bounded rule. External Theme.Form
+  extensions and aliases are refused.
 
 This is a constrained syntax contract, not Swift type inference. It does not certify
 arbitrary generic helper APIs, derived alpha/weight, layout dimensions or all primitive
@@ -124,7 +138,13 @@ paint during refactoring would change hit testing.
 ## Shared components and behavior
 
 Reuse existing cards, settings rows/fields/actions, icon actions, tabs, conversation
-rows and Markdown primitives. Menu and remaining style consolidation is still pending.
+rows and Markdown primitives. Selection menus share one native Menu shell, with
+explicit surface/standard/provider/compact/action/inline/policy recipes preserving
+their old fonts, dimensions, arrow treatments and native menu style. Callers still
+own their Button actions, checkmarks, disabled options, help and identifiers. The
+policy recipe remains borderless; this is not a migration to Picker. PillSelect
+requires an explicit accessibility label and reuses the same shell.
+Remaining sidebar, conversation, panel and dialog styles are not yet consolidated.
 `SwitchToggle` and `Checkbox` pass the original Binding directly to native Toggle,
 without optimistic state or a custom action handler. Callers retain labelsHidden,
 control size (including inspector mini), tint, disabled predicates and identifiers.

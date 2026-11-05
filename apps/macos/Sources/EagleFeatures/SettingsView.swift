@@ -102,6 +102,7 @@ public struct SettingsView: View {
       Divider().overlay(Theme.Palette.line)
       SettingsSectionRow("外观", detail: "浅色、深色或跟随系统") {
         PillSelect(
+          "外观",
           options: [
             .init("system", "跟随系统"),
             .init("light", "浅色"),
@@ -524,28 +525,11 @@ public struct SettingsView: View {
 
   /// The seven reasoning levels as a popup, drawn like the other capsules so the tab keeps one style.
   private var thinkingLevelMenu: some View {
-    Menu {
+    SelectionMenu(model.gatewayThinkingLevelLabel, style: .standard) {
       ForEach(model.thinkingLevels, id: \.value) { level in
         Button(level.label) { model.setGatewayThinkingLevel(level.value) }
       }
-    } label: {
-      HStack(spacing: 6) {
-        Text(model.gatewayThinkingLevelLabel)
-          .font(Theme.TypeScale.noteEmphasis)
-          .foregroundStyle(Theme.Palette.textPrimary)
-        Image(systemName: "chevron.down")
-          .font(Theme.TypeScale.Glyph.chevron)
-          .foregroundStyle(Theme.Palette.textSecondary)
-      }
-      .padding(.horizontal, 14)
-      .frame(height: 32)
-      .background(Capsule().fill(Theme.Palette.canvas))
-      .overlay(Capsule().strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline))
     }
-    .menuStyle(.button)
-    .buttonStyle(.plain)
-    .menuIndicator(.hidden)
-    .fixedSize()
   }
 
   private var providersPage: some View {
@@ -729,7 +713,7 @@ public struct SettingsView: View {
     offLabel: String
   ) -> some View {
     let selected = model.selectedProvider(in: service)
-    return Menu {
+    return SelectionMenu(selected.map { "使用 \($0.title)" } ?? "选择服务商", style: .provider) {
       Button(offLabel) {
         if let chosen = selected {
           Task { await model.setProviderEnabled(chosen.id, false) }
@@ -746,22 +730,7 @@ public struct SettingsView: View {
         }
         .disabled(provider.keyRequired && !provider.hasApiKey)
       }
-    } label: {
-      HStack(spacing: 6) {
-        Text(selected.map { "使用 \($0.title)" } ?? "选择服务商")
-        Image(systemName: "chevron.down")
-      }
-      .font(Theme.TypeScale.note)
-      .foregroundStyle(Theme.Palette.textPrimary)
-      .padding(.horizontal, 12)
-      .frame(height: 32)
-      .background(Capsule().fill(Theme.Palette.canvas))
-      .overlay(Capsule().strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline))
     }
-    .menuStyle(.button)
-    .buttonStyle(.plain)
-    .menuIndicator(.hidden)
-    .fixedSize()
     .disabled(model.providerBusy)
     .accessibilityLabel("当前\(service == ProviderSettings.decisionService ? "决策" : "搜索")服务商")
   }

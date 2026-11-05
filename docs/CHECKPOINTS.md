@@ -1,5 +1,22 @@
 # 用户视角检查点
 
+## 2026-11-05 10:45 +08 — Selection menus and form tokens
+
+- Seven selection-menu presentations now share SelectionMenu; existing sizes,
+  typography, checkmarks, async actions, disabled predicates and identifiers are
+  preserved. Settings primitives use Theme.Form metrics and a tokenized focus color.
+  No eight-color or grid-value redesign was performed.
+- The scoped parser gate passes 71 syntax assertions after demonstrating the new
+  rejection cases. App and test targets compile; typecheck and check-only lint pass.
+  Read-only code review found no important regression. Pure recipe assertions were
+  added for CI but were not executed locally; no Swift/UI/keyboard acceptance suite,
+  browser suite or root release check was rerun at the owner's request.
+- UI acceptance belongs to the owner. Fresh App PID 17894 owns daemon 18080 from
+  this checkout's apps/bots; CLI health passes. It remains in the same right-side
+  pane, foregrounded with Settings → General open for manual inspection. No menu
+  selection, live device action, provider mutation, production authentication, D1
+  or Herdr collection was exercised.
+
 ## 2026-11-05 10:15 +08 — Accepted slice committed; experiment archived
 
 - `6666578` commits the owner-accepted native switch/checkbox slice on main. Its

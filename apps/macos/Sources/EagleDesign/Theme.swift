@@ -27,6 +27,7 @@ public enum Theme {
     public static let roundShadow = Color.black.opacity(Metric.roundShadowOpacity)
     public static let participantShadow = Color.black.opacity(Metric.participantShadowOpacity)
     public static let accent = Color(light: 0x0B84C4, dark: 0x4FC3F7)
+    public static let fieldFocus = accent.opacity(0.65)
     public static let accentFill = Color(light: 0x2FB457, dark: 0x2FB457)
     public static let accentStrong = Color(light: 0x2FB457, dark: 0x3DD068)
     public static let info = Color(light: 0x0B6FBE, dark: 0x7FC8FF)
@@ -78,6 +79,33 @@ public enum Theme {
       case .graphite: return Color(light: 0x6E6E76, dark: 0x8A8A93)
       }
     }
+  }
+
+  public enum Form {
+    public static let controlGap: CGFloat = 6
+    public static let controlInset: CGFloat = 14
+    public static let compactControlInset: CGFloat = 12
+    public static let inlineChoiceGap: CGFloat = 4
+    public static let selectorHeight: CGFloat = 32
+    public static let compactSelectorHeight: CGFloat = 26
+    public static let actionHeight: CGFloat = 30
+    public static let actionRadius: CGFloat = 8
+    public static let fieldHeight: CGFloat = 34
+    public static let fieldInset: CGFloat = 11
+    public static let fieldPlaceholderInset: CGFloat = 12
+    public static let sectionContentGap: CGFloat = 12
+    public static let headingDetailGap: CGFloat = 4
+    public static let rowContentGap: CGFloat = 16
+    public static let rowDetailGap: CGFloat = 3
+    public static let rowVerticalInset: CGFloat = 16
+    public static let noteBottomInset: CGFloat = 12
+    public static let bannerGap: CGFloat = 8
+    public static let bannerHeight: CGFloat = 40
+    public static let textAreaMinHeight: CGFloat = 88
+    public static let textAreaPlaceholderInset: CGFloat = 6
+    public static let textAreaEditorHorizontalInset: CGFloat = 3
+    public static let textAreaEditorVerticalInset: CGFloat = 2
+    public static let textAreaOuterInset: CGFloat = 4
   }
 
   public enum Metric {

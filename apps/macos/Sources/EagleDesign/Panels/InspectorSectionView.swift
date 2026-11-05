@@ -77,7 +77,7 @@ public struct InspectorSectionView: View {
               .font(Theme.TypeScale.pill)
               .foregroundStyle(Theme.Palette.textMuted)
             Spacer(minLength: 8)
-            Menu {
+            SelectionMenu(row.value, style: .inline) {
               ForEach(row.choices) { choice in
                 Button {
                   onChoose(row.id, choice.id)
@@ -89,21 +89,7 @@ public struct InspectorSectionView: View {
                   }
                 }
               }
-            } label: {
-              HStack(spacing: 4) {
-                Text(row.value)
-                  .font(Theme.TypeScale.pill)
-                  .foregroundStyle(Theme.Palette.textPrimary)
-                  .lineLimit(1)
-                Image(systemName: "chevron.down")
-                  .font(Theme.TypeScale.Glyph.microChevron)
-                  .foregroundStyle(Theme.Palette.textMuted)
-              }
             }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
           }
           .frame(height: Theme.Metric.panelTaskRowHeight)
         }

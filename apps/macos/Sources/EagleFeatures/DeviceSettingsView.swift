@@ -178,21 +178,11 @@ public struct DeviceSettingsView: View {
     let canEdit =
       device.map { model.canEditPolicy(for: $0) }
       ?? (model.enabled && model.localReady && !model.controlsBusy && model.policy != nil)
-    return Menu {
+    return SelectionMenu(policy?.mode.title ?? "策略未知", style: .policy) {
       ForEach(DevicePolicyState.Mode.allCases, id: \.self) { mode in
         Button(mode.title) { Task { await model.setPolicy(mode, deviceId: device?.deviceId) } }
       }
-    } label: {
-      HStack(spacing: 6) {
-        Text(policy?.mode.title ?? "策略未知")
-        Image(systemName: "chevron.down")
-      }
-      .font(Theme.TypeScale.note)
-      .foregroundStyle(Theme.Palette.textPrimary)
     }
-    .menuStyle(.borderlessButton)
-    .menuIndicator(.hidden)
-    .fixedSize()
     .disabled(!canEdit)
     .accessibilityLabel("\(device?.name ?? "本机")执行策略")
     .accessibilityIdentifier("devices.policy.\(device?.deviceId ?? "local")")
@@ -202,32 +192,11 @@ public struct DeviceSettingsView: View {
   /// The validity of a new code. It is the same control grid as every button beside it: 30 pt,
   /// radius 8, canvas fill and a hairline, with the chevron inside the tap target.
   private var validityMenu: some View {
-    Menu {
+    SelectionMenu("有效期 \(Self.validityTitle(ttlSeconds))", style: .action) {
       ForEach(Self.validityChoices, id: \.self) { seconds in
         Button(Self.validityTitle(seconds)) { ttlSeconds = seconds }
       }
-    } label: {
-      HStack(spacing: 6) {
-        Text("有效期 \(Self.validityTitle(ttlSeconds))")
-        Image(systemName: "chevron.down")
-      }
-      .font(Theme.TypeScale.noteEmphasis)
-      .foregroundStyle(Theme.Palette.textPrimary)
-      .padding(.horizontal, 14)
-      .frame(height: 30)
-      .background(
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .fill(Theme.Palette.canvas)
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
-      )
     }
-    .menuStyle(.button)
-    .buttonStyle(.plain)
-    .menuIndicator(.hidden)
-    .fixedSize()
     .disabled(model.controlsBusy || !model.canUseRemote)
     .accessibilityLabel("配对码有效期")
     .accessibilityIdentifier("devices.pairing.validity")

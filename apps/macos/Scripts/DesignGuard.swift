@@ -23,6 +23,11 @@ func family(_ name: String) -> String? {
   {
     return "toggle-ownership"
   }
+  if name == "Menu" || name == "SwiftUI.Menu"
+    || name.hasPrefix("Menu<") || name.hasPrefix("SwiftUI.Menu<")
+  {
+    return "menu-ownership"
+  }
   switch name {
   case "Color", "SwiftUI.Color", "NSColor", "AppKit.NSColor", "CGColor", "CoreGraphics.CGColor":
     return "palette-ownership"
@@ -38,6 +43,7 @@ func ownerFamily(_ name: String) -> String? {
   if name == "Theme.TypeScale" || name.hasSuffix(".Theme.TypeScale") {
     return "typography-ownership"
   }
+  if name == "Theme.Form" || name.hasSuffix(".Theme.Form") { return "form-style-ownership" }
   return nil
 }
 
@@ -109,26 +115,88 @@ final class Ownership: SyntaxVisitor {
     return nil
   }
 
-  func isToggleBody(_ node: some SyntaxProtocol) -> Bool {
+  func ownsControl(_ node: some SyntaxProtocol, rule: String) -> Bool {
     var parent = Syntax(node).parent
-    var inBody = false
+    var member: String?
     while let current = parent {
-      if let binding = current.as(PatternBindingSyntax.self), symbol(binding.pattern) == "body" {
-        inBody = true
+      if let binding = current.as(PatternBindingSyntax.self),
+        binding.parent?.parent?.parent?.is(MemberBlockItemSyntax.self) == true
+      {
+        member = symbol(binding.pattern)
+      }
+      if let function = current.as(FunctionDeclSyntax.self),
+        function.parent?.is(MemberBlockItemSyntax.self) == true
+      {
+        member = function.name.text
+      }
+      if current.is(EnumDeclSyntax.self) || current.is(ClassDeclSyntax.self)
+        || current.is(ActorDeclSyntax.self) || current.is(ExtensionDeclSyntax.self)
+      {
+        return false
       }
       if let type = current.as(StructDeclSyntax.self) {
+        guard type.parent?.parent?.parent?.is(SourceFileSyntax.self) == true else { return false }
         let name = type.name.text
-        return inBody && ["SwitchToggle", "Checkbox"].contains(name)
-          && path == "EagleDesign/Primitives/\(name).swift"
+        if rule == "toggle-ownership", member == "body",
+          ["SwitchToggle", "Checkbox"].contains(name)
+        {
+          return path == "EagleDesign/Primitives/\(name).swift"
+        }
+        if rule == "menu-ownership" {
+          if (name == "SelectionMenu" && member == "menu")
+            || (name == "MenuIconButton" && member == "body")
+          {
+            return path == "EagleDesign/Primitives/\(name).swift"
+          }
+          if name == "SidebarPanel", member == "itemMenu" {
+            return path == "EagleDesign/Panels/SidebarPanel.swift"
+          }
+        }
+        return false
       }
       parent = current.parent
     }
     return false
   }
 
+  func checkFormNumber(_ text: String, node: some SyntaxProtocol) {
+    guard
+      [
+        "EagleDesign/Settings/SettingsComponents.swift",
+        "EagleDesign/Primitives/SelectionMenu.swift",
+      ].contains(path)
+    else { return }
+    if text == "0" || text == "0.0" { return }
+    var parent = Syntax(node).parent
+    while let current = parent {
+      if let call = current.as(FunctionCallExprSyntax.self) {
+        let name =
+          call.calledExpression.as(MemberAccessExprSyntax.self)?.declName.baseName.text
+          ?? call.calledExpression.as(DeclReferenceExprSyntax.self)?.baseName.text
+        if name == "Text" || name == "lineLimit" { return }
+        if text == "1", name == "opacity" || name == "scaleEffect" { return }
+        break
+      }
+      parent = current.parent
+    }
+    report(node, "form-style-ownership")
+  }
+
+  override func visit(_ node: IntegerLiteralExprSyntax) -> SyntaxVisitorContinueKind {
+    checkFormNumber(node.literal.text, node: node)
+    return .visitChildren
+  }
+
+  override func visit(_ node: FloatLiteralExprSyntax) -> SyntaxVisitorContinueKind {
+    checkFormNumber(node.literal.text, node: node)
+    return .visitChildren
+  }
+
   func report(_ node: some SyntaxProtocol, _ rule: String, enforceInOwner: Bool = false) {
     if !enforceInOwner {
-      if rule == "toggle-ownership", isToggleBody(node) { return }
+      if ["toggle-ownership", "menu-ownership"].contains(rule), ownsControl(node, rule: rule) {
+        return
+      }
       if path == "EagleDesign/Theme.swift",
         ["palette-ownership", "typography-ownership"].contains(rule)
       {
@@ -169,7 +237,7 @@ final class Ownership: SyntaxVisitor {
   override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
     if let rule = family(symbol(node.calledExpression)) {
       report(node, rule)
-      return rule == "toggle-ownership" ? .visitChildren : .skipChildren
+      return ["toggle-ownership", "menu-ownership"].contains(rule) ? .visitChildren : .skipChildren
     }
     return .visitChildren
   }

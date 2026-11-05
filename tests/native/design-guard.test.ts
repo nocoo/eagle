@@ -135,6 +135,100 @@ test("raw Toggle is owned by the exact switch and checkbox bodies, not entire fi
   );
 });
 
+for (const source of [
+  'Menu { Text("Item") } label: { Text("Pick") }',
+  'SwiftUI.Menu { Text("Item") } label: { Text("Pick") }',
+  'let control: Menu<Text, Text> = .init { Text("Item") } label: { Text("Pick") }',
+  "let factory = Menu<Text, Text>.init",
+  "typealias RawMenu = SwiftUI.Menu<Text, Text>",
+]) {
+  test(`rejects raw selection menus outside their owners: ${source}`, () => {
+    assert(check(source).some((item) => item.rule === "menu-ownership"));
+  });
+}
+
+test("menu exceptions belong to exact native builder members", () => {
+  for (const [type, member, path] of [
+    ["SelectionMenu", "menu", "EagleDesign/Primitives/SelectionMenu.swift"],
+    ["MenuIconButton", "body", "EagleDesign/Primitives/MenuIconButton.swift"],
+    ["SidebarPanel", "itemMenu", "EagleDesign/Panels/SidebarPanel.swift"],
+  ]) {
+    const menu = 'Menu { Text("Item") } label: { Text("Pick") }';
+    const owner =
+      member === "itemMenu"
+        ? `func ${member}() -> some View`
+        : `var ${member}: some View`;
+    assert.deepEqual(
+      check("", { [path]: `struct ${type} { ${owner} { ${menu} } }` }),
+      [],
+    );
+    assert(
+      check("", {
+        [path]: `struct ${type} { var other: some View { ${menu} } }`,
+      }).some((item) => item.rule === "menu-ownership"),
+    );
+    assert(
+      check("", {
+        [path]: `struct ${type} { ${owner} { Menu { Text("Item") } label: { Text("Pick").foregroundStyle(.white) } } }`,
+      }).some((item) => item.rule === "palette-ownership"),
+    );
+  }
+});
+
+for (const source of [
+  'Text("Row").padding(12)',
+  'let inset = 12; Text("Row").padding(inset)',
+  'Text("Row").frame(height: 1)',
+  "RoundedRectangle(cornerRadius: 8)",
+  'Text("Row").opacity(0.65)',
+  'Text("Row").animation(.easeOut(duration: 0.18), value: selected)',
+]) {
+  test(`form primitives reject scattered numeric style: ${source}`, () => {
+    for (const path of [
+      "EagleDesign/Settings/SettingsComponents.swift",
+      "EagleDesign/Primitives/SelectionMenu.swift",
+    ]) {
+      assert(
+        check("", { [path]: source }).some(
+          (item) => item.rule === "form-style-ownership",
+        ),
+      );
+    }
+  });
+}
+
+test("nested lookalike owners cannot authorize native menu construction", () => {
+  const path = "EagleDesign/Primitives/SelectionMenu.swift";
+  for (const source of [
+    'struct SelectionMenu { enum Other { static var menu: some View { Menu { Text("Item") } label: { Text("Pick") } } } }',
+    'enum Other { struct SelectionMenu { var menu: some View { Menu { Text("Item") } label: { Text("Pick") } } } }',
+  ])
+    assert(
+      check("", { [path]: source }).some(
+        (item) => item.rule === "menu-ownership",
+      ),
+    );
+});
+
+test("form tokens preserve runtime sizing, structural zeros and content counts", () => {
+  assert.deepEqual(
+    check("", {
+      "EagleDesign/Settings/SettingsComponents.swift": `
+    VStack(spacing: 0) { Text("12").padding(Theme.Form.controlInset) }
+      .frame(minHeight: minHeight).opacity(hidden ? 0 : 1)
+    Text("One line").lineLimit(1)
+    Text(42, format: .number)
+  `,
+    }),
+    [],
+  );
+  assert(
+    check("extension Theme.Form { static let rogue = 12 }").some(
+      (item) => item.rule === "form-style-ownership",
+    ),
+  );
+});
+
 test("tracks type aliases across files rather than blessing local names", () => {
   const findings = check(
     "let fill = Paint.red; let title = Letter.system(size: 13)",
