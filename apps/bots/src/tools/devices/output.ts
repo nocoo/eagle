@@ -15,6 +15,7 @@ export const deviceReceiptSchema = Type.Object({
   error: Type.Optional(Type.String()),
   exitCode: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   truncated: Type.Boolean(),
+  diagnostics: Type.Optional(Type.Array(Type.String())),
 });
 
 /** Bound only the payload: the full receipt must survive the SDK's final text budget. */

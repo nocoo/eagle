@@ -313,7 +313,7 @@ public struct WorkspaceShellView: View {
         guard !Task.isCancelled else { return }
         await bots.loadModels()
       }
-      .task { await devices.observe() }
+      .task { await devices.observeLocal() }
       .onDisappear {
         // Closing the window must release the bot's connection, or its subscriber slot
         // stays taken for as long as the process lives.

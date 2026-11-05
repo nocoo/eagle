@@ -102,7 +102,10 @@ struct DeviceSettingsViewModelTests {
     #expect(model.pendingRedeemRequestId == nil)
     let id = UUID().uuidString.lowercased()
     defaults.set(
-      ["requestId": id, "codeHash": String(repeating: "a", count: 64)],
+      [
+        "requestId": id, "codeHash": String(repeating: "a", count: 64),
+        "relayOrigin": "https://devices.example",
+      ],
       forKey: DeviceSettingsViewModel.pendingRedeemKey)
     control.handler = nil
     let pending = DeviceSettingsViewModel(control: control, defaults: defaults)
@@ -177,6 +180,10 @@ struct DeviceSettingsViewModelTests {
     }
     await model.redeem(code: String(repeating: "c", count: 43))
     let originalID = try #require(sentID)
+    let prepared = try #require(control.calls.first { $0.0 == "pairing.prepare" }?.1)
+    #expect(prepared["requestId"]?.string == originalID)
+    #expect(prepared["relayOrigin"]?.string == "https://devices.example")
+    #expect(prepared["codeHash"]?.string?.count == 64)
     #expect(model.pendingRedeemRequestId == originalID)
     #expect(
       !defaults.dictionaryRepresentation().values.contains {
@@ -280,6 +287,7 @@ struct DeviceSettingsViewModelTests {
   var confirm: (@MainActor @Sendable (DeviceApprovalRequest) async -> Bool)?
   var calls: [(String, DeviceJSON?)] = []
   var directory = deviceDirectory()
+  var relayOrigin = "https://devices.example"
   var policy: DeviceJSON = .object(["mode": .string("all-approve"), "version": .number(1)])
   var handler: ((String, DeviceJSON?) throws -> DeviceJSON?)?
   var asyncHandler: ((String, DeviceJSON?) async throws -> DeviceJSON?)?
@@ -298,17 +306,46 @@ struct DeviceSettingsViewModelTests {
     if let result = try handler?(method, params) { return result }
     switch method {
     case "service.status":
-      return .object([
+      var value: [String: DeviceJSON] = [
         "deviceId": .string(deviceSettingsLocalID), "localReady": .bool(true),
-        "cloudStatus": .string("offline"),
-      ])
-    case "directory": return directory
+        "cloudStatus": .string(relayOrigin.isEmpty ? "unconfigured" : "offline"),
+      ]
+      if !relayOrigin.isEmpty { value["relayOrigin"] = .string(relayOrigin) }
+      return .object(value)
+    case "directory":
+      if case .object(var value) = directory {
+        if relayOrigin.isEmpty {
+          value.removeValue(forKey: "relayOrigin")
+          value["cloudStatus"] = .string("unconfigured")
+        } else {
+          value["relayOrigin"] = .string(relayOrigin)
+        }
+        return .object(value)
+      }
+      return directory
     case "policy.get": return policy
+    case "remote.configure":
+      relayOrigin = params?["baseUrl"]?.string ?? ""
+      if case .object(var value) = directory {
+        if relayOrigin.isEmpty {
+          value.removeValue(forKey: "relayOrigin")
+          value["cloudStatus"] = .string("unconfigured")
+        } else {
+          value["relayOrigin"] = .string(relayOrigin)
+          value.removeValue(forKey: "cloudStatus")
+        }
+        directory = .object(value)
+      }
+      return .object([
+        "baseUrl": .string(relayOrigin),
+        "cloudStatus": .string(relayOrigin.isEmpty ? "unconfigured" : "offline"),
+      ])
     case "policy.set":
       policy = .object(["mode": params?["mode"] ?? .null, "version": .number(2)])
       return policy
     case "pairing.create":
       return .object(["code": .string("memory-only-code"), "expiresAt": .number(1_900_000_000_000)])
+    case "pairing.prepare": return .object(["prepared": .bool(true)])
     case "pairing.revoke", "member.remove": return .object([:])
     default: throw DevicePortError("result_not_found")
     }
@@ -327,6 +364,7 @@ func deviceDirectory(observation: String = "first", online: Bool? = nil) -> Devi
   .object([
     "localDeviceId": .string(deviceSettingsLocalID), "groupId": .null,
     "revision": .number(1), "observationRevision": .string(observation),
+    "relayOrigin": .string("https://devices.example"),
     "devices": .array([
       .object([
         "deviceId": .string(deviceSettingsLocalID), "name": .string("This Mac"),
@@ -368,14 +406,34 @@ func deviceApproval(expiresAt: Int64) throws -> DeviceApprovalRequest {
 @Suite("Device service address configuration", .serialized)
 @MainActor
 struct DeviceServiceAddressConfigurationTests {
-  @Test("a bundle without a relay never starts the service before a person names one")
-  func unconfiguredStaysIdle() async throws {
+  @Test("a bundle without a relay starts local protection without configuring remote access")
+  func unconfiguredStartsLocally() async throws {
     let (model, control, defaults) = deviceSettingsFixture(requiresServiceAddress: true)
     defer { defaults.removePersistentDomain(forName: control.domain) }
     #expect(model.needsServiceAddress)
     await model.startIfNeeded()
-    #expect(control.starts == 0)
-    #expect(!model.localReady)
+    #expect(control.starts == 1)
+    #expect(model.localReady)
+    #expect(model.policy?.mode == .allApprove)
+    #expect(model.needsServiceAddress)
+  }
+
+  @Test("saving a remote origin keeps the local service running")
+  func savingOriginKeepsLocal() async throws {
+    let (model, control, defaults) = deviceSettingsFixture()
+    defer { defaults.removePersistentDomain(forName: control.domain) }
+    await model.startIfNeeded()
+    let policy = model.policy
+    model.serviceAddressDraft = "https://devices.example.com"
+    await model.saveServiceAddress()
+    #expect(control.starts == 1)
+    #expect(control.stops == 0)
+    #expect(model.localReady)
+    #expect(model.policy == policy)
+    #expect(
+      control.calls.contains {
+        $0.0 == "remote.configure" && $0.1?["baseUrl"] == .string("https://devices.example.com")
+      })
   }
 
   @Test("saving an origin is stored and starts the service; a bad value is refused")

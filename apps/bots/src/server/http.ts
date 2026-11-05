@@ -553,7 +553,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
           options.deviceSocket === undefined
             ? null
             : {
-                version: 1,
+                version: 2,
                 binding: createHash("sha256").update(options.deviceSocket).digest("hex"),
               },
       });

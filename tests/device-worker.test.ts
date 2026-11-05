@@ -253,7 +253,12 @@ test("standalone routes reach the existing Registry and canonical per-device rel
       policy: { mode: "all-approve", version: 1 },
     }),
   );
-  assert.deepEqual(JSON.parse(await ready), { type: "ready" });
+  const authenticated = JSON.parse(await ready) as {
+    type: string;
+    expiresAt: number;
+  };
+  assert.equal(authenticated.type, "ready");
+  assert.equal(authenticated.expiresAt > Date.now(), true);
   const directory = await call("/directory", a.token);
   const devices = (await directory.json()) as {
     devices: { deviceId: string; online: boolean | null }[];

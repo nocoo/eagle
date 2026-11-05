@@ -19,6 +19,7 @@ import {
 } from "./output.ts";
 import {
   type DeviceDirectory,
+  type DeviceLocalStatus,
   type DeviceOperation,
   type DeviceRequest,
   type JSONValue,
@@ -70,6 +71,7 @@ export async function bindDeviceOperation(
   operation: DeviceOperation,
   api: ToolExecutionApi,
   context: Context,
+  relayOrigin?: string,
 ): Promise<DeviceRequest> {
   const digest = operationDigest(operation);
   const candidate = {
@@ -77,6 +79,7 @@ export async function bindDeviceOperation(
     operationId: randomUUID(),
     targetDeviceId: target,
     sourceBotId: options.botId,
+    ...(relayOrigin === undefined ? {} : { relayOrigin }),
     action: "run" as const,
     operation,
     digest,
@@ -90,12 +93,35 @@ export async function bindDeviceOperation(
     stored.targetDeviceId !== target ||
     stored.digest !== digest ||
     stored.sourceBotId !== options.botId ||
+    stored.relayOrigin !== relayOrigin ||
     stored.operation === undefined ||
     operationDigest(stored.operation) !== digest
   ) {
     throw new Error("operation_binding_changed");
   }
   return stored;
+}
+
+async function requireRemote(options: DeviceToolsOptions, signal?: AbortSignal): Promise<void> {
+  const status = await options.port.status(signal);
+  if (!status.localReady) throw new Error("device_service_unavailable");
+  if (status.cloudStatus === "unconfigured") throw new Error("remote_not_configured");
+}
+
+async function authorizePolicy(
+  options: DeviceToolsOptions,
+  policy: DeviceLocalStatus["policy"],
+  request: DeviceRequest,
+  context: Context,
+): Promise<DeviceRequest> {
+  if (policy.mode === "paused") throw new Error("device_access_paused");
+  if (policy.mode === "always-ask") {
+    return {
+      ...request,
+      approval: await options.port.approve(request, policy.version, context.abortSignal),
+    };
+  }
+  return request;
 }
 
 async function authorize(
@@ -106,22 +132,15 @@ async function authorize(
 ): Promise<DeviceRequest> {
   const target = directory.devices.find((device) => device.deviceId === request.targetDeviceId);
   if (target === undefined) throw new Error("target_not_in_directory");
-  if (target.deviceId !== directory.localDeviceId && target.online !== true)
-    throw new Error("target_offline_or_unknown");
+  if (target.deviceId === directory.localDeviceId) throw new Error("local_target_use_native_tools");
+  if (target.online !== true) throw new Error("target_offline_or_unknown");
   if (
     request.operation?.kind !== "native" &&
     !target.capabilities?.includes(request.operation?.kind ?? "")
   )
     throw new Error("target_capability_unavailable");
   if (target.policy === null) throw new Error("target_policy_unknown");
-  if (target.policy.mode === "paused") throw new Error("device_access_paused");
-  if (target.policy.mode === "always-ask") {
-    return {
-      ...request,
-      approval: await options.port.approve(request, target.policy.version, context.abortSignal),
-    };
-  }
-  return request;
+  return authorizePolicy(options, target.policy, request, context);
 }
 
 const operationParameters = Type.Union([
@@ -152,7 +171,12 @@ export const deviceExtension = (options: DeviceToolsOptions) =>
         replay: "safe",
         async execute(_args, _api, context) {
           try {
-            return textResult(await options.port.directory(context.abortSignal));
+            await requireRemote(options, context.abortSignal);
+            const { relayOrigin: _origin, ...directory } = await options.port.directory(
+              context.abortSignal,
+            );
+            if (directory.cloudStatus === "unconfigured") throw new Error("remote_not_configured");
+            return textResult(directory);
           } catch (error) {
             return textResult({ error: safeError(error) }, true);
           }
@@ -172,12 +196,33 @@ export const deviceExtension = (options: DeviceToolsOptions) =>
         async execute(args, api, context) {
           let request: DeviceRequest | undefined;
           try {
+            const previous = (await api.memo("device.operation.v1", context)) as
+              | DeviceRequest
+              | undefined;
+            let directory: DeviceDirectory | undefined;
+            if (previous) {
+              if (
+                previous.targetDeviceId !== args.deviceId ||
+                previous.sourceBotId !== options.botId ||
+                previous.digest !== operationDigest(args.operation) ||
+                previous.operation === undefined ||
+                operationDigest(previous.operation) !== previous.digest
+              )
+                throw new Error("operation_binding_changed");
+              request = previous;
+              if (!previous.relayOrigin) throw new Error("relay_origin_unknown");
+            }
+            await requireRemote(options, context.abortSignal);
+            if (!previous) directory = await options.port.directory(context.abortSignal);
+            const origin = previous?.relayOrigin ?? directory?.relayOrigin;
+            if (!origin) throw new Error("remote_directory_unavailable");
             request = await bindDeviceOperation(
               options,
               args.deviceId,
               args.operation,
               api,
               context,
+              origin,
             );
             if (await api.memo("device.transmitted.v1", context)) {
               return receipt(
@@ -185,7 +230,8 @@ export const deviceExtension = (options: DeviceToolsOptions) =>
                 await options.port.request({ ...request, action: "get" }, context.abortSignal),
               );
             }
-            const directory = await options.port.directory(context.abortSignal);
+            directory ??= await options.port.directory(context.abortSignal);
+            if (directory.relayOrigin !== origin) throw new Error("remote_configuration_changed");
             request = await authorize(options, directory, request, context);
             await api.memo("device.transmitted.v1", true, context);
             return receipt(request, await options.port.request(request, context.abortSignal));
@@ -216,6 +262,7 @@ export const deviceExtension = (options: DeviceToolsOptions) =>
             action: args.action,
           };
           try {
+            await requireRemote(options, context.abortSignal);
             return receipt(request, await options.port.request(request, context.abortSignal));
           } catch (error) {
             return receipt(request, { status: "unknown", error: safeError(error) });
@@ -226,8 +273,8 @@ export const deviceExtension = (options: DeviceToolsOptions) =>
     sections: [
       section("shared-devices-v1", () =>
         [
-          "You can use the shared device group. remote_status identifies this computer as localDeviceId and reports current capabilities.",
-          "Follow the computer specified by the user. Otherwise choose by task, resource location and capabilities; use this computer when there is no reason to use another.",
+          "Remote access is configured, but a target may be offline or unauthorized. remote_status identifies this computer as localDeviceId and reports current capabilities.",
+          "Use this computer by default. Choose a remote computer only when the user explicitly names one or the task justifies that target.",
           "Local read/write/edit/bash/list operate on this computer. Remote steps require remote_execute with an explicit deviceId. Confirm remote files on that target; do not treat another computer's absolute path as local.",
           "A submitted operation keeps its original target and operationId. After loss, timeout or uncertainty, query that operation; never silently retry elsewhere. Busy is unaccepted: do not append parallel work or wait in an implicit queue.",
           "All tools follow device policy. Always ask requires confirmation in the initiating App; missing confirmation never grants access.",
@@ -249,7 +296,8 @@ export const guardNativeTool = <T extends ToolRegistration>(
     let request: DeviceRequest | undefined;
     let admission: Awaited<ReturnType<SharedDevicePort["begin"]>> | undefined;
     try {
-      const directory = await options.port.directory(context.abortSignal);
+      const status = await options.port.status(context.abortSignal);
+      if (!status.localReady) throw new Error("device_service_unavailable");
       const agent = await api.agent(context);
       const operation: DeviceOperation = {
         kind: "native",
@@ -257,20 +305,14 @@ export const guardNativeTool = <T extends ToolRegistration>(
         args: args as JSONValue,
         ...(agent.cwd === undefined ? {} : { cwd: agent.cwd }),
       };
-      request = await bindDeviceOperation(
-        options,
-        directory.localDeviceId,
-        operation,
-        api,
-        context,
-      );
+      request = await bindDeviceOperation(options, status.deviceId, operation, api, context);
       if (await api.memo("device.transmitted.v1", context)) {
         return receipt(
           request,
           await options.port.request({ ...request, action: "get" }, context.abortSignal),
         );
       }
-      request = await authorize(options, directory, request, context);
+      request = await authorizePolicy(options, status.policy, request, context);
       await api.memo("device.transmitted.v1", true, context);
       admission = await options.port.begin(request, context.abortSignal);
       if (!admission.accepted) return receipt(request, admission.result);

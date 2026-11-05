@@ -40,7 +40,9 @@ public struct DeviceLocalPort: Sendable {
     }
     guard connected == 0 else { throw DeviceHostError.unavailable }
     let id = UUID().uuidString.lowercased()
-    var request: [String: DeviceJSON] = ["requestId": .string(id), "method": .string(method)]
+    var request: [String: DeviceJSON] = [
+      "version": .number(2), "requestId": .string(id), "method": .string(method),
+    ]
     if let params { request["params"] = params }
     var data = try JSONEncoder().encode(DeviceJSON.object(request))
     guard data.count <= 524288 else { throw DeviceHostError.invalidConfiguration }
@@ -62,7 +64,9 @@ public struct DeviceLocalPort: Sendable {
       if let end = response.firstIndex(of: 10) {
         guard end <= 524288 else { throw DeviceHostError.invalidResponse }
         let value = try JSONDecoder().decode(DeviceJSON.self, from: response.prefix(upTo: end))
-        guard value["requestId"]?.string == id else { throw DeviceHostError.invalidResponse }
+        guard value["version"] == .number(2), value["requestId"]?.string == id else {
+          throw DeviceHostError.invalidResponse
+        }
         if let error = value["error"]?.string { throw DevicePortError(error) }
         guard let result = value["result"] else { throw DeviceHostError.invalidResponse }
         return result

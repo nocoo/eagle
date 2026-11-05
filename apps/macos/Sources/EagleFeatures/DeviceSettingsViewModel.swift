@@ -45,6 +45,7 @@ public struct DeviceDirectoryState: Codable, Equatable, Sendable {
   public let groupId: String?
   public let revision: Int
   public let observationRevision: String
+  public let relayOrigin: String?
   public let devices: [DeviceDirectoryEntry]
 }
 
@@ -57,6 +58,7 @@ private struct DeviceServiceState: Decodable {
   let deviceId: String?
   let localReady: Bool
   let cloudStatus: String
+  let relayOrigin: String?
   let error: String?
 }
 
@@ -93,12 +95,22 @@ private struct DeviceServiceState: Decodable {
   private var stateGeneration: UInt64 = 0
   private var refreshGeneration: UInt64?
   private var pendingRedeemCodeHash: String?
+  private var pendingRedeemOrigin: String?
+  private var pendingBindingUnavailable = false
+  private var invitationOrigin: String?
+  @Published private var appliedRelayOrigin: String?
   private var localDeviceId: String?
   private var startTask: Task<Void, Never>?
   private var approvalContinuation: CheckedContinuation<Bool, Never>?
   private var approvalExpiry: Task<Void, Never>?
-  private var observers: [UUID: CheckedContinuation<Void, Never>] = [:]
+  private var observers: [UUID: (continuation: CheckedContinuation<Void, Never>, directory: Bool)] =
+    [:]
   private var observationTask: Task<Void, Never>?
+  private var observationWaitTask: Task<Void, any Error>?
+  private var readWaiters: [CheckedContinuation<Void, Never>] = []
+  var observationCount: Int { observers.count }
+  var observationRunner: Task<Void, Never>? { observationTask }
+  var observationWaiting: Bool { observationWaitTask != nil }
 
   public init(
     control: any DeviceControl = DeviceSystemControl(), defaults: UserDefaults = .standard,
@@ -122,20 +134,38 @@ private struct DeviceServiceState: Decodable {
     defaults.removeObject(forKey: Self.disabledKey)
     savedServiceAddress = DeviceServiceAddress.saved(defaults) ?? ""
     serviceAddressDraft = savedServiceAddress
-    let record = defaults.dictionary(forKey: Self.pendingRedeemKey)
-    // Older candidate records contain an ID only: they can be queried, never blindly retried.
-    let savedID = record?["requestId"] as? String ?? defaults.string(forKey: Self.pendingRedeemKey)
-    pendingRedeemRequestId = savedID.flatMap { UUID(uuidString: $0)?.uuidString.lowercased() }
-    if let hash = record?["codeHash"] as? String,
-      hash.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil
+    let raw = defaults.object(forKey: Self.pendingRedeemKey)
+    if let record = raw as? [String: Any], let savedID = record["requestId"] as? String,
+      let id = UUID(uuidString: savedID)?.uuidString.lowercased(),
+      let hash = record["codeHash"] as? String,
+      hash.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+      let origin = record["relayOrigin"] as? String,
+      DeviceServiceAddress.normalize(origin) == origin
     {
+      pendingRedeemRequestId = id
       pendingRedeemCodeHash = hash
+      pendingRedeemOrigin = origin
+    } else if raw != nil {
+      pendingBindingUnavailable = true
     }
   }
 
   public var needsBackgroundApproval: Bool { errorCode == "background_approval_required" }
   /// True when nothing may be contacted yet: no relay is baked in and none was chosen.
   public var needsServiceAddress: Bool { requiresServiceAddress && savedServiceAddress.isEmpty }
+  private var enforcesSavedRelay: Bool {
+    requiresServiceAddress || !savedServiceAddress.isEmpty
+  }
+
+  private var remoteSelectionMatches: Bool {
+    guard let origin = appliedRelayOrigin else { return false }
+    return !enforcesSavedRelay || origin == savedServiceAddress
+  }
+
+  public var canUseRemote: Bool {
+    enabled && localReady && !needsServiceAddress && remoteSelectionMatches
+      && cloudStatus != "unconfigured"
+  }
   public var isRefreshing: Bool { refreshGeneration != nil }
   public var controlsBusy: Bool { isStarting || isBusy }
   public var canToggleService: Bool { !isBusy && (enabled || !controlsBusy) }
@@ -143,7 +173,9 @@ private struct DeviceServiceState: Decodable {
     enabled && !localReady && !controlsBusy && !needsBackgroundApproval
   }
   public var errorMessage: String? {
-    guard let errorCode else { return nil }
+    guard
+      let errorCode = errorCode ?? (pendingBindingUnavailable ? "pairing_binding_unavailable" : nil)
+    else { return nil }
     switch errorCode {
     case "invalid_service_address":
       return "请填写服务地址：https 的裸域名，本机调试可用 http://127.0.0.1:端口。"
@@ -151,6 +183,10 @@ private struct DeviceServiceState: Decodable {
       return "请在系统设置中允许 Eagle 在后台运行，然后重试。"
     case "invalid_configuration":
       return "这个版本没有设备服务：设备服务由安装好的 App 提供，源码运行连不上 relay。"
+    case "remote_not_configured":
+      return "远程设备服务尚未配置；本机工具仍可用。"
+    case "relay_origin_mismatch", "remote_configuration_changed":
+      return "远程服务已变更；请切回原服务后恢复原请求。"
     case "group_conflict": return "两台设备已属于不同设备群。请先退出原群，再配对。"
     case "pairing_unavailable", "pairing_not_found": return "配对码已过期、已作废或不存在。"
     case "pairing_consumed": return "这个配对码已被另一台设备使用。"
@@ -178,42 +214,58 @@ private struct DeviceServiceState: Decodable {
     }
   }
 
-  /// Stores the origin and restarts the service so the helper picks it up.
   public func saveServiceAddress() async {
+    guard !controlsBusy, !stopping else { return }
     guard let origin = DeviceServiceAddress.normalize(serviceAddressDraft) else {
       errorCode = "invalid_service_address"
       return
     }
+    stateGeneration &+= 1
     DeviceServiceAddress.save(origin, defaults: defaults)
     savedServiceAddress = origin
     serviceAddressDraft = origin
     errorCode = nil
+    directoryIsStale = true
+    appliedRelayOrigin = nil
+    invitation = nil
+    invitationOrigin = nil
+    confirmedPolicies.removeAll()
     guard started else {
       await startIfNeeded()
       return
     }
+    isBusy = true
+    var configured = false
     do {
-      try await control.stop()
+      let result = try await control.call(
+        "remote.configure", params: .object(["baseUrl": .string(origin)]))
+      guard result["baseUrl"]?.string == origin else { throw DeviceHostError.invalidResponse }
+      cloudStatus = result["cloudStatus"]?.string ?? "unknown"
+      appliedRelayOrigin = origin
+      configured = true
     } catch {
-      started = false
+      cloudStatus = "unknown"
       record(error)
-      return
     }
-    started = false
-    localReady = false
-    cloudStatus = "unknown"
-    directoryIsStale = true
-    await start(retrying: false)
+    isBusy = false
+    if configured { await readDirectory() }
   }
 
   public func startIfNeeded() async {
     await start(retrying: false)
   }
 
-  private func start(retrying: Bool) async {
-    guard enabled, !stopping, !isBusy, !needsServiceAddress else { return }
+  public func startLocal() async {
+    await start(retrying: false, includeDirectory: false)
+  }
+
+  private func start(retrying: Bool, includeDirectory: Bool = true) async {
+    guard enabled, !stopping, !isBusy else { return }
     if let startTask {
       await startTask.value
+      if !Task.isCancelled && includeDirectory && enabled && !stopping && localReady {
+        await readDirectory()
+      }
       return
     }
     guard !started else { return }
@@ -253,10 +305,12 @@ private struct DeviceServiceState: Decodable {
     await task.value
     startTask = nil
     // Cloud enrichment is outside the startup task: disabling never waits for a cloud read.
-    if enabled && !stopping && localReady {
+    if !Task.isCancelled && enabled && !stopping && localReady {
       let generation = stateGeneration
-      await readDirectory()
-      if acceptsRead(generation), pendingRedeemRequestId != nil { await recoverPairing() }
+      if includeDirectory { await readDirectory() }
+      if acceptsRead(generation), pendingRedeemRequestId != nil, cloudStatus != "unconfigured" {
+        await recoverPairing()
+      }
     }
   }
 
@@ -282,6 +336,8 @@ private struct DeviceServiceState: Decodable {
       enabled = false
       defaults.set(true, forKey: Self.disabledKey)
       invitation = nil
+      invitationOrigin = nil
+      appliedRelayOrigin = nil
       started = false
       localReady = false
       cloudStatus = "unknown"
@@ -299,21 +355,21 @@ private struct DeviceServiceState: Decodable {
 
   public func openSystemSettings() { control.openSystemSettings() }
 
-  /// Settings, inspectors and windows share one reader until the last view disappears.
-  public func observe() async {
+  public func observeLocal() async { await observe(directory: false) }
+
+  public func observe() async { await observe(directory: true) }
+
+  private func observe(directory: Bool) async {
     let id = UUID()
     await withTaskCancellationHandler {
       guard !Task.isCancelled else { return }
       await withCheckedContinuation { continuation in
-        observers[id] = continuation
-        guard observationTask == nil else { return }
-        observationTask = Task { @MainActor [weak self] in
-          while !Task.isCancelled {
-            guard let self else { return }
-            if started { await refresh() } else { await startIfNeeded() }
-            guard !Task.isCancelled else { return }
-            do { try await observationWait() } catch { return }
-          }
+        let hadDirectory = observers.values.contains { $0.directory }
+        observers[id] = (continuation, directory)
+        if observationTask == nil {
+          observationTask = Task { @MainActor [weak self] in await self?.runObservation() }
+        } else if directory && !hadDirectory {
+          observationWaitTask?.cancel()
         }
       }
     } onCancel: {
@@ -321,13 +377,44 @@ private struct DeviceServiceState: Decodable {
     }
   }
 
+  private func runObservation() async {
+    while !Task.isCancelled {
+      let starting = !started || startTask != nil
+      if starting { await startLocal() }
+      guard !Task.isCancelled else { return }
+      if refreshGeneration != nil {
+        await withCheckedContinuation { readWaiters.append($0) }
+      }
+      guard !Task.isCancelled else { return }
+      let directory = observers.values.contains { $0.directory }
+      if directory {
+        if starting {
+          await readDirectory(whileVisible: true)
+        } else if !isBusy {
+          await readState(whileVisible: true)
+        }
+      } else if !starting {
+        await readState(includeDirectory: false)
+      }
+      guard !Task.isCancelled else { return }
+      if !directory && observers.values.contains(where: { $0.directory }) { continue }
+      let wait = Task { @MainActor in try await observationWait() }
+      observationWaitTask = wait
+      do { try await wait.value } catch { if Task.isCancelled { return } }
+      guard !Task.isCancelled else { return }
+      observationWaitTask = nil
+    }
+  }
+
   private func endObservation(_ id: UUID) {
-    let continuation = observers.removeValue(forKey: id)
+    let observer = observers.removeValue(forKey: id)
     if observers.isEmpty {
       observationTask?.cancel()
+      observationWaitTask?.cancel()
       observationTask = nil
+      observationWaitTask = nil
     }
-    continuation?.resume()
+    observer?.continuation.resume()
   }
 
   public func refresh() async {
@@ -335,12 +422,16 @@ private struct DeviceServiceState: Decodable {
     await readState()
   }
 
-  private func readState(includeDirectory: Bool = true) async {
+  private func readState(includeDirectory: Bool = true, whileVisible: Bool = false) async {
     let generation = stateGeneration
-    guard enabled, started, !stopping, refreshGeneration != generation else { return }
+    guard enabled, started, !stopping, !Task.isCancelled, refreshGeneration != generation else {
+      return
+    }
     refreshGeneration = generation
-    defer { if refreshGeneration == generation { refreshGeneration = nil } }
+    defer { finishRead(generation) }
     var observedStatus: DeviceServiceState?
+    var relayOverride: String?
+    var cloudOverride: String?
     do {
       let status = try await control.call("service.status", params: nil).decoded(
         DeviceServiceState.self)
@@ -360,14 +451,30 @@ private struct DeviceServiceState: Decodable {
       guard acceptsRead(generation) else { return }
       publish(\.policy, currentPolicy)
       if isStarting { isStarting = false }
-      if !includeDirectory {
-        applyStatus(status)
+      let observedOrigin = status.cloudStatus == "unconfigured" ? "" : status.relayOrigin
+      if enforcesSavedRelay && observedOrigin != savedServiceAddress {
+        let desired = savedServiceAddress
+        publish(\.directoryIsStale, true)
+        let configured = try await control.call(
+          "remote.configure", params: .object(["baseUrl": .string(desired)]))
+        guard acceptsRead(generation), savedServiceAddress == desired else { return }
+        guard configured["baseUrl"]?.string == desired,
+          let cloud = configured["cloudStatus"]?.string
+        else { throw DeviceHostError.invalidResponse }
+        relayOverride = desired
+        cloudOverride = cloud
+      }
+      if !includeDirectory || (whileVisible && !observers.values.contains(where: { $0.directory }))
+      {
+        applyStatus(status, cloudStatus: cloudOverride, relayOrigin: relayOverride)
         publish(\.errorCode, nil)
         return
       }
       let current = try await control.call("directory", params: nil)
       guard acceptsRead(generation) else { return }
-      applyStatus(status, cloudStatus: current["cloudStatus"]?.string)
+      applyStatus(
+        status, cloudStatus: current["cloudStatus"]?.string ?? cloudOverride,
+        relayOrigin: relayOverride)
       try applyDirectory(current)
       publish(\.errorCode, nil)
     } catch {
@@ -385,12 +492,18 @@ private struct DeviceServiceState: Decodable {
     }
   }
 
-  private func readDirectory() async {
+  private func readDirectory(whileVisible: Bool = false) async {
     let generation = stateGeneration
-    guard enabled, started, !stopping, !isBusy, refreshGeneration != generation else { return }
+    guard enabled, started, !stopping, !isBusy, !Task.isCancelled, refreshGeneration != generation,
+      !whileVisible || observers.values.contains(where: { $0.directory })
+    else { return }
     refreshGeneration = generation
-    defer { if refreshGeneration == generation { refreshGeneration = nil } }
+    defer { finishRead(generation) }
     do {
+      let expected: String? = savedServiceAddress.isEmpty ? nil : savedServiceAddress
+      guard !enforcesSavedRelay || appliedRelayOrigin == expected else {
+        throw DevicePortError("remote_configuration_changed")
+      }
       let current = try await control.call("directory", params: nil)
       guard acceptsRead(generation) else { return }
       if let cloud = current["cloudStatus"]?.string { publish(\.cloudStatus, cloud) }
@@ -441,25 +554,29 @@ private struct DeviceServiceState: Decodable {
   public func canEditPolicy(for device: DeviceDirectoryEntry) -> Bool {
     guard enabled, localReady, !controlsBusy, policy(for: device) != nil else { return false }
     if device.deviceId == localDeviceId { return true }
-    return !directoryIsStale && device.online == true
+    return !directoryIsStale && device.online == true && remoteSelectionMatches
+      && directory?.relayOrigin == appliedRelayOrigin
       && device.capabilities?.contains("policy.manage") == true
   }
 
   public func setPolicy(_ mode: DevicePolicyState.Mode, deviceId: String? = nil) async {
     let remote = deviceId.flatMap { $0 == localDeviceId ? nil : $0 }
+    var relayOrigin: String?
     if let remote {
       guard let device = directory?.devices.first(where: { $0.deviceId == remote }),
-        canEditPolicy(for: device)
+        canEditPolicy(for: device), let origin = directory?.relayOrigin
       else {
         rejectPreflight("target_policy_unavailable")
         return
       }
+      relayOrigin = origin
     }
     await perform {
       var params: [String: DeviceJSON] = ["mode": .string(mode.rawValue)]
-      if let remote {
+      if let remote, let relayOrigin {
         params["deviceId"] = .string(remote)
         params["requestId"] = .string(UUID().uuidString.lowercased())
+        params["relayOrigin"] = .string(relayOrigin)
       }
       let result = try await self.control.call(
         "policy.set", params: .object(params))
@@ -480,18 +597,30 @@ private struct DeviceServiceState: Decodable {
       return
     }
     await perform {
+      let origin = try self.requireRelayOrigin()
       self.invitation = try await self.control.call(
-        "pairing.create", params: .object(["ttlSeconds": .number(Double(ttlSeconds))])
+        "pairing.create",
+        params: .object([
+          "ttlSeconds": .number(Double(ttlSeconds)), "relayOrigin": .string(origin),
+        ])
       ).decoded(DevicePairingInvitation.self)
+      self.invitationOrigin = origin
     }
   }
 
   public func revokePairing() async {
-    guard let invitation else { return }
+    guard let invitation, let origin = invitationOrigin else { return }
     await perform {
+      guard try self.requireRelayOrigin() == origin else {
+        throw DevicePortError("relay_origin_mismatch")
+      }
       _ = try await self.control.call(
-        "pairing.revoke", params: .object(["code": .string(invitation.code)]))
+        "pairing.revoke",
+        params: .object([
+          "code": .string(invitation.code), "relayOrigin": .string(origin),
+        ]))
       self.invitation = nil
+      self.invitationOrigin = nil
     }
   }
 
@@ -506,14 +635,24 @@ private struct DeviceServiceState: Decodable {
       return
     }
     await perform {
+      guard !self.pendingBindingUnavailable else {
+        throw DevicePortError("pairing_binding_unavailable")
+      }
+      let currentOrigin = try self.requireRelayOrigin()
       let hash = SHA256.hash(data: Data(code.utf8)).map { String(format: "%02x", $0) }.joined()
       if let requestId = self.pendingRedeemRequestId {
+        guard let origin = self.pendingRedeemOrigin, origin == currentOrigin else {
+          throw DevicePortError("relay_origin_mismatch")
+        }
         if let original = self.pendingRedeemCodeHash, original != hash {
           throw DevicePortError("request_conflict")
         }
         do {
           let result = try await self.control.call(
-            "pairing.result", params: .object(["requestId": .string(requestId)]))
+            "pairing.result",
+            params: .object([
+              "requestId": .string(requestId), "relayOrigin": .string(origin),
+            ]))
           try self.acceptPairingResult(result, requestId: requestId)
           await self.readState()
         } catch let error as DevicePortError where error.code == "result_not_found" {
@@ -521,27 +660,43 @@ private struct DeviceServiceState: Decodable {
             throw DevicePortError("pairing_binding_unavailable")
           }
           // Explicit re-entry of the same code can recover a pre-send loss. The ID never changes.
-          try await self.sendRedemption(requestId: requestId, code: code, firstAttempt: false)
+          try await self.sendRedemption(
+            requestId: requestId, code: code, origin: origin, firstAttempt: false)
         }
       } else {
         let requestId = UUID().uuidString.lowercased()
+        let prepared = try await self.control.call(
+          "pairing.prepare",
+          params: .object([
+            "requestId": .string(requestId), "codeHash": .string(hash),
+            "relayOrigin": .string(currentOrigin),
+          ]))
+        guard prepared["prepared"] == .bool(true) else { throw DeviceHostError.invalidResponse }
         self.defaults.set(
-          ["requestId": requestId, "codeHash": hash], forKey: Self.pendingRedeemKey)
+          ["requestId": requestId, "codeHash": hash, "relayOrigin": currentOrigin],
+          forKey: Self.pendingRedeemKey)
         guard self.defaults.synchronize() else {
           self.defaults.removeObject(forKey: Self.pendingRedeemKey)
           throw DeviceHostError.failed
         }
         self.pendingRedeemRequestId = requestId
         self.pendingRedeemCodeHash = hash
-        try await self.sendRedemption(requestId: requestId, code: code, firstAttempt: true)
+        self.pendingRedeemOrigin = currentOrigin
+        try await self.sendRedemption(
+          requestId: requestId, code: code, origin: currentOrigin, firstAttempt: true)
       }
     }
   }
 
-  private func sendRedemption(requestId: String, code: String, firstAttempt: Bool) async throws {
+  private func sendRedemption(
+    requestId: String, code: String, origin: String, firstAttempt: Bool
+  ) async throws {
     do {
       let result = try await control.call(
-        "pairing.redeem", params: .object(["requestId": .string(requestId), "code": .string(code)]))
+        "pairing.redeem",
+        params: .object([
+          "requestId": .string(requestId), "code": .string(code), "relayOrigin": .string(origin),
+        ]))
       try acceptPairingResult(result, requestId: requestId)
       await readState()
     } catch {
@@ -550,7 +705,9 @@ private struct DeviceServiceState: Decodable {
       {
         let current = try await control.call("directory", params: nil)
         // The Agent's offline local fallback cannot confirm current Registry membership.
-        guard current["cloudStatus"]?.string != "offline" else { throw DeviceHostError.unavailable }
+        guard !["offline", "unconfigured"].contains(current["cloudStatus"]?.string ?? ""),
+          current["relayOrigin"]?.string == origin
+        else { throw DeviceHostError.unavailable }
         try applyDirectory(current)
         clearPendingRedemption()
       }
@@ -561,7 +718,8 @@ private struct DeviceServiceState: Decodable {
             && [
               "group_conflict", "pairing_unavailable", "pairing_consumed", "pairing_result_expired",
               "request_conflict", "rate_limited", "invalid_request", "invalid_session",
-              "revoked_session", "unknown_device",
+              "revoked_session", "unknown_device", "remote_not_configured",
+              "remote_configuration_changed",
             ].contains(port.code))
       {
         clearPendingRedemption()
@@ -571,10 +729,20 @@ private struct DeviceServiceState: Decodable {
   }
 
   public func recoverPairing() async {
-    guard let requestId = pendingRedeemRequestId else { return }
+    guard !pendingBindingUnavailable else {
+      rejectPreflight("pairing_binding_unavailable")
+      return
+    }
+    guard let requestId = pendingRedeemRequestId, let origin = pendingRedeemOrigin else { return }
     await perform {
+      guard try self.requireRelayOrigin() == origin else {
+        throw DevicePortError("relay_origin_mismatch")
+      }
       let result = try await self.control.call(
-        "pairing.result", params: .object(["requestId": .string(requestId)]))
+        "pairing.result",
+        params: .object([
+          "requestId": .string(requestId), "relayOrigin": .string(origin),
+        ]))
       try self.acceptPairingResult(result, requestId: requestId)
       await self.readState()
     }
@@ -582,10 +750,26 @@ private struct DeviceServiceState: Decodable {
 
   public func removeMember(_ deviceId: String) async {
     await perform {
+      let origin = try self.requireRelayOrigin()
+      guard self.directory?.relayOrigin == origin, !self.directoryIsStale else {
+        throw DevicePortError("remote_configuration_changed")
+      }
       _ = try await self.control.call(
-        "member.remove", params: .object(["deviceId": .string(deviceId)]))
+        "member.remove",
+        params: .object([
+          "deviceId": .string(deviceId), "relayOrigin": .string(origin),
+        ]))
       await self.readState()
     }
+  }
+
+  private func requireRelayOrigin() throws -> String {
+    if needsServiceAddress || cloudStatus == "unconfigured" {
+      throw DevicePortError("remote_not_configured")
+    }
+    guard let origin = appliedRelayOrigin else { throw DeviceHostError.unavailable }
+    guard remoteSelectionMatches else { throw DevicePortError("remote_configuration_changed") }
+    return origin
   }
 
   private func perform(_ action: @MainActor () async throws -> Void) async {
@@ -604,14 +788,32 @@ private struct DeviceServiceState: Decodable {
 
   private func applyDirectory(_ value: DeviceJSON) throws {
     let current = try value.decoded(DeviceDirectoryState.self)
+    if let origin = current.relayOrigin {
+      guard DeviceServiceAddress.normalize(origin) == origin,
+        !enforcesSavedRelay || origin == savedServiceAddress,
+        appliedRelayOrigin == nil || appliedRelayOrigin == origin
+      else { throw DevicePortError("remote_configuration_changed") }
+      publish(\.appliedRelayOrigin, origin)
+    }
     if directory?.groupId != current.groupId || directory?.localDeviceId != current.localDeviceId
-      || directory?.revision != current.revision
+      || directory?.relayOrigin != current.relayOrigin || directory?.revision != current.revision
       || directory?.observationRevision != current.observationRevision
     {
       directory = current
     }
-    publish(\.directoryIsStale, false)
-    if value["cloudStatus"]?.string == "offline" { publish(\.cloudStatus, "offline") }
+    let stale = ["offline", "unconfigured"].contains(value["cloudStatus"]?.string ?? "")
+    publish(\.directoryIsStale, stale)
+    if let cloud = value["cloudStatus"]?.string, ["offline", "unconfigured"].contains(cloud) {
+      publish(\.cloudStatus, cloud)
+    }
+  }
+
+  private func finishRead(_ generation: UInt64) {
+    guard refreshGeneration == generation else { return }
+    refreshGeneration = nil
+    let waiting = readWaiters
+    readWaiters.removeAll()
+    for waiter in waiting { waiter.resume() }
   }
 
   private func acceptsRead(_ generation: UInt64) -> Bool {
@@ -624,9 +826,18 @@ private struct DeviceServiceState: Decodable {
     publish(\.errorCode, code)
   }
 
-  private func applyStatus(_ status: DeviceServiceState, cloudStatus: String? = nil) {
+  private func applyStatus(
+    _ status: DeviceServiceState, cloudStatus: String? = nil, relayOrigin: String? = nil
+  ) {
     publish(\.localReady, status.localReady)
     localDeviceId = status.deviceId
+    if let origin = relayOrigin ?? status.relayOrigin,
+      DeviceServiceAddress.normalize(origin) == origin
+    {
+      publish(\.appliedRelayOrigin, origin)
+    } else {
+      publish(\.appliedRelayOrigin, nil)
+    }
     publish(\.cloudStatus, cloudStatus ?? status.cloudStatus)
   }
 
@@ -637,7 +848,9 @@ private struct DeviceServiceState: Decodable {
   }
 
   private func acceptPairingResult(_ value: DeviceJSON, requestId: String) throws {
-    guard value["requestId"]?.string == requestId, let current = value["directory"] else {
+    guard value["requestId"]?.string == requestId, let origin = pendingRedeemOrigin,
+      let current = value["directory"], current["relayOrigin"]?.string == origin
+    else {
       throw DeviceHostError.invalidResponse
     }
     let known = Set(directory?.devices.map(\.deviceId) ?? [])
@@ -654,7 +867,8 @@ private struct DeviceServiceState: Decodable {
   /// itself already succeeded, and the row shows the policy it reports.
   private func askBeforeRunning(on device: DeviceDirectoryEntry) async {
     guard device.online == true, device.capabilities?.contains("policy.manage") == true,
-      device.policy?.mode != .alwaysAsk
+      device.policy?.mode != .alwaysAsk, !directoryIsStale,
+      let origin = directory?.relayOrigin, appliedRelayOrigin == origin
     else { return }
     _ = try? await control.call(
       "policy.set",
@@ -662,6 +876,7 @@ private struct DeviceServiceState: Decodable {
         "mode": .string(DevicePolicyState.Mode.alwaysAsk.rawValue),
         "deviceId": .string(device.deviceId),
         "requestId": .string(UUID().uuidString.lowercased()),
+        "relayOrigin": .string(origin),
       ]))
     await readState()
   }
@@ -670,6 +885,8 @@ private struct DeviceServiceState: Decodable {
     defaults.removeObject(forKey: Self.pendingRedeemKey)
     pendingRedeemRequestId = nil
     pendingRedeemCodeHash = nil
+    pendingRedeemOrigin = nil
+    pendingBindingUnavailable = false
   }
 
   private func record(_ error: any Error) {

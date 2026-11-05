@@ -12,7 +12,21 @@ in [Extensions and tools](EXTENSIONS-AND-TOOLS.md). That guide also
 specifies planned optional `memory`, `search` and `peers` groups and child-agent
 discovery. Those additions are not implemented or enabled by this plan update.
 
+## Shared-device idle and wake (in progress)
+
+[DEVICE-IDLE-AND-WAKE.md](DEVICE-IDLE-AND-WAKE.md) owns the target design, current
+implementation matrix, recorded verification and the pre-change baseline.
+Local-first startup, relay-bound recovery, panel-scoped directory reads and
+same-socket renewal are implemented in source. Root and child tool refresh occurs
+on open, subscription, new input and child spawn/send. A remote-only disable control,
+automatic in-flight propagation and target hibernation remain open; the 10-second
+heartbeat still reaches the Registry. No live savings, installed-App acceptance
+or physical two-Mac verification is claimed.
+
 ## 共享设备与配对重构（2026-10-29）
+
+Historical request below; the current source default for a fresh local device is
+`always-ask`, as documented in [DEVICES.md](../DEVICES.md).
 
 用户最新要求替代旧 M0–M1 的“手填部署信息、每 Bot 机器授权”产品流程：
 安装并首次启动 Eagle 后本机环境自动就绪、默认 All approve；设备由整个 App 共享，

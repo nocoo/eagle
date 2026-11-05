@@ -1242,3 +1242,141 @@ Publishing the 0.17.0 draft succeeded, but the immediately chained verification
 asked `gh release view` for the unsupported `isLatest` field. The error was in the
 read, not publication; checking the release and latest endpoint separately proved
 the asset was already published and avoided repeating the mutation.
+
+## 2026-11-04 — Separate unconfigured from disconnected device service
+
+The first idle-device proposal treated an unreachable configured relay as the
+local-first case. The owner reported that an unconfigured installation could
+instead return `device_unavailable` for a local task. Source inspection found
+that the packaged Bot receives the device socket while App/helper startup is
+blocked by an empty remote address; the run itself was not reproduced here.
+Check first-install and configured-but-offline startup independently, from App
+bootstrap through the real Bot tool, before claiming local independence.
+
+The first service-suite run after the local-only change overlapped an editing
+formatter on its test file. It was rerun after formatting completed: all nine
+service tests and the check-only Biome run passed. Never run a test concurrently
+with an edit to its inputs; wait for formatting before collecting green evidence.
+
+Review of the new CLI device fixture found that one cleanup error could prevent
+later resources from closing, and synchronous Swift builds had no timeout. The
+fixture now attempts every cleanup, retains failures and bounds both Swift commands.
+The first fix threw from `finally` and the staged Biome hook rejected it; error
+aggregation now happens after cleanup, and the check runs before committing.
+Cleanup fault injection is not yet tested. The later relay-origin integration test
+reintroduced the same `finally` throw and the root lint caught it again. It now
+uses the existing post-cleanup aggregation pattern; check the established fixture
+before writing another multi-resource cleanup, not only after the gate fails.
+The Bots gate then found an unsorted new import: `biome format` does not run
+import organization. A later recovery fixture repeated the same mistake; both were
+caught by check-only lint, not by format. Run the package lint immediately after
+adding files, before the expensive gate. The renewal test also left an existing
+worker fixture unformatted; check-only lint caught it before behavioral testing.
+A new Agent renewal test again had unsorted imports; the immediate lint caught
+it before the gate, but checking import order while writing remains necessary.
+The growing device API suite later exhausted its shared synthetic registration-IP
+budget, making a final authentication test fail for the wrong reason. My first
+reset targeted `registration:local`, but Miniflare uses `registration:127.0.0.1`;
+a new isolation assertion exposed that mistake. The isolated fixture now clears
+registration rate rows between cases and separately verifies all 120 allowed
+registrations and the 121st rejection; the production limit is unchanged. Review of
+same-socket renewal also found that concurrent authorization could retain an old
+reference; barrier tests now force renewal and expiry during both operation and
+policy checks. The renewal-expiry test explicitly gives the replacement a later
+expiry so downgrade rejection cannot masquerade as proof of old-session validation.
+Client renewal also exposed a stale HTTP 401 clearing a newer cached credential;
+a fake-clock overlap now verifies only the credential that received the 401 is
+invalidated, without logging either value.
+A new Swift red test initially referenced nonexistent fixture names and failed to
+compile; correcting the test precedes collecting behavioral red evidence.
+The root remote-tool selection was initially changed before its contract was
+updated, and review found it could erase an interrupted operation receipt. Write
+and review the recovery contract first; prove reopen with a killed real Harness,
+not only a direct tool invocation. The first Registry RPC regression also failed
+at TypeScript compilation because Miniflare's namespace declaration needed the
+same explicit cast as the existing RPC fixture; only the subsequent runtime
+failure counted as behavioral red evidence. The first root gate for this Registry
+slice failed an unrelated redaction scaling ratio (20.25 ms versus 115.83 ms);
+the complete performance file alone passed with 12.51 ms versus 24.22 ms. The
+machine was concurrently busy, but that does not prove the cause. No limit or
+test was changed; the later full gate passed all 290 tests with 13.38 ms versus
+31.26 ms for that case. Before replacing the target bearer with a session
+reference, a controlled result-authorization barrier exposed an old generation
+race: removing and re-pairing the target could release its previous output. The
+combined target/source reference check now returns unknown without that output;
+the regression tests the actual await boundary, not just revocation before it.
+
+The second full CLI eval round collided with the singleton lock port of this run's
+own isolated foreground App. The failure was real, not a product test pass; the
+runner now chooses a fresh root with a currently free derived port, without stopping
+another daemon or retrying a failed case. A deterministic occupied-port test and an
+existing-directory negative control protect fixture isolation. A later bind race
+still fails explicitly.
+
+## 2026-11-04 — Keep time-dependent secret tests deterministic
+
+The full Swift red run also exposed an unrelated secret-validity fixture whose
+fixed expiry had passed in real time. The assertion now supplies a fixed clock
+and checks both the remaining and expired boundaries; the test passed while the
+new device-startup regressions remained red. A failing host assertion initially
+printed the synthetic identity object's debug structure, though no key bytes;
+the test now compares extracted status values instead of rendering the host.
+
+The first targeted Bots run was invoked from the repository root, so two
+process tests looked for `scripts/serve.ts` in the wrong directory. Running the
+same four complete test files from `apps/bots` passed all 44 tests and typecheck.
+Run package-owned process tests from their package root; do not treat a cwd error
+as a product failure.
+
+## 2026-11-05 — Fake-timer isolation and foreground cleanup
+
+A negative renewal test disabled the ACK deadline cancellation to prove the
+expiry boundary; its fake-clock path timed out rather than failing promptly. The
+line was restored. A bounded rerun then passed six of seven cases but exposed a
+Node mock-timer/Undici `runAt` failure in the following case. The tests remain
+unfixed and uncommitted; use independent clocks or real-time process watchdogs,
+and verify that asynchronous network resources are closed before resetting timers.
+The next timeout regression first failed to compile because its fixture omitted the
+required Bot ID and TypeScript could not follow a callback assignment. The fixture
+was corrected before collecting the behavioral red. No test limit was widened or failure suppressed. The later fix isolated the two
+fake-clock network cases in separate Node test processes, used captured real-time
+watchdogs and added a no-ready cleanup regression. The complete root check then
+passed all 309 tests. A subsequent Bots coverage run failed with `ENOTEMPTY` while
+removing a trace-test fixture; that complete trace file passed independently and
+a later full Bots check passed all 1,019 tests. The teardown race's cause remains
+unproven; no cleanup retry, timeout increase or test suppression was added.
+
+Stopping the isolated foreground source App with Ctrl-C left its own Bots daemon
+orphaned. Its PID and isolated root were verified before sending it SIGTERM; both
+processes exited, and all controlled panes were closed. Other spaces and daemons
+were not changed. Future cleanup must verify child processes after stopping the App.
+
+## 2026-11-05 — Ten-hour blocked test from a timeout unit error
+
+After the owner asked for uninterrupted implementation at 14:25 on November 4,
+work continued until 19:53. The final Agent renewal negative test was reported
+failed after its 15-second test timeout, but its Node process did not exit. The
+shell tool call returned only when the owner interrupted it at 05:52 on November
+5: about 9 hours 58 minutes blocked on that one call, not productive work.
+
+The shell tool's `timeout` is in **seconds**. I passed `120000` as if it were
+milliseconds, granting 120,000 seconds instead of 120. That removed the intended
+outer safeguard. The test's own `deadline()` also used `setTimeout` while that API
+was mocked; an awaited event with no further fake-clock advancement could therefore
+remain pending. A later bounded rerun after restoring the temporary negative-test
+change exposed a separate Node mock-timer/Undici `runAt` failure; the exact shared
+root cause has not been established.
+
+Use the tool's documented units explicitly (`timeout: 120` for 120 seconds), and
+bound subprocesses independently of a mocked clock. On timeout, terminate only
+this run's process group, verify cleanup, and record the real failure. Keep the
+full suite and its thresholds intact. The Agent renewal slice is still uncommitted
+and its test fixture remains red.
+
+The productive interval also accumulated 38 full Swift test invocations and five
+full CLI eval invocations, including deliberate TDD reds and one actual lock-port
+collision. Related regressions should be grouped into coherent red/green slices,
+with affected checks first and the full acceptance rounds after the relevant slice
+stabilizes. Required security review remains mandatory; the repeated serialized
+waits and premature full-suite repetition were avoidable, not evidence that the
+underlying fix itself required ten hours.

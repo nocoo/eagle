@@ -16,8 +16,6 @@ import Security
       else { throw DeviceHostError.invalidConfiguration }
       let requirement = try DeviceCodeIdentity.applicationRequirement(at: bundle)
       var config = try DeviceHostConfiguration.load(bundle: bundle)
-      // A published App ships no relay: the person's own choice in Settings wins, and an
-      // unconfigured Mac parks here instead of contacting anything.
       if let chosen = DeviceServiceAddress.saved(forBundle: identifier) { config.baseUrl = chosen }
       let runtime = bundle.appendingPathComponent("Contents/Resources/DeviceRuntime")
       let identity = try DeviceIdentity.loadOrCreate(profile: config.profile)
@@ -29,7 +27,7 @@ import Security
       let listener = NSXPCListener(machServiceName: config.machServiceName)
       let delegate = DeviceXPCServer(host: host, requiredPeer: requirement)
       listener.delegate = delegate
-      if config.isConfigured { try host.start() }
+      try host.start()
       listener.resume()
       withExtendedLifetime((host, listener, delegate)) { RunLoop.main.run() }
     } catch {

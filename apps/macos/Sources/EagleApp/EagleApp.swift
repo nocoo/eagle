@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if Bundle.main.bundleIdentifier == nil { NSApp.applicationIconImage = EagleIcon.image }
     NSApp.activate(ignoringOtherApps: true)
     DeviceApprovalWindowController.shared.observe(DeviceSettingsViewModel.shared)
-    Task { @MainActor in await DeviceSettingsViewModel.shared.startIfNeeded() }
+    Task { @MainActor in await DeviceSettingsViewModel.shared.startLocal() }
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

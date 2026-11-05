@@ -13,6 +13,12 @@ export const policySchema = z.object({
   mode: z.enum(["all-approve", "always-ask", "paused"]),
   version: z.number().int().positive(),
 });
+export const localStatusSchema = z.object({
+  deviceId: z.uuid(),
+  localReady: z.boolean(),
+  cloudStatus: z.enum(["online", "offline", "unconfigured"]),
+  policy: policySchema,
+});
 export const deviceSchema = z.object({
   deviceId: z.uuid(),
   name: z.string(),
@@ -28,6 +34,8 @@ export const directorySchema = z.object({
   groupId: z.string().nullable(),
   revision: z.number(),
   observationRevision: z.string().optional(),
+  cloudStatus: z.enum(["online", "offline", "unconfigured"]).optional(),
+  relayOrigin: z.url().optional(),
   devices: z.array(deviceSchema),
 });
 export const resultSchema = z.object({
@@ -45,6 +53,7 @@ export const approvalSchema = z.object({
   expiresAt: z.number().int().positive(),
   signature: z.string(),
 });
+export type DeviceLocalStatus = z.infer<typeof localStatusSchema>;
 export type DeviceDirectory = z.infer<typeof directorySchema>;
 export type DeviceResult = z.infer<typeof resultSchema>;
 export type DeviceApproval = z.infer<typeof approvalSchema>;
@@ -54,6 +63,7 @@ export type DeviceRequest = {
   operationId: string;
   targetDeviceId: string;
   sourceBotId: string;
+  relayOrigin?: string;
   action: "run" | "get" | "cancel";
   operation?: DeviceOperation;
   digest?: string;
@@ -69,7 +79,8 @@ export type NativeAdmission =
       close(): void;
     };
 export interface SharedDevicePort {
-  readonly version: 1;
+  readonly version: 2;
+  status(signal?: AbortSignal): Promise<DeviceLocalStatus>;
   directory(signal?: AbortSignal): Promise<DeviceDirectory>;
   request(request: DeviceRequest, signal?: AbortSignal): Promise<DeviceResult>;
   approve(
@@ -95,14 +106,19 @@ export const operationDigest = (operation: DeviceOperation): string =>
   createHash("sha256").update(canonicalJSON(operation)).digest("hex");
 
 export class SocketDevicePort implements SharedDevicePort {
-  readonly version = 1;
+  readonly version = 2;
   readonly #path: string;
   constructor(path: string) {
     this.#path = path;
   }
 
-  async #call(method: string, params?: unknown, signal?: AbortSignal): Promise<unknown> {
-    const channel = new DeviceChannel(this.#path);
+  async #call(
+    method: string,
+    params?: unknown,
+    signal?: AbortSignal,
+    timeoutMs?: number,
+  ): Promise<unknown> {
+    const channel = new DeviceChannel(this.#path, timeoutMs);
     try {
       return await channel.call(method, params, signal);
     } finally {
@@ -110,12 +126,26 @@ export class SocketDevicePort implements SharedDevicePort {
     }
   }
 
+  async status(signal?: AbortSignal): Promise<DeviceLocalStatus> {
+    return localStatusSchema.parse(await this.#call("status", undefined, signal, 2000));
+  }
   async directory(signal?: AbortSignal): Promise<DeviceDirectory> {
     return directorySchema.parse(await this.#call("directory", undefined, signal));
   }
   async request(request: DeviceRequest, signal?: AbortSignal): Promise<DeviceResult> {
     const method = request.action === "run" ? "execute" : `operation.${request.action}`;
-    return resultSchema.parse(await this.#call(method, request, signal));
+    const operation = request.operation;
+    const command = request.action === "run" && operation?.kind === "command";
+    const duration = operation?.timeoutMs;
+    const timeoutMs = command
+      ? (typeof duration === "number" &&
+        Number.isInteger(duration) &&
+        duration >= 1 &&
+        duration <= 300000
+          ? duration
+          : 30000) + 95000
+      : undefined;
+    return resultSchema.parse(await this.#call(method, request, signal, timeoutMs));
   }
   async approve(
     request: DeviceRequest,

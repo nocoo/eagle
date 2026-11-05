@@ -86,8 +86,10 @@ marshalling it with generation counters.
 ## HTTP endpoints
 
 `health.deviceAccess` is `null` without a host device port, or
-`{version:1,binding:<lowercase SHA256 of the configured socket path UTF-8>}`.
-The App checks this configuration binding before connecting to an existing daemon;
+`{version:2,binding:<lowercase SHA256 of the configured socket path UTF-8>}`.
+The version describes the independent device port, not conversation protocol v1;
+its former value 1 is not interpreted as v2. The App checks this configuration
+binding and version before connecting to an existing daemon;
 a mismatch must not silently use tools outside the shared device policy. It carries
 no path, token or permission decision. An offline configured port still has a binding.
 
@@ -1020,12 +1022,13 @@ Rules enforced by `test/protocol/fixtures.test.ts`:
    document, and the file set must match this table exactly.
 3. No real user data, tokens or paths.
 
-## External shared device port v1
+## External shared device port v2
 
-The optional host integration uses the independent JSONL contract in
-[DEVICES.md](../DEVICES.md); it does not change conversation v1 fields or
-capabilities. Normative cross-language canonical parameter vectors are in
-`fixtures/bots-protocol/device-access-v1/`, checked by the Bot adapter and App
+The optional host integration uses the independently versioned JSONL contract in
+[DEVICES.md](../DEVICES.md); each request and response carries version 2. It does
+not change conversation v1 fields or capabilities. The unchanged canonical parameter
+vectors have their own version in `fixtures/bots-protocol/device-access-v1/`, checked
+by the Bot adapter and App
 identity tests. The Keychain signer accepts registration payloads only at its
 registration seam; typed approvals require complete, validated operation data
 and a matching digest before a trusted App confirmation can be signed.
@@ -1035,3 +1038,7 @@ before attaching it to the same operation; it never treats transport success as
 human confirmation.
 The helper canonicalizes all approval UUID fields to lowercase at decoding, so
 the displayed operation, signed bytes and service verification use the same IDs.
+For a root remote operation interrupted before reopen while remote access is
+unavailable, `toolResult.text` contains a JSON device receipt with the original
+IDs, `status: "unknown"` and a `diagnostics` array carrying the SDK interruption
+message. This does not add a conversation wire field or prove a remote outcome.

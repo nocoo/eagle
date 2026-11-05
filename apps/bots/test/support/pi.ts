@@ -42,6 +42,7 @@ export type BenchOptions = {
   readonly storage?: (path: string) => Promise<Storage>;
   readonly windowMessages?: number;
   readonly maxMessageBytes?: number;
+  readonly deviceSocket?: string;
   readonly search?: (spec: RuntimeBotSpec) => SearchClient | undefined;
   readonly usage?: UsageMeter;
   /** The two core prompts, when a test asserts what the model actually receives. */
@@ -70,6 +71,7 @@ export const createBench = async (options: BenchOptions = {}): Promise<Bench> =>
     ...(options.storage === undefined ? {} : { storage: options.storage }),
     ...(options.windowMessages === undefined ? {} : { windowMessages: options.windowMessages }),
     ...(options.maxMessageBytes === undefined ? {} : { maxMessageBytes: options.maxMessageBytes }),
+    ...(options.deviceSocket === undefined ? {} : { deviceSocket: options.deviceSocket }),
     ...(options.search === undefined ? {} : { search: options.search }),
     ...(options.usage === undefined ? {} : { usage: options.usage }),
     ...(options.corePrompt === undefined ? {} : { corePrompt: options.corePrompt }),

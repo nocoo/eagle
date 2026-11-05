@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import {
+  createHash,
   generateKeyPairSync,
   randomBytes,
   randomUUID,
@@ -23,6 +24,7 @@ import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import WebSocket from "ws";
+import { canonicalDeviceJSON } from "../../packages/contracts/src/devices.ts";
 
 type JSONRecord = Record<string, unknown>;
 type Directory = {
@@ -186,15 +188,31 @@ function deviceProcess(root: string, baseUrl: string) {
     root,
     deviceId,
     socketPath,
-    async ready() {
+    async ready(expectedCloud = "online") {
       await process.message((message) => message.type === "ready");
       await process.message(
-        (message) => message.type === "cloud" && message.status === "online",
+        (message) =>
+          message.type === "cloud" && message.status === expectedCloud,
       );
     },
     async manage(method: string, params?: unknown) {
       const requestId = randomUUID();
-      process.send({ type: "manage", requestId, method, params });
+      const remote =
+        method.startsWith("pairing.") ||
+        method === "member.remove" ||
+        (method === "policy.set" &&
+          params &&
+          typeof params === "object" &&
+          "deviceId" in params &&
+          params.deviceId !== deviceId);
+      const routed =
+        remote && baseUrl
+          ? {
+              ...(params as object | undefined),
+              relayOrigin: new URL(baseUrl).origin,
+            }
+          : params;
+      process.send({ type: "manage", requestId, method, params: routed });
       const reply = await process.message(
         (message) =>
           message.type === "managed" && message.requestId === requestId,
@@ -205,7 +223,11 @@ function deviceProcess(root: string, baseUrl: string) {
   };
 }
 
-async function localCall(path: string, method: string): Promise<unknown> {
+async function localCall(
+  path: string,
+  method: string,
+  params?: unknown,
+): Promise<unknown> {
   const socket = connect(path);
   const reader = createInterface({ input: socket });
   try {
@@ -217,7 +239,9 @@ async function localCall(path: string, method: string): Promise<unknown> {
         if (reply.error) reject(new Error("local port rejected request"));
         else done(reply.result);
       });
-      socket.write(`${JSON.stringify({ requestId: randomUUID(), method })}\n`);
+      socket.write(
+        `${JSON.stringify({ version: 2, requestId: randomUUID(), method, ...(params === undefined ? {} : { params }) })}\n`,
+      );
     });
   } finally {
     reader.close();
@@ -226,14 +250,26 @@ async function localCall(path: string, method: string): Promise<unknown> {
 }
 
 async function workerFixture(directory: string) {
-  // Only a test transport fault: the real target finishes and the real relay
-  // authorizes its result, then the caller loses that one response. No executor,
-  // registry, SDK or device-port implementation is replaced.
+  // Test-only transport loss and an authorization barrier retain the real executor,
+  // registry, SDK and device-port implementations.
   writeFileSync(
     join(directory, "entry.ts"),
     `
-import worker,{DeviceRegistry,DeviceExecution as Execution} from "../../apps/web/src/worker/device-service.ts";
-export {DeviceRegistry};
+import worker,{DeviceRegistry as Registry,DeviceExecution as Execution} from "../../apps/web/src/worker/device-service.ts";
+export class DeviceRegistry extends Registry {
+ async checkSessionReference(reference,token){
+  const result=await super.checkSessionReference(reference,token);
+  if(result.ok&&token&&this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name='test_result_gate'").toArray().length){
+   const row=this.ctx.storage.sql.exec("SELECT sourceId FROM test_result_gate WHERE sourceId=? AND targetId=?",result.source.deviceId,result.target.deviceId).toArray()[0];
+   if(row){this.ctx.storage.sql.exec("UPDATE test_result_gate SET started=1 WHERE sourceId=?",row.sourceId);
+    const deadline=Date.now()+5000;
+    while(!this.ctx.storage.sql.exec("SELECT released FROM test_result_gate WHERE sourceId=?",row.sourceId).toArray()[0]?.released){if(Date.now()>deadline)throw new Error('test result gate timeout');await new Promise(resolve=>setTimeout(resolve,10));}
+    return super.checkSessionReference(reference,token);
+   }
+  }
+  return result;
+ }
+}
 export class DeviceExecution extends Execution {
  respond(socket,request,result,unauthorized=false) {
   if(request.action==='run'&&request.operation?.command?.includes('device-integration-drop-response')&&result.status==='completed') {
@@ -242,7 +278,15 @@ export class DeviceExecution extends Execution {
   return super.respond(socket,request,result,unauthorized);
  }
 }
-export default worker;
+let directoryReads = 0;
+export default {
+ fetch(request,env,ctx) {
+  const path = new URL(request.url).pathname;
+  if(path==='/__test/directory-count') return new Response(String(directoryReads));
+  if(path==='/api/devices/v1/directory') directoryReads++;
+  return worker.fetch(request,env,ctx);
+ }
+};
 `,
   );
   execFileSync(
@@ -258,8 +302,8 @@ export default worker;
     ],
     { stdio: "pipe" },
   );
-  const mf = new Miniflare(
-    convertV4MiniflareOptions({
+  const mf = new Miniflare({
+    ...convertV4MiniflareOptions({
       workers: [
         {
           name: "eagle",
@@ -275,7 +319,8 @@ export default worker;
         },
       ],
     }),
-  );
+    unsafeInspectDurableObjects: true,
+  });
   try {
     return { mf, origin: (await mf.ready).origin };
   } catch (error) {
@@ -284,7 +329,9 @@ export default worker;
   }
 }
 
-type ModelStep = { name: string; args: JSONRecord } | { text: string };
+type ModelStep = ({ name: string; args: JSONRecord } | { text: string }) & {
+  remote?: boolean;
+};
 async function modelFixture(key: string) {
   const steps: ModelStep[] = [];
   const failures: string[] = [];
@@ -323,6 +370,18 @@ async function modelFixture(key: string) {
       assert(step, "unexpected root model request");
       if (kind === "reflection") reflectionRequests++;
       else requests++;
+      if ("remote" in step && step.remote !== undefined) {
+        const offered = input.tools
+          .filter((tool) => tool.name.startsWith("remote_"))
+          .map((tool) => tool.name)
+          .sort();
+        assert.deepEqual(
+          offered,
+          step.remote
+            ? ["remote_execute", "remote_operation", "remote_status"]
+            : [],
+        );
+      }
       const id = `resp_${requests + reflectionRequests}`;
       const event = (type: string, fields: object) =>
         `event: ${type}\ndata: ${JSON.stringify({ type, ...fields })}\n\n`;
@@ -405,15 +464,18 @@ async function modelFixture(key: string) {
     server,
     baseUrl: `http://127.0.0.1:${address.port}/v1`,
     failures,
-    script(name: string, args: JSONRecord) {
-      steps.push({ name, args }, { text: "done" });
+    script(name: string, args: JSONRecord, remote?: boolean) {
+      steps.push(
+        { name, args, ...(remote === undefined ? {} : { remote }) },
+        { text: "done", ...(remote === undefined ? {} : { remote }) },
+      );
     },
-    verify() {
+    verify(expectedReflections = 9) {
       assert.deepEqual(failures, []);
       assert.equal(steps.length, 0);
       assert.equal(
         reflectionRequests,
-        9,
+        expectedReflections,
         "each completed tool round reflects exactly once",
       );
       return requests;
@@ -591,6 +653,624 @@ async function closeServer(server: Server) {
   });
 }
 
+async function runCli(
+  executable: string,
+  args: string[],
+  root: string,
+  origin: string,
+  token: string,
+): Promise<string> {
+  const child = spawn(executable, args, {
+    cwd: root,
+    env: {
+      ...childEnv(root),
+      EAGLE_ROOT: root,
+      EAGLE_PORT: new URL(origin).port,
+      EAGLE_TOKEN: token,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  let error = "";
+  child.stdout
+    .setEncoding("utf8")
+    .on("data", (text: string) => (output += text));
+  child.stderr
+    .setEncoding("utf8")
+    .on("data", (text: string) => (error += text));
+  const exit = await new Promise<number | null>((done, reject) => {
+    const timer = setTimeout(() => child.kill("SIGKILL"), 30000);
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      done(code);
+    });
+  });
+  assert.equal(exit, 0, `CLI failed: ${error}`);
+  return output;
+}
+
+test("CLI drives local Bot tools without a configured remote", {
+  timeout: 90000,
+}, async () => {
+  const swiftEnv = {
+    ...process.env,
+    DEVELOPER_DIR:
+      process.env.DEVELOPER_DIR ?? "/Applications/Xcode.app/Contents/Developer",
+  };
+  const macos = resolve("apps/macos");
+  execFileSync("swift", ["build", "--product", "eagle-cli"], {
+    cwd: macos,
+    env: swiftEnv,
+    stdio: "pipe",
+    timeout: 60000,
+    killSignal: "SIGKILL",
+  });
+  const bin = execFileSync("swift", ["build", "--show-bin-path"], {
+    cwd: macos,
+    env: swiftEnv,
+    encoding: "utf8",
+    timeout: 10000,
+    killSignal: "SIGKILL",
+  }).trim();
+  const cli = join(bin, "eagle-cli");
+  const root = mkdtempSync("/tmp/eagle-device-cli-");
+  const key = randomBytes(32).toString("base64url");
+  let model: Awaited<ReturnType<typeof modelFixture>> | undefined;
+  let device: ReturnType<typeof deviceProcess> | undefined;
+  let daemon: Awaited<ReturnType<typeof daemonProcess>> | undefined;
+  let failure: unknown;
+  try {
+    model = await modelFixture(key);
+    device = deviceProcess(join(root, "device"), "");
+    await device.ready("unconfigured");
+    await device.manage("policy.set", { mode: "paused" });
+    daemon = await daemonProcess(
+      join(root, "bots"),
+      device.socketPath,
+      model.baseUrl,
+      key,
+    );
+    const created = JSON.parse(
+      await runCli(
+        cli,
+        ["bots", "create", "--title", "Local health", "--json"],
+        root,
+        daemon.origin,
+        daemon.token,
+      ),
+    ) as { bot: { id: string } };
+    const deniedPath = join(root, "denied");
+    model.script(
+      "bash",
+      { command: `printf forbidden > '${deniedPath}'` },
+      false,
+    );
+    const denied = await runCli(
+      cli,
+      [
+        "chat",
+        "send",
+        created.bot.id,
+        "--text",
+        "Check this computer",
+        "--wait",
+        "--json",
+      ],
+      root,
+      daemon.origin,
+      daemon.token,
+    );
+    assert.match(denied, /device_access_paused/);
+    assert.equal(existsSync(deniedPath), false);
+    await device.manage("policy.set", { mode: "all-approve" });
+    const resultPath = join(root, "local-result");
+    model.script(
+      "bash",
+      { command: `printf local-ok > '${resultPath}'` },
+      false,
+    );
+    const accepted = await runCli(
+      cli,
+      [
+        "chat",
+        "send",
+        created.bot.id,
+        "--text",
+        "Check this computer again",
+        "--wait",
+        "--json",
+      ],
+      root,
+      daemon.origin,
+      daemon.token,
+    );
+    assert.match(accepted, /"name":"bash"/);
+    assert.equal(readFileSync(resultPath, "utf8"), "local-ok");
+    for (const [baseUrl, offered] of [
+      ["http://127.0.0.1:1", true],
+      ["", false],
+    ] as const) {
+      await device.manage("remote.configure", { baseUrl });
+      const marker = join(root, offered ? "configured" : "disabled");
+      model.script("bash", { command: `printf local > '${marker}'` }, offered);
+      await runCli(
+        cli,
+        [
+          "chat",
+          "send",
+          created.bot.id,
+          "--text",
+          "Check this computer",
+          "--wait",
+          "--json",
+        ],
+        root,
+        daemon.origin,
+        daemon.token,
+      );
+      assert.equal(readFileSync(marker, "utf8"), "local");
+    }
+    model.verify(4);
+  } catch (error) {
+    failure = error;
+  }
+  const results = await Promise.allSettled([
+    daemon?.stop(),
+    device?.stop(),
+    model ? closeServer(model.server) : undefined,
+  ]);
+  const errors = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch (error) {
+    errors.push(error);
+  }
+  if (failure !== undefined) errors.unshift(failure);
+  if (model?.failures.length) errors.push(new Error(model.failures.join("; ")));
+  if (errors.length)
+    throw new AggregateError(errors, "device CLI acceptance failed");
+});
+
+test("remote operations skip discarded directory reads but still enforce live membership", {
+  timeout: 90000,
+}, async () => {
+  mkdirSync(".local", { recursive: true });
+  const workerRoot = mkdtempSync(resolve(".local/device-dispatch-worker-"));
+  const root = mkdtempSync("/tmp/eagle-device-dispatch-");
+  let worker: Awaited<ReturnType<typeof workerFixture>> | undefined;
+  let a: ReturnType<typeof deviceProcess> | undefined;
+  let b: ReturnType<typeof deviceProcess> | undefined;
+  let failure: unknown;
+  try {
+    worker = await workerFixture(workerRoot);
+    a = deviceProcess(join(root, "a"), worker.origin);
+    b = deviceProcess(join(root, "b"), worker.origin);
+    await Promise.all([a.ready(), b.ready()]);
+    await b.manage("policy.set", { mode: "all-approve" });
+    const invitation = await a.manage("pairing.create", {});
+    await b.manage("pairing.redeem", {
+      requestId: randomUUID(),
+      code: invitation.code,
+    });
+    const source = a;
+    const target = b;
+    const relay = worker.origin;
+    await until(async () => {
+      const directory = (await localCall(
+        source.socketPath,
+        "directory",
+      )) as Directory;
+      const peer = directory.devices.find(
+        (device) => device.deviceId === target.deviceId,
+      );
+      return peer?.online && peer.policy?.mode === "all-approve"
+        ? true
+        : undefined;
+    }, "remote target observation");
+    const directoryReads = async () =>
+      Number(await (await fetch(`${relay}/__test/directory-count`)).text());
+    const before = await directoryReads();
+    assert(before > 0);
+    const operation = { kind: "command", command: "printf on-target" };
+    const request = {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: target.deviceId,
+      action: "run",
+      operation,
+      digest: createHash("sha256")
+        .update(canonicalDeviceJSON(operation))
+        .digest("hex"),
+      relayOrigin: relay,
+    };
+    const completed = (await localCall(
+      source.socketPath,
+      "execute",
+      request,
+    )) as Receipt;
+    assert.equal(completed.status, "completed");
+    assert.equal(completed.output, "on-target");
+    assert.equal(
+      await directoryReads(),
+      before,
+      "run fetched an unused directory",
+    );
+    const query = (await localCall(source.socketPath, "operation.get", {
+      requestId: randomUUID(),
+      operationId: request.operationId,
+      targetDeviceId: target.deviceId,
+      action: "get",
+    })) as Receipt;
+    assert.equal(query.status, "completed");
+    assert.equal(
+      await directoryReads(),
+      before,
+      "get fetched an unused directory",
+    );
+    const cancelled = (await localCall(source.socketPath, "operation.cancel", {
+      requestId: randomUUID(),
+      operationId: request.operationId,
+      targetDeviceId: target.deviceId,
+      action: "cancel",
+    })) as Receipt;
+    assert.equal(cancelled.status, "completed");
+    assert.equal(
+      await directoryReads(),
+      before,
+      "cancel fetched an unused directory",
+    );
+    await source.manage("member.remove", { deviceId: target.deviceId });
+    const marker = join(target.root, "revoked-write");
+    const forbidden = {
+      kind: "file.write",
+      path: marker,
+      content: "forbidden",
+    };
+    const denied = (await localCall(source.socketPath, "execute", {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: target.deviceId,
+      action: "run",
+      operation: forbidden,
+      relayOrigin: relay,
+      digest: createHash("sha256")
+        .update(canonicalDeviceJSON(forbidden))
+        .digest("hex"),
+    })) as Receipt;
+    assert.equal(denied.status, "denied");
+    assert.equal(existsSync(marker), false);
+    assert.equal(
+      await directoryReads(),
+      before,
+      "revoked run fetched an unused directory",
+    );
+  } catch (error) {
+    failure = error;
+  }
+  const cleaned = await Promise.allSettled([
+    a?.stop(),
+    b?.stop(),
+    worker?.mf.dispose(),
+  ]);
+  const errors = cleaned.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  for (const path of [workerRoot, root]) {
+    try {
+      rmSync(path, { recursive: true, force: true });
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (failure !== undefined) errors.unshift(failure);
+  if (errors.length)
+    throw new AggregateError(errors, "device dispatch test failed");
+});
+
+test("lost authorization after a remote side effect keeps the source operation sent", {
+  timeout: 90000,
+}, async () => {
+  mkdirSync(".local", { recursive: true });
+  const workerRoot = mkdtempSync(resolve(".local/device-result-worker-"));
+  const root = mkdtempSync("/tmp/eagle-device-result-");
+  let worker: Awaited<ReturnType<typeof workerFixture>> | undefined;
+  let a: ReturnType<typeof deviceProcess> | undefined;
+  let b: ReturnType<typeof deviceProcess> | undefined;
+  let storage:
+    | Awaited<ReturnType<Miniflare["unsafeGetDurableObjectStorage"]>>
+    | undefined;
+  let pending: Promise<{ value?: Receipt; error?: unknown }> | undefined;
+  let gate = false;
+  let failure: unknown;
+  try {
+    worker = await workerFixture(workerRoot);
+    a = deviceProcess(join(root, "a"), worker.origin);
+    b = deviceProcess(join(root, "b"), worker.origin);
+    await Promise.all([a.ready(), b.ready()]);
+    await b.manage("policy.set", { mode: "all-approve" });
+    const invitation = await a.manage("pairing.create", {});
+    await b.manage("pairing.redeem", {
+      requestId: randomUUID(),
+      code: invitation.code,
+    });
+    const source = a;
+    const target = b;
+    await until(async () => {
+      const directory = (await localCall(
+        source.socketPath,
+        "directory",
+      )) as Directory;
+      const peer = directory.devices.find(
+        (device) => device.deviceId === target.deviceId,
+      );
+      return peer?.online && peer.policy?.mode === "all-approve"
+        ? true
+        : undefined;
+    }, "remote target observation");
+    const marker = join(target.root, "side-effect");
+    const release = join(target.root, "release");
+    const operation = {
+      kind: "command",
+      command: `printf x >> '${marker}'; while [ ! -f '${release}' ]; do sleep 0.02; done; printf fixture-private`,
+      timeoutMs: 10000,
+    };
+    const request = {
+      requestId: randomUUID(),
+      operationId: randomUUID(),
+      targetDeviceId: target.deviceId,
+      action: "run",
+      operation,
+      relayOrigin: worker.origin,
+      digest: createHash("sha256")
+        .update(canonicalDeviceJSON(operation))
+        .digest("hex"),
+    };
+    pending = localCall(source.socketPath, "execute", request).then(
+      (value) => ({ value: value as Receipt }),
+      (error: unknown) => ({ error }),
+    );
+    await until(
+      async () => (existsSync(marker) ? true : undefined),
+      "target side effect",
+    );
+    storage = await worker.mf.unsafeGetDurableObjectStorage(
+      "eagle",
+      "DeviceRegistry",
+      { name: "registry" },
+    );
+    await storage.exec(
+      "CREATE TABLE test_result_gate(sourceId TEXT PRIMARY KEY,targetId TEXT,started INTEGER DEFAULT 0,released INTEGER DEFAULT 0)",
+    );
+    gate = true;
+    await storage.exec(
+      "INSERT INTO test_result_gate(sourceId,targetId) VALUES(?,?)",
+      source.deviceId,
+      target.deviceId,
+    );
+    writeFileSync(release, "go");
+    await until(async () => {
+      const rows = await storage?.exec(
+        "SELECT started FROM test_result_gate WHERE sourceId=?",
+        source.deviceId,
+      );
+      return rows?.[0]?.started === 1 ? true : undefined;
+    }, "result authorization gate");
+    await target.manage("member.remove", { deviceId: source.deviceId });
+    await storage.exec(
+      "UPDATE test_result_gate SET released=1 WHERE sourceId=?",
+      source.deviceId,
+    );
+    const outcome = await pending;
+    if (outcome.error) throw outcome.error;
+    assert.equal(outcome.value?.status, "unknown");
+    assert.equal(outcome.value?.error, "membership_changed_query_original_id");
+    assert.equal(outcome.value?.output, undefined);
+    await localCall(source.socketPath, "execute", request);
+    assert.equal(readFileSync(marker, "utf8"), "x");
+    await Promise.all([source.stop(), target.stop()]);
+    const journal = new DatabaseSync(join(source.root, "operations.sqlite"), {
+      readOnly: true,
+    });
+    try {
+      const row = journal
+        .prepare("SELECT state FROM outgoing_requests WHERE id=?")
+        .get(request.operationId) as { state: string };
+      assert.equal(row.state, "sent");
+    } finally {
+      journal.close();
+    }
+  } catch (error) {
+    failure = error;
+  }
+  if (gate)
+    await storage
+      ?.exec("UPDATE test_result_gate SET released=1")
+      .catch(() => undefined);
+  await pending?.catch(() => undefined);
+  const cleaned = await Promise.allSettled([
+    a?.stop(),
+    b?.stop(),
+    worker?.mf.dispose(),
+  ]);
+  const errors = cleaned.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  for (const path of [workerRoot, root]) {
+    try {
+      rmSync(path, { recursive: true, force: true });
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (failure !== undefined) errors.unshift(failure);
+  if (errors.length)
+    throw new AggregateError(errors, "device result authorization test failed");
+});
+
+test("relay changes cannot move pairing or policy IDs to another service", {
+  timeout: 90000,
+}, async () => {
+  mkdirSync(".local", { recursive: true });
+  const workerRoot = mkdtempSync(resolve(".local/device-origin-worker-"));
+  const root = mkdtempSync("/tmp/eagle-device-origin-");
+  let worker: Awaited<ReturnType<typeof workerFixture>> | undefined;
+  let a: ReturnType<typeof deviceProcess> | undefined;
+  let b: ReturnType<typeof deviceProcess> | undefined;
+  let challengeSeen = () => {};
+  const challenge = new Promise<void>((resolve) => {
+    challengeSeen = resolve;
+  });
+  let forbiddenRequests = 0;
+  let unexpectedAuthorization = false;
+  const other = createServer((request, response) => {
+    if (request.url?.includes("/register/challenge")) {
+      unexpectedAuthorization ||= request.headers.authorization !== undefined;
+      challengeSeen();
+    }
+    if (request.url?.includes("/pairings") || request.url?.endsWith("/policy"))
+      forbiddenRequests++;
+    response
+      .writeHead(503, { "content-type": "application/json" })
+      .end(JSON.stringify({ error: "offline" }));
+  });
+  let failure: unknown;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      other.once("error", reject);
+      other.listen(0, "127.0.0.1", () => {
+        other.off("error", reject);
+        resolve();
+      });
+    });
+    const address = other.address();
+    assert(address && typeof address !== "string");
+    const otherOrigin = `http://127.0.0.1:${address.port}`;
+    worker = await workerFixture(workerRoot);
+    a = deviceProcess(join(root, "a"), worker.origin);
+    b = deviceProcess(join(root, "b"), worker.origin);
+    await Promise.all([a.ready(), b.ready()]);
+    const invitation = await b.manage("pairing.create", {});
+    const pairingId = randomUUID();
+    const prepared = await a.manage("pairing.prepare", {
+      requestId: pairingId,
+      codeHash: createHash("sha256")
+        .update(String(invitation.code))
+        .digest("hex"),
+    });
+    assert.equal(prepared.prepared, true);
+    const lookupId = randomUUID();
+    a.send({
+      type: "manage",
+      requestId: lookupId,
+      method: "pairing.result",
+      params: { requestId: pairingId, relayOrigin: worker.origin },
+    });
+    const lookup: Record<string, unknown> = await a.message(
+      (message) => message.type === "managed" && message.requestId === lookupId,
+    );
+    assert.equal(lookup.error, "result_not_found");
+    await a.manage("pairing.redeem", {
+      requestId: pairingId,
+      code: invitation.code,
+    });
+    const policyId = randomUUID();
+    await a.manage("policy.set", {
+      deviceId: b.deviceId,
+      mode: "paused",
+      requestId: policyId,
+    });
+    await a.manage("remote.configure", { baseUrl: otherOrigin });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      challenge,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("other relay timeout")),
+          5000,
+        );
+      }),
+    ]).finally(() => clearTimeout(timer));
+    for (const [method, params, expected] of [
+      [
+        "pairing.result",
+        { requestId: pairingId, relayOrigin: worker.origin },
+        "remote_configuration_changed",
+      ],
+      [
+        "pairing.redeem",
+        {
+          requestId: pairingId,
+          code: invitation.code,
+          relayOrigin: otherOrigin,
+        },
+        "relay_origin_mismatch",
+      ],
+      [
+        "policy.set",
+        {
+          deviceId: b.deviceId,
+          mode: "paused",
+          requestId: policyId,
+          relayOrigin: otherOrigin,
+        },
+        "relay_origin_mismatch",
+      ],
+    ] as const) {
+      const requestId = randomUUID();
+      a.send({ type: "manage", requestId, method, params });
+      const result: Record<string, unknown> = await a.message(
+        (message) =>
+          message.type === "managed" && message.requestId === requestId,
+      );
+      assert.equal(result.error, expected, method);
+    }
+    assert.equal(forbiddenRequests, 0);
+    assert.equal(unexpectedAuthorization, false);
+    await a.manage("remote.configure", { baseUrl: worker.origin });
+    await until(async () => {
+      const status = (await localCall(a?.socketPath ?? "", "status")) as {
+        cloudStatus: string;
+      };
+      return status.cloudStatus === "online" ? true : undefined;
+    }, "original relay reconnection");
+    const recovered = await a.manage("pairing.result", {
+      requestId: pairingId,
+    });
+    assert.equal(recovered.requestId, pairingId);
+    assert.equal(
+      (recovered.directory as { relayOrigin: string }).relayOrigin,
+      worker.origin,
+    );
+  } catch (error) {
+    failure = error;
+  }
+  const cleaned = await Promise.allSettled([
+    a?.stop(),
+    b?.stop(),
+    worker?.mf.dispose(),
+    closeServer(other),
+  ]);
+  const errors = cleaned.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  for (const path of [workerRoot, root]) {
+    try {
+      rmSync(path, { recursive: true, force: true });
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (failure !== undefined) errors.unshift(failure);
+  if (errors.length)
+    throw new AggregateError(errors, "device origin test failed");
+});
+
 test("existing and new Bots share real paired devices, native tools and original remote operation IDs", {
   timeout: 90000,
 }, async () => {
@@ -626,7 +1306,7 @@ test("existing and new Bots share real paired devices, native tools and original
     const health = (await fetch(`${daemon.origin}/v1/health`).then((response) =>
       response.json(),
     )) as { deviceAccess: { version: number } };
-    assert.equal(health.deviceAccess.version, 1);
+    assert.equal(health.deviceAccess.version, 2);
     const existingId = await daemon.createBot("Existing before pairing");
     const existing = await botConnection(
       daemon.origin,

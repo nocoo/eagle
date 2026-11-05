@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
@@ -529,6 +535,111 @@ test("policy changed while a real approval signature verifies cannot admit side 
   }
 });
 
+for (const mode of ["aborted", "closing"] as const) {
+  test(`a remote connection ${mode} before admission cannot execute`, async () => {
+    const f = fixture();
+    const original = crypto.subtle.verify.bind(crypto.subtle);
+    let enter: () => void;
+    let release: (() => void) | undefined;
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      f.runtime.setPolicy("always-ask");
+      const path = join(f.directory, "must-not-exist");
+      const input = await request(f.device.deviceId, {
+        kind: "file.write",
+        path,
+        content: "forbidden",
+      });
+      const envelope = {
+        operationId: input.operationId,
+        sourceDeviceId: f.device.deviceId,
+        targetDeviceId: f.device.deviceId,
+        digest: input.digest as string,
+        policyVersion: f.runtime.policy.version,
+        expiresAt: Date.now() + 60000,
+      };
+      input.approval = {
+        ...envelope,
+        signature: sign(
+          null,
+          Buffer.from(approvalPayload(envelope)),
+          f.keys.privateKey,
+        ).toString("base64url"),
+      };
+      crypto.subtle.verify = async (
+        ...args: Parameters<SubtleCrypto["verify"]>
+      ) => {
+        const verified = await original(...args);
+        enter();
+        await blocked;
+        return verified;
+      };
+      const controller = new AbortController();
+      let live = true;
+      const running = f.runtime.handle(input, f.device, {
+        signal: controller.signal,
+        isLive: () => live,
+      });
+      await entered;
+      if (mode === "aborted") controller.abort();
+      else live = false;
+      release?.();
+      assert.equal((await running).status, "denied");
+      assert.equal(existsSync(path), false);
+      assert.equal(
+        (await f.runtime.handle({ ...input, action: "get" }, f.device)).status,
+        "unknown",
+      );
+    } finally {
+      crypto.subtle.verify = original;
+      release?.();
+      await f.close();
+    }
+  });
+}
+
+test("retiring a connection after admission does not rerun or cancel the operation", async () => {
+  const f = fixture();
+  const release = join(f.directory, "release");
+  try {
+    const path = join(f.directory, "side-effect");
+    const input = await request(f.device.deviceId, {
+      kind: "command",
+      command: `printf x >> '${path}'; while [ ! -f '${release}' ]; do sleep 0.05; done; printf done`,
+    });
+    const controller = new AbortController();
+    const running = f.runtime.handle(input, f.device, {
+      signal: controller.signal,
+      isLive: () => !controller.signal.aborted,
+    });
+    const deadline = Date.now() + 5000;
+    while (!existsSync(path) && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(
+      existsSync(path),
+      true,
+      "the operation must be admitted first",
+    );
+    controller.abort();
+    writeFileSync(release, "");
+    assert.equal((await running).status, "completed");
+    const next = new AbortController();
+    const recovered = await f.runtime.handle(input, f.device, {
+      signal: next.signal,
+      isLive: () => true,
+    });
+    assert.equal(recovered.status, "completed");
+    assert.equal(readFileSync(path, "utf8"), "x");
+  } finally {
+    await f.close();
+  }
+});
+
 test("native and file output use bounded UTF-8 bytes and the command credential redactor before journaling", async () => {
   const directory = mkdtempSync(join(tmpdir(), "device-output-"));
   const { device } = local();
@@ -748,17 +859,23 @@ test("caller pins survive restart and uncertain re-submission becomes a query of
       kind: "command",
       command: "printf original-target",
     });
-    assert.equal(f.runtime.journal.prepareOutgoing(input).action, "run");
+    const scope = {
+      kind: "remote",
+      origin: "https://devices.example",
+    } as const;
+    assert.equal(f.runtime.journal.prepareOutgoing(input, scope).action, "run");
     assert.equal(
-      f.runtime.journal.prepareOutgoing({ ...input, requestId: randomUUID() })
-        .action,
+      f.runtime.journal.prepareOutgoing(
+        { ...input, requestId: randomUUID() },
+        scope,
+      ).action,
       "get",
     );
     assert.throws(() =>
-      f.runtime.journal.prepareOutgoing({
-        ...input,
-        targetDeviceId: f.device.deviceId,
-      }),
+      f.runtime.journal.prepareOutgoing(
+        { ...input, targetDeviceId: f.device.deviceId },
+        scope,
+      ),
     );
     await f.runtime.close();
     const recovered = new DeviceRuntime(
@@ -766,20 +883,33 @@ test("caller pins survive restart and uncertain re-submission becomes a query of
       join(f.directory, "journal.sqlite"),
     );
     try {
-      assert.equal(recovered.journal.prepareOutgoing(input).action, "get");
+      assert.equal(
+        recovered.journal.prepareOutgoing(input, scope).action,
+        "get",
+      );
       const busy = {
         ...input,
         requestId: randomUUID(),
         operationId: randomUUID(),
       };
-      assert.equal(recovered.journal.prepareOutgoing(busy).action, "run");
-      recovered.journal.completeOutgoing(busy, { status: "busy" });
-      assert.equal(recovered.journal.prepareOutgoing(busy).action, "run");
+      assert.equal(
+        recovered.journal.prepareOutgoing(busy, scope).action,
+        "run",
+      );
+      recovered.journal.completeOutgoing(busy, { status: "busy" }, scope);
+      assert.equal(
+        recovered.journal.prepareOutgoing(busy, scope).action,
+        "run",
+      );
       recovered.journal.completeOutgoing(
         { ...busy, action: "get" },
         { status: "denied" },
+        scope,
       );
-      assert.equal(recovered.journal.prepareOutgoing(busy).action, "get");
+      assert.equal(
+        recovered.journal.prepareOutgoing(busy, scope).action,
+        "get",
+      );
     } finally {
       await recovered.close();
     }
