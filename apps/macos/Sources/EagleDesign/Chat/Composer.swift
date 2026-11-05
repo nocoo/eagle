@@ -43,8 +43,8 @@ public struct Composer: View {
   }
 
   public var body: some View {
-    HStack(alignment: .bottom, spacing: 8) {
-      IconButton(systemName: "plus", label: "添加附件", size: 28, action: onAttach)
+    HStack(alignment: .bottom, spacing: Theme.Layout.rowGap) {
+      IconButton(systemName: "plus", label: "添加附件", size: Theme.Metric.hitTarget, action: onAttach)
 
       ZStack(alignment: .leading) {
         TextField("", text: $text, axis: .vertical)
@@ -52,7 +52,7 @@ public struct Composer: View {
           .font(Theme.TypeScale.composer)
           .foregroundStyle(Theme.Palette.textPrimary)
           .focused($focused)
-          .lineLimit(1...3)
+          .lineLimit(Theme.Chat.composerLines)
           .fixedSize(horizontal: false, vertical: true)
           .frame(minHeight: Theme.Metric.hitTarget)
           .onSubmit(onSend)
@@ -67,12 +67,13 @@ public struct Composer: View {
       .frame(maxWidth: .infinity, alignment: .leading)
 
       IconButton(
-        systemName: "mic", label: "语音输入", size: 28, tint: Theme.Palette.textSecondary, action: onMic
+        systemName: "mic", label: "语音输入", size: Theme.Metric.hitTarget,
+        tint: Theme.Palette.textSecondary, action: onMic
       )
       IconButton(
         systemName: "waveform",
         label: "发送",
-        size: 28,
+        size: Theme.Metric.hitTarget,
         tint: text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
           ? Theme.Palette.textSecondary
           : Theme.Palette.accentFill,
@@ -97,12 +98,12 @@ public struct Composer: View {
     // height when the column is short, and a squeezed pill leaves the caret off centre.
     .fixedSize(horizontal: false, vertical: true)
     .background(
-      RoundedRectangle(cornerRadius: Theme.Metric.composerHeight / 2, style: .continuous)
+      RoundedRectangle(cornerRadius: Theme.Chat.composerRadius, style: .continuous)
         .fill(Theme.Palette.card)
         .onTapGesture { focused = true }
     )
     .overlay(
-      RoundedRectangle(cornerRadius: Theme.Metric.composerHeight / 2, style: .continuous)
+      RoundedRectangle(cornerRadius: Theme.Chat.composerRadius, style: .continuous)
         .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
         .allowsHitTesting(false)
     )
@@ -121,11 +122,14 @@ public struct Composer: View {
     let steered = hint != nil
     return ZStack(alignment: .leading) {
       placeholderLine(
-        placeholder, visible: !steered, turn: steered ? 82 : 0, rise: steered ? -5 : 0)
-      placeholderLine(hint ?? "", visible: steered, turn: steered ? 0 : -82, rise: steered ? 0 : 5)
+        placeholder, visible: !steered, turn: steered ? Theme.Chat.placeholderTurn : 0,
+        rise: steered ? -Theme.Chat.placeholderRise : 0)
+      placeholderLine(
+        hint ?? "", visible: steered, turn: steered ? 0 : -Theme.Chat.placeholderTurn,
+        rise: steered ? 0 : Theme.Chat.placeholderRise)
     }
     .animation(
-      reduceMotion ? .easeInOut(duration: 0.16) : .easeInOut(duration: 0.26),
+      reduceMotion ? Theme.Motion.placeholderReduced : Theme.Motion.placeholder,
       value: steered
     )
   }
@@ -143,7 +147,7 @@ public struct Composer: View {
         .degrees(reduceMotion ? 0 : turn),
         axis: (x: 1, y: 0, z: 0),
         anchor: .center,
-        perspective: 0.35
+        perspective: Theme.Chat.placeholderPerspective
       )
   }
 }

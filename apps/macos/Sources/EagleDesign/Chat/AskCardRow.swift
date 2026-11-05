@@ -85,7 +85,7 @@ public struct AskCardRow: View {
         Text(failure)
           .font(Theme.TypeScale.note)
           .foregroundStyle(Theme.Palette.destructive)
-          .padding(12)
+          .padding(Theme.Layout.sectionGap)
       }
     }
     .clipShape(RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous))
@@ -107,7 +107,7 @@ public struct AskCardRow: View {
   }
 
   private var header: some View {
-    HStack(spacing: 10) {
+    HStack(spacing: Theme.Layout.controlGap) {
       Image(systemName: locked ? "checkmark.circle.fill" : "questionmark.circle")
         .font(Theme.TypeScale.noteEmphasis)
         .foregroundStyle(locked ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
@@ -127,13 +127,13 @@ public struct AskCardRow: View {
         .accessibilityLabel("忽略这次提问")
       }
     }
-    .padding(.horizontal, 14)
-    .frame(height: 40)
+    .padding(.horizontal, Theme.Layout.controlInset)
+    .frame(height: Theme.Card.headerHeight)
   }
 
   private func questionBlock(_ question: AskCardQuestion) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 8) {
+    VStack(alignment: .leading, spacing: Theme.Layout.rowGap) {
+      HStack(spacing: Theme.Layout.rowGap) {
         Text(question.prompt)
           .font(Theme.TypeScale.sectionLabel)
           .foregroundStyle(Theme.Palette.textPrimary)
@@ -143,14 +143,14 @@ public struct AskCardRow: View {
           .foregroundStyle(Theme.Palette.textMuted)
         Spacer(minLength: 0)
       }
-      VStack(spacing: 6) {
+      VStack(spacing: Theme.Layout.labelGap) {
         ForEach(question.options) { option in
           optionRow(question: question, option: option)
         }
       }
     }
-    .padding(.horizontal, 14)
-    .padding(.vertical, 12)
+    .padding(.horizontal, Theme.Layout.controlInset)
+    .padding(.vertical, Theme.Layout.sectionGap)
   }
 
   private func optionRow(question: AskCardQuestion, option: AskCardQuestion.Option) -> some View {
@@ -169,12 +169,12 @@ public struct AskCardRow: View {
       }
       chosen[question.id] = current
     } label: {
-      HStack(alignment: .top, spacing: 10) {
+      HStack(alignment: .top, spacing: Theme.Layout.controlGap) {
         Image(systemName: selected ? "checkmark.circle.fill" : "circle")
           .font(Theme.TypeScale.cardTitle)
           .foregroundStyle(selected ? Theme.Palette.accentStrong : Theme.Palette.textMuted)
-          .frame(width: 18, alignment: .center)
-        VStack(alignment: .leading, spacing: 2) {
+          .frame(width: Theme.Card.optionGlyphSlot, alignment: .center)
+        VStack(alignment: .leading, spacing: Theme.Layout.microGap) {
           Text(option.label)
             .font(Theme.TypeScale.note)
             .foregroundStyle(Theme.Palette.textPrimary)
@@ -187,8 +187,8 @@ public struct AskCardRow: View {
         }
         Spacer(minLength: 0)
       }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 8)
+      .padding(.horizontal, Theme.Layout.controlGap)
+      .padding(.vertical, Theme.Layout.rowGap)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(
         RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
@@ -203,31 +203,17 @@ public struct AskCardRow: View {
   }
 
   private var actions: some View {
-    HStack(spacing: 10) {
-      Button {
-        send(skipped: false)
-      } label: {
-        Text("提交")
-          .font(Theme.TypeScale.noteEmphasis)
-          .foregroundStyle(Theme.Palette.onColor)
-          .padding(.horizontal, 16)
-          .frame(height: 30)
-          .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-              .fill(complete ? Theme.Palette.accentStrong : Theme.Palette.textMuted.opacity(0.4))
-          )
-      }
-      .buttonStyle(.plain)
-      .disabled(!complete)
-      .accessibilityLabel("提交回答")
+    HStack(spacing: Theme.Layout.controlGap) {
+      CardActionButton("提交", enabled: complete) { send(skipped: false) }
+        .accessibilityLabel("提交回答")
 
       Text(complete ? "已选好，可以提交" : "每个问题都选一项后可提交")
         .font(Theme.TypeScale.note)
         .foregroundStyle(Theme.Palette.textMuted)
       Spacer(minLength: 0)
     }
-    .padding(.horizontal, 14)
-    .padding(.vertical, 12)
+    .padding(.horizontal, Theme.Layout.controlInset)
+    .padding(.vertical, Theme.Layout.sectionGap)
   }
 
   /// Read-only once the person answered or has just submitted.

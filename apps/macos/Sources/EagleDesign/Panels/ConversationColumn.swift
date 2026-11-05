@@ -145,7 +145,7 @@ public struct ConversationColumn: View {
       }
       .frame(height: Theme.Metric.waitingBandHeight)
       .padding(.horizontal, Theme.Metric.conversationInset)
-      .animation(.easeOut(duration: 0.18), value: isWaiting)
+      .animation(Theme.Motion.waiting, value: isWaiting)
 
       Composer(
         placeholder: "给 \(title) 发消息",
@@ -181,10 +181,10 @@ public struct ConversationColumn: View {
         .padding(
           .horizontal,
           (showsSidebar ? Theme.Metric.conversationInset : Theme.Metric.trafficLightsClearance)
-            + Theme.Metric.headerControlHeight + 8
+            + Theme.Metric.headerControlHeight + Theme.Chat.actionGap
         )
 
-        HStack(spacing: 8) {
+        HStack(spacing: Theme.Chat.actionGap) {
           if !showsSidebar {
             IconButton(
               systemName: "sidebar.left", label: "展开侧栏", style: .circled, action: onShowSidebar)
@@ -213,13 +213,13 @@ public struct ConversationColumn: View {
             ForEach(entries.hidingToolCalls(!showsToolCalls)) { entry in
               row(entry).id(entry.id)
             }
-            Theme.Palette.clear.frame(height: 1).id("bottom")
+            Theme.Palette.clear.frame(height: Theme.Metric.hairline).id("bottom")
           }
           .frame(maxWidth: .infinity, alignment: .leading)
           .padding(.horizontal, Theme.Metric.conversationInset)
           // Clear of the top edge fade: the first row must not start under it.
-          .padding(.top, Theme.Metric.edgeFadeHeight + 10)
-          .padding(.bottom, 12)
+          .padding(.top, Theme.Metric.edgeFadeHeight + Theme.Chat.transcriptTopClearance)
+          .padding(.bottom, Theme.Chat.transcriptBottomInset)
           .frame(minHeight: viewport.size.height, alignment: .top)
           // The document's background catches only blank space, behind message controls.
           .background {
@@ -257,7 +257,7 @@ public struct ConversationColumn: View {
   private func row(_ entry: TranscriptEntry) -> some View {
     switch entry {
     case .assistant(_, let blocks, let from):
-      VStack(alignment: .leading, spacing: 6) {
+      VStack(alignment: .leading, spacing: Theme.Layout.labelGap) {
         AssistantBubble(
           text: blocks.markdown, preparedBlocks: preparedMarkdown[entry.id]
         )
@@ -268,7 +268,8 @@ public struct ConversationColumn: View {
       }
       .transition(
         .asymmetric(
-          insertion: .opacity.combined(with: .scale(scale: 0.985, anchor: .bottomLeading)),
+          insertion: .opacity.combined(
+            with: .scale(scale: Theme.Chat.messageEntryScale, anchor: .bottomLeading)),
           removal: .opacity
         )
       )
@@ -279,7 +280,8 @@ public struct ConversationColumn: View {
       .equatable()
       .transition(
         .asymmetric(
-          insertion: .opacity.combined(with: .scale(scale: 0.985, anchor: .bottomLeading)),
+          insertion: .opacity.combined(
+            with: .scale(scale: Theme.Chat.messageEntryScale, anchor: .bottomLeading)),
           removal: .opacity
         )
       )
@@ -287,7 +289,8 @@ public struct ConversationColumn: View {
       UserBubble(text, origin: origin)
         .transition(
           .asymmetric(
-            insertion: .opacity.combined(with: .scale(scale: 0.985, anchor: .bottomTrailing)),
+            insertion: .opacity.combined(
+              with: .scale(scale: Theme.Chat.messageEntryScale, anchor: .bottomTrailing)),
             removal: .opacity
           )
         )

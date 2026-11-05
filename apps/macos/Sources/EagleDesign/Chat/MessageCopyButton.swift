@@ -51,7 +51,7 @@ struct MessageCopyButton: View {
     )
     .focused($focused)
     .disabled(text.isEmpty)
-    .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: model.feedback)
+    .animation(reduceMotion ? nil : Theme.Motion.copyFeedback, value: model.feedback)
     .onDisappear { model.resetFeedback() }
   }
 

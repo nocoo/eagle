@@ -177,7 +177,7 @@ public struct SecretCardRow: View {
   }
 
   private var header: some View {
-    HStack(spacing: 10) {
+    HStack(spacing: Theme.Layout.controlGap) {
       Image(
         systemName: locked
           ? (card.skipped || skipped ? "xmark.circle.fill" : "checkmark.circle.fill") : "key.fill"
@@ -188,14 +188,14 @@ public struct SecretCardRow: View {
         .font(Theme.TypeScale.noteEmphasis)
         .foregroundStyle(Theme.Palette.textPrimary)
       Spacer(minLength: 0)
-      if working { SpinnerArc(size: 12) }
+      if working { SpinnerArc(size: Theme.Metric.spinnerSize) }
     }
-    .padding(.horizontal, 14)
-    .frame(height: 40)
+    .padding(.horizontal, Theme.Layout.controlInset)
+    .frame(height: Theme.Card.headerHeight)
   }
 
   private var fields: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: Theme.Layout.controlGap) {
       if let purpose = card.purpose, !purpose.isEmpty {
         Text(purpose)
           .font(Theme.TypeScale.compactBody)
@@ -217,14 +217,14 @@ public struct SecretCardRow: View {
           .fixedSize(horizontal: false, vertical: true)
       }
     }
-    .padding(.horizontal, 14)
-    .padding(.vertical, 12)
+    .padding(.horizontal, Theme.Layout.controlInset)
+    .padding(.vertical, Theme.Layout.sectionGap)
   }
 
   /// The field the password goes into, with the eye that shows it. The value is never put
   /// anywhere else.
   private var valueField: some View {
-    HStack(spacing: 6) {
+    HStack(spacing: Theme.Layout.labelGap) {
       Group {
         if revealed {
           TextField("", text: $value)
@@ -239,12 +239,12 @@ public struct SecretCardRow: View {
       IconButton(
         systemName: revealed ? "eye.slash" : "eye",
         label: revealed ? "隐藏密码" : "显示密码",
-        size: 22,
+        size: Theme.Card.revealButton,
         action: { revealed.toggle() }
       )
     }
-    .padding(.horizontal, 10)
-    .frame(height: 30)
+    .padding(.horizontal, Theme.Layout.controlGap)
+    .frame(height: Theme.Card.fieldHeight)
     .background(
       RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
         .fill(Theme.Palette.canvas)
@@ -257,7 +257,7 @@ public struct SecretCardRow: View {
 
   /// The record's name, read-only: the Bot named it and the Bot reads it back by that name.
   private var nameRow: some View {
-    HStack(spacing: 8) {
+    HStack(spacing: Theme.Layout.rowGap) {
       Text("名称")
         .font(Theme.TypeScale.compactBody)
         .foregroundStyle(Theme.Palette.textSecondary)
@@ -277,7 +277,7 @@ public struct SecretCardRow: View {
   /// The expiry, only when the Bot asked for one: a card without a suggestion shows no
   /// control at all.
   private var expiryRow: some View {
-    HStack(spacing: 8) {
+    HStack(spacing: Theme.Layout.rowGap) {
       Text("有效期")
         .font(Theme.TypeScale.compactBody)
         .foregroundStyle(Theme.Palette.textSecondary)
@@ -319,7 +319,7 @@ public struct SecretCardRow: View {
 
   /// After the answer arrived the card says what happened, never the value itself.
   private var savedValue: some View {
-    HStack(spacing: 8) {
+    HStack(spacing: Theme.Layout.rowGap) {
       Text(effectiveSkipped ? "已取消" : "已保存")
         .font(Theme.TypeScale.compactBody)
         .foregroundStyle(Theme.Palette.textSecondary)
@@ -331,35 +331,12 @@ public struct SecretCardRow: View {
   }
 
   private var actions: some View {
-    HStack(spacing: 10) {
-      Button {
-        send(value: value, skipped: false)
-      } label: {
-        Text("保存")
-          .font(Theme.TypeScale.noteEmphasis)
-          .foregroundStyle(Theme.Palette.onColor)
-          .padding(.horizontal, 16)
-          .frame(height: 30)
-          .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-              .fill(canSave ? Theme.Palette.accentStrong : Theme.Palette.textMuted.opacity(0.4))
-          )
-      }
-      .buttonStyle(.plain)
-      .disabled(!canSave)
-      .accessibilityLabel("保存密码")
+    HStack(spacing: Theme.Layout.controlGap) {
+      CardActionButton("保存", enabled: canSave) { send(value: value, skipped: false) }
+        .accessibilityLabel("保存密码")
 
-      Button {
-        send(value: "", skipped: true)
-      } label: {
-        Text("取消")
-          .font(Theme.TypeScale.noteEmphasis)
-          .foregroundStyle(Theme.Palette.textSecondary)
-          .padding(.horizontal, 12)
-          .frame(height: 30)
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("取消这次提问")
+      CardActionButton("取消", style: .text) { send(value: "", skipped: true) }
+        .accessibilityLabel("取消这次提问")
 
       if !canSave && !working {
         Text("至少 \(Self.minimumValueLength) 个字符才能保存")
@@ -368,8 +345,8 @@ public struct SecretCardRow: View {
       }
       Spacer(minLength: 0)
     }
-    .padding(.horizontal, 14)
-    .padding(.vertical, 12)
+    .padding(.horizontal, Theme.Layout.controlInset)
+    .padding(.vertical, Theme.Layout.sectionGap)
   }
 
   private var canSave: Bool { value.count >= Self.minimumValueLength && !working }

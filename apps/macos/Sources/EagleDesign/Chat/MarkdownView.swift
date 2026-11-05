@@ -22,8 +22,8 @@ public struct AssistantBubble: View, Equatable {
     text: String,
     streaming: Bool = false,
     preparedBlocks: [RenderedMarkdownBlock]? = nil,
-    cornerRadius: CGFloat = 20,
-    maxWidth: CGFloat = Theme.Metric.conversationMaxContentWidth - 120,
+    cornerRadius: CGFloat = Theme.Chat.assistantRadius,
+    maxWidth: CGFloat = Theme.Chat.contentWidth,
     fill: Color? = nil,
     border: Color? = nil
   ) {
@@ -38,17 +38,17 @@ public struct AssistantBubble: View, Equatable {
 
   public var body: some View {
     let blocks = preparedBlocks ?? model.blocks
-    HStack(alignment: .bottom, spacing: 8) {
-      HStack(alignment: .bottom, spacing: 8) {
+    HStack(alignment: .bottom, spacing: Theme.Layout.rowGap) {
+      HStack(alignment: .bottom, spacing: Theme.Layout.rowGap) {
         selectable(
-          VStack(alignment: .leading, spacing: 10) {
+          VStack(alignment: .leading, spacing: Theme.Chat.blockGap) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
               blockView(block, caret: streaming && index == blocks.count - 1)
             }
           }
         )
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
+        .padding(.horizontal, Theme.Chat.bubbleHorizontalInset)
+        .padding(.vertical, Theme.Chat.assistantVerticalInset)
         .background(
           RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(Theme.Palette.assistantFill)
@@ -69,7 +69,7 @@ public struct AssistantBubble: View, Equatable {
       }
       .frame(maxWidth: maxWidth, alignment: .leading)
       .onHover { hovering = $0 }
-      Spacer(minLength: 40)
+      Spacer(minLength: Theme.Chat.assistantTrailingSpace)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -87,38 +87,38 @@ public struct AssistantBubble: View, Equatable {
       Text(text)
         .font(Theme.TypeScale.markdownHeading(level))
         .foregroundStyle(Theme.Palette.textPrimary)
-        .lineSpacing(3)
+        .lineSpacing(Theme.Chat.headingLineSpacing)
         .fixedSize(horizontal: false, vertical: true)
     case .bullets(let items):
-      VStack(alignment: .leading, spacing: 6) {
+      VStack(alignment: .leading, spacing: Theme.Layout.labelGap) {
         ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-          HStack(alignment: .firstTextBaseline, spacing: 9) {
+          HStack(alignment: .firstTextBaseline, spacing: Theme.Chat.bulletGap) {
             Text("•")
               .font(Theme.TypeScale.body)
               .foregroundStyle(Theme.Palette.textSecondary)
-              .frame(width: 8, alignment: .leading)
+              .frame(width: Theme.Chat.bulletWidth, alignment: .leading)
             MarkdownInline(text: item, caret: caret && index == items.count - 1)
           }
           .font(Theme.TypeScale.body)
           .foregroundStyle(Theme.Palette.textPrimary)
-          .lineSpacing(4)
+          .lineSpacing(Theme.Chat.listLineSpacing)
           .fixedSize(horizontal: false, vertical: true)
         }
       }
     case .code(let language, let body):
       code(language: language, body: body)
     case .quote(let text):
-      HStack(alignment: .top, spacing: 10) {
-        RoundedRectangle(cornerRadius: 1.5)
+      HStack(alignment: .top, spacing: Theme.Layout.controlGap) {
+        RoundedRectangle(cornerRadius: Theme.Chat.quoteRuleRadius)
           .fill(Theme.Palette.line)
-          .frame(width: 3)
-        VStack(alignment: .leading, spacing: 4) {
+          .frame(width: Theme.Chat.quoteRuleWidth)
+        VStack(alignment: .leading, spacing: Theme.Layout.detailGap) {
           ForEach(Array(text.enumerated()), id: \.offset) {
             _, line in
             Text(line)
               .font(Theme.TypeScale.body)
               .foregroundStyle(Theme.Palette.textSecondary)
-              .lineSpacing(4)
+              .lineSpacing(Theme.Chat.listLineSpacing)
               .fixedSize(horizontal: false, vertical: true)
           }
         }
@@ -132,7 +132,7 @@ public struct AssistantBubble: View, Equatable {
     MarkdownInline(text: text, caret: caret)
       .font(Theme.TypeScale.body)
       .foregroundStyle(Theme.Palette.textPrimary)
-      .lineSpacing(5)
+      .lineSpacing(Theme.Chat.bodyLineSpacing)
       .fixedSize(horizontal: false, vertical: true)
   }
 
@@ -142,8 +142,8 @@ public struct AssistantBubble: View, Equatable {
         Text(language)
           .font(Theme.TypeScale.codeLanguage)
           .foregroundStyle(Theme.Palette.textMuted)
-          .padding(.horizontal, 12)
-          .padding(.top, 8)
+          .padding(.horizontal, Theme.Chat.codeInset)
+          .padding(.top, Theme.Chat.codeHeaderInset)
       }
       ScrollView(.horizontal, showsIndicators: false) {
         Text(body)
@@ -151,17 +151,17 @@ public struct AssistantBubble: View, Equatable {
           .foregroundStyle(Theme.Palette.textPrimary)
 
           .fixedSize(horizontal: true, vertical: true)
-          .padding(.horizontal, 12)
-          .padding(.vertical, 9)
+          .padding(.horizontal, Theme.Chat.codeInset)
+          .padding(.vertical, Theme.Chat.codeVerticalInset)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(
-      RoundedRectangle(cornerRadius: 10, style: .continuous)
+      RoundedRectangle(cornerRadius: Theme.Chat.codeRadius, style: .continuous)
         .fill(Theme.Palette.canvas)
     )
     .overlay(
-      RoundedRectangle(cornerRadius: 10, style: .continuous)
+      RoundedRectangle(cornerRadius: Theme.Chat.codeRadius, style: .continuous)
         .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
     )
   }
@@ -172,7 +172,10 @@ public struct AssistantBubble: View, Equatable {
     headers: [AttributedString], rows: [[AttributedString]]
   ) -> some View {
     ScrollView(.horizontal, showsIndicators: false) {
-      Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
+      Grid(
+        alignment: .leading, horizontalSpacing: Theme.Chat.tableColumnGap,
+        verticalSpacing: Theme.Chat.tableRowGap
+      ) {
         GridRow {
           ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
             Text(header)
@@ -190,13 +193,13 @@ public struct AssistantBubble: View, Equatable {
               Text(cell)
                 .font(Theme.TypeScale.rowSubtitle)
                 .foregroundStyle(Theme.Palette.textPrimary)
-                .lineSpacing(3)
+                .lineSpacing(Theme.Chat.headingLineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
             }
           }
         }
       }
-      .padding(.vertical, 2)
+      .padding(.vertical, Theme.Chat.tableVerticalInset)
     }
   }
 
@@ -236,13 +239,15 @@ private struct MarkdownInline: View {
 
   var body: some View {
     if caret {
-      TimelineView(.animation(minimumInterval: 0.62, paused: reduceMotion)) { context in
+      TimelineView(.animation(minimumInterval: Theme.Motion.caretInterval, paused: reduceMotion)) {
+        context in
         let visible =
-          reduceMotion || Int(context.date.timeIntervalSinceReferenceDate / 0.62) % 2 == 0
+          reduceMotion
+          || Int(context.date.timeIntervalSinceReferenceDate / Theme.Motion.caretInterval) % 2 == 0
         Text(text)
           + Text("▍")
           .font(Theme.TypeScale.streamingCaret)
-          .foregroundColor(Theme.Palette.accent.opacity(visible ? 1 : 0.12))
+          .foregroundColor((visible ? Theme.Palette.accent : Theme.Palette.quietCaret))
       }
     } else {
       Text(text)

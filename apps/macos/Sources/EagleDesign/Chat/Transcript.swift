@@ -20,15 +20,15 @@ public struct UserBubble: View {
 
   public var body: some View {
     HStack {
-      Spacer(minLength: 96)
-      HStack(alignment: .bottom, spacing: 8) {
+      Spacer(minLength: Theme.Chat.userLeadingSpace)
+      HStack(alignment: .bottom, spacing: Theme.Layout.rowGap) {
         copyAction
         selectable(
           bubbleText
-            .padding(.horizontal, 16)
-            .padding(.vertical, 9)
+            .padding(.horizontal, Theme.Chat.bubbleHorizontalInset)
+            .padding(.vertical, Theme.Chat.userVerticalInset)
             .background(
-              RoundedRectangle(cornerRadius: 14, style: .continuous)
+              RoundedRectangle(cornerRadius: Theme.Chat.userRadius, style: .continuous)
                 .fill(Theme.Palette.accentFill)
             )
         )
@@ -43,7 +43,7 @@ public struct UserBubble: View {
   @ViewBuilder
   private var bubbleText: some View {
     if let origin {
-      VStack(alignment: .leading, spacing: 3) {
+      VStack(alignment: .leading, spacing: Theme.Layout.captionGap) {
         Text(origin)
           .font(Theme.TypeScale.pill)
           .foregroundStyle(Theme.Palette.onColorSecondary)
@@ -94,7 +94,7 @@ public struct DeliveryNote: View {
   }
 
   public var body: some View {
-    HStack(spacing: 6) {
+    HStack(spacing: Theme.Layout.labelGap) {
       Spacer(minLength: 0)
       ForEach(Array(avatars.enumerated()), id: \.offset) { index, tint in
         Avatar(initial: "", tint: tint, size: Theme.Metric.avatarNote)

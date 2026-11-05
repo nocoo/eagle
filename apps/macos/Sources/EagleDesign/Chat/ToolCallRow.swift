@@ -58,12 +58,12 @@ public struct ToolCallRow: View {
   }
 
   public var body: some View {
-    HStack(alignment: .top, spacing: 8) {
-      VStack(alignment: .leading, spacing: 2) {
+    HStack(alignment: .top, spacing: Theme.Layout.rowGap) {
+      VStack(alignment: .leading, spacing: Theme.Layout.microGap) {
         header
         if expanded {
           detailBody(of: row)
-            .padding(.top, 5)
+            .padding(.top, Theme.Tool.rowVerticalInset)
         } else if let preview = preview {
           // The result is visible without a click: one dim line, the rest on expansion.
           Text(preview)
@@ -76,24 +76,24 @@ public struct ToolCallRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
       }
-      .padding(.horizontal, 8)
-      .padding(.vertical, 5)
+      .padding(.horizontal, Theme.Layout.rowGap)
+      .padding(.vertical, Theme.Tool.rowVerticalInset)
       .frame(maxWidth: contentWidth, alignment: .leading)
       .background(
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
+        RoundedRectangle(cornerRadius: Theme.Tool.rowRadius, style: .continuous)
           .fill(hovering ? Theme.Palette.hover : Theme.Palette.clear)
       )
       .contentShape(Rectangle())
-      .onTapGesture { withAnimation(.easeOut(duration: 0.16)) { expanded.toggle() } }
+      .onTapGesture { withAnimation(Theme.Motion.selection) { expanded.toggle() } }
       .onHover { hovering = $0 }
-      Spacer(minLength: 40)
+      Spacer(minLength: Theme.Chat.assistantTrailingSpace)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityElement(children: .combine)
     .accessibilityLabel("工具 \(row.name)")
   }
 
-  private var contentWidth: CGFloat { Theme.Metric.conversationMaxContentWidth - 120 }
+  private var contentWidth: CGFloat { Theme.Chat.contentWidth }
 
   private var preview: String? {
     guard let output = row.output else { return nil }
@@ -102,13 +102,13 @@ public struct ToolCallRow: View {
   }
 
   private var header: some View {
-    HStack(spacing: 7) {
+    HStack(spacing: Theme.Tool.detailGap) {
       Image(systemName: "wrench.and.screwdriver")
         .font(Theme.TypeScale.toolCaption)
         .foregroundStyle(
           row.isError ? Theme.Palette.destructive : Theme.Palette.textSecondary
         )
-        .frame(width: 14)
+        .frame(width: Theme.Tool.glyphSlot)
       Text(row.name)
         .font(Theme.TypeScale.monoTitle)
         .foregroundStyle(Theme.Palette.textPrimary)
@@ -120,9 +120,9 @@ public struct ToolCallRow: View {
           .lineLimit(1)
           .truncationMode(.middle)
       }
-      Spacer(minLength: 6)
+      Spacer(minLength: Theme.Layout.labelGap)
       if row.isRunning {
-        SpinnerArc(size: 11, lineWidth: 1.5)
+        SpinnerArc(size: Theme.Tool.spinnerSize, lineWidth: Theme.Tool.spinnerStroke)
       } else if row.isError {
         Text("失败")
           .font(Theme.TypeScale.note)
@@ -140,7 +140,7 @@ public struct ToolCallRow: View {
 
   @ViewBuilder
   private func detailBody(of row: ToolRow) -> some View {
-    VStack(alignment: .leading, spacing: 7) {
+    VStack(alignment: .leading, spacing: Theme.Tool.detailGap) {
       if !row.input.isEmpty {
         label("参数")
         ScrollView(.vertical) {
@@ -150,7 +150,7 @@ public struct ToolCallRow: View {
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: 160)
+        .frame(maxHeight: Theme.Tool.inputMaxHeight)
       }
       if let output = row.output, !output.isEmpty {
         label(row.isError ? "错误" : "结果")
@@ -163,7 +163,7 @@ public struct ToolCallRow: View {
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: 220)
+        .frame(maxHeight: Theme.Tool.outputMaxHeight)
       }
     }
   }
@@ -187,7 +187,7 @@ public struct ToolRunRow: View {
     self.rows = rows
   }
 
-  private var contentWidth: CGFloat { Theme.Metric.conversationMaxContentWidth - 120 }
+  private var contentWidth: CGFloat { Theme.Chat.contentWidth }
 
   private var running: ToolRow? { rows.last { $0.isRunning } }
   private var failures: Int { rows.filter(\.isError).count }
@@ -198,11 +198,11 @@ public struct ToolRunRow: View {
       Button {
         showingDetails = true
       } label: {
-        HStack(spacing: 8) {
+        HStack(spacing: Theme.Layout.rowGap) {
           Image(systemName: "wrench.and.screwdriver")
             .font(Theme.TypeScale.toolCaption)
             .foregroundStyle(failures > 0 ? Theme.Palette.destructive : Theme.Palette.textSecondary)
-            .frame(width: 14)
+            .frame(width: Theme.Tool.glyphSlot)
           if let running {
             Text("正在执行 \(running.name)")
               .font(Theme.TypeScale.monoTitle)
@@ -229,26 +229,26 @@ public struct ToolRunRow: View {
                 .foregroundStyle(Theme.Palette.textMuted)
             }
           }
-          Spacer(minLength: 6)
+          Spacer(minLength: Theme.Layout.labelGap)
           if running != nil {
-            SpinnerArc(size: 11, lineWidth: 1.5)
+            SpinnerArc(size: Theme.Tool.spinnerSize, lineWidth: Theme.Tool.spinnerStroke)
           }
           Image(systemName: "chevron.right")
             .font(Theme.TypeScale.Glyph.chevron)
             .foregroundStyle(Theme.Palette.textMuted)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, Theme.Layout.rowGap)
+        .padding(.vertical, Theme.Layout.labelGap)
         .frame(maxWidth: contentWidth, alignment: .leading)
         .background(
-          RoundedRectangle(cornerRadius: 8, style: .continuous)
+          RoundedRectangle(cornerRadius: Theme.Tool.rowRadius, style: .continuous)
             .fill(hovering ? Theme.Palette.hover : Theme.Palette.clear)
         )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
       }
       .buttonStyle(.plain)
-      Spacer(minLength: 40)
+      Spacer(minLength: Theme.Chat.assistantTrailingSpace)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityLabel("工具调用 \(rows.count) 个")
@@ -287,32 +287,35 @@ public struct ToolRunDetailView: View {
           .font(Theme.TypeScale.note)
           .foregroundStyle(Theme.Palette.accent)
       }
-      .padding(.horizontal, 18)
-      .padding(.vertical, 13)
+      .padding(.horizontal, Theme.Layout.groupGap)
+      .padding(.vertical, Theme.Tool.headerVerticalInset)
       Divider()
       ScrollView {
         VStack(alignment: .leading, spacing: 0) {
           ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
             detail(row)
-            if index < rows.count - 1 { Divider().padding(.vertical, 4) }
+            if index < rows.count - 1 { Divider().padding(.vertical, Theme.Layout.detailGap) }
           }
         }
-        .padding(18)
+        .padding(Theme.Layout.groupGap)
       }
     }
-    .frame(minWidth: 620, idealWidth: 680, minHeight: 420, idealHeight: 520)
+    .frame(
+      minWidth: Theme.Tool.dialogMinWidth, idealWidth: Theme.Tool.dialogWidth,
+      minHeight: Theme.Tool.dialogMinHeight, idealHeight: Theme.Tool.dialogHeight
+    )
     .background(Theme.Palette.surface)
   }
 
   @ViewBuilder
   private func detail(_ row: ToolRow) -> some View {
-    VStack(alignment: .leading, spacing: 7) {
-      HStack(spacing: 8) {
+    VStack(alignment: .leading, spacing: Theme.Tool.detailGap) {
+      HStack(spacing: Theme.Layout.rowGap) {
         Text(row.name)
           .font(Theme.TypeScale.toolDetailTitle)
           .foregroundStyle(Theme.Palette.textPrimary)
         if row.isRunning {
-          SpinnerArc(size: 10, lineWidth: 1.4)
+          SpinnerArc(size: Theme.Tool.detailSpinnerSize, lineWidth: Theme.Tool.detailSpinnerStroke)
         } else if row.isError {
           Text("失败")
             .font(Theme.TypeScale.note)
@@ -339,7 +342,7 @@ public struct ToolRunDetailView: View {
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: 170)
+        .frame(maxHeight: Theme.Tool.dialogInputMaxHeight)
       }
       if let output = row.output, !output.isEmpty {
         sectionLabel(row.isError ? "错误" : "结果")
@@ -350,10 +353,10 @@ public struct ToolRunDetailView: View {
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: 240)
+        .frame(maxHeight: Theme.Tool.dialogOutputMaxHeight)
       }
     }
-    .padding(.vertical, 5)
+    .padding(.vertical, Theme.Tool.rowVerticalInset)
   }
 
   private func sectionLabel(_ text: String) -> some View {

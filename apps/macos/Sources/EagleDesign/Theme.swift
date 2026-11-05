@@ -32,6 +32,8 @@ public enum Theme {
     public static let inlineEditFocus = accent.opacity(0.55)
     public static let unreadShadow = accent.opacity(0.28)
     public static let productFallback = avatarTint(2)
+    public static let disabledAction = textMuted.opacity(0.4)
+    public static let quietCaret = accent.opacity(0.12)
     public static let accentFill = Color(light: 0x2FB457, dark: 0x2FB457)
     public static let accentStrong = Color(light: 0x2FB457, dark: 0x3DD068)
     public static let info = Color(light: 0x0B6FBE, dark: 0x7FC8FF)
@@ -85,6 +87,96 @@ public enum Theme {
     }
   }
 
+  public enum Layout {
+    public static let microGap: CGFloat = 2
+    public static let captionGap: CGFloat = 3
+    public static let detailGap: CGFloat = 4
+    public static let labelGap: CGFloat = 6
+    public static let rowGap: CGFloat = 8
+    public static let controlGap: CGFloat = 10
+    public static let sectionGap: CGFloat = 12
+    public static let controlInset: CGFloat = 14
+    public static let sectionInset: CGFloat = 16
+    public static let groupGap: CGFloat = 18
+    public static let pageInset: CGFloat = 24
+    public static let pageBottomInset: CGFloat = 32
+    public static let glyphSlot: CGFloat = 20
+    public static let statusDot: CGFloat = 6
+    public static let statusMarker: CGFloat = 8
+    public static let disclosureSlot: CGFloat = 10
+    public static let selectionRadius: CGFloat = 7
+    public static let badgeRadius: CGFloat = 5
+    public static let badgeInset: CGFloat = 5
+    public static let badgeVerticalInset: CGFloat = 1
+    public static let compactRowHeight: CGFloat = 32
+  }
+
+  public enum Chat {
+    public static let userLeadingSpace: CGFloat = 96
+    public static let assistantTrailingSpace: CGFloat = 40
+    public static let actionGap: CGFloat = 8
+    public static let bubbleHorizontalInset: CGFloat = 16
+    public static let userVerticalInset: CGFloat = 9
+    public static let userRadius: CGFloat = 14
+    public static let assistantVerticalInset: CGFloat = 13
+    public static let assistantRadius: CGFloat = 20
+    public static let contentWidthReserve: CGFloat = 120
+    public static let contentWidth: CGFloat =
+      Metric.conversationMaxContentWidth - contentWidthReserve
+    public static let blockGap: CGFloat = 10
+    public static let headingLineSpacing: CGFloat = 3
+    public static let bodyLineSpacing: CGFloat = 5
+    public static let listLineSpacing: CGFloat = 4
+    public static let listGap: CGFloat = 6
+    public static let bulletGap: CGFloat = 9
+    public static let bulletWidth: CGFloat = 8
+    public static let quoteRuleWidth: CGFloat = 3
+    public static let quoteRuleRadius: CGFloat = 1.5
+    public static let codeInset: CGFloat = 12
+    public static let codeVerticalInset: CGFloat = 9
+    public static let codeHeaderInset: CGFloat = 8
+    public static let codeRadius: CGFloat = 10
+    public static let tableColumnGap: CGFloat = 18
+    public static let tableRowGap: CGFloat = 6
+    public static let tableVerticalInset: CGFloat = 2
+    public static let composerRadius: CGFloat = Metric.composerHeight / 2
+    public static let composerLines = 1...3
+    public static let placeholderTurn: Double = 82
+    public static let placeholderRise: CGFloat = 5
+    public static let placeholderPerspective: CGFloat = 0.35
+    public static let transcriptTopClearance: CGFloat = 10
+    public static let transcriptBottomInset: CGFloat = 12
+    public static let messageEntryScale: CGFloat = 0.985
+  }
+
+  public enum Tool {
+    public static let detailGap: CGFloat = 7
+    public static let rowVerticalInset: CGFloat = 5
+    public static let rowRadius: CGFloat = 8
+    public static let glyphSlot: CGFloat = 14
+    public static let spinnerSize: CGFloat = 11
+    public static let spinnerStroke: CGFloat = 1.5
+    public static let detailSpinnerSize: CGFloat = 10
+    public static let detailSpinnerStroke: CGFloat = 1.4
+    public static let inputMaxHeight: CGFloat = 160
+    public static let outputMaxHeight: CGFloat = 220
+    public static let dialogInputMaxHeight: CGFloat = 170
+    public static let dialogOutputMaxHeight: CGFloat = 240
+    public static let headerVerticalInset: CGFloat = 13
+    public static let dialogMinWidth: CGFloat = 620
+    public static let dialogWidth: CGFloat = 680
+    public static let dialogMinHeight: CGFloat = 420
+    public static let dialogHeight: CGFloat = 520
+  }
+
+  public enum Card {
+    public static let headerHeight: CGFloat = 40
+    public static let optionGlyphSlot: CGFloat = 18
+    public static let revealButton: CGFloat = 22
+    public static let fieldHeight: CGFloat = 30
+    public static let actionInset: CGFloat = 16
+  }
+
   public enum Sidebar {
     public static let headerGap: CGFloat = 6
     public static let listBottomInset: CGFloat = 8
@@ -135,6 +227,11 @@ public enum Theme {
     public static let disclosure = Animation.snappy(duration: 0.22)
     public static let inspectorTab = Animation.easeOut(duration: 0.18)
     public static let columns = Animation.snappy(duration: Metric.collapseDuration)
+    public static let waiting = Animation.easeOut(duration: 0.18)
+    public static let copyFeedback = Animation.easeOut(duration: 0.15)
+    public static let placeholderReduced = Animation.easeInOut(duration: 0.16)
+    public static let placeholder = Animation.easeInOut(duration: 0.26)
+    public static let caretInterval: TimeInterval = 0.62
   }
 
   public enum Form {
@@ -290,6 +387,8 @@ public enum Theme {
     public static let avatarInspector: CGFloat = 76
     public static let avatarNote: CGFloat = 18
     public static let iconButton: CGFloat = 32
+    public static let spinnerSize: CGFloat = 12
+    public static let spinnerStroke: CGFloat = 1.6
     public static let hitTarget: CGFloat = 28
     public static let messageActionGlyph: CGFloat = 10
 

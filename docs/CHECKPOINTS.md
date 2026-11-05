@@ -1,5 +1,19 @@
 # 用户视角检查点
 
+## 2026-11-05 12:00 +08 — Remaining UI consolidation in progress
+
+- The owner requested chat, tool/question/secret cards, dialogs and page composition
+  together before the next review. Chat/Markdown/composer and card styles are being
+  extracted without changing their values or handlers. A shared card action keeps
+  submission/skip guards and secret-value handling in the original views.
+- A read-only inventory distinguishes presentation values from protocol limits,
+  security TTLs, parser limits, geometry math and fixture inputs. Bulk style changes
+  use SwiftSyntax expression spans and explicit value-preserving mappings, not global
+  replacement of numbers or strings. Full coverage is not yet claimed.
+- Dev App remains on the prior reviewed build. No live secret, device operation,
+  production authentication, D1 or Herdr collection was exercised. Next: finish the
+  remaining surfaces, extend source ownership checks and produce the coverage ledger.
+
 ## 2026-11-05 11:24 +08 — Push completed; panel token slice
 
 - Remote main is verified at `9942b40`. The normal push gates passed: root check
