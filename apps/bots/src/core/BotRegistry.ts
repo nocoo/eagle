@@ -801,8 +801,12 @@ export class BotRegistry {
     // closed is never waited on by the drain it belongs to (TRIGGERS.md §3.6). Opening during
     // that window would create a second Harness over one sqlite file, and the close would
     // then clear the handle it never owned (ARCHITECTURE.md, "Bot lifecycle").
-    if (entry.settling !== undefined) {
-      await entry.settling.catch(() => undefined);
+    // A close, a change or a delete owns the bot while its window is set. Waiting once is
+    // not enough: another owner can set a newer window while this one completes, and an open
+    // that read the catalog between them would start from the pair they are replacing.
+    while (entry.settling !== undefined) {
+      const window = entry.settling;
+      await window.catch(() => undefined);
       if (this.#entries.get(botId) !== entry) {
         throw this.#unresolved(botId, trace);
       }

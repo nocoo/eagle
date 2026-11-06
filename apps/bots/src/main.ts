@@ -294,13 +294,17 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
   gateway = (await readGateway(root)) ?? gatewayFromEnv(process.env);
   // A gateway is usable only when it names an endpoint, a model and a key: a file the
   // 工具 or 技能 page wrote before anyone configured one is not a gateway.
+  // The provider id the daemon builds its models and its conversations against. It is
+  // fixed for this process's lifetime: a save cannot move it (PROTOCOL.md, "Per-bot
+  // agent"), and a machine that boots without a gateway has the same id a save would name.
+  const bootProvider = gateway?.provider ?? "magpie";
   const configured = isGatewayComplete(gateway);
   const windowTokens = positiveNumber(process.env.BOTS_CONTEXT_WINDOW, 200_000);
   const maxTokens = positiveNumber(process.env.BOTS_MAX_TOKENS, 8_192);
   // The model registry (docs/bots/RUNTIME.md, "The model registry"): one gateway
   // provider, every model the gateway offers, and the models bots already store.
   const modelRegistry = new ModelRegistry({
-    provider: gateway?.provider ?? "magpie",
+    provider: bootProvider,
     baseUrl: gateway?.baseUrl ?? "",
     apiKey: gateway?.apiKey ?? "",
     contextWindow: windowTokens,
@@ -488,7 +492,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
       }),
   });
   const defaultModel = configured
-    ? { provider: gateway?.provider ?? "magpie", modelId: gateway?.model ?? "" }
+    ? { provider: bootProvider, modelId: gateway?.model ?? "" }
     : canonical.model;
   const registry = new BotRegistry({
     directory,
@@ -675,9 +679,11 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     // against. Moving it under a running daemon would hand every open conversation a
     // provider its Harness has never resolved, so it is a restart, not a save. The address
     // and the key are not: those are the same provider with new coordinates.
-    refuse: (next, current) =>
-      current !== undefined && next.provider !== current.provider
-        ? `provider 由 ${current.provider} 改为 ${next.provider} 需要重启 Bot 服务后再保存`
+    // Boot's provider, not the stored one: a daemon that booted with no gateway still
+    // built its runtime against one, so the first save cannot move it either.
+    refuse: (next) =>
+      next.provider !== bootProvider
+        ? `provider 由 ${bootProvider} 改为 ${next.provider} 需要重启 Bot 服务后再保存`
         : undefined,
     write: async (config) => {
       await writeGateway(root, config);
@@ -762,7 +768,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     instance: `i_${process.pid}`,
     capabilities,
     port: canonical.port,
-    gatewayProvider: () => gateway?.provider ?? "magpie",
+    gatewayProvider: () => bootProvider,
     providers,
     usage: async (days: number) => {
       const report = usageStore.report(days);

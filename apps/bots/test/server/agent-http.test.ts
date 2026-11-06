@@ -207,6 +207,70 @@ test("a pair the conversation refused is still the catalog's, and the refusal sa
   }
 });
 
+test("a daemon booted without a gateway cannot be given a different provider", async () => {
+  const root = await daemonRoot("bots-agent-boot-provider-");
+  try {
+    const config = readConfig({ argv: ["--root", root, "--port", "0"], env: {} });
+    const daemon = await startDaemon(config);
+    try {
+      const authorized = (path: string, init: RequestInit = {}) =>
+        fetch(`http://127.0.0.1:${daemon.port}${path}`, {
+          ...init,
+          headers: {
+            authorization: `Bearer ${daemon.token}`,
+            "content-type": "application/json",
+            ...(init.headers ?? {}),
+          },
+        });
+      const created = await authorized("/v1/bots", {
+        method: "POST",
+        body: JSON.stringify({ title: "first" }),
+      });
+      const botId = ((await created.json()) as { bot: { id: string } }).bot.id;
+
+      const refused = await authorized("/v1/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          provider: "next",
+          baseUrl: "http://127.0.0.1:9/v1",
+          model: "auto/a",
+          apiKey: "sk-boot-0000000000000000",
+        }),
+      });
+      assert.equal(refused.status, 400, "the first save cannot move the provider either");
+      assert.match(JSON.stringify(await refused.json()), /重启 Bot 服务/);
+      assert.equal(
+        await readFile(join(root, "gateway.json"), "utf8").catch(() => undefined),
+        undefined,
+        "a refused first save writes no gateway file",
+      );
+
+      const accepted = await authorized("/v1/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          provider: "magpie",
+          baseUrl: "http://127.0.0.1:9/v1",
+          model: "auto/a",
+          apiKey: "sk-boot-0000000000000001",
+        }),
+      });
+      assert.equal(accepted.status, 200, "the provider the daemon booted with is accepted");
+      const catalog = JSON.parse(await readFile(join(root, "catalog.json"), "utf8")) as {
+        bots: { id: string; model: { provider: string } }[];
+      };
+      assert.equal(
+        catalog.bots.find((bot) => bot.id === botId)?.model.provider,
+        "magpie",
+        "the existing bot keeps the provider the daemon runs",
+      );
+    } finally {
+      await daemon.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("the model list names the ids and what the daemon knows about them", async () => {
   const root = await daemonRoot("bots-agent-models-");
   try {

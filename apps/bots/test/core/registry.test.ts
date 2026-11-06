@@ -808,6 +808,52 @@ test("a close, a reopen and a change settle in one order and the bot runs the sa
   }
 });
 
+test("a reopen that wakes with a change waits for it instead of starting from the old spec", async () => {
+  let releaseClose: () => void = () => undefined;
+  const closed = new Promise<void>((resolve) => {
+    releaseClose = resolve;
+  });
+  let releaseOpen: () => void = () => undefined;
+  const opened = new Promise<void>((resolve) => {
+    releaseOpen = resolve;
+  });
+  const setup = await bench({ bots: ["a"], closeGate: closed });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_wake_0001");
+    await setup.timers.advance(1_000);
+    // The change queues first; the reopen queues second; both wait for the close.
+    const edit = setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+      "tr_wake_0002",
+    );
+    await settle();
+    setup.setOpenGate(opened);
+    const reopen = setup.registry.open("b_bot0", "tr_wake_0003");
+    await settle();
+    // The change wakes first and owns a window; the reopen must wait for it.
+    releaseClose();
+    await edit;
+    await settle();
+    const beforeOpen = setup.specs.length;
+    releaseOpen();
+    await reopen;
+    // The reopen started after the catalog held the saved pair, so the spec it used is the
+    // saved one — a reopen that woke on the close alone would have read the old pair.
+    const last = setup.specs.at(-1);
+    assert.ok(setup.specs.length > beforeOpen || last?.model.modelId === "faux-9");
+    assert.equal(last?.model.modelId, "faux-9", "the reopened conversation runs the saved pair");
+    assert.equal(last?.thinkingLevel, "high");
+    assert.deepEqual(setup.agents, [], "and no live handle had to be corrected");
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.model.modelId, "faux-9", "the catalog holds the saved pair");
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
 test("a change that arrives while the bot is opening reaches the handle it installs", async () => {
   let release: () => void = () => undefined;
   const opened = new Promise<void>((resolve) => {

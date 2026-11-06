@@ -18,7 +18,7 @@
   前端：每行自己的拒绝保留（换 Bot、别的字段成功都不会擦掉），模型发现失败会重试并在检查器 模型 行显示。
 - 验收用例加强：`cli-agent-models` 用两个不同问题 + `modelRequestsSeen` 断言“带这个问题的那次请求”模型名
   与思考等级；把期望改成同一个模型会失败，证明它不是靠两个 Bot 同名或反思请求蒙过。
-- 门禁（第二轮修复后）：`apps/bots` `npm run check` 1099 tests / 96.00% 行 / 89.14% 分支 / 91.19% 函数，
+- 门禁（第三轮修复后）：`apps/bots` `npm run check` 1101 tests / 96.01% 行 / 89.12% 分支 / 91.24% 函数，
   `test:crash` 5/5；`apps/bots-macos` 156（coverage 90.9%）、`apps/macos` 399 + 81 + 52 + 37（coverage 94.8%）；
   `swift format lint --strict` 两包干净；`check:design` 与 `test:design`（91）通过；
   `npm --prefix apps/bots run eval` 26/26。
@@ -28,6 +28,11 @@
   的唤醒顺序用一个受控测试钉住，`applied` 只记“这次 open 实际用的那一对”。保存但未应用时异常带 `saved` 标记，
   HTTP 先广播目录真相再回 409；App 在保存失败时重读目录，行里显示已保存的模型加“未应用”错误；选中 Bot 会重试
   失败的模型发现。
+- 第三轮（最后两条）收口：provider 是**启动时**固定的（`bootProvider`），所以“本来没配网关、第一次保存却换了
+  provider”也会被 400 拒绝、不写 gateway.json——之前比较的是当前网关，那条路径能绕过启动规则；`open()` 现在
+  在一个循环里等待 settling 窗口，某个 close 唤醒后若又有新的窗口（例如 PATCH 刚接管），它会继续等，
+  不会读到旧配置就开 Harness。两条都用确定性测试先钉红：无网关时首次 PUT `next` → 400 且无 gateway.json；
+  持有 close、PATCH 与 reopen 排队、PATCH 先唤醒且 reopen 的 openRuntime 被闸住 → reopen 用的是保存后的那一对。
 - 未验证：真实网关上的两个模型与 `xhigh`/`max` 的上游接受度（网关不发布能力，只有抓包证据）；没有
   `swift run` 的开发 App 肉眼验收（协调者执行）；没有 Herdr 采集、查看器鉴权、D1、已安装 App 或真机双 Mac。
 
