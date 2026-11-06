@@ -4,13 +4,17 @@ import SwiftUI
 /// `GeometryReader` min-height, edge fades, and transcript scroll bookkeeping. Benchmarks should
 /// wrap **only** differing row content in this shell so ratios reflect row cost, not structural
 /// differences between a bare `ScrollView` and this tree.
+///
+/// `focusRequestCounter` must match the parent's `Composer.focusRequest` counter: tapping blank
+/// transcript area increments it so the composer re-focuses (same as pre-extraction behaviour).
 struct TranscriptScrollColumn<Content: View>: View {
+  @Binding private var focusRequestCounter: Int
   @ViewBuilder private let content: () -> Content
 
   @State private var scroller = TranscriptScroller()
-  @State private var composerFocusRequest = 0
 
-  init(@ViewBuilder content: @escaping () -> Content) {
+  init(focusRequestCounter: Binding<Int>, @ViewBuilder content: @escaping () -> Content) {
+    _focusRequestCounter = focusRequestCounter
     self.content = content
   }
 
@@ -33,7 +37,7 @@ struct TranscriptScrollColumn<Content: View>: View {
           .background {
             Theme.Palette.clear
               .contentShape(Rectangle())
-              .onTapGesture { composerFocusRequest += 1 }
+              .onTapGesture { focusRequestCounter += 1 }
               .accessibilityHidden(true)
           }
         }

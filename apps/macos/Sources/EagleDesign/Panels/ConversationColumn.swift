@@ -207,7 +207,7 @@ public struct ConversationColumn: View {
   }
 
   private var transcript: some View {
-    TranscriptScrollColumn {
+    TranscriptScrollColumn(focusRequestCounter: $composerFocusRequest) {
       ForEach(entries.hidingToolCalls(!showsToolCalls)) { entry in
         TranscriptEntryRow(
           entry: entry,

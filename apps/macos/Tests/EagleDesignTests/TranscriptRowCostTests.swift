@@ -119,7 +119,7 @@ struct TranscriptRowCostTests {
   private static func transcriptRows(
     _ entries: [TranscriptEntry], preparedMarkdown: [String: [RenderedMarkdownBlock]]
   ) -> some View {
-    TranscriptScrollColumn {
+    TranscriptScrollColumn(focusRequestCounter: .constant(0)) {
       ForEach(entries) { entry in
         TranscriptEntryRow(
           entry: entry,
@@ -135,7 +135,7 @@ struct TranscriptRowCostTests {
 
   /// Same scroll shell; rows are `Text` with the same string content as bubbles/notes.
   private static func plainTextShell(_ entries: [TranscriptEntry]) -> some View {
-    TranscriptScrollColumn {
+    TranscriptScrollColumn(focusRequestCounter: .constant(0)) {
       ForEach(entries) { entry in
         switch entry {
         case .user(_, let text, _), .note(_, let text, _):
