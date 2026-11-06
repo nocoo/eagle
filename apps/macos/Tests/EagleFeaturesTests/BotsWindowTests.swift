@@ -440,6 +440,8 @@ final class StubCatalog: CatalogPort {
   var moved: [(String, String?)] = []
   var refuseDelete: Error?
   var models: [String] = ["auto/gpt-6-luna"]
+  /// The discovery failure the daemon reports beside the ids it kept.
+  var modelDiscoveryError: String?
   var agentChanges: [(String, String?, String?)] = []
   /// Held open, so a save can be observed in flight.
   var agentGate: Gate?
@@ -497,9 +499,10 @@ final class StubCatalog: CatalogPort {
       ids: models,
       details: models.map {
         ModelDetail(
-          id: $0, contextWindow: 272_000, maxTokens: 128_000, reasoning: true,
-          thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"])
-      }
+          id: $0, contextWindow: 200_000, maxTokens: 8_192, reasoning: true,
+          thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"])
+      },
+      discoveryError: modelDiscoveryError
     )
   }
 

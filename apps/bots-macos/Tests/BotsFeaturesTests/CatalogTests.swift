@@ -188,12 +188,17 @@ final class CatalogActionTests: XCTestCase {
     XCTAssertEqual(model.error, "stop refused")
     catalog.actionError = ClientError("agent refused")
     await model.setAgent(model: "m2", thinkingLevel: nil)
-    XCTAssertEqual(model.agentEdit?.error, "agent refused")
+    XCTAssertEqual(model.agentError(botId: "b_1", field: "model"), "agent refused")
     catalog.actionError = nil
     await model.retryTask("t_1")
     XCTAssertNil(model.error)
     await model.setAgent(model: nil, thinkingLevel: "low")
-    XCTAssertNil(model.agentEdit)
+    XCTAssertNil(model.agentError(botId: "b_1", field: "thinking"))
+    XCTAssertEqual(
+      model.agentError(botId: "b_1", field: "model"),
+      "agent refused",
+      "another row's success does not erase this one"
+    )
   }
 
   func testModelDiscoveryRetriesFailureAndCachesASuccessfulCatalog() async {

@@ -718,7 +718,9 @@ final class BotsWorkspaceViewModel: ObservableObject {
       agent: conversation.state.agent,
       models: app.models,
       detail: app.modelDetails[selected.model.modelId],
-      edit: app.agentEdit?.botId == selected.id ? app.agentEdit : nil
+      edit: app.agentEdit?.botId == selected.id ? app.agentEdit : nil,
+      errors: app.agentErrors,
+      discoveryError: app.modelDiscoveryError
     )
     if choices != nextChoices { choices = nextChoices }
     let nextTriggers = conversation.state.triggers.map { trigger in
@@ -1369,7 +1371,9 @@ struct BotsPresenter {
     agent: AgentView?,
     models: [String],
     detail: ModelDetail? = nil,
-    edit: AppViewModel.AgentEdit? = nil
+    edit: AppViewModel.AgentEdit? = nil,
+    errors: [String: String] = [:],
+    discoveryError: String? = nil
   ) -> [InspectorChoiceRow] {
     let modelChoices =
       models.contains(bot.model.modelId) || models.isEmpty
@@ -1386,7 +1390,7 @@ struct BotsPresenter {
         selected: bot.model.modelId,
         choices: modelChoices.map { InspectorChoiceRow.Choice(id: $0, title: $0) },
         isSaving: edit?.field == "model" && edit?.isSaving == true,
-        error: edit?.field == "model" ? edit?.error : nil
+        error: errors["\(bot.id)/model"] ?? discoveryError
       ),
       InspectorChoiceRow(
         id: "thinking",
@@ -1397,7 +1401,7 @@ struct BotsPresenter {
           InspectorChoiceRow.Choice(id: $0, title: $0)
         },
         isSaving: edit?.field == "thinking" && edit?.isSaving == true,
-        error: edit?.field == "thinking" ? edit?.error : nil
+        error: errors["\(bot.id)/thinking"]
       ),
     ]
   }

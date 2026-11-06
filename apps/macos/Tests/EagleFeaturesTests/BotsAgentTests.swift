@@ -97,11 +97,11 @@ struct BotsAgentTests {
     await app.refresh()
     app.select("b_1")
     await app.setAgent(model: nil, thinkingLevel: "minimal")
-    let edit = try #require(app.agentEdit)
-    #expect(edit.botId == "b_1")
-    #expect(edit.field == "thinking")
-    #expect(edit.isSaving == false)
-    #expect(edit.error?.contains("does not support") == true)
+    #expect(app.agentEdit == nil, "nothing is saving once the refusal lands")
+    #expect(
+      app.agentError(botId: "b_1", field: "thinking")?.contains("does not support") == true
+    )
+    #expect(app.agentError(botId: "b_1", field: "model") == nil, "the other row is untouched")
   }
 
   @Test("two rapid edits are applied one after the other")
@@ -125,6 +125,52 @@ struct BotsAgentTests {
     #expect(catalog.agentChanges.count == 2)
     #expect(catalog.agentChanges.map(\.1) == ["auto/gpt-6-sol", nil])
     #expect(catalog.agentChanges.map(\.2) == [nil, "low"])
+  }
+
+  @Test("a discovery failure keeps the ids and is retried, then cleared")
+  func discoveryRetries() async throws {
+    let catalog = StubCatalog()
+    catalog.models = ["auto/gpt-6-luna"]
+    catalog.modelDiscoveryError = "the gateway could not be asked for its models"
+    let app = app(catalog: catalog)
+    await app.loadModelsIfNeeded()
+    #expect(app.models == ["auto/gpt-6-luna"], "the ids the daemon knew stay offered")
+    #expect(app.modelDiscoveryError != nil, "and the failure is visible")
+
+    // The next visit asks again rather than trusting the preserved list for ever.
+    catalog.models = ["auto/gpt-6-luna", "auto/gpt-6-sol"]
+    catalog.modelDiscoveryError = nil
+    await app.loadModelsIfNeeded()
+    #expect(app.models == ["auto/gpt-6-luna", "auto/gpt-6-sol"])
+    #expect(app.modelDiscoveryError == nil, "a good answer clears the failure")
+  }
+
+  @Test("a refusal stays on its row, whatever the person looks at next")
+  func refusalStaysOnItsRow() async throws {
+    let catalog = StubCatalog()
+    catalog.bots = [bot("b_1"), bot("b_2")]
+    catalog.agentError = ClientError("auto/gpt-6-luna does not support the minimal thinking level")
+    let app = app(catalog: catalog)
+    await app.refresh()
+    app.select("b_1")
+    await app.setAgent(model: nil, thinkingLevel: "minimal")
+    #expect(app.agentError(botId: "b_1", field: "thinking")?.contains("does not support") == true)
+
+    // The person moves to the other bot and changes its model: that succeeds, and must not
+    // erase the first bot's refusal.
+    app.select("b_2")
+    catalog.agentError = nil
+    await app.setAgent(model: "auto/gpt-6-sol", thinkingLevel: nil)
+    #expect(app.agentError(botId: "b_2", field: "model") == nil)
+    #expect(
+      app.agentError(botId: "b_1", field: "thinking")?.contains("does not support") == true,
+      "coming back to b_1 still shows what happened there"
+    )
+
+    // That row's own next success clears it.
+    app.select("b_1")
+    await app.setAgent(model: nil, thinkingLevel: "low")
+    #expect(app.agentError(botId: "b_1", field: "thinking") == nil)
   }
 
   @Test("the model list carries what the daemon knows about each model")
