@@ -95,3 +95,71 @@ test("without an endpoint or a key the registry holds no model at all", async ()
   assert.deepEqual([...models.ids()], []);
   assert.equal(models.models.getModel("magpie", "auto/gpt-6-luna"), undefined);
 });
+
+test("a new endpoint and key under one provider never resurrect the old address", async () => {
+  let reachable = true;
+  const bodies: { authorization?: string }[] = [];
+  const recorded: typeof fetch = (async (_url: string, init?: RequestInit) => {
+    const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+    bodies.push(authorization === undefined ? {} : { authorization });
+    if (!reachable) return new Response("no", { status: 500 });
+    return new Response(JSON.stringify({ data: [{ id: "auto/a" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as unknown as typeof fetch;
+  const models = new ModelRegistry({
+    provider: "magpie",
+    baseUrl: "http://127.0.0.1:1/v1",
+    apiKey: "sk-a",
+    contextWindow: 200_000,
+    maxTokens: 8_192,
+    fetch: recorded,
+  });
+  assert.equal((await models.discover()).ok, true);
+  assert.equal(models.models.getModel("magpie", "auto/a")?.baseUrl, "http://127.0.0.1:1/v1");
+
+  // The person moves the gateway to another address and key under the same provider id,
+  // and the new gateway cannot be asked for its list.
+  reachable = false;
+  models.reconfigure({
+    provider: "magpie",
+    baseUrl: "http://127.0.0.1:2/v1",
+    apiKey: "sk-b",
+    contextWindow: 200_000,
+    maxTokens: 8_192,
+    fetch: recorded,
+  });
+  assert.equal((await models.discover()).ok, false);
+  const model = models.models.getModel("magpie", "auto/a");
+  assert.ok(model !== undefined, "the model the daemon knew stays usable");
+  assert.equal(model.baseUrl, "http://127.0.0.1:2/v1", "it resolves the new address");
+  assert.equal((await models.models.getAuth(model))?.auth.apiKey, "sk-b", "and the new key");
+  assert.equal(bodies.at(-1)?.authorization, "Bearer sk-b", "the discovery asked with it too");
+});
+
+test("a provider id that moves is removed from the collection", async () => {
+  const models = new ModelRegistry({
+    provider: "old",
+    baseUrl: "http://127.0.0.1:1/v1",
+    apiKey: "sk-old",
+    contextWindow: 200_000,
+    maxTokens: 8_192,
+    fetch: gateway({ data: [{ id: "auto/a" }] }),
+  });
+  models.ensure(["auto/a"]);
+  assert.ok(models.models.getModel("old", "auto/a") !== undefined);
+  models.reconfigure({
+    provider: "new",
+    baseUrl: "http://127.0.0.1:2/v1",
+    apiKey: "sk-new",
+    contextWindow: 200_000,
+    maxTokens: 8_192,
+  });
+  assert.equal(models.models.getProvider("old"), undefined, "the old provider is gone");
+  assert.equal(
+    models.models.getModel("new", "auto/a")?.baseUrl,
+    "http://127.0.0.1:2/v1",
+    "the model moved with it",
+  );
+});

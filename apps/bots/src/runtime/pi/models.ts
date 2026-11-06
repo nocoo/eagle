@@ -93,6 +93,8 @@ export class ModelRegistry {
   #listed = new Set<string>();
   /** The ids the registry holds, as the last install left them. */
   #ids: readonly string[] = [];
+  /** The provider id the collection currently holds, so a moved id can be removed. */
+  #installed: string | undefined;
   #discoveryError: string | undefined;
 
   constructor(options: ModelRegistryOptions) {
@@ -159,15 +161,17 @@ export class ModelRegistry {
       this.#discoveryError = "the gateway has no address or no key";
       return { ok: false, error: this.#discoveryError };
     }
-    const result = await this.#models.refresh({ providers: [this.#options.provider] });
-    const failure = result.errors.get(this.#options.provider);
-    if (failure !== undefined) {
-      this.#discoveryError = failure.message;
+    // The daemon asks for the list itself. pi-ai's `refresh()` keeps a per-provider store
+    // and would restore the models of the previous endpoint under the new key, so the
+    // registry owns this: one answer, then one provider built from the current options.
+    const controller = new AbortController();
+    const listed = await this.#fetchIds(controller.signal);
+    if (listed === undefined) {
+      this.#discoveryError = "the gateway could not be asked for its models";
       return { ok: false, error: this.#discoveryError };
     }
+    this.#listed = new Set(listed);
     this.#discoveryError = undefined;
-    // The provider is rebuilt with the ids it just learned, so the collection holds
-    // exactly what the daemon knows and a model the gateway dropped stops being offered.
     this.#install();
     return { ok: true };
   }
@@ -192,6 +196,13 @@ export class ModelRegistry {
   /** One provider, rebuilt in place: the models it holds are the ones the daemon knows. */
   #install(): void {
     const options = this.#options;
+    // A provider id that moved must be gone from the collection: a live Harness reads the
+    // collection at each access, and a leftover provider still holds the old address and
+    // key. Removing it makes the old endpoint unreachable rather than merely unused.
+    if (this.#installed !== undefined && this.#installed !== options.provider) {
+      this.#models.deleteProvider(this.#installed);
+    }
+    this.#installed = options.provider;
     // Without an endpoint or a key there is no gateway to run a model against, so the
     // registry holds nothing and a run settles `no_model`.
     const configured = options.baseUrl.length > 0 && options.apiKey.length > 0;
@@ -210,14 +221,6 @@ export class ModelRegistry {
           },
         },
         models: ids.map((id) => gatewayModel(id, options)),
-        fetchModels: async (context) => {
-          const listed = await this.#fetchIds(context.signal);
-          if (listed === undefined) {
-            throw new Error("the gateway could not be asked for its models");
-          }
-          this.#listed = new Set(listed);
-          return listed.map((id) => gatewayModel(id, options));
-        },
         api: openAIResponsesApi(),
       }),
     );
