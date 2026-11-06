@@ -113,6 +113,7 @@ struct TranscriptRowCostTests {
     window.contentView = host
     defer { window.contentView = nil }
     host.layoutSubtreeIfNeeded()
+    host.displayIfNeeded()
     RunLoop.main.run(until: Date().addingTimeInterval(0.3))
     guard let scroll = scrollView(in: host), scroll.documentView != nil else {
       return .greatestFiniteMagnitude
@@ -121,9 +122,10 @@ struct TranscriptRowCostTests {
     let clip = scroll.contentView
     let page = clip.bounds.height - 40
     var offset: CGFloat = 0
-    // Match TranscriptScrollCostTests: measure layout + scroll bookkeeping only. Calling
-    // displayIfNeeded inside the timed loop added compositor/GPU jitter on busy CI hosts and
-    // widened the column/plain ratio without reflecting structural row cost.
+    // Time layout *and* display for each jump. `ConversationColumn` builds heavier rows than
+    // `Text`; layout-only timing made the plain baseline nearly free so the ratio rose into the
+    // 3x range on main while PR Check still looked green on a warmer PR branch. Keeping
+    // `displayIfNeeded` inside the loop preserves a fair “work per page scroll” comparison.
     let start = ContinuousClock.now
     for _ in 0..<jumps {
       let limit = max(0, (scroll.documentView?.frame.height ?? 0) - clip.bounds.height)
@@ -131,11 +133,13 @@ struct TranscriptRowCostTests {
       clip.scroll(to: NSPoint(x: 0, y: offset))
       scroll.reflectScrolledClipView(clip)
       host.layoutSubtreeIfNeeded()
+      host.displayIfNeeded()
       if offset >= limit {
         offset = 0
         clip.scroll(to: .zero)
         scroll.reflectScrolledClipView(clip)
         host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
       }
     }
     let duration = start.duration(to: ContinuousClock.now)
