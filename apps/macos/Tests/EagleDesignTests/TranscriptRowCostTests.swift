@@ -19,9 +19,13 @@ struct TranscriptRowCostTests {
       title: "Bot", tintIndex: 1, entries: entries,
       preparedMarkdown: markdown, draft: .constant(""), onSend: {})
     let plainView = Self.plainText(entries)
-    // Warm both variants so scored rounds are not cold-start biased toward either side.
-    _ = Self.pageCost(columnView)
-    _ = Self.pageCost(plainView)
+    // Warm both variants twice so caches and the hosting view path are hot before we score.
+    // A single warm pair still left occasional CI noise when the second view paid first-layout
+    // work during measured rounds.
+    for _ in 0..<2 {
+      _ = Self.pageCost(columnView)
+      _ = Self.pageCost(plainView)
+    }
     // Each round times column and plain back-to-back on the same load. Measuring column
     // *before* plain warmed the run loop and font caches that plain reuses but column does
     // not, so plain looked artificially fast and every round's ratio sat above the bound
@@ -109,7 +113,6 @@ struct TranscriptRowCostTests {
     window.contentView = host
     defer { window.contentView = nil }
     host.layoutSubtreeIfNeeded()
-    host.displayIfNeeded()
     RunLoop.main.run(until: Date().addingTimeInterval(0.3))
     guard let scroll = scrollView(in: host), scroll.documentView != nil else {
       return .greatestFiniteMagnitude
@@ -118,25 +121,29 @@ struct TranscriptRowCostTests {
     let clip = scroll.contentView
     let page = clip.bounds.height - 40
     var offset: CGFloat = 0
-    let start = Date()
+    // Match TranscriptScrollCostTests: measure layout + scroll bookkeeping only. Calling
+    // displayIfNeeded inside the timed loop added compositor/GPU jitter on busy CI hosts and
+    // widened the column/plain ratio without reflecting structural row cost.
+    let start = ContinuousClock.now
     for _ in 0..<jumps {
       let limit = max(0, (scroll.documentView?.frame.height ?? 0) - clip.bounds.height)
       offset = min(limit, offset + page)
       clip.scroll(to: NSPoint(x: 0, y: offset))
       scroll.reflectScrolledClipView(clip)
       host.layoutSubtreeIfNeeded()
-      host.displayIfNeeded()
       if offset >= limit {
         offset = 0
         clip.scroll(to: .zero)
         scroll.reflectScrolledClipView(clip)
         host.layoutSubtreeIfNeeded()
-        host.displayIfNeeded()
       }
     }
-    let elapsed = Date().timeIntervalSince(start) * 1_000 / Double(jumps)
+    let duration = start.duration(to: ContinuousClock.now)
+    let parts = duration.components
+    let elapsedMs =
+      Double(parts.seconds) * 1000 + Double(parts.attoseconds) / 1_000_000_000_000_000
     window.orderOut(nil)
-    return elapsed
+    return elapsedMs / Double(jumps)
   }
 
   private static func scrollView(in view: NSView) -> NSScrollView? {
