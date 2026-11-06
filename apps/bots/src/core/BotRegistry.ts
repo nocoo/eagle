@@ -171,7 +171,10 @@ export class BotRegistry {
       });
   }
 
-  /** Loads the catalog, finishes an interrupted delete, then scans for active work. */
+  /**
+   * Loads the catalog, finishes an interrupted delete, gives a bot created before the
+   * level existed the level it runs with today, then scans for active work.
+   */
   async start(): Promise<void> {
     const trace = this.#boot();
     this.#groups = await this.#options.directory.loadGroups().catch(() => []);
@@ -198,7 +201,19 @@ export class BotRegistry {
         cause: error,
       });
     }
-    for (const config of bots) {
+    for (let config of bots) {
+      // A bot created before the level was stored keeps running with the level it has
+      // today, written once: after this it is its own, and a later change of the daemon's
+      // default cannot move it.
+      if (config.thinkingLevel === undefined) {
+        config = await this.#write(trace, config.id, () =>
+          this.#options.directory.setAgent(
+            config.id,
+            { thinkingLevel: this.#defaultThinkingLevel },
+            (this.#options.now?.() ?? new Date()).toISOString(),
+          ),
+        );
+      }
       this.#entries.set(config.id, {
         config,
         state: "catalogued",
@@ -395,7 +410,7 @@ export class BotRegistry {
     const entry = this.#entry(botId, trace);
     return this.#serializeAgent(botId, async () => {
       const current = entry.config;
-      const currentLevel = current.thinkingLevel ?? this.#defaultThinkingLevel;
+      const currentLevel = await this.#storedLevel(entry, trace);
       const model = change.model ?? current.model;
       const level = change.thinkingLevel ?? currentLevel;
       const sameModel =
@@ -918,7 +933,7 @@ export class BotRegistry {
         id: entry.config.id,
         dir: this.#options.directory.botDir(entry.config.id),
         model: entry.config.model,
-        thinkingLevel: entry.config.thinkingLevel ?? this.#defaultThinkingLevel,
+        thinkingLevel: await this.#storedLevel(entry, trace),
         toolGroups: resolveToolGroups(entry.config.toolGroups ?? this.#defaultToolGroups),
         trace,
       });
@@ -976,6 +991,33 @@ export class BotRegistry {
     } finally {
       entry.opening = undefined;
     }
+  }
+
+  /**
+   * The level a bot runs at. A bot created before the field existed gets the daemon's
+   * current default once, written into the catalog, and keeps it from then on: the
+   * default is a default for new bots, never a value an existing bot follows.
+   */
+  async #storedLevel(entry: Entry, trace: string): Promise<string> {
+    const stored = entry.config.thinkingLevel;
+    if (stored !== undefined) return stored;
+    const config = await this.#write(trace, entry.config.id, () =>
+      this.#options.directory.setAgent(
+        entry.config.id,
+        { thinkingLevel: this.#defaultThinkingLevel },
+        (this.#options.now?.() ?? new Date()).toISOString(),
+      ),
+    );
+    entry.config = config;
+    const written = config.thinkingLevel;
+    if (written === undefined) {
+      throw new ClassifiedFailure(
+        newFailure("internal", "core"),
+        "not_admitted",
+        "the catalog did not keep the bot's thinking level",
+      );
+    }
+    return written;
   }
 
   #touch(entry: Entry): void {

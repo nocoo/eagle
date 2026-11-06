@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { BotDirectory, nodeDirectoryFs } from "../../src/core/BotDirectory.ts";
 import { BotRegistry } from "../../src/core/BotRegistry.ts";
-import { ClassifiedFailure } from "../../src/core/domain.ts";
+import { ClassifiedFailure, DEFAULT_THINKING_LEVEL } from "../../src/core/domain.ts";
 import type { RuntimeBotSpec } from "../../src/core/RuntimePort.ts";
 import { captureLog } from "../../src/log/log.ts";
 import { FakeRuntime } from "../../src/testing/FakeRuntime.ts";
@@ -57,6 +57,8 @@ const bench = async (
     busyGate?: Promise<void>;
     /** The levels the models accept, when the daemon knows the models. */
     agentLevels?: (modelId: string) => readonly string[];
+    /** The pair change lands but taking it back fails, so the conversation is stranded. */
+    failAgentRollback?: boolean;
   } = {},
 ) => {
   const root = await mkdtemp(join(tmpdir(), "bots-registry-"));
@@ -115,6 +117,9 @@ const bench = async (
           // A conversation on its way out cannot take a new pair.
           if (closing) throw new Error("the conversation is closing");
           agents.push(change);
+          if (options.failAgentRollback === true && agents.length > 1) {
+            throw new Error("the conversation refuses to go back");
+          }
         },
         configureToolGroups: async (groups: readonly string[]) => {
           groupCalls.push(groups);
@@ -165,6 +170,8 @@ const bench = async (
     specs,
     agents,
     groupCalls,
+    /** The level the bench's daemon runs as its default, so a migration can be read. */
+    defaultLevel: DEFAULT_THINKING_LEVEL,
     opens: () => opens,
     closes: () => closes,
     closeDeadlines,
@@ -281,6 +288,7 @@ test("a per-bot model and level reach the catalog and the live conversation", as
   const setup = await bench({ bots: ["a"] });
   try {
     await setup.registry.start();
+    const started = setup.records.length;
     await setup.registry.open("b_bot0", "tr_agent_0001");
     const summary = await setup.registry.setAgent(
       "b_bot0",
@@ -296,7 +304,9 @@ test("a per-bot model and level reach the catalog and the live conversation", as
       [{ model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" }],
       "the live conversation follows the pair",
     );
-    const writes = setup.records.filter((record) => record.evt === "core.catalog.write.ok");
+    const writes = setup.records
+      .slice(started)
+      .filter((record) => record.evt === "core.catalog.write.ok");
     assert.equal(writes.length, 1, "the pair is one catalog write");
   } finally {
     await setup.registry.shutdown();
@@ -414,6 +424,79 @@ test("a failed live tool refresh is reported and an identical save retries it", 
   }
 });
 
+test("a bot created before the level existed is migrated once and keeps it", async () => {
+  const setup = await bench({ bots: ["a"] });
+  try {
+    // The fixture has no stored level, exactly like a catalog written before the field
+    // existed. The daemon it upgrades to runs `low`.
+    await setup.registry.start();
+    const migrated = (await setup.directory.load())[0];
+    assert.equal(migrated?.thinkingLevel, setup.defaultLevel, "the upgrade writes the level");
+    assert.equal(migrated?.model.modelId, "faux-1", "and nothing else");
+    // The write happens before the recovery scan touches the bot: a bot nobody opens is
+    // migrated too.
+    const wrote = setup.records.findIndex(
+      (record) => record.evt === "core.catalog.write.ok" && record.botId === "b_bot0",
+    );
+    const opened = setup.records.findIndex((record) => record.evt === "core.bot.open.start");
+    assert.ok(wrote !== -1, "the migration wrote the catalog");
+    assert.ok(
+      opened === -1 || wrote < opened,
+      "the migration lands before the recovery scan opens the bot",
+    );
+
+    // A later change of the daemon's default cannot move the bot any more.
+    setup.registry.setDefaultThinkingLevel("high");
+    await setup.registry.open("b_bot0", "tr_migrate_0001");
+    const spec = setup.specs.at(-1);
+    assert.equal(spec?.thinkingLevel, setup.defaultLevel, "the bot runs with what it stores");
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.thinkingLevel, setup.defaultLevel, "the catalog did not move");
+
+    // A new daemon with another default leaves it alone, and a new bot takes that default.
+    await setup.registry.shutdown();
+    const restarted = new BotRegistry({
+      directory: setup.directory,
+      openRuntime: (spec) => new FakeRuntime().open(spec),
+      model: { provider: "faux", modelId: "faux-1" },
+      thinkingLevel: "max",
+      log: captureLog().log,
+      idleCloseMs: 1_000,
+      quarantineRetryMs: 5_000,
+      closeDeadlineMs: 40,
+      bootTrace: () => "tr_boot_probe",
+    });
+    await restarted.start();
+    const afterRestart = (await setup.directory.load()).find((bot) => bot.id === "b_bot0");
+    assert.equal(
+      afterRestart?.thinkingLevel,
+      setup.defaultLevel,
+      "a second daemon does not migrate it again",
+    );
+    await restarted.create("new", "tr_migrate_0002");
+    const created = (await setup.directory.load()).find((bot) => bot.title === "new");
+    assert.equal(created?.thinkingLevel, "max", "a new bot records the later default");
+    await restarted.shutdown();
+  } finally {
+    await setup.registry.shutdown().catch(() => false);
+    await setup.cleanup();
+  }
+});
+
+test("a migration that cannot be written fails the start instead of falling back", async () => {
+  const setup = await bench({ bots: ["a"] });
+  try {
+    setup.failWrites(true);
+    await assert.rejects(
+      () => setup.registry.start(),
+      /catalog could not be written/,
+      "a bot the upgrade cannot record stops the daemon",
+    );
+  } finally {
+    await setup.cleanup();
+  }
+});
+
 test("a gateway thinking-level change is the default for new bots only", async () => {
   const setup = await bench({ bots: ["a"] });
   try {
@@ -484,7 +567,11 @@ test("a level the model cannot take is refused and nothing is written", async ()
     assert.deepEqual(setup.agents, [], "the conversation did not move");
     const stored = (await setup.directory.load())[0];
     assert.equal(stored?.model.modelId, "faux-1", "the catalog did not move either");
-    assert.equal(stored?.thinkingLevel, undefined);
+    assert.equal(
+      stored?.thinkingLevel,
+      "medium",
+      "the refused change left the migrated level alone",
+    );
   } finally {
     await setup.registry.shutdown();
     await setup.cleanup();
