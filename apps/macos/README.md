@@ -151,7 +151,7 @@ physical A-to-B command does not establish every step on a clean machine.
 
 ```sh
 cd apps/macos
-swift run Eagle             # same shell without a bundle; ⌘⇧G opens the gallery
+swift run "Eagle Dev"       # same shell without a bundle; ⌘⇧G opens the gallery
 swift test                 # Swift Testing suites for the logic layer
 ./Scripts/coverage.sh      # same tests plus a 90% logic-coverage gate
 swift run SnapshotRenderer ../../.local/macos-snapshots   # PNGs for review

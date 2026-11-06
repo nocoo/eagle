@@ -117,9 +117,11 @@ with `npx playwright install --with-deps chromium` before browser tests. `format
 is an editing command, not a check; checks must not run autofix.
 
 Every change under `apps/macos` ends with a dev App the owner can inspect by
-hand: `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run Eagle`
+hand: `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run "Eagle Dev"`
 from `apps/macos`, in a pane split to the right of the main pane, never a new tab
-and never a background process. The Command Line Tools alone cannot build the
+and never a background process. The product name is what a bundle-less run is
+labelled by in the Dock; `Eagle` is the packaged App's binary and stays a
+separate product. The Command Line Tools alone cannot build the
 SwiftUI macros, so the toolchain is explicit. The App starts the Bots daemon
 itself against `~/.local/share/eagle-bots` on 43117; a `swift run` shell reuses
 whatever daemon that root already answers on.

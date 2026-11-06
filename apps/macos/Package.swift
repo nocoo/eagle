@@ -5,6 +5,10 @@ let package = Package(
   name: "Eagle",
   platforms: [.macOS(.v15)],
   products: [
+    // The development product carries its own name into the Dock: a bundle-less process is
+    // labelled by its executable, and a source run has no Info.plist to say otherwise.
+    .executable(name: "Eagle Dev", targets: ["EagleApp"]),
+    // The packaged App link: Scripts/build-app.sh copies this binary into its bundle.
     .executable(name: "Eagle", targets: ["EagleApp"]),
     .executable(name: "EagleDeviceHelper", targets: ["EagleDeviceHelper"]),
     // Tokens and primitives, dependent on nothing (docs/bots/ARCHITECTURE.md).

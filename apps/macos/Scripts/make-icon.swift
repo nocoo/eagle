@@ -1,9 +1,13 @@
 import AppKit
 import Foundation
 
-/// Builds `Support/AppIcon.iconset` from the Eagle brand composition and packs
-/// it into `Sources/EagleDesign/Resources/AppIcon.icns`, which is both the bundle
-/// icon and the Dock icon of a bundle-less `swift run` (see `EagleIcon`).
+/// Builds the two app marks from the Eagle brand composition:
+///
+/// * `Support/AppIcon.iconset` -> `Sources/EagleDesign/Resources/AppIcon.icns`, the released
+///   bundle icon.
+/// * `Support/AppIconDev.iconset` -> `Sources/EagleDesign/Resources/AppIconDev.icns`, the same
+///   artwork with a red DEV ribbon across the top-right corner, for a bundle-less
+///   `swift run "Eagle Dev"` (see `EagleIcon`).
 ///
 /// Source artwork: hexly.ai `public/brands/eagle/v1.0.0/hero-square.webp`
 /// (authored composition of the approved 2048 px eagle foreground plus its
@@ -16,7 +20,9 @@ let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
 let texture = root.appendingPathComponent("Support/Brand/eagle-texture.png")
 let mark = root.appendingPathComponent("Support/Brand/eagle-mark.png")
 let iconset = root.appendingPathComponent("Support/AppIcon.iconset")
+let devIconset = root.appendingPathComponent("Support/AppIconDev.iconset")
 let output = root.appendingPathComponent("Sources/EagleDesign/Resources/AppIcon.icns")
+let devOutput = root.appendingPathComponent("Sources/EagleDesign/Resources/AppIconDev.icns")
 
 guard let textureImage = NSImage(contentsOf: texture), let markImage = NSImage(contentsOf: mark)
 else {
@@ -68,7 +74,48 @@ let canvas: CGFloat = 1024
 let inset: CGFloat = 100
 let radius: CGFloat = 185
 
-func render(_ size: CGFloat) -> Data? {
+/// The development mark: a red sash across the top-right corner, one fifth of the body wide,
+/// with DEV set in white along the sash. Drawn inside the same rounded body, so the ribbon is
+/// cut by the icon edge instead of hanging off it.
+func drawDevRibbon(in body: NSRect) {
+  let width = body.width * 0.20
+  // The sash lies inside the corner and clears the rounded edge, so both ends are cut by the
+  // straight top and right edges instead of spilling past the rounded corner. In y-up
+  // coordinates it is the strip around x + y = k, one width measured perpendicular to that
+  // line; the corner arc's centre is (body.max - radius) on both axes.
+  let outer = body.maxX + body.maxY
+  let k = outer - width / sqrt(2)
+  let center = NSPoint(x: k / 2, y: k / 2)
+  let transform = NSAffineTransform()
+  transform.translateX(by: center.x, yBy: center.y)
+  transform.rotate(byDegrees: -45)
+
+  NSGraphicsContext.saveGraphicsState()
+  transform.concat()
+  NSColor(srgbRed: 0.878, green: 0.153, blue: 0.157, alpha: 1).setFill()
+  NSRect(x: -body.width, y: -width / 2, width: body.width * 2, height: width).fill()
+  NSGraphicsContext.restoreGraphicsState()
+
+  NSGraphicsContext.saveGraphicsState()
+  transform.concat()
+  let font = NSFont.systemFont(ofSize: width * 0.40, weight: .bold)
+  let text = NSAttributedString(
+    string: "DEV",
+    attributes: [
+      .font: font,
+      .foregroundColor: NSColor.white,
+      .kern: width * 0.06,
+    ])
+  let size = text.size()
+  // Worn along the sash, in the middle of what the corner actually shows: local +y points at
+  // the corner, so the letters sit a little inward from the band's centre line.
+  text.draw(
+    at: NSPoint(
+      x: -size.width / 2 + width * 0.08, y: -size.height / 2 - width * 0.27))
+  NSGraphicsContext.restoreGraphicsState()
+}
+
+func render(_ size: CGFloat, development: Bool = false) -> Data? {
   let pixels = Int(size)
   guard
     let rep = NSBitmapImageRep(
@@ -102,6 +149,7 @@ func render(_ size: CGFloat) -> Data? {
   )
   clip.addClip()
   image.draw(in: body, from: .zero, operation: .sourceOver, fraction: 1)
+  if development { drawDevRibbon(in: body) }
 
   // Hairline highlight so the edge stays crisp on light and dark desktops.
   NSColor.white.withAlphaComponent(0.20).setStroke()
@@ -111,9 +159,6 @@ func render(_ size: CGFloat) -> Data? {
   NSGraphicsContext.restoreGraphicsState()
   return rep.representation(using: .png, properties: [:])
 }
-
-try? FileManager.default.removeItem(at: iconset)
-try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
 
 let variants: [(String, CGFloat)] = [
   ("icon_16x16", 16),
@@ -128,21 +173,28 @@ let variants: [(String, CGFloat)] = [
   ("icon_512x512@2x", 1024),
 ]
 
-for (name, size) in variants {
-  guard let data = render(size) else {
-    print("failed to render \(name)")
+func write(directory: URL, output: URL, development: Bool) throws {
+  try? FileManager.default.removeItem(at: directory)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  for (name, size) in variants {
+    guard let data = render(size, development: development) else {
+      print("failed to render \(name)")
+      exit(1)
+    }
+    try data.write(to: directory.appendingPathComponent("\(name).png"))
+  }
+
+  let iconutil = Process()
+  iconutil.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
+  iconutil.arguments = ["-c", "icns", directory.path, "-o", output.path]
+  try iconutil.run()
+  iconutil.waitUntilExit()
+  guard iconutil.terminationStatus == 0 else {
+    print("iconutil failed")
     exit(1)
   }
-  try data.write(to: iconset.appendingPathComponent("\(name).png"))
+  print("wrote \(output.path)")
 }
 
-let iconutil = Process()
-iconutil.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
-iconutil.arguments = ["-c", "icns", iconset.path, "-o", output.path]
-try iconutil.run()
-iconutil.waitUntilExit()
-guard iconutil.terminationStatus == 0 else {
-  print("iconutil failed")
-  exit(1)
-}
-print("wrote \(output.path)")
+try write(directory: iconset, output: output, development: false)
+try write(directory: devIconset, output: devOutput, development: true)
