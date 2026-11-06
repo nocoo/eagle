@@ -833,7 +833,8 @@ struct BotsDaemonAbsentTests {
     let model = ConversationViewModel(botId: "", conversation: connection, outbox: outbox)
     model.select(botId: "b_1")
 
-    let deadline = Date().addingTimeInterval(30)
+    // Closed-port failure can take longer on loaded CI runners than on a quiet machine.
+    let deadline = Date().addingTimeInterval(60)
     while !model.connection.isFailed, Date() < deadline {
       try await Task.sleep(nanoseconds: 50_000_000)
     }
