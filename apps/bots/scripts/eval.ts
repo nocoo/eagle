@@ -43,6 +43,11 @@ type CaseFile = {
     readonly script: readonly ScriptedReply[];
     readonly repeatLast?: boolean;
     readonly reflectionScript?: readonly ScriptedReply[];
+    /**
+     * The ids the gateway lists, and what a new bot records: the first is the default. One
+     * case proves that two bots on two models each run with their own.
+     */
+    readonly ids?: readonly string[];
   };
   /** What the same local server answers at `/v1/systemone`, so a decision tool runs for real. */
   readonly systemone?: {
@@ -191,6 +196,7 @@ const scriptedModel = (
   repeatLast: boolean,
   systemone: CaseFile["systemone"],
   reflectionScript: readonly ScriptedReply[] | undefined,
+  ids: readonly string[],
 ) => {
   const requests: {
     readonly lastInput: string;
@@ -240,7 +246,7 @@ const scriptedModel = (
       }
       if (request.url?.endsWith("/models") === true) {
         response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({ data: [{ id: "eval-model", object: "model" }] }));
+        response.end(JSON.stringify({ data: ids.map((id) => ({ id, object: "model" })) }));
         return;
       }
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as {
@@ -716,11 +722,13 @@ const runCase = async (
   const devTokenPath = join(home, ".config", "eagle-dev", "token");
   /** Values a step captured, addressed by later steps as `{{name.path}}`. */
   const captured = new Map<string, unknown>();
+  const modelIds = study.model.ids ?? ["eval-model"];
   const model = scriptedModel(
     study.model.script,
     study.model.repeatLast === true,
     study.systemone,
     study.model.reflectionScript,
+    modelIds,
   );
   const modelPort = await listen(model.server);
   let handle: DaemonHandle | undefined;
@@ -752,7 +760,7 @@ const runCase = async (
         {
           provider: "magpie",
           baseUrl: `http://127.0.0.1:${modelPort}/v1`,
-          model: "eval-model",
+          model: modelIds[0] ?? "eval-model",
           apiKey: "eval-key",
           thinkingLevel: "low",
           // No `toolGroups` means "whatever the daemon defaults to", which is what a case

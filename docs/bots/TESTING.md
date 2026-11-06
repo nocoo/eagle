@@ -195,9 +195,15 @@ is never started before its preconditions are green.
 | 73 | `EagleFeaturesTests/BotsPresenterTests.swift` | `a call without its result is a running row while the run works`; `the result pairs with its call by id` | 72 |
 | 74 | `test/server/gateway.test.ts` | `settings round-trip, stay 0600 and never expose the key`; `the probe reports reachability, auth and model count` | — |
 | 75 | `test/server/settings.test.ts` | `the settings endpoints read, validate, save and test behind the bearer` | 74 |
-| 76 | `test/core/registry.test.ts` | `a gateway model change reaches existing bots and new ones` | 75 |
+| 76 | `test/core/registry.test.ts` | `a gateway model change is the default for new bots only` | 75 |
 | 77 | `test/server/update.test.ts` | `name, label and face are editable over PATCH` | 75 |
 | 78 | `BotsFeaturesTests/CatalogTests.swift` | `testUpdateChangesNameLabelAndFaceAndReloadsTheCatalog` | 77 |
+| 79 | `test/runtime/models.test.ts` | `the gateway's models are registered and described`; `a failed discovery is not an empty list and keeps what the daemon knows` | — |
+| 80 | `test/runtime/agent.test.ts` | `the stored pair is configured on every open`; `a change reaches the next prepared request and never interrupts the running one` | 79 |
+| 81 | `test/core/registry.test.ts` | `a per-bot model and level reach the catalog and the live conversation` (one catalog write, one runtime commit); `a level the model cannot take is refused and nothing is written`; `a failed catalog write puts the conversation back on the pair it had`; `two rapid agent changes are applied one after the other` | 80 |
+| 82 | `test/server/agent-http.test.ts` | `the model list names the ids and what the daemon knows about them`; `the settings name the default for a new bot and leave an existing one alone` | 81 |
+| 83 | `EagleFeaturesTests/BotsAgentTests.swift` | `the inspector offers the levels the bot's own model takes`; `a save shows only on the bot it was made for, and another selection keeps its own`; `two rapid edits are applied one after the other` | 82 |
+| 84 | `tests/eval/cases/cli-agent-models.json` | two bots on two models, each request naming its own model | 82, 83, real daemon |
 
 ## Golden fixtures
 

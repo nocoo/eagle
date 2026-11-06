@@ -1,0 +1,79 @@
+{
+  "id": "cli-agent-models",
+  "title": "两个 Bot 各自用自己的模型与思考等级",
+  "kind": "chat",
+  "notes": "The settings name the default for a new bot; every bot stores its own pair. The gateway lists two models, the second bot is moved to the second one through the CLI, and each bot's request names its own model.",
+  "model": {
+    "ids": ["eval-model-a", "eval-model-b"],
+    "script": [
+      {
+        "text": "第一个 Bot 用自己的模型回答了。"
+      },
+      {
+        "text": "第二个 Bot 用自己的模型回答了。"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": ["bots", "create", "--title", "eval second", "--json"],
+      "stdoutContains": "eval second"
+    },
+    {
+      "kind": "cli",
+      "args": [
+        "bots",
+        "update",
+        "eval second",
+        "--model",
+        "eval-model-b",
+        "--thinking",
+        "high",
+        "--json"
+      ],
+      "stdoutContains": "eval-model-b"
+    },
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval cli-agent-models",
+        "--text",
+        "你用的是哪个模型？",
+        "--wait",
+        "--json"
+      ],
+      "stdoutContains": "第一个 Bot 用自己的模型回答了。",
+      "oneTerminal": true
+    },
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval second",
+        "--text",
+        "你用的是哪个模型？",
+        "--wait",
+        "--json"
+      ],
+      "stdoutContains": "第二个 Bot 用自己的模型回答了。",
+      "oneTerminal": true
+    }
+  ],
+  "expect": {
+    "messages": [
+      {
+        "role": "assistant",
+        "contains": "第一个 Bot 用自己的模型回答了。"
+      }
+    ],
+    "modelSaw": ["\"model\":\"eval-model-b\""],
+    "modelRequests": {
+      "max": 4
+    },
+    "noErrors": true
+  }
+}

@@ -183,6 +183,9 @@ root conversation does not change that root's request classification.
   through commands, each write read back by the next command.
 - `cli-chat` — `chat send --wait`, `chat history`, `chat watch`, and an answer aborted
   while it is still in flight; the transcript must never carry that answer.
+- `cli-agent-models` — the gateway lists two models; the second bot is moved to the second
+  one and to `high` through `bots update`, and each bot's request names its own model. The
+  settings name the default for a new bot, so the first bot keeps the model it recorded.
 - `cli-isolation` — a real CLI turn and Bash tool prove the tool's home is the case home,
   not the runner's inherited home.
 - `cli-memory` — two CLI turns write and read a Bot-scoped memory.

@@ -596,6 +596,40 @@ stays readable until a send is attempted without a gateway, then the conversatio
 short "去设置" banner; the gate is tested (`BotsWindowTests`), the fresh-install window is
 not.
 
+## The bot's own model and level (2026-11-06)
+
+The gateway stayed global and became a registry of models instead of one: one provider (the
+address, the key and the provider id, all shared) and every model the daemon knows — the
+ids the gateway lists, the ids bots store and the id the settings name as the default. A
+model a bot stores stays registered when the gateway stops listing it, and a model the
+daemon cannot describe is registered with the declared window and passes every level
+through, so a custom model is not silently lowered.
+
+The settings' model and thinking level are now the **defaults a new bot records**; saving
+them no longer rewrites an existing bot. Every bot stores its own pair, the inspector
+changes it, and the change reaches the next prepared request: the running answer keeps the
+model and the level it started with, and nothing is aborted, reset or restarted. The pair
+is one catalog write and one runtime commit, so a bot never records a pair it does not run
+with; a level the model does not take is a `400` rather than a silent clamp, and a failed
+catalog write puts the conversation back on the pair it had.
+
+The model facts come from pi-ai's own catalogue: an id is matched by its whole name and by
+the name after its last `/`, because a routing gateway publishes `auto/gpt-6-luna` for the
+model the catalogue calls `gpt-6-luna`. The adapter asks `getSupportedThinkingLevels`
+before it configures a pair, so the levels a picker offers are the levels the model takes.
+`GET /v1/models` keeps `models` as string ids and adds `modelDetails` beside it; a discovery
+that failed is reported apart from a gateway that offers no model.
+
+Evidence: `apps/bots` `npm run check` passed 1 087 tests with 96.00% lines / 88.89%
+branches / 91.01% functions over 90/85/90, and `npm run test:crash` passed 5 cases. The
+crash provider now counts only the conversation under test: the reflection conversation's
+request raced `provider.requests() === 2` and made that pre-existing assertion flaky.
+`swift test` passed 156 cases in `apps/bots-macos` and 395 + 81 + 52 + 37 in `apps/macos`;
+`swift format lint --strict`, `npm run check:design` and `npm run test:design` passed. The
+whole eval suite passed 26 cases, including `cli-agent-models`, which moves a second bot to
+a second model and asserts each request names its own. Not verified: a real gateway's two
+models (the eval model is scripted), an installed App, and a rendered inspector by hand.
+
 ## Settings for effort, compaction and tool groups (2026-10-27)
 
 The model page now carries three daemon-wide choices, each stored in the gateway settings
