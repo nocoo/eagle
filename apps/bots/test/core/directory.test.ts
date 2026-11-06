@@ -1,6 +1,6 @@
 // Ladder rows 9-10: the catalog is atomic and a delete is finishable after a crash.
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -267,26 +267,30 @@ test("a malformed catalog entry is refused instead of being trusted", async () =
   }
 });
 
-test("create persists bot.json before publishing the catalog entry", async () => {
+test("create publishes the catalog entry and the bot's own directory", async () => {
   const { root, dir } = await workspace();
   try {
     await dir.create({ ...record("b_1"), instructions: "be brief" });
-    const config = JSON.parse(await readFile(join(root, "bots", "b_1", "bot.json"), "utf8"));
-    assert.equal(config.instructions, "be brief");
-    assert.equal(config.id, "b_1");
+    const stored = await dir.load();
+    assert.equal(stored[0]?.id, "b_1");
+    assert.equal(stored[0]?.instructions, "be brief");
+    const files = await readdir(join(root, "bots", "b_1"));
+    assert.deepEqual(files, [], "the catalog is the only copy of a bot's own fields");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("a failed bot.json write does not create a catalog entry", async () => {
+test("a failed catalog write does not publish a bot", async () => {
   const { root, dir } = await workspace();
   try {
     const real = await nodeDirectoryFs();
     const failing: DirectoryFs = {
       ...real,
       writeFile: async (path, body, mode) => {
-        if (path.endsWith("bot.json")) throw Object.assign(new Error("ENOSPC"), { code: "ENOSPC" });
+        if (path.includes("catalog.json")) {
+          throw Object.assign(new Error("ENOSPC"), { code: "ENOSPC" });
+        }
         return real.writeFile(path, body, mode);
       },
     };

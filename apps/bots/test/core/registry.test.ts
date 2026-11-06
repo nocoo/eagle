@@ -55,10 +55,13 @@ const bench = async (
     waitDeadline?: boolean;
     /** Held open inside `busy()`, to land a lease across the idle-close decision. */
     busyGate?: Promise<void>;
+    /** The levels the models accept, when the daemon knows the models. */
+    agentLevels?: (modelId: string) => readonly string[];
   } = {},
 ) => {
   const root = await mkdtemp(join(tmpdir(), "bots-registry-"));
   const fs = await nodeDirectoryFs();
+  let failWrites = false;
   const directory = new BotDirectory(root, {
     ...fs,
     rename: async (from, to) => {
@@ -66,6 +69,12 @@ const bench = async (
         await options.renameGate;
       }
       return fs.rename(from, to);
+    },
+    writeFile: async (path, body, mode) => {
+      if (failWrites && path.includes("catalog.json")) {
+        throw Object.assign(new Error("ENOSPC"), { code: "ENOSPC" });
+      }
+      return fs.writeFile(path, body, mode);
     },
   });
   for (const [index, title] of (options.bots ?? []).entries()) {
@@ -86,7 +95,7 @@ const bench = async (
   let closes = 0;
   const closeDeadlines: number[] = [];
   const specs: RuntimeBotSpec[] = [];
-  const levels: string[] = [];
+  const agents: { model: { provider: string; modelId: string }; thinkingLevel: string }[] = [];
   const groupCalls: (readonly string[])[] = [];
   const registry = new BotRegistry({
     directory,
@@ -98,8 +107,11 @@ const bench = async (
       const busy = (options.busy ?? []).includes(spec.id);
       return {
         ...handle,
-        configureThinkingLevel: async (level: string) => {
-          levels.push(level);
+        configureAgent: async (change: {
+          model: { provider: string; modelId: string };
+          thinkingLevel: string;
+        }) => {
+          agents.push(change);
         },
         configureToolGroups: async (groups: readonly string[]) => {
           groupCalls.push(groups);
@@ -124,6 +136,13 @@ const bench = async (
       };
     },
     model: { provider: "faux", modelId: "faux-1" },
+    ...(options.agentLevels === undefined
+      ? {}
+      : {
+          agentSupport: (model: { readonly modelId: string }) => ({
+            levels: options.agentLevels?.(model.modelId) ?? [],
+          }),
+        }),
     log,
     idleCloseMs: 1_000,
     quarantineRetryMs: 5_000,
@@ -139,7 +158,7 @@ const bench = async (
     timers,
     directory,
     specs,
-    levels,
+    agents,
     groupCalls,
     opens: () => opens,
     closes: () => closes,
@@ -152,6 +171,9 @@ const bench = async (
     },
     setBusyGate: (gate: Promise<void> | undefined) => {
       busyGate = gate;
+    },
+    failWrites: (on: boolean) => {
+      failWrites = on;
     },
     cleanup: () => rm(root, { recursive: true, force: true }),
   };
@@ -264,7 +286,13 @@ test("a per-bot model and level reach the catalog and the live conversation", as
     const stored = (await setup.directory.load())[0];
     assert.equal(stored?.model.modelId, "faux-9", "the catalog is the source of truth");
     assert.equal(stored?.thinkingLevel, "high");
-    assert.deepEqual(setup.levels, ["high"], "the live conversation follows the level");
+    assert.deepEqual(
+      setup.agents,
+      [{ model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" }],
+      "the live conversation follows the pair",
+    );
+    const writes = setup.records.filter((record) => record.evt === "core.catalog.write.ok");
+    assert.equal(writes.length, 1, "the pair is one catalog write");
   } finally {
     await setup.registry.shutdown();
     await setup.cleanup();
@@ -381,35 +409,135 @@ test("a failed live tool refresh is reported and an identical save retries it", 
   }
 });
 
-test("a gateway thinking-level change reaches existing bots and new ones", async () => {
+test("a gateway thinking-level change is the default for new bots only", async () => {
   const setup = await bench({ bots: ["a"] });
   try {
     await setup.registry.start();
     await setup.registry.open("b_bot0", "tr_level_0001");
-    await setup.registry.applyThinkingLevel("high", "tr_level_0002");
-    assert.deepEqual(setup.levels, ["high"], "the live conversation follows in place");
+    setup.registry.setDefaultThinkingLevel("high");
+    assert.deepEqual(setup.agents, [], "an existing conversation is not moved");
     const stored = await setup.directory.load();
-    assert.equal(stored[0]?.thinkingLevel, "high", "the catalog is the source of truth");
+    assert.notEqual(stored[0]?.thinkingLevel, "high", "the bot keeps the level it stores");
     await setup.registry.create("new", "tr_level_0003");
     const created = (await setup.directory.load()).find((bot) => bot.title === "new");
-    assert.equal(created?.thinkingLevel, "high", "a new bot records the settings level");
+    assert.equal(created?.thinkingLevel, "high", "a new bot records the default level");
   } finally {
     await setup.registry.shutdown();
     await setup.cleanup();
   }
 });
 
-test("a gateway model change reaches existing bots and new ones", async () => {
+test("a gateway model change is the default for new bots only", async () => {
   const setup = await bench({ bots: ["a"] });
   try {
     await setup.registry.start();
     await setup.registry.open("b_bot0", "tr_model_0001");
-    await setup.registry.applyModel({ provider: "faux", modelId: "faux-2" }, "tr_model_0002");
-    assert.equal(setup.registry.summaries()[0]?.model.modelId, "faux-2");
+    setup.registry.setDefaultModel({ provider: "faux", modelId: "faux-2" });
+    assert.deepEqual(setup.agents, [], "an existing conversation is not moved");
     const stored = await setup.directory.load();
-    assert.equal(stored[0]?.model.modelId, "faux-2", "the catalog is the source of truth");
-    const created = await setup.registry.create("new", "tr_model_0003");
-    assert.equal(created.model.modelId, "faux-2", "a new bot records the new model");
+    assert.equal(stored[0]?.model.modelId, "faux-1", "the bot keeps the model it stores");
+    await setup.registry.create("new", "tr_model_0003");
+    const created = (await setup.directory.load()).find((bot) => bot.title === "new");
+    assert.equal(created?.model.modelId, "faux-2", "a new bot records the default model");
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("the gateway's provider follows every stored reference, the model id does not", async () => {
+  const setup = await bench({ bots: ["a"] });
+  try {
+    await setup.registry.start();
+    await setup.registry.applyGatewayProvider("other", "tr_provider_0001");
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.model.provider, "other", "the provider belongs to the gateway");
+    assert.equal(stored?.model.modelId, "faux-1", "the model id stays the bot's own");
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("a level the model cannot take is refused and nothing is written", async () => {
+  const setup = await bench({
+    bots: ["a"],
+    agentLevels: (modelId) => (modelId === "faux-9" ? ["off", "low"] : ["off", "low", "high"]),
+  });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_level_refuse_0001");
+    await assert.rejects(
+      () =>
+        setup.registry.setAgent(
+          "b_bot0",
+          { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+          "tr_level_refuse_0002",
+        ),
+      /does not support the high thinking level/,
+    );
+    assert.deepEqual(setup.agents, [], "the conversation did not move");
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.model.modelId, "faux-1", "the catalog did not move either");
+    assert.equal(stored?.thinkingLevel, undefined);
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("a failed catalog write puts the conversation back on the pair it had", async () => {
+  const setup = await bench({ bots: ["a"] });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_apply_fail_0001");
+    setup.failWrites(true);
+    await assert.rejects(
+      () =>
+        setup.registry.setAgent(
+          "b_bot0",
+          { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+          "tr_apply_fail_0002",
+        ),
+      /catalog could not be written/,
+    );
+    assert.deepEqual(
+      setup.agents.map((agent) => agent.model.modelId),
+      ["faux-9", "faux-1"],
+      "the conversation went back to the pair it had",
+    );
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.model.modelId, "faux-1", "the catalog kept the old pair");
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("two rapid agent changes are applied one after the other", async () => {
+  const setup = await bench({ bots: ["a"] });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_rapid_0001");
+    const first = setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-2" }, thinkingLevel: "low" },
+      "tr_rapid_0002",
+    );
+    const second = setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-3" }, thinkingLevel: "high" },
+      "tr_rapid_0003",
+    );
+    await Promise.all([first, second]);
+    assert.deepEqual(
+      setup.agents.map((agent) => agent.model.modelId),
+      ["faux-2", "faux-3"],
+      "the second change waits for the first",
+    );
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.model.modelId, "faux-3", "the last change is the one that is stored");
+    assert.equal(stored?.thinkingLevel, "high");
   } finally {
     await setup.registry.shutdown();
     await setup.cleanup();

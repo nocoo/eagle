@@ -75,9 +75,41 @@ harness.resume();                                      // recovery, before servi
   the current Registry is per Bot because tools bind Bot-specific dependencies.
   Settings and storage remain per Bot (F19).
 - `root()` is idempotent: conversation `1` for a new storage, the same root after
-  reopen.
+  reopen. Its `agent` choices only apply when it *creates* the conversation, so the
+  adapter configures the stored pair (`model`, `thinkingLevel`) on every open, in the
+  same commit as the extensions. A reopened bot therefore runs with what the catalog
+  stores and not with what an earlier session left behind.
 - Phase 1 kept exactly one conversation per bot and never called
   `createConversation`, `fork` or subagent APIs.
+
+## The model registry
+
+The daemon holds one provider and many models (PROTOCOL.md, "Per-bot agent"):
+
+- **One provider, many models.** The provider is the gateway: its id, its address and
+  its key. The models are the ids the gateway lists, the ids bots store and the id the
+  settings name as the default. A model the gateway stops listing stays registered while
+  a bot stores it, so a stored bot keeps running with it.
+- **The metadata comes from pi-ai's catalogue.** A model id is matched against the
+  catalogue by its full id and by the name after its last `/`, because a routing gateway
+  publishes `auto/gpt-6-luna` for the model the catalogue calls `gpt-6-luna`. The
+  catalogue supplies the real context window, the real reasoning flag and the real
+  thinking-level map, so the daemon never claims a window or a level the model does not
+  have.
+- **A model nothing describes takes every level.** Its window is the daemon's declared
+  one (`BOTS_CONTEXT_WINDOW`) and every level is sent as it is: the daemon does not know
+  the model's limits, so it does not lower a level behind the person's back. The gateway
+  decides what it takes.
+- **Discovery is apart from emptiness.** `GET /v1/models` asks the gateway for its list.
+  A gateway that answers with no model is an empty list; a gateway that cannot be asked
+  is a failure, and the daemon keeps the models it already knew.
+- **The level belongs to the model.** The runtime adapter asks pi-ai which levels a
+  model accepts (`getSupportedThinkingLevels`) and refuses a level the model does not
+  take, instead of letting the provider lower it silently.
+
+The provider is read through a getter, so a gateway change reaches the conversations
+that are already open. The endpoint, the key and the provider are global; the model and
+the level are the bot's own.
 
 ## Event mapping
 
@@ -325,10 +357,10 @@ Projection, which is also part of the mapping contract:
 | `afterFailedRun` | `"continue"` | A failed run must not strand queued follow-ups |
 | `restartLimit` | 5 (default) | Parked tasks surface as `task_parked` and are cleared by `recover` |
 | `toolGroups` (per bot) | from stored config, default `["core", "coding", "herdr", "agents", "trigger"]` | `core` and `coding` are mandatory. The former adds `list`; the latter is native `CodingTools`. Herdr and child-agent extensions are optional. See "Tool groups" below |
-| `thinkingLevel` (per bot) | from `bot.json`, default `medium` | Written by the settings page for every bot; applied when the Harness opens and moved in place on a live conversation (`root.configure`). One value for the whole daemon, because a bot cannot yet choose its own |
+| `thinkingLevel` (per bot) | from the stored pair, default `medium` | Every bot stores its own level. The settings name the level a new bot records; the inspector changes the level of one bot, in one commit (`root.configure`), and the change reaches the next prepared request — a running answer is never interrupted. A level the model does not take is refused |
 | Search provider | `<XDG_CONFIG_HOME or ~/.config>/eagle-bots/providers.json` (0600) | Independent DeepSeek/Tavily keys with one selected provider. The `search` tool group is off by default. Its deferred `web_search`/`web_fetch` use a stable routing client that resolves the selected provider/key at invocation, including existing conversations; missing configuration is an error result, and failures never trigger fallback. Successful calls each book one `search` call |
 | Usage statistics | `<root>/usage.sqlite`, 90 days | `usage_daily(bot_id, day, source, tokens, calls, cost_usd)` plus `last_seen(bot_id, total_tokens, cost_usd)` so a cumulative model report becomes a delta. A source is a string (`model`, `search`), so a new spender needs no schema change; the first token-only `daily` table is migrated into the `model` source on open. Kept outside a bot's session, so deleting a bot keeps its history; pruned on boot and on write |
-| Model gateway | `<root>/gateway.json` (0600), dotenv fallback | The daemon registers one provider from the stored `{provider, baseUrl, model, apiKey}`. `PUT /v1/settings` rewrites the file, swaps the process-wide `Models` (the Harness reads it through a getter), binds the saved key directly to the provider auth resolver (the same path used on startup, without mutating process environment), and moves every bot to the new model in place with `conversation.configure({model})`; a closed bot opens with the catalog's new model. A bot naming another id before that settles `no_model` |
+| Model gateway | `<root>/gateway.json` (0600), dotenv fallback | The daemon registers one provider from the stored `{provider, baseUrl, apiKey}` and every model the gateway offers, plus the models bots store and the default the settings name. `PUT /v1/settings` rewrites the file, rebuilds the provider (the Harness reads it through a getter), binds the saved key directly to the provider auth resolver (the same path used on startup, without mutating process environment), and sets the default for new bots. The endpoint, the key and the provider are global and reach every bot at once; the model id and the level stay the bot's own |
 | `skills` (daemon) | from `gateway.json`, default none | The App's ticks are the only input: the daemon never scans a folder for skills. The selection becomes the `bots-skills` prompt index and `skill_read`, read again on every ask, so a tick lands on the next turn instead of at the next Harness open (see "Skills" below) |
 | `contextRetentionMs`, `documentRetentionMs` | 600 000 (default) | Idle close frees memory; defaults keep reopen cheap |
 

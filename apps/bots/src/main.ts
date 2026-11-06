@@ -25,7 +25,7 @@ import { peerApi } from "./peers/api.ts";
 import { peerHostFor } from "./peers/host.ts";
 import { encodeServerEvent } from "./protocol/encode.ts";
 import { composePulls, pullPublisher } from "./pulls/host.ts";
-import { createDaemonModels } from "./runtime/pi/models.ts";
+import { ModelRegistry } from "./runtime/pi/models.ts";
 import { PiDurableRuntime, type PiSettings } from "./runtime/pi/PiDurableRuntime.ts";
 import { SecretsStore } from "./secrets/store.ts";
 import { loadToken } from "./server/auth.ts";
@@ -36,7 +36,6 @@ import {
   type GatewayConfig,
   gatewayFromEnv,
   isGatewayComplete,
-  listGatewayModels,
   normalizeBaseUrl,
   publicGateway,
   readGateway,
@@ -297,20 +296,16 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
   // 工具 or 技能 page wrote before anyone configured one is not a gateway.
   const configured = isGatewayComplete(gateway);
   const windowTokens = positiveNumber(process.env.BOTS_CONTEXT_WINDOW, 200_000);
-  let models = createDaemonModels(
-    configured
-      ? {
-          baseUrl: gateway?.baseUrl ?? "",
-          apiKey: gateway?.apiKey ?? "",
-          provider: gateway?.provider ?? "magpie",
-          modelId: gateway?.model ?? "",
-          contextWindow: windowTokens,
-          ...(process.env.BOTS_MAX_TOKENS === undefined
-            ? {}
-            : { maxTokens: positiveNumber(process.env.BOTS_MAX_TOKENS, 8_192) }),
-        }
-      : undefined,
-  );
+  const maxTokens = positiveNumber(process.env.BOTS_MAX_TOKENS, 8_192);
+  // The model registry (docs/bots/RUNTIME.md, "The model registry"): one gateway
+  // provider, every model the gateway offers, and the models bots already store.
+  const modelRegistry = new ModelRegistry({
+    provider: gateway?.provider ?? "magpie",
+    baseUrl: gateway?.baseUrl ?? "",
+    apiKey: gateway?.apiKey ?? "",
+    contextWindow: windowTokens,
+    maxTokens,
+  });
   const compaction = compactionFromEnv(process.env, windowTokens);
   const usageStore = new UsageStore(join(root, "usage.sqlite"));
   // Exchanges between bots live next to the catalog: one durable record each, with the budget.
@@ -442,7 +437,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
   let noteTraces = 0;
   const runtime = new PiDurableRuntime({
     ...(canonical.deviceSocket === undefined ? {} : { deviceSocket: canonical.deviceSocket }),
-    models: () => models,
+    models: () => modelRegistry.models,
     log,
     compaction,
     usage: usageStore,
@@ -502,6 +497,9 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     ...(gateway === undefined
       ? {}
       : { thinkingLevel: gateway.thinkingLevel, toolGroups: gateway.toolGroups }),
+    // What the daemon knows about a model decides whether a pair can be recorded.
+    agentSupport: (model) => modelRegistry.support(model),
+    ensureModel: (modelId) => modelRegistry.ensure([modelId]),
     log,
     idleCloseMs: canonical.idleCloseMs,
     quarantineRetryMs: canonical.quarantineRetryMs,
@@ -512,7 +510,14 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
   // existed: a restart applies it once, exactly like saving the settings does.
   if (gateway !== undefined) {
     await registry.applyToolGroups(gateway.toolGroups, "tr_boot_groups");
+    // The provider belongs to the gateway, so every stored reference follows it.
+    await registry.applyGatewayProvider(gateway.provider, "tr_boot_provider");
   }
+  // Every model a bot stores stays usable, and so does the default a new bot records.
+  modelRegistry.ensure([
+    defaultModel.modelId,
+    ...registry.summaries().map((summary) => summary.model.modelId),
+  ]);
   // The daemon exists after the service that has to broadcast through it.
   let broadcast: (() => void) | undefined;
   const service = new ConversationService({
@@ -645,9 +650,16 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     peers: false,
     triggers: true,
   };
-  let modelCache: { at: number; ids: readonly string[] } | undefined;
   // One save at a time: the second one reads what the first stored, so two pages that
   // save at the same moment cannot drop each other's field.
+  let discoveredAt = 0;
+  /** The gateway is asked once a minute; a failure keeps what the daemon knows. */
+  const discoverModels = async (): Promise<void> => {
+    const now = Date.now();
+    if (now - discoveredAt < 60_000) return;
+    discoveredAt = now;
+    await modelRegistry.discover();
+  };
   const saveSettings = createSettingsSaver({
     current: () => gateway,
     write: async (config) => {
@@ -658,19 +670,24 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
       // Only what the request carried is applied: the 技能 page must not reset the model,
       // the thinking level or the tool groups the other pages chose.
       if (carried.model && isGatewayComplete(config)) {
-        models = createDaemonModels({
+        // The endpoint, the key and the provider are global: every bot talks to this
+        // gateway from now on. The model id is the default for a new bot; every bot that
+        // exists keeps the model it stores.
+        modelRegistry.reconfigure({
+          provider: config.provider,
           baseUrl: config.baseUrl,
           apiKey: config.apiKey,
-          provider: config.provider,
-          modelId: config.model,
+          contextWindow: windowTokens,
+          maxTokens,
         });
-        await registry.applyModel(
-          { provider: config.provider, modelId: config.model },
-          "tr_http_settings",
-        );
+        await registry.applyGatewayProvider(config.provider, "tr_http_settings");
+        registry.setDefaultModel({ provider: config.provider, modelId: config.model });
+        modelRegistry.ensure([config.model]);
+        await modelRegistry.discover();
+        discoveredAt = Date.now();
       }
       if (carried.thinkingLevel) {
-        await registry.applyThinkingLevel(config.thinkingLevel, "tr_http_settings");
+        registry.setDefaultThinkingLevel(config.thinkingLevel);
       }
       if (carried.toolGroups) {
         await registry.applyToolGroups(config.toolGroups, "tr_http_settings");
@@ -740,12 +757,14 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
       };
     },
     models: async () => {
-      if (gateway === undefined) return [];
-      const now = Date.now();
-      if (modelCache !== undefined && now - modelCache.at < 60_000) return modelCache.ids;
-      const ids = await listGatewayModels(gateway);
-      modelCache = { at: now, ids };
-      return ids;
+      await discoverModels();
+      return {
+        ids: modelRegistry.ids(),
+        details: modelRegistry.metadata(),
+        ...(modelRegistry.discoveryError === undefined
+          ? {}
+          : { error: modelRegistry.discoveryError }),
+      };
     },
   });
   broadcast = daemon.broadcastCatalog;

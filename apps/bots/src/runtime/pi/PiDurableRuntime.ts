@@ -5,7 +5,12 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { AssistantMessage, Models, ModelThinkingLevel } from "@earendil-works/pi-ai";
+import {
+  type AssistantMessage,
+  getSupportedThinkingLevels,
+  type Models,
+  type ModelThinkingLevel,
+} from "@earendil-works/pi-ai";
 import type { TaskGraph, TaskId } from "@earendil-works/pi-durable";
 import {
   type AgentEvent,
@@ -360,7 +365,19 @@ export class PiDurableRuntime implements RuntimePort {
         registry.install(reflection);
         installed.push(reflection);
       }
-      await root.configure({ extensions: installed }, BACKGROUND_CONTEXT);
+      // The stored pair is configured on every open, in one commit: `root()` only takes
+      // the agent choices when it creates the conversation, so a reopened bot would
+      // otherwise run with what an earlier session left behind.
+      await root.configure(
+        {
+          extensions: installed,
+          model: { provider: spec.model.provider, modelId: spec.model.modelId },
+          ...(spec.thinkingLevel === undefined
+            ? {}
+            : { thinkingLevel: spec.thinkingLevel as ModelThinkingLevel }),
+        },
+        BACKGROUND_CONTEXT,
+      );
       await retainInterruptedDeviceReceipts(harness, root.id, spec.id, deviceCapability.current);
       const reflectionUsage =
         note === undefined || this.#options.usage === undefined
@@ -890,15 +907,6 @@ class PiRuntimeHandle implements RuntimeHandle {
     }
   }
 
-  /** Settings changed the gateway: move this conversation to the new model in place. */
-  async configureModel(
-    model: { provider: string; modelId: string },
-    _trace: string,
-  ): Promise<void> {
-    const root = await this.#harness.root(BACKGROUND_CONTEXT);
-    await root.configure({ model }, BACKGROUND_CONTEXT);
-  }
-
   /** Runs one parked task again; the graph then reports it as live work. */
   async retryTask(taskId: string, trace: string): Promise<void> {
     // The caller validated the wire id; crossing to TaskId is the only work left here.
@@ -983,11 +991,45 @@ class PiRuntimeHandle implements RuntimeHandle {
     await next;
   }
 
-  /** Settings changed the reasoning level: the conversation follows without a reopen. */
-  async configureThinkingLevel(thinkingLevel: string, _trace: string): Promise<void> {
+  /**
+   * The bot's own pair changed: the conversation is configured once, in one commit, and
+   * the change reaches the next prepared request. A request that is already in flight
+   * keeps the model and the level it was prepared with.
+   */
+  async configureAgent(
+    change: {
+      readonly model: { readonly provider: string; readonly modelId: string };
+      readonly thinkingLevel: string;
+    },
+    _trace: string,
+  ): Promise<void> {
+    const models = this.#options.models;
+    const collection = typeof models === "function" ? models() : models;
+    const model = collection.getModel(change.model.provider, change.model.modelId);
+    const refusal = (message: string): ClassifiedFailure => {
+      const minted = this.#classifier.classify(
+        `agent:${change.model.modelId}:${change.thinkingLevel}`,
+        "invalid_command",
+        "runtime",
+      );
+      return new ClassifiedFailure(minted.classification.failure, "not_admitted", message);
+    };
+    if (model === undefined) {
+      throw refusal(`the gateway does not offer ${change.model.modelId}`);
+    }
+    // The level is the model's to accept: the daemon never lowers one behind the
+    // person's back.
+    if (!getSupportedThinkingLevels(model).includes(change.thinkingLevel as ModelThinkingLevel)) {
+      throw refusal(
+        `${change.model.modelId} does not support the ${change.thinkingLevel} thinking level`,
+      );
+    }
     const root = await this.#harness.root(BACKGROUND_CONTEXT);
     await root.configure(
-      { thinkingLevel: thinkingLevel as ModelThinkingLevel },
+      {
+        model: change.model,
+        thinkingLevel: change.thinkingLevel as ModelThinkingLevel,
+      },
       BACKGROUND_CONTEXT,
     );
   }

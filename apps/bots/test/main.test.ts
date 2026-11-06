@@ -594,12 +594,12 @@ test("settings store the thinking level, refuse an unknown one and apply it to b
         body: JSON.stringify({ title: "等级" }),
       });
       const botId = ((await created.json()) as { bot: { id: string } }).bot.id;
-      const stored = JSON.parse(await readFile(join(root, "bots", botId, "bot.json"), "utf8")) as {
-        thinkingLevel?: string;
-        model: { modelId: string };
+      const stored = JSON.parse(await readFile(join(root, "catalog.json"), "utf8")) as {
+        bots: { id: string; thinkingLevel?: string; model: { modelId: string } }[];
       };
-      assert.equal(stored.thinkingLevel, "xhigh", "a new bot records the settings level");
-      assert.equal(stored.model.modelId, "auto/gpt-6-luna");
+      const entry = stored.bots.find((bot) => bot.id === botId);
+      assert.equal(entry?.thinkingLevel, "xhigh", "a new bot records the settings level");
+      assert.equal(entry?.model.modelId, "auto/gpt-6-luna");
     } finally {
       await daemon.close();
     }

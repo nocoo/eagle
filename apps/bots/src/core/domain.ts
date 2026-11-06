@@ -243,6 +243,16 @@ export type AgentView = {
   readonly instructions: string;
 };
 
+/** What the daemon knows about one model of the gateway (PROTOCOL.md, "Per-bot agent"). */
+export type ModelDetail = {
+  readonly id: string;
+  readonly contextWindow: number;
+  readonly maxTokens: number;
+  readonly reasoning: boolean;
+  /** The reasoning levels the model accepts; `xhigh` and `max` are opt-in per model. */
+  readonly thinkingLevels: readonly string[];
+};
+
 /** The closed sets the client and the daemon share for a bot's face. */
 export const BOT_SHAPES = [
   "blob",

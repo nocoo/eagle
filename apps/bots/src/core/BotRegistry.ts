@@ -79,6 +79,15 @@ export type RegistryOptions = {
   readonly thinkingLevel?: string;
   /** The tool groups a newly created bot records; settings can change it at runtime. */
   readonly toolGroups?: readonly ToolGroup[];
+  /**
+   * What the daemon knows about a model: the reasoning levels it accepts. A level the
+   * model cannot take is refused before anything is written.
+   */
+  readonly agentSupport?: (model: { readonly provider: string; readonly modelId: string }) => {
+    readonly levels: readonly string[];
+  };
+  /** Registers a model a bot names, so the daemon can run it. */
+  readonly ensureModel?: (modelId: string) => void;
   readonly log: Log;
   readonly idleCloseMs: number;
   readonly quarantineRetryMs: number;
@@ -137,6 +146,8 @@ export class BotRegistry {
   #defaultThinkingLevel: string;
   /** The tool groups a newly created bot records; settings can change it at runtime. */
   #defaultToolGroups: readonly ToolGroup[];
+  /** One queue per bot: two agent changes cannot interleave on one catalog. */
+  readonly #agentQueues = new Map<string, Promise<unknown>>();
   /** The sidebar groups, refreshed on load and after every mutation. */
   #groups: readonly BotGroup[] = [];
   readonly #boot: () => string;
@@ -336,28 +347,32 @@ export class BotRegistry {
     return this.#summary(entry);
   }
 
-  /** Settings changed the gateway: new bots use the new model, existing ones on reopen. */
+  /** Settings changed the gateway: new bots use the new model, existing ones keep theirs. */
   setDefaultModel(model: { readonly provider: string; readonly modelId: string }): void {
     this.#defaultModel = model;
   }
 
-  /**
-   * Applies a reasoning level to every bot: the catalog records it and a live conversation
-   * follows in place, so no answer has to be interrupted.
-   */
-  async applyThinkingLevel(thinkingLevel: string, trace: string): Promise<void> {
+  /** Settings changed the reasoning level: new bots use it, existing ones keep theirs. */
+  setDefaultThinkingLevel(thinkingLevel: string): void {
     this.#defaultThinkingLevel = thinkingLevel;
+  }
+
+  /**
+   * The provider belongs to the gateway, not to a bot: every stored reference follows it,
+   * while the model id each bot chose stays that bot's own.
+   */
+  async applyGatewayProvider(provider: string, trace: string): Promise<void> {
     for (const entry of this.#entries.values()) {
-      if (entry.config.thinkingLevel === thinkingLevel) continue;
+      if (entry.config.model.provider === provider) continue;
       const at = (this.#options.now?.() ?? new Date()).toISOString();
       try {
-        const config = await this.#write(trace, entry.config.id, () =>
-          this.#options.directory.setThinkingLevel(entry.config.id, thinkingLevel, at),
+        entry.config = await this.#write(trace, entry.config.id, () =>
+          this.#options.directory.setAgent(
+            entry.config.id,
+            { model: { provider, modelId: entry.config.model.modelId } },
+            at,
+          ),
         );
-        entry.config = config;
-        if (entry.handle?.configureThinkingLevel !== undefined) {
-          await entry.handle.configureThinkingLevel(thinkingLevel, trace);
-        }
       } catch {
         // One bot that cannot be written must not stop the others.
       }
@@ -365,40 +380,9 @@ export class BotRegistry {
   }
 
   /**
-   * Applies a gateway model to every bot: the catalog records it, a live conversation is
-   * moved in place (its session keeps its history), and a closed one opens with it later.
-   */
-  async applyModel(
-    model: { readonly provider: string; readonly modelId: string },
-    trace: string,
-  ): Promise<void> {
-    this.#defaultModel = model;
-    for (const entry of this.#entries.values()) {
-      if (
-        entry.config.model.provider === model.provider &&
-        entry.config.model.modelId === model.modelId
-      ) {
-        continue;
-      }
-      const at = (this.#options.now?.() ?? new Date()).toISOString();
-      try {
-        const config = await this.#write(trace, entry.config.id, () =>
-          this.#options.directory.setModel(entry.config.id, model, at),
-        );
-        entry.config = config;
-        if (entry.handle?.configureModel !== undefined) {
-          await entry.handle.configureModel(model, trace);
-        }
-      } catch {
-        // One bot that cannot be written must not stop the others; the failed entry keeps
-        // its old model and the next save retries it.
-      }
-    }
-  }
-
-  /**
-   * Per-bot agent choice (the `agent` capability): the catalog records it and a live
-   * conversation follows in place, so no answer has to be interrupted.
+   * One bot's own pair, in one change: the model it runs with and the reasoning level it
+   * runs at. The catalog is written once, the conversation is configured once, and a
+   * request that is already in flight keeps the model it was prepared with.
    */
   async setAgent(
     botId: string,
@@ -409,30 +393,72 @@ export class BotRegistry {
     trace: string,
   ): Promise<BotSummary> {
     const entry = this.#entry(botId, trace);
-    const at = (this.#options.now?.() ?? new Date()).toISOString();
-    let config = entry.config;
-    if (change.model !== undefined && change.model.modelId !== config.model.modelId) {
-      config = await this.#write(trace, botId, () =>
-        this.#options.directory.setModel(
-          botId,
-          change.model as NonNullable<typeof change.model>,
-          at,
-        ),
-      );
-      if (entry.handle?.configureModel !== undefined) {
-        await entry.handle.configureModel(change.model, trace);
+    return this.#serializeAgent(botId, async () => {
+      const current = entry.config;
+      const currentLevel = current.thinkingLevel ?? this.#defaultThinkingLevel;
+      const model = change.model ?? current.model;
+      const level = change.thinkingLevel ?? currentLevel;
+      const sameModel =
+        change.model === undefined ||
+        (change.model.provider === current.model.provider &&
+          change.model.modelId === current.model.modelId);
+      const sameLevel = level === currentLevel;
+      if (sameModel && sameLevel) return this.#summary(entry);
+      // The pair has to be one the model accepts, and that is checked before anything is
+      // written: a bot never records a pair it cannot run with.
+      if (change.model !== undefined) this.#options.ensureModel?.(change.model.modelId);
+      const support = this.#options.agentSupport?.(model);
+      if (support !== undefined && !support.levels.includes(level)) {
+        throw new ClassifiedFailure(
+          newFailure("invalid_command"),
+          "not_admitted",
+          `${model.modelId} does not support the ${level} thinking level`,
+        );
       }
-    }
-    if (change.thinkingLevel !== undefined && change.thinkingLevel !== config.thinkingLevel) {
-      config = await this.#write(trace, botId, () =>
-        this.#options.directory.setThinkingLevel(botId, change.thinkingLevel as string, at),
-      );
-      if (entry.handle?.configureThinkingLevel !== undefined) {
-        await entry.handle.configureThinkingLevel(change.thinkingLevel as string, trace);
+      const at = (this.#options.now?.() ?? new Date()).toISOString();
+      const handle = entry.handle;
+      // The live conversation follows first: a conversation that refuses the pair must
+      // not be recorded as having it.
+      if (handle?.configureAgent !== undefined) {
+        await handle.configureAgent({ model, thinkingLevel: level }, trace);
       }
-    }
-    entry.config = config;
-    return this.#summary(entry);
+      try {
+        const config = await this.#write(trace, botId, () =>
+          this.#options.directory.setAgent(botId, { model, thinkingLevel: level }, at),
+        );
+        entry.config = config;
+      } catch (error) {
+        // The catalog is the truth: a conversation that took the pair and a catalog that
+        // did not would run two different pairs. The old pair goes back.
+        if (handle?.configureAgent !== undefined) {
+          await handle
+            .configureAgent(
+              {
+                model: current.model,
+                thinkingLevel: currentLevel,
+              },
+              trace,
+            )
+            .catch(() => undefined);
+        }
+        throw error;
+      }
+      return this.#summary(entry);
+    });
+  }
+
+  /** One agent change at a time per bot: two patches cannot interleave on one catalog. */
+  #serializeAgent<T>(botId: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.#agentQueues.get(botId) ?? Promise.resolve();
+    const run = previous.then(work, work);
+    this.#agentQueues.set(
+      botId,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return run;
   }
 
   /** Runs one parked task again; the task graph then reports it as live work. */

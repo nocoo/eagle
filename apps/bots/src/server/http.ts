@@ -15,6 +15,7 @@ import {
   ClassifiedFailure,
   isThinkingLevel,
   MAX_BOT_NOTE_CHARS,
+  type ModelDetail,
   normalizeBotNote,
   type SecretMeta,
   type SecretScope,
@@ -65,8 +66,12 @@ export type ServerOptions = {
   readonly version: string;
   readonly instance: string;
   readonly capabilities: Readonly<Record<string, boolean>>;
-  /** The model ids the configured gateway offers, for a per-bot picker. */
-  readonly models?: () => Promise<readonly string[]>;
+  /** The models the daemon knows, and what it knows about each of them. */
+  readonly models?: () => Promise<{
+    readonly ids: readonly string[];
+    readonly details: readonly ModelDetail[];
+    readonly error?: string;
+  }>;
   /** The configured gateway's provider, so a per-bot model id keeps it. */
   readonly gatewayProvider?: () => string;
   /** Usage statistics for the Settings page; `days` is the requested window. */
@@ -814,7 +819,15 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         return;
       }
       if (path === "/v1/models" && request.method === "GET") {
-        json(response, 200, { models: options.models === undefined ? [] : await options.models() });
+        const models =
+          options.models === undefined
+            ? { ids: [] as readonly string[], details: [] as readonly ModelDetail[] }
+            : await options.models();
+        json(response, 200, {
+          models: models.ids,
+          modelDetails: models.details,
+          ...(models.error === undefined ? {} : { discoveryError: models.error }),
+        });
         return;
       }
       if (path === "/v1/bots" && request.method === "GET") {
