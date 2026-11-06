@@ -1,5 +1,14 @@
 # Retrospective
 
+## 2026-11-06 — Matching font size did not match line spacing
+
+After the font fix, the owner still saw compressed text on hover. The selectable
+assistant text lacked the rich paragraph's 4-point line spacing. Comparing the
+visible text ink in both states exposed a 12-point difference over four explicit
+lines and a 28-point difference in a wrapped paragraph. Both matched after applying
+the existing body spacing token to the selectable assistant view. Text size and row
+height alone do not prove that multi-line typography stays stable.
+
 ## 2026-11-06 — A hosting-view layout test did not reproduce a real hover shrink
 
 Bubbles appeared to shrink on hover. The first fix moved the selectable `Text` into an

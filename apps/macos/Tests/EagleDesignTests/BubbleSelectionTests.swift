@@ -37,6 +37,40 @@ struct BubbleSelectionTests {
     }
   }
 
+  @Test("selectable assistant text keeps the paragraph line spacing")
+  func selectableLineSpacing() throws {
+    for source in [
+      "First line\nSecond line\nThird line\nFourth line",
+      String(repeating: "中英文 mixed text for a long paragraph. ", count: 8),
+    ] {
+      let blocks: [RenderedMarkdownBlock] = [.paragraph(MarkdownDocument.inline(source))]
+      func inkHeight(_ selection: Bool) throws -> Int {
+        let renderer = ImageRenderer(
+          content: AssistantBubble(
+            text: source, preparedBlocks: blocks, selectionOverride: selection
+          ).frame(width: 420).preferredColorScheme(.light))
+        renderer.scale = 1
+        let bitmap = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
+        var rows: [Int] = []
+        for y in 0..<bitmap.pixelsHigh {
+          for x in 0..<bitmap.pixelsWide {
+            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+            if color.alphaComponent > 0.9 && color.redComponent < 0.25
+              && color.greenComponent < 0.25 && color.blueComponent < 0.25
+            {
+              rows.append(y)
+            }
+          }
+        }
+        return try #require(rows.max()) - #require(rows.min()) + 1
+      }
+      let normal = try inkHeight(false)
+      let selected = try inkHeight(true)
+      #expect(normal > 40)
+      #expect(abs(normal - selected) <= 1)
+    }
+  }
+
   @Test("insertion preserves the draft, trims whitespace and ignores empty text")
   func insertDraft() {
     var draft = "已有草稿"

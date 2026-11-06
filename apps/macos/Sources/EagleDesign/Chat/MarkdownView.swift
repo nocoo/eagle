@@ -234,6 +234,7 @@ public struct AssistantBubble: View, Equatable {
       .allowsHitTesting(!selectionEnabled)
       if selectionEnabled {
         SelectableTranscriptText(attributedText: attributedText)
+          .lineSpacing(Theme.Chat.bodyLineSpacing)
       }
     }
   }
