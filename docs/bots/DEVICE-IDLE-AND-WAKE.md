@@ -177,18 +177,15 @@ separate facts. A socket path alone proves none of them:
 | Remote access enabled but cloud or a target is unreachable | Keep remote capability distinguishable from its current availability; discovery or execution returns a precise unavailable/unknown result. Local tool registration and local execution remain unchanged. |
 | An enabled local protection service actually fails or its policy is unknown | Report the local protection failure and recovery path; do not claim that remote setup is needed and do not bypass the local policy. |
 
-The local instruction says that inspecting or operating **this computer** uses
-`bash`, `read`, `write`, `edit` or `list`; it must not first discover a remote
-group. If no other target is requested or justified, local is the default. Remote
-operations require an explicit device ID and must never silently fall back to
-local or retarget after uncertainty. A remote discovery failure is not evidence
-that local tools cannot run. Tool descriptions, selected extensions, model-offered
-schemas, `tool_search` results and prompt sections must agree; prompts explain
-the behaviour but are not an authorization boundary. Installed objects are not
-necessarily selected; selected eager tools are initially offered; only selected
-deferred tools may be discovered through `tool_search`. The existing
-`health.deviceAccess` socket binding is not evidence that remote access is
-configured, reachable or authorized.
+Local inspection and commands use `bash`, `read`, `write`, `edit` and `list` on this computer. Remote operations use `remote_status` to find a target, `remote_execute` with a device ID, and `remote_operation` with the original IDs.
+
+Tool descriptions, selected extensions, model-offered schemas, `tool_search`
+results and prompt sections must agree; prompts explain the behaviour but are not
+an authorization boundary. Installed objects are not necessarily selected;
+selected eager tools are initially offered; only selected deferred tools may be
+discovered through `tool_search`. The existing `health.deviceAccess` socket
+binding is not evidence that remote access is configured, reachable or
+authorized.
 
 Use the existing native Registry and tool-refresh mechanism, not a second tool
 registry or cloud polling. On configuration changes, existing and newly created

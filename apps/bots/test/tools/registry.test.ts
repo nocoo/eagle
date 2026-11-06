@@ -5,7 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { defineExtension } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import { DEVICE_EXTENSION } from "../../src/tools/devices/tools.ts";
+import type { SharedDevicePort } from "../../src/tools/devices/port.ts";
+import { DEVICE_EXTENSION, deviceExtension } from "../../src/tools/devices/tools.ts";
 import type { HerdrClient } from "../../src/tools/herdr/client.ts";
 import { HERDR_TOOLS_EXTENSION } from "../../src/tools/herdr/tools.ts";
 import {
@@ -71,7 +72,24 @@ test("remote tools are selected only for a configured shared device", () => {
   }
 });
 
-test("the local prompt distinguishes absent remote setup from a failed local protection service", () => {
+test("remote prompts assign other computers and stay free of local comparison", () => {
+  const extension = deviceExtension({ botId: "test", port: {} as SharedDevicePort });
+  const section = extension.sections?.find((entry) => entry.key === "shared-devices-v1");
+  assert.ok(section);
+  const text = section.render({ agent: {} } as never, {} as never) as string;
+  assert.equal(
+    text.split("\n")[0],
+    "These tools control other computers. Use bash for this computer.",
+  );
+  for (const name of ["remote_status", "remote_execute", "remote_operation"]) {
+    assert.ok(text.includes(name));
+    const tool = extension.tools?.find((candidate) => candidate.name === name);
+    assert.ok(tool);
+    assert.doesNotMatch(tool.description, /do not|never|must not|only when/i);
+  }
+});
+
+test("the local prompt omits remote setup and names only the local protection failure", () => {
   let capability: "unconfigured" | "unavailable" | "configured" = "unconfigured";
   const registry = createToolRegistry(
     { root: "/tmp" },
@@ -83,13 +101,13 @@ test("the local prompt distinguishes absent remote setup from a failed local pro
       },
     },
   );
-  assert.match(botsToolsSection(registry), /Remote access is not configured or enabled/);
+  for (const current of ["unconfigured", "configured", "unavailable"] as const) {
+    capability = current;
+    const text = botsToolsSection(registry);
+    assert.doesNotMatch(text, /remote_status|remote_execute|remote_operation|Remote access/);
+  }
   capability = "unavailable";
-  const failed = botsToolsSection(registry);
-  assert.match(failed, /local device protection service is unavailable/);
-  assert.doesNotMatch(failed, /Remote access is not configured or enabled/);
-  capability = "configured";
-  assert.match(botsToolsSection(registry), /Local tools operate on this computer by default/);
+  assert.match(botsToolsSection(registry), /awaiting recovery/);
 });
 
 test("core supplies list and coding installs the original native extension without aliases", async () => {

@@ -324,16 +324,9 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
             ...(options.note === undefined
               ? []
               : [noteLine(options.note.current(), (options.now ?? Date.now)())]),
-            devices === undefined
-              ? "Tool calls run without asking the user first. Remote access is not configured."
-              : "Local tools follow the shared device policy.",
-            devices === undefined
-              ? ""
-              : options.devices?.remoteCapability?.() === "unavailable"
-                ? "The local device protection service is unavailable. Local work must not bypass it; do not blame remote configuration for a local service failure."
-                : options.devices?.remoteCapability?.() === "configured"
-                  ? "Local tools operate on this computer by default. Remote targets require a separate explicit choice."
-                  : "Local tools operate on this computer by default. Remote access is not configured or enabled; explain this if another computer is requested.",
+            ...(devices === undefined || options.devices?.remoteCapability?.() !== "unavailable"
+              ? []
+              : ["The local device protection service is awaiting recovery."]),
           ].join("\n"),
         ),
       ],
@@ -384,7 +377,7 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
           section("bots-herdr", () =>
             devices === undefined
               ? herdrSection(herdr.botId)
-              : "Herdr inspection is available. Herdr write/control tools are unavailable until they use shared device admission. Use device-governed coding tools for local commands.",
+              : "Herdr inspection reads this bot's space; local commands use bash.",
           ),
         ],
       }),

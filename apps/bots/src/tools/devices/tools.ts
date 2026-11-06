@@ -166,7 +166,7 @@ export const deviceExtension = (options: DeviceToolsOptions) =>
       defineTool({
         name: "remote_status",
         description:
-          "Read the current shared device directory, including localDeviceId, online evidence, capabilities and device policy. Refresh before choosing a remote computer.",
+          "Read the shared device directory for another computer: localDeviceId, online targets, capabilities and policy.",
         parameters: Type.Object({}),
         replay: "safe",
         async execute(_args, _api, context) {
@@ -185,7 +185,7 @@ export const deviceExtension = (options: DeviceToolsOptions) =>
       defineTool({
         name: "remote_execute",
         description:
-          "Execute a command or file operation on an explicit deviceId. Targets never fall back to another machine. A returned operationId must be queried after an uncertain result; busy means unaccepted, without a queue.",
+          "Run a command or file operation on the deviceId from remote_status; that deviceId stays bound to the operation.",
         parameters: Type.Object({
           deviceId: Type.String({ format: "uuid" }),
           operation: operationParameters,
@@ -244,7 +244,7 @@ export const deviceExtension = (options: DeviceToolsOptions) =>
       defineTool({
         name: "remote_operation",
         description:
-          "Query or cancel an existing operation on its original deviceId and operationId. This never starts a new operation or changes its target.",
+          "Query or cancel an existing operation on its original deviceId and operationId.",
         parameters: Type.Object({
           deviceId: Type.String({ format: "uuid" }),
           operationId: Type.String({ format: "uuid" }),
@@ -273,11 +273,9 @@ export const deviceExtension = (options: DeviceToolsOptions) =>
     sections: [
       section("shared-devices-v1", () =>
         [
-          "Remote access is configured, but a target may be offline or unauthorized. remote_status identifies this computer as localDeviceId and reports current capabilities.",
-          "Use this computer by default. Choose a remote computer only when the user explicitly names one or the task justifies that target.",
-          "Local read/write/edit/bash/list operate on this computer. Remote steps require remote_execute with an explicit deviceId. Confirm remote files on that target; do not treat another computer's absolute path as local.",
-          "A submitted operation keeps its original target and operationId. After loss, timeout or uncertainty, query that operation; never silently retry elsewhere. Busy is unaccepted: do not append parallel work or wait in an implicit queue.",
-          "All tools follow device policy. Always ask requires confirmation in the initiating App; missing confirmation never grants access.",
+          "These tools control other computers. Use bash for this computer.",
+          "remote_status reads the shared device directory; remote_execute runs one operation on a deviceId from that directory; remote_operation queries or cancels it by the original deviceId and operationId.",
+          "An uncertain result keeps its original IDs. A busy response is a completed refusal. Device policy applies to every request; always-ask completes after the App confirms it.",
         ].join("\n"),
       ),
     ],
