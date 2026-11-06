@@ -898,6 +898,12 @@ The extension/tool track has its own proposed sequence in
    against a live daemon.
 3. Add optional `search`: `web_search` and `web_fetch`, separating URL discovery
    from page retrieval and proving bounded, cancellable provider calls.
+4. ~~Let the person's ticked skills reach every Bot.~~ **Built 2026-11-06** as
+   [§3 "Skills"](EXTENSIONS-AND-TOOLS.md#skills) specifies: the App pushes its ticks to
+   `PUT /v1/settings` (`skills`), `bots-skills` lists them in the prompt without a tool
+   group and re-reads the selection on every ask, and `skill_read` returns one selected
+   `SKILL.md` by name. `tests/eval/cases/skills-enabled.json` is the acceptance. The daemon
+   still owns no discovery: a skill the App never pushes does not exist for a Bot.
 4. Add optional `peers`: `peer_list`, `peer_send`, `peer_read`, with durable
    cross-Bot admission, observable settlement and bounded routing.
 

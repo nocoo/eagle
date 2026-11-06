@@ -1,0 +1,98 @@
+{
+  "id": "skills-enabled",
+  "title": "勾选的技能进了提示与 skill_read，未勾选的文件读不到",
+  "kind": "chat",
+  "notes": "What this proves end to end: PUT /v1/settings accepts one tick; the full system prompt of the first root request the daemon sends carries that skill's index line; a scripted model calls skill_read and the tool result carries the file's own sentence; the following model request carries it too; a second SKILL.md that really exists on disk but was never ticked is refused with an error result naming the selection, and its text never reaches a row. What it does not prove: the model's own choice (it is scripted), the 技能 page's push (the settings PUT stands in for it), and the CLI path (that is cli-chat). The prompt index is asserted on the first root request and covered deterministically in apps/bots/test/runtime/skills.test.ts.",
+  "toolGroups": ["core", "coding"],
+  "model": {
+    "script": [
+      {
+        "toolCall": {
+          "name": "skill_read",
+          "args": {
+            "name": "weather-lookup"
+          }
+        }
+      },
+      {
+        "text": "技能说：查天气先问城市，再报温度。"
+      },
+      {
+        "toolCall": {
+          "name": "skill_read",
+          "args": {
+            "name": "release-notes"
+          }
+        }
+      },
+      {
+        "text": "我没有勾选 release-notes，所以读不到它。"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "file",
+      "path": "home/.agents/skills/weather-lookup/SKILL.md",
+      "content": "---\nname: weather-lookup\ndescription: Looks up the weather.\nversion: 1.4.0\n---\n\n# Weather lookup\n\n先问城市，再报温度：eval-skill-sentence-9f2c。\n"
+    },
+    {
+      "kind": "file",
+      "path": "home/.agents/skills/release-notes/SKILL.md",
+      "content": "---\nname: release-notes\ndescription: Writes release notes.\nversion: 2.0.0\n---\n\n# Release notes\n\n这段文字不该离开磁盘：eval-unselected-sentence-4b71。\n"
+    },
+    {
+      "kind": "http",
+      "method": "PUT",
+      "path": "/v1/settings",
+      "body": "{\"skills\":[{\"name\":\"weather-lookup\",\"version\":\"1.4.0\",\"description\":\"Looks up the weather.\",\"path\":\"~/.agents/skills/weather-lookup\"}]}",
+      "expectStatus": 200
+    },
+    {
+      "kind": "chat",
+      "text": "这台机器上的技能怎么用？"
+    },
+    {
+      "kind": "chat",
+      "text": "那 release-notes 呢？"
+    }
+  ],
+  "expect": {
+    "messages": [
+      {
+        "role": "user",
+        "contains": "技能怎么用"
+      },
+      {
+        "role": "tool",
+        "error": false,
+        "contains": "eval-skill-sentence-9f2c"
+      },
+      {
+        "role": "assistant",
+        "contains": "先问城市，再报温度"
+      },
+      {
+        "role": "tool",
+        "error": true,
+        "contains": "no skill named release-notes is selected"
+      },
+      {
+        "role": "assistant",
+        "contains": "没有勾选"
+      }
+    ],
+    "messagesExcluded": [
+      {
+        "contains": "eval-unselected-sentence-4b71"
+      }
+    ],
+    "modelSaw": ["eval-skill-sentence-9f2c"],
+    "toolsCalled": ["skill_read"],
+    "noErrors": true,
+    "modelRequests": {
+      "max": 6
+    },
+    "firstRequestSaw": ["- weather-lookup · 1.4.0 — Looks up the weather."]
+  }
+}

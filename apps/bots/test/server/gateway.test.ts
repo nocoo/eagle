@@ -39,6 +39,14 @@ test("settings round-trip, stay 0600 and never expose the key", async () => {
       thinkingLevel: "medium",
       toolGroups: ["core", "coding", "herdr", "agents", "trigger"],
       corePrompt: "你是一个务实、友好的 agent。",
+      skills: [
+        {
+          name: "humanizer-zh",
+          version: "1.0.0",
+          description: "去除文本里的 AI 痕迹。",
+          path: "~/.agents/skills/humanizer-zh",
+        },
+      ],
     };
     await writeGateway(bench_.root, config);
     assert.deepEqual(await readGateway(bench_.root), config);
@@ -55,6 +63,14 @@ test("settings round-trip, stay 0600 and never expose the key", async () => {
       model: "auto/gpt-6-astra",
       hasApiKey: true,
       corePrompt: "你是一个务实、友好的 agent。",
+      skills: [
+        {
+          name: "humanizer-zh",
+          version: "1.0.0",
+          description: "去除文本里的 AI 痕迹。",
+          path: "~/.agents/skills/humanizer-zh",
+        },
+      ],
     });
     assert.equal(JSON.stringify(shown).includes("sk-secret"), false);
   } finally {
@@ -88,6 +104,7 @@ test("dotenv values are the fallback, and a broken file is not configured", asyn
         "trigger",
       ],
       corePrompt: DEFAULT_CORE_PROMPT,
+      skills: [],
     },
   );
   const env = { BOTS_BASE_URL: "http://x/v1", BOTS_API_KEY: "k", BOTS_MODEL: "m" };
@@ -251,10 +268,70 @@ test("the core prompt round-trips and defaults to one editable sentence", async 
       thinkingLevel: "medium",
       toolGroups: ["core", "coding"],
       corePrompt: "只说结论。",
+      skills: [],
     };
     await writeGateway(bench_.root, config);
     assert.equal((await readGateway(bench_.root))?.corePrompt, "只说结论。");
     assert.equal(publicGateway(config).corePrompt, "只说结论。");
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("the selected skills round-trip, and an older file without them reads as none", async () => {
+  const bench_ = await bench();
+  try {
+    assert.deepEqual(publicGateway(undefined).skills, []);
+    const legacy = {
+      provider: "magpie",
+      baseUrl: "http://127.0.0.1:3425/v1",
+      model: "auto/gpt-6-astra",
+      apiKey: "sk-secret-0123456789",
+      thinkingLevel: "medium",
+      toolGroups: ["persona", "machine", "core", "coding"],
+    };
+    await writeFile(gatewayPath(bench_.root), JSON.stringify(legacy), "utf8");
+    assert.deepEqual((await readGateway(bench_.root))?.skills, []);
+
+    const config: GatewayConfig = {
+      ...legacy,
+      thinkingLevel: "medium",
+      toolGroups: ["persona", "machine", "core", "coding"],
+      corePrompt: DEFAULT_CORE_PROMPT,
+      skills: [
+        { name: "alpha", version: "1.0.0", description: "Runs alpha.", path: "/skills/alpha" },
+        { name: "beta", version: "", description: "Runs beta.", path: "~/skills/beta" },
+      ],
+    };
+    await writeGateway(bench_.root, config);
+    assert.deepEqual((await readGateway(bench_.root))?.skills, config.skills);
+    assert.deepEqual(publicGateway(config).skills, config.skills);
+
+    // An empty selection is a value, not a missing field: it clears what was stored.
+    await writeGateway(bench_.root, { ...config, skills: [] });
+    assert.deepEqual((await readGateway(bench_.root))?.skills, []);
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("a hand-edited selection that breaks a bound reads as no skills, never a crash", async () => {
+  const bench_ = await bench();
+  try {
+    const base = {
+      provider: "magpie",
+      baseUrl: "http://127.0.0.1:3425/v1",
+      model: "auto/gpt-6-astra",
+      apiKey: "sk-secret-0123456789",
+    };
+    await writeFile(
+      gatewayPath(bench_.root),
+      JSON.stringify({ ...base, skills: [{ name: "alpha" }] }),
+      "utf8",
+    );
+    assert.deepEqual((await readGateway(bench_.root))?.skills, []);
+    await writeFile(gatewayPath(bench_.root), JSON.stringify({ ...base, skills: "alpha" }), "utf8");
+    assert.deepEqual((await readGateway(bench_.root))?.skills, []);
   } finally {
     await bench_.cleanup();
   }

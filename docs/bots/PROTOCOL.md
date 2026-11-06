@@ -46,6 +46,8 @@ Runtime details live in [RUNTIME.md](RUNTIME.md), layers in
 | `bot.appearance` (HTTP) | valid shape; POST permits an omitted tint, PATCH requires a valid tint | HTTP `400` |
 | Any HTTP body | 256 KiB, measured as received (the shared frame cap) | HTTP `500` before the body is parsed |
 | `settings.corePrompt` (HTTP) | 4 000 characters after trimming | HTTP `400` |
+| `settings.skills` (HTTP) | ≤ 50 entries; `name` 1–80, `version` ≤ 40, `description` ≤ 500 characters after whitespace collapse; `path` ≤ 1 024 and absolute or `~/…`; one entry per name | HTTP `400` |
+| `skill_read` result | 64 KiB read from the file; 32 000 characters and 4 096 lines kept, then a truncation note naming the budget that bound the returned text | — |
 | Any single frame | 256 KiB, measured on the **encoded** frame | Close `1008`; a daemon-produced frame that cannot fit is dropped and the socket closes `1008`, because the client cannot decode it either |
 | Single message payload | ≤ 96 KiB encoded | Withheld and replaced by a notice, see below |
 | `notice` text | ≤ 500 bytes, and for the withheld case a fixed constant | — |
@@ -125,7 +127,7 @@ version, the instance id, the pid and a bot count, never bot content.
 | `POST` | `/v1/clients/:id/rotate` | — | `{ "client": Client, "token" }` — requires `admin` |
 | `POST` | `/v1/clients/:id/revoke` | — | `{ "client": Client }` — requires `admin`, idempotent |
 | `DELETE` | `/v1/clients/:id` | — | `204`, or `409 client_active` while the client is not revoked |
-| `PUT` | `/v1/settings` | `{ "baseUrl", "model", "apiKey"?, "provider"?, "thinkingLevel"?, "toolGroups"?, "corePrompt"? }` | `{ "settings": GatewaySettings, "machinePrompt": MachinePrompt \| null, "tools"?: [ToolGroup] }` |
+| `PUT` | `/v1/settings` | `{ "baseUrl"?, "model"?, "apiKey"?, "provider"?, "thinkingLevel"?, "toolGroups"?, "corePrompt"?, "skills"? }` — absent keeps, `"skills": []` clears | `{ "settings": GatewaySettings, "machinePrompt": MachinePrompt \| null, "tools"?: [ToolGroup] }` |
 | `POST` | `/v1/settings/test` | `{ "baseUrl"?, "model"?, "apiKey"?, "provider"? }` | `{ "result": GatewayProbe }` |
 
 ```json
@@ -133,7 +135,15 @@ version, the instance id, the pid and a bot count, never bot content.
 { "configured": true, "provider": "magpie", "baseUrl": "http://127.0.0.1:3425/v1",
   "model": "auto/gpt-6-luna", "hasApiKey": true, "thinkingLevel": "medium",
   "toolGroups": ["persona", "machine", "core", "coding", "herdr", "agents", "trigger"],
-  "corePrompt": "你是一个务实、友好的 agent：先说结论，再给依据。" }
+  "corePrompt": "你是一个务实、友好的 agent：先说结论，再给依据。",
+  "skills": [{ "name": "humanizer-zh", "version": "1.0.0",
+    "description": "去除文本中的 AI 生成痕迹。",
+    "path": "~/.agents/skills/humanizer-zh" }] }
+
+// SelectedSkill: one skill the person ticked. `path` is the skill's own directory, never a
+// file the model may name; `~/…` is resolved against the daemon's home.
+{ "name": "humanizer-zh", "version": "1.0.0", "description": "去除文本中的 AI 生成痕迹。",
+  "path": "~/.agents/skills/humanizer-zh" }
 
 // ToolGroup: what one group gives a bot today, described by the daemon that installs it.
 { "group": "coding",
@@ -177,6 +187,26 @@ Gateway rules:
   `~/.codex/AGENTS.md` and `~/.claude/CLAUDE.md`, resolved through its symlink and cut at
   40 000 characters. `machinePrompt` reports that file and its text, or `null` when none
   exists; neither field is a per-bot setting.
+- **The ticked skills are the daemon's only skill input.** `skills` is additive: an absent
+  field keeps what is stored, `[]` clears it, and a malformed entry is a `400
+  invalid_command` that writes nothing. The daemon never scans a folder — the App owns
+  discovery, so the selection is the whole input. Every selected skill becomes one line of
+  every bot's system prompt and reachable through `skill_read` by its name
+  (EXTENSIONS-AND-TOOLS.md, "Skills"). `path` is the skill's own directory: `SKILL.md` is read
+  from inside it and only a regular file is read. The read makes four separate checks, each a
+  fact about its own moment: the resolved manifest path is inside that directory; the opened
+  descriptor is the file that path named (`fstat` device and inode); the directory is still
+  the one that was resolved; and a fresh resolution from it leads inside it again and ends at
+  the same inode. A folder, an intermediate directory of the resolved path, or the file
+  itself swapped in place is therefore refused rather than read. The checks and the open are
+  separate calls — Node has no `openat` bound to a directory descriptor — so a swap that
+  happens after the last check, or one made and unmade between two checks, is not detected:
+  it cannot change which file the already-open descriptor reads, but nothing here proves the
+  tree stayed still for the whole call (EXTENSIONS-AND-TOOLS.md, "Skills"). `~/…` is expanded
+  against the daemon's home, and `GET /v1/settings`
+  reports the list back in the same shape. A file written before the field reads as no
+  skills; a hand-edited file that breaks a bound is read as no skills too, and the App pushes
+  the selection again on the next tick or page visit.
 - **The tool catalogue is reported, never authored by a client.** Both settings responses
   carry `tools` when the daemon can describe its own tool surface: one entry per group with
   the tools it would give a bot right now, each `{ "name", "description" }` in the daemon's

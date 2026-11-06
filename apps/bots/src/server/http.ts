@@ -26,6 +26,7 @@ import type { Log } from "../log/log.ts";
 import type { ServerEvent } from "../protocol/frames.ts";
 import { MAX_HTTP_BODY_BYTES, MAX_LABEL_CHARS, MAX_TITLE_CHARS } from "../protocol/limits.ts";
 import { PROTOCOL_VERSION } from "../protocol/version.ts";
+import { parseSelectedSkill, type SelectedSkill } from "../skills/selection.ts";
 import { parseBearer, tokenMatches } from "./auth.ts";
 import {
   CLIENT_SCOPES,
@@ -163,6 +164,7 @@ const gatewayInput = (body: unknown): GatewayInput | undefined => {
     thinkingLevel?: string;
     toolGroups?: readonly string[];
     corePrompt?: string;
+    skills?: readonly SelectedSkill[];
   } = {};
   for (const key of [
     "baseUrl",
@@ -181,6 +183,15 @@ const gatewayInput = (body: unknown): GatewayInput | undefined => {
   if (groups !== undefined) {
     if (!Array.isArray(groups) || groups.some((name) => typeof name !== "string")) return undefined;
     input.toolGroups = groups as string[];
+  }
+  // The ticks have a shape of their own: four strings per skill, or the request is malformed.
+  // Count and size are bounded where the settings are stored, so their answer can say which.
+  const skills = raw.skills;
+  if (skills !== undefined) {
+    if (!Array.isArray(skills)) return undefined;
+    const parsed = skills.map(parseSelectedSkill);
+    if (parsed.some((entry) => entry === undefined)) return undefined;
+    input.skills = parsed as readonly SelectedSkill[];
   }
   return input;
 };
@@ -682,7 +693,11 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         const input = gatewayInput(await readBody(request));
         if (input === undefined) {
           json(response, 400, {
-            error: { kind: "invalid_command", message: "settings must be strings" },
+            error: {
+              kind: "invalid_command",
+              message:
+                "settings must be strings; a skill needs name, version, description and path",
+            },
           });
           return;
         }
@@ -709,7 +724,11 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
         const input = gatewayInput(await readBody(request));
         if (input === undefined) {
           json(response, 400, {
-            error: { kind: "invalid_command", message: "settings must be strings" },
+            error: {
+              kind: "invalid_command",
+              message:
+                "settings must be strings; a skill needs name, version, description and path",
+            },
           });
           return;
         }

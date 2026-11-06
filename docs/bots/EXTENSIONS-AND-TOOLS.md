@@ -92,6 +92,7 @@ because extensions can capture Bot-specific services and directories.
 | `search` | `bots-search`, `tool-search` | Optional, **off by default** | `tool_search` is offered; `web_search` and `web_fetch` are deferred |
 | `decision` | `bots-decision`, `tool-search` | Optional, **off by default** | `tool_search` is offered; `decide`, `classify`, `assess`, `rate` and `judge` are deferred |
 | `trigger` | `bots-trigger`, `tool-search` | Optional, **on by default** | `tool_search` is offered; the five `trigger_*` tools are deferred |
+| — (no group) | `bots-skills` | The person's ticks, not a switch | `skill_read`, eager: no loader |
 
 `ask_user` is the person-interface tool: it takes one to five questions, each single or
 multiple choice with two to eight options, and returns at once. The questions are the call's
@@ -132,14 +133,85 @@ loader. The normal daemon installs search even before configuration: its tools
 can explain a missing selection without making an external request. A test/host
 that supplies no search client installs no search extension or loader for it.
 
-There are **41 tool names** with all current groups registered: five filesystem/coding tools,
-two pull-report tools, three child-agent tools, eight Herdr tools, two search tools, five
-decision tools, five trigger tools, three peer tools, five memory tools, three shared-device
-tools (installed when the daemon supplies a device socket) and one SDK loader. A root
+There are **44 tool names** with all current groups registered, the shared-device socket
+installed and the person's ticks read: the table below is that list, and a test derives it
+from the registry so the numbers cannot drift. A root
 conversation selects those three eagerly only when local status says remote is configured;
 local coding tools remain available under local policy. With the default selection (no
 `search`, no `decision`, no `peers`) eager selected tools are offered at once. Herdr,
-decision and trigger tools wait behind `tool_search`.
+decision and trigger tools wait behind `tool_search`. Without a device socket the shared
+device extension is absent and `bots-herdr` keeps all eight of its tools instead of the
+three `herdr_list`, `herdr_wait` and `herdr_read` it is reduced to under the shared device
+policy.
+
+### Tool names
+
+Every tool name the daemon installs in that configuration, one row per extension group:
+
+| Group | Tool names |
+| --- | --- |
+| `core` | `list`, `note_set`, `ask_user` |
+| `coding` | `read`, `write`, `edit`, `bash` |
+| `coding` (pull reports) | `pr_register`, `pr_list` |
+| `memory` | `memory_list`, `memory_search`, `memory_read`, `memory_write`, `memory_delete` |
+| `secrets` | `secret_request`, `secret_list`, `secret_read`, `secret_delete` |
+| `agents` | `agent_spawn`, `agent_send`, `agent_stop` |
+| `herdr` | `herdr_list`, `herdr_wait`, `herdr_read` |
+| `search` | `web_search`, `web_fetch` |
+| `decision` | `decide`, `classify`, `assess`, `rate`, `judge` |
+| `trigger` | `trigger_create`, `trigger_list`, `trigger_update`, `trigger_enable`, `trigger_delete` |
+| `peers` | `peer_list`, `peer_send`, `peer_read` |
+| shared devices | `remote_status`, `remote_execute`, `remote_operation` |
+| skills (no group) | `skill_read` |
+| SDK loader (no group) | `tool_search` |
+
+### Skills
+
+The App discovers skills and the daemon stores the person's ticks (PROTOCOL.md, "Gateway
+settings"). `bots-skills` is installed whenever the daemon has a selection to read and is
+selected whatever the tool groups are: the ticks are the switch, so there is no group row,
+no `toolGroups` name and nothing to configure per Bot. With nothing ticked the extension's
+section renders nothing; its one tool refuses every name.
+
+| Tool | Input | Behavior | Replay |
+| --- | --- | --- | --- |
+| `skill_read` | `name` | The `SKILL.md` of one selected skill, read from inside that skill's stored directory; 64 KiB read, 32 000 characters and 4 096 lines kept, then a truncation note naming the budget that bound the returned text (declared output limits, so the harness never cuts the manifest or the note). Only a name is accepted, never a path: an unselected name, a manifest that is gone, unreadable, outside that directory or not a regular file, or a folder swapped after it was resolved, is refused | SDK default unsafe |
+
+The prompt section is an index, one line per selected skill as `name · version —
+description`, re-read on every ask, plus one sentence telling the model to call `skill_read`
+before following a skill. Building it does no filesystem work, and the order is the order the
+App pushed. The daemon never scans a directory: a tick the App does not push does not exist
+here. The macOS 技能 page owns discovery, and the App-scoped
+`SkillsSelection` owns the ticks and their one ordered push queue
+(`apps/macos/Sources/EagleFeatures/SkillsSelection.swift`): a page is a view of it, so a
+reopened window keeps the ticks and cannot start a second queue, and a scan that a newer
+page's scan superseded teaches the selection nothing and pushes nothing.
+
+The read itself assumes a model can ask for it. It runs as separate steps, and each one is a
+check in its own right: the folder is resolved and its device and inode are recorded; the
+manifest is resolved and its real path must be inside that folder; the file is opened with
+`O_NONBLOCK` and without following a final symlink, so a fifo cannot park the read and a last
+component swapped for a symlink is refused; the opened descriptor is checked with `fstat`, so
+it must be a regular file and the same file that path named; the folder is stated again and
+must still be the directory that was resolved; and finally the manifest is resolved once more
+from that folder and must still lead inside it and end at the inode the descriptor is.
+
+The last check is the one an intermediate directory needs: a resolved path is a string, so a
+subdirectory along it can be replaced by a symlink to another tree while the folder's own
+identity stays untouched. With it, a swapped folder, a swapped intermediate directory or a
+swapped file is a refusal, not a read of another tree.
+
+What those checks prove, and what they do not: each is a fact about the moment it ran, and
+the checks and the open are separate calls — Node has no `openat` bound to a directory
+descriptor — so the composite does not establish that the tree held still for the whole call.
+A swap that happens after the last check is not detected, and neither is one made and unmade
+between two checks; the bytes that are read still come from the descriptor that was opened
+and checked, so such a swap cannot redirect this read, but nothing here proves the file still
+"belongs" to that folder later. Only after those checks are bytes pulled, and only `64 KiB`
+of them, cut on a UTF-8 boundary; the kept text is bounded by characters and lines, and the
+truncation note names the budget that bound the returned text and sits inside the tool's
+declared output limits — the harness defaults (50 KiB, 2 000 lines) would otherwise cut the
+note away.
 
 ### Filesystem and coding
 
@@ -304,8 +376,9 @@ uses the existing reconnect path; errors retain their single origin identity.
 - First-party domain tools use singular `domain_verb`: `memory_read`,
   `web_fetch`, `agent_list`, `peer_send`. Groups are product categories; they need
   not be identical to prefixes (`search` groups the `web_*` tools).
-- An extension uses `bots-<group>`; existing `bots-tools` is the core name.
-  Preserve native `coding-tools` and `tool-search`. No duplicate tool names
+- An extension uses `bots-<group>`; existing `bots-tools` is the core name, and
+  `bots-skills` is named for what it carries rather than a switchable group, because the
+  person's ticks are the switch. Preserve native `coding-tools` and `tool-search`. No duplicate tool names
   across our extensions, even though the SDK permits name-based composition.
 - One operation has one name. Use arguments for scope/target, not duplicate
   `shared_memory_*` and `private_memory_*` families. Do not add synonymous

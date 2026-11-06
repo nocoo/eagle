@@ -74,6 +74,7 @@ test("saved gateway credentials authorize model requests on every daemon boot", 
       thinkingLevel: "medium",
       toolGroups: ["core", "herdr"],
       corePrompt: "你是一个务实、友好的 agent。",
+      skills: [],
     });
     let botId: string | undefined;
     for (const boot of [1, 2]) {
@@ -881,6 +882,239 @@ test("the daemon reads the machine prompt and saves the core prompt", async () =
   } finally {
     if (previous === undefined) delete process.env.BOTS_MACHINE_AGENTS;
     else process.env.BOTS_MACHINE_AGENTS = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// The ticks the App pushes are the daemon's only skill input (PROTOCOL.md, "Gateway
+// settings"): stored beside the gateway, reported back, and bounded where it is written.
+test("the daemon stores the skills the App pushed and refuses a broken selection", async () => {
+  const root = await daemonRoot("bots-main-skills-");
+  try {
+    const config = readConfig({ argv: ["--root", root, "--port", "0"], env: {} });
+    const daemon = await startDaemon(config);
+    const authorized = (path: string, init: RequestInit = {}) =>
+      fetch(`http://127.0.0.1:${daemon.port}${path}`, {
+        ...init,
+        headers: {
+          authorization: `Bearer ${daemon.token}`,
+          "content-type": "application/json",
+          ...(init.headers ?? {}),
+        },
+      });
+    try {
+      const skill = {
+        name: "humanizer-zh",
+        version: "1.0.0",
+        description: "去除文本里的 AI 痕迹。",
+        path: "~/.agents/skills/humanizer-zh",
+      };
+      const initial = (await (await authorized("/v1/settings")).json()) as {
+        settings: { skills: unknown[] };
+      };
+      assert.deepEqual(initial.settings.skills, [], "a machine without ticks stores none");
+
+      const saved = await authorized("/v1/settings", {
+        method: "PUT",
+        body: JSON.stringify({ skills: [skill] }),
+      });
+      assert.equal(saved.status, 200);
+      assert.deepEqual(
+        ((await saved.json()) as { settings: { skills: unknown[] } }).settings.skills,
+        [skill],
+      );
+      assert.deepEqual((await readGateway(root))?.skills, [skill]);
+
+      const absent = await authorized("/v1/settings", {
+        method: "PUT",
+        body: JSON.stringify({ corePrompt: "只说结论。" }),
+      });
+      assert.equal(absent.status, 200);
+      assert.deepEqual(
+        ((await absent.json()) as { settings: { skills: unknown[] } }).settings.skills,
+        [skill],
+        "an absent field keeps the stored ticks",
+      );
+
+      for (const body of [
+        { skills: [skill, skill] },
+        { skills: [{ ...skill, path: "relative/alpha" }] },
+        { skills: [{ ...skill, description: "x".repeat(501) }] },
+      ]) {
+        const refused = await authorized("/v1/settings", {
+          method: "PUT",
+          body: JSON.stringify(body),
+        });
+        assert.equal(refused.status, 400, `${JSON.stringify(body)} is refused`);
+        const error = (await refused.json()) as { error: { kind: string } };
+        assert.equal(error.error.kind, "invalid_command");
+      }
+      assert.deepEqual((await readGateway(root))?.skills, [skill], "a refusal writes nothing");
+
+      const cleared = await authorized("/v1/settings", {
+        method: "PUT",
+        body: JSON.stringify({ skills: [] }),
+      });
+      assert.equal(cleared.status, 200);
+      assert.deepEqual((await readGateway(root))?.skills, []);
+    } finally {
+      await daemon.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// The pages of the settings window save one thing each: the 技能 page must not undo the
+// 模型网关 page's choices, and a machine without a gateway stays unconfigured (PROTOCOL.md,
+// "Gateway settings").
+test("a skills-only save leaves the model, the thinking level and the tool groups alone", async () => {
+  const root = await daemonRoot("bots-main-skills-only-");
+  try {
+    const config = readConfig({ argv: ["--root", root, "--port", "0"], env: {} });
+    const daemon = await startDaemon(config);
+    const authorized = (path: string, init: RequestInit = {}) =>
+      fetch(`http://127.0.0.1:${daemon.port}${path}`, {
+        ...init,
+        headers: {
+          authorization: `Bearer ${daemon.token}`,
+          "content-type": "application/json",
+          ...(init.headers ?? {}),
+        },
+      });
+    try {
+      const gateway = await authorized("/v1/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          baseUrl: "http://127.0.0.1:9/v1",
+          model: "auto/gpt-6-luna",
+          apiKey: "sk-main-skills-000000000",
+          thinkingLevel: "medium",
+          toolGroups: ["core", "herdr"],
+        }),
+      });
+      assert.equal(gateway.status, 200);
+
+      const created = await authorized("/v1/bots", {
+        method: "POST",
+        body: JSON.stringify({ title: "技能" }),
+      });
+      const botId = ((await created.json()) as { bot: { id: string } }).bot.id;
+      // The bot chooses its own agent: a page visit must not take that choice away.
+      const patched = await authorized(`/v1/bots/${botId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ model: "other-model", thinkingLevel: "xhigh" }),
+      });
+      assert.equal(patched.status, 200);
+
+      const saved = await authorized("/v1/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          skills: [
+            {
+              name: "alpha",
+              version: "1.0.0",
+              description: "Runs alpha.",
+              path: "~/.agents/skills/alpha",
+            },
+          ],
+        }),
+      });
+      assert.equal(saved.status, 200);
+
+      const catalog = JSON.parse(await readFile(join(root, "catalog.json"), "utf8")) as {
+        bots: { id: string; thinkingLevel?: string; model: { modelId: string } }[];
+      };
+      const bot = catalog.bots.find((entry) => entry.id === botId);
+      assert.equal(bot?.thinkingLevel, "xhigh", "the bot keeps its own level");
+      assert.equal(bot?.model.modelId, "other-model", "the bot keeps its own model");
+      const stored = await readGateway(root);
+      assert.equal(stored?.thinkingLevel, "medium", "the stored level is untouched");
+      assert.deepEqual(
+        stored?.toolGroups,
+        ["core", "coding", "herdr"],
+        "the stored groups are untouched",
+      );
+      assert.equal(stored?.model, "auto/gpt-6-luna", "the stored model is untouched");
+      assert.equal(stored?.skills.length, 1, "the ticks are stored");
+    } finally {
+      await daemon.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a skills-only save on a machine without a gateway stays unconfigured after a restart", async () => {
+  const root = await daemonRoot("bots-main-skills-restart-");
+  try {
+    const config = readConfig({ argv: ["--root", root, "--port", "0"], env: {} });
+    const first = await startDaemon(config);
+    try {
+      const saved = await fetch(`http://127.0.0.1:${first.port}/v1/settings`, {
+        method: "PUT",
+        headers: {
+          authorization: `Bearer ${first.token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          skills: [
+            {
+              name: "alpha",
+              version: "1.0.0",
+              description: "Runs alpha.",
+              path: "~/.agents/skills/alpha",
+            },
+          ],
+        }),
+      });
+      assert.equal(saved.status, 200);
+    } finally {
+      await first.close();
+    }
+
+    const second = await startDaemon(config);
+    try {
+      const shown = (await (
+        await fetch(`http://127.0.0.1:${second.port}/v1/settings`, {
+          headers: { authorization: `Bearer ${second.token}` },
+        })
+      ).json()) as { settings: { configured: boolean; skills: unknown[] } };
+      assert.equal(shown.settings.configured, false, "the machine is still unconfigured");
+      assert.equal(shown.settings.skills.length, 1, "the ticks survived the restart");
+
+      const bot = await second.registry.create("重启", "tr_create_restart");
+      const handle = await second.registry.open(bot.id, "tr_open_restart");
+      try {
+        await handle.submit({
+          requestId: "r_restart_1",
+          text: "你好",
+          whenBusy: "followUp",
+          trace: "tr_restart",
+        });
+        await waitFor(async () => {
+          const record = await handle.submission({ requestId: "r_restart_1" });
+          return record?.status === "done" || record?.status === "unanswered";
+        }, "the run settles");
+        const record = await handle.submission({ requestId: "r_restart_1" });
+        assert.equal(record?.status, "unanswered");
+        assert.equal(record?.reason, "no_model", "no model is configured, and none is asked for");
+      } finally {
+        await handle.close("tr_restart", 5_000);
+      }
+      const catalog = JSON.parse(await readFile(join(root, "catalog.json"), "utf8")) as {
+        bots: { id: string; model: { modelId: string } }[];
+      };
+      const stored = catalog.bots.find((entry) => entry.id === bot.id);
+      assert.notEqual(
+        stored?.model.modelId,
+        "",
+        "the bot has the daemon's default, not an empty id",
+      );
+    } finally {
+      await second.close();
+    }
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

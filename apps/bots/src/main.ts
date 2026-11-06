@@ -10,14 +10,7 @@ import { BotDirectory, nodeDirectoryFs } from "./core/BotDirectory.ts";
 import { BotRegistry } from "./core/BotRegistry.ts";
 import { ConversationService } from "./core/ConversationService.ts";
 import type { TriggerSummary } from "./core/domain.ts";
-import {
-  DEFAULT_THINKING_LEVEL,
-  isThinkingLevel,
-  isToolGroup,
-  resolveToolGroups,
-  type SecretsPort,
-  SecretsStorageError,
-} from "./core/domain.ts";
+import { type SecretsPort, SecretsStorageError } from "./core/domain.ts";
 import { newFailure } from "./core/failures.ts";
 import { OriginStore, originPath } from "./core/OriginStore.ts";
 import { PeerExchangeStore } from "./core/PeerExchangeStore.ts";
@@ -39,14 +32,12 @@ import { loadToken } from "./server/auth.ts";
 import { ClientStore } from "./server/clients.ts";
 import { armDevToken } from "./server/devToken.ts";
 import {
-  DEFAULT_CORE_PROMPT,
   type GatewayApi,
   type GatewayConfig,
   gatewayFromEnv,
+  isGatewayComplete,
   listGatewayModels,
-  MAX_CORE_PROMPT,
   normalizeBaseUrl,
-  normalizeCorePrompt,
   publicGateway,
   readGateway,
   testGateway,
@@ -66,6 +57,7 @@ import {
   selectedProvider,
   writeProviders,
 } from "./server/providers.ts";
+import { createSettingsSaver } from "./server/settings.ts";
 import { acquireLock, LockError } from "./server/singleton.ts";
 import { toServerEvent } from "./server/socket.ts";
 import { UsageStore } from "./server/usage.ts";
@@ -301,20 +293,23 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
   // The stored gateway wins over the dotenv; without either, the registry is empty and a
   // run settles `no_model` until a person configures it in the app.
   gateway = (await readGateway(root)) ?? gatewayFromEnv(process.env);
+  // A gateway is usable only when it names an endpoint, a model and a key: a file the
+  // 工具 or 技能 page wrote before anyone configured one is not a gateway.
+  const configured = isGatewayComplete(gateway);
   const windowTokens = positiveNumber(process.env.BOTS_CONTEXT_WINDOW, 200_000);
   let models = createDaemonModels(
-    gateway === undefined
-      ? undefined
-      : {
-          baseUrl: gateway.baseUrl,
-          apiKey: gateway.apiKey,
-          provider: gateway.provider,
-          modelId: gateway.model,
+    configured
+      ? {
+          baseUrl: gateway?.baseUrl ?? "",
+          apiKey: gateway?.apiKey ?? "",
+          provider: gateway?.provider ?? "magpie",
+          modelId: gateway?.model ?? "",
           contextWindow: windowTokens,
           ...(process.env.BOTS_MAX_TOKENS === undefined
             ? {}
             : { maxTokens: positiveNumber(process.env.BOTS_MAX_TOKENS, 8_192) }),
-        },
+        }
+      : undefined,
   );
   const compaction = compactionFromEnv(process.env, windowTokens);
   const usageStore = new UsageStore(join(root, "usage.sqlite"));
@@ -453,6 +448,8 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     usage: usageStore,
     corePrompt: () => gateway?.corePrompt,
     machinePrompt: () => machinePrompt(),
+    // The App's ticks are the only input: the daemon never scans a folder for skills.
+    skills: () => gateway?.skills ?? [],
     search: () => providers.client,
     decision: () => providers.decision,
     trigger: async (spec) =>
@@ -495,10 +492,9 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
         },
       }),
   });
-  const defaultModel =
-    gateway === undefined
-      ? canonical.model
-      : { provider: gateway.provider, modelId: gateway.model };
+  const defaultModel = configured
+    ? { provider: gateway?.provider ?? "magpie", modelId: gateway?.model ?? "" }
+    : canonical.model;
   const registry = new BotRegistry({
     directory,
     openRuntime: (spec) => runtime.open(spec),
@@ -650,95 +646,40 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     triggers: true,
   };
   let modelCache: { at: number; ids: readonly string[] } | undefined;
+  // One save at a time: the second one reads what the first stored, so two pages that
+  // save at the same moment cannot drop each other's field.
+  const saveSettings = createSettingsSaver({
+    current: () => gateway,
+    write: async (config) => {
+      await writeGateway(root, config);
+      gateway = config;
+    },
+    apply: async (config, carried) => {
+      // Only what the request carried is applied: the 技能 page must not reset the model,
+      // the thinking level or the tool groups the other pages chose.
+      if (carried.model && isGatewayComplete(config)) {
+        models = createDaemonModels({
+          baseUrl: config.baseUrl,
+          apiKey: config.apiKey,
+          provider: config.provider,
+          modelId: config.model,
+        });
+        await registry.applyModel(
+          { provider: config.provider, modelId: config.model },
+          "tr_http_settings",
+        );
+      }
+      if (carried.thinkingLevel) {
+        await registry.applyThinkingLevel(config.thinkingLevel, "tr_http_settings");
+      }
+      if (carried.toolGroups) {
+        await registry.applyToolGroups(config.toolGroups, "tr_http_settings");
+      }
+    },
+  });
   const settings: GatewayApi = {
     public: () => publicGateway(gateway),
-    save: async (input) => {
-      const baseUrl =
-        input.baseUrl === undefined
-          ? (gateway?.baseUrl ?? "")
-          : (normalizeBaseUrl(input.baseUrl) ?? "");
-      const model = (input.model ?? gateway?.model ?? "").trim();
-      const apiKey =
-        input.apiKey !== undefined && input.apiKey.trim().length > 0
-          ? input.apiKey.trim()
-          : (gateway?.apiKey ?? "");
-      const provider = (input.provider ?? gateway?.provider ?? "magpie").trim() || "magpie";
-      const thinkingLevel =
-        input.thinkingLevel === undefined
-          ? (gateway?.thinkingLevel ?? DEFAULT_THINKING_LEVEL)
-          : input.thinkingLevel.trim();
-      if (!isThinkingLevel(thinkingLevel)) {
-        return {
-          settings: publicGateway(gateway),
-          error: "思考等级必须是 off、minimal、low、medium、high、xhigh 或 max",
-        };
-      }
-      // A save that names no gateway field is the 工具 page: it may run before a gateway is
-      // configured, so the three required fields are only checked when this request decides
-      // them or when a gateway is already stored.
-      const touchesGateway =
-        input.baseUrl !== undefined ||
-        input.model !== undefined ||
-        input.apiKey !== undefined ||
-        input.provider !== undefined ||
-        input.thinkingLevel !== undefined;
-      const needsGateway = touchesGateway || gateway !== undefined;
-      if (needsGateway && baseUrl.length === 0) {
-        return { settings: publicGateway(gateway), error: "网关地址必须是 http(s) URL" };
-      }
-      if (needsGateway && model.length === 0) {
-        return { settings: publicGateway(gateway), error: "模型不能为空" };
-      }
-      if (needsGateway && apiKey.length === 0) {
-        return { settings: publicGateway(gateway), error: "API Key 不能为空" };
-      }
-      const requestedGroups = input.toolGroups;
-      if (requestedGroups !== undefined) {
-        const unknown = requestedGroups.filter((name) => !isToolGroup(name));
-        if (unknown.length > 0) {
-          return {
-            settings: publicGateway(gateway),
-            error: `未知的工具组：${unknown.join("、")}`,
-          };
-        }
-      }
-      const corePrompt =
-        input.corePrompt === undefined
-          ? (gateway?.corePrompt ?? DEFAULT_CORE_PROMPT)
-          : normalizeCorePrompt(input.corePrompt);
-      if (corePrompt === undefined) {
-        return {
-          settings: publicGateway(gateway),
-          error: `人格提示不能超过 ${MAX_CORE_PROMPT} 个字符`,
-        };
-      }
-      const toolGroups = resolveToolGroups(requestedGroups ?? gateway?.toolGroups);
-      const next: GatewayConfig = {
-        provider,
-        baseUrl,
-        model,
-        apiKey,
-        thinkingLevel,
-        toolGroups,
-        corePrompt,
-      };
-      await writeGateway(root, next);
-      gateway = next;
-      // Without a complete gateway there is nothing to apply: the tools page is allowed to
-      // store a persona before anyone configures a model.
-      if (next.baseUrl.length > 0 && next.model.length > 0 && next.apiKey.length > 0) {
-        models = createDaemonModels({
-          baseUrl,
-          apiKey,
-          provider,
-          modelId: model,
-        });
-        await registry.applyModel({ provider, modelId: model }, "tr_http_settings");
-      }
-      await registry.applyThinkingLevel(thinkingLevel, "tr_http_settings");
-      await registry.applyToolGroups(toolGroups, "tr_http_settings");
-      return { settings: publicGateway(next) };
-    },
+    save: saveSettings,
     test: async (input) => {
       const baseUrl =
         input.baseUrl === undefined

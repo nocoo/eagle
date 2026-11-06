@@ -48,6 +48,13 @@ or mathematical geometry into presentation tokens.
 - SettingsCard/SectionRow/Header, SettingsTextField/TextArea and SettingsActionButton
   remain the standard form primitives. SettingsSectionRow's optional leading slot carries
   the mark a row names (a bot's face in 用量); rows without one are unchanged.
+- A settings table is one shared component: SettingsTableHeader draws the column titles and
+  SettingsTableRow draws one row (a checkbox, a name, a version, a description and a
+  directory). Both take their widths from the table tokens in Theme.Page and the description
+  column takes the room that is left, so the header and its rows put the four columns at the
+  same horizontal places; the layout test measures that at the 960 pt settings width. A
+  caller supplies the values and the tick, and the checkbox is the only part of a row that
+  reacts to a click.
 - A transient answer is a toast, not a card row: ToastCenter holds one SettingsNotice (✅, ⚠️
   or neutral), SettingsScaffold floats it over the content and retires it after
   `Theme.Motion.toastDwell`, so saving never changes the height of the page that produced it.
@@ -158,6 +165,53 @@ recipes and semantic stroke widths are not padding-grid values. The physical res
 line uses SwiftUI pixelLength (1 pt at 1×, 0.5 pt at 2×) and aligns its inner edge without
 shrinking the existing 11 pt drag hit region or changing drag/clamp behavior. Card/focus
 outlines retain their semantic widths, distinct from physical-pixel separators.
+
+## The 技能 page
+
+The 技能 page (settings → 技能) says where skills come from and what was found there, and
+its ticks are live: the App pushes the selection to this machine's Bot service, which is what
+every Bot reads. The page says so in one line — 勾选即生效, and a Bot reads the file with
+`skill_read` before following it — and it never mentions a tool group, because the ticks are
+the switch.
+
+- The scan roots are `~/.agents/skills` (always scanned, never removable, shown with a `~`)
+  and the folders the person added with a native folder picker, in the order they were
+  added. Each custom root has a 移除 button; the automatic root has none.
+- A skill is an immediate child directory of a root that carries a `SKILL.md`. The front
+  matter is the block between two column-0 `---` delimiters, and without a closing one there
+  is none at all. Plain, single quoted and double quoted scalars are read, the six block
+  forms (`|`, `|-`, `|+`, `>`, `>-`, `>+`) are read, a comment that follows a value is dropped
+  before the value is looked at, and a `#` inside quotes stays part of the value. A version
+  counts when it is a direct child of a `metadata` mapping. A value the reader cannot read is
+  no value at all: the cell stays empty and the skill is named after its folder. A missing
+  name falls back to the folder name and every other key, and every sequence, is ignored.
+- A folder that is really the same folder — reached through a link, or through two roots —
+  is one skill with one row, and the row keeps the path the skill really lives at, so a tick
+  belongs to the skill and not to the way in.
+- A manifest is read through one descriptor that is opened without blocking and checked with
+  `fstat` before a byte is read, so a pipe — even one that replaces the manifest after the
+  check — is never read and never holds the scan up. Only the head of a manifest is read, and
+  the front matter is decided on those bytes, so a character that the cut split in half
+  cannot take the front matter with it. An empty manifest is a skill without front matter.
+- A root that is not there says so, and a root the process may not read says why; neither
+  fails the page.
+- The rows are ordered by name (case-insensitively) and then by path.
+- The list has a keyword field (name, description and directory) and a 全部/已勾选/未勾选
+  filter, and it states the honest counts. Nothing is ticked until a person ticks it, and
+  the ticks and the custom roots live in this App's own defaults.
+- A tick, an added or removed root and a finished scan each push the whole selection (name,
+  version, description and the `~`-shaped directory) to the daemon through the same token
+  client the other settings pages use, one push at a time so two quick ticks cannot land out
+  of order. A refused push changes nothing locally: the tick stays, the card shows the
+  daemon's own message as a ⚠️ note under the statement, and the next change or page visit
+  sends the selection again; a successful push clears the note. A skill the scan no longer
+  finds is not pushed as if it still existed.
+- The scan reads the filesystem off the main actor and publishes on it; 重新扫描 rescans
+  without losing the ticks. Every reload is a request of its own and only the newest one
+  answers the page: a request that a newer one has superseded leaves the page alone and
+  does not scan again, so an older answer can never overwrite a newer one. A root that
+  changes while a scan is running therefore ends with a scan of the scope that is stored
+  now.
 
 ## Reference-led composition
 

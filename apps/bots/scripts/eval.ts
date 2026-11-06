@@ -58,6 +58,8 @@ type CaseFile = {
       readonly role?: string;
       readonly origin?: string;
       readonly contains?: string;
+      /** `true` for a tool result the daemon marked an error, `false` for one that is not. */
+      readonly error?: boolean;
     }[];
     /** Rows that must not exist: how a case proves an answer never arrived. */
     readonly messagesExcluded?: readonly {
@@ -70,6 +72,13 @@ type CaseFile = {
       readonly count: number;
     }[];
     readonly toolsCalled?: readonly string[];
+    /** Text any model request carried: how a case proves what the model was given. */
+    readonly modelSaw?: readonly string[];
+    /**
+     * Text the **first** non-reflection request's system content carried: how a case pins a
+     * prompt section to the request a run actually starts with, not to a later replay.
+     */
+    readonly firstRequestSaw?: readonly string[];
     readonly files?: Readonly<Record<string, string>>;
     readonly noErrors?: boolean;
     readonly modelRequests?: { readonly max: number };
@@ -160,7 +169,13 @@ type Step =
 
 type Frame = { readonly type: string } & Record<string, unknown>;
 type Loose = Record<string, unknown>;
-type Row = { readonly role: string; readonly origin: string | null; readonly text: string };
+type Row = {
+  readonly role: string;
+  readonly origin: string | null;
+  readonly text: string;
+  /** Whether a tool result in this row is an error; absent when the row holds no result. */
+  readonly error?: boolean;
+};
 
 function failure(message: string): never {
   throw new Error(message);
@@ -179,6 +194,9 @@ const scriptedModel = (
 ) => {
   const requests: {
     readonly lastInput: string;
+    readonly body: string;
+    /** The developer/system content the request carried, which is where sections live. */
+    readonly system: string;
     readonly tools: number;
     readonly reflection: boolean;
   }[] = [];
@@ -244,8 +262,19 @@ const scriptedModel = (
         response.end(JSON.stringify({ error: { message: routingFailure } }));
         return;
       }
+      const inputs = Array.isArray(body.input) ? (body.input as Loose[]) : [];
       requests.push({
         lastInput: JSON.stringify(body.input?.at(-1) ?? null).slice(0, 2_000),
+        // What the model was given, whole: a case can assert a prompt section or a tool
+        // result actually reached it, not merely that the daemon stored it.
+        body: JSON.stringify(body).slice(0, 200_000),
+        system: inputs
+          .filter((item) => item.role === "developer" || item.role === "system")
+          .map((item) =>
+            typeof item.content === "string" ? item.content : JSON.stringify(item.content ?? ""),
+          )
+          .join("\n")
+          .slice(0, 40_000),
         tools: body.tools?.length ?? 0,
         reflection,
       });
@@ -469,11 +498,20 @@ const viewer = async (port: number, token: string, botId: string) => {
           // A provisional is a projection of the attempt the committed entry replaces.
           if (String(message.id).startsWith("p_")) continue;
           const origin = (message.origin as { kind?: string } | undefined)?.kind ?? null;
-          const blocks = (message.blocks ?? []) as { type: string; name?: string; text?: string }[];
+          const blocks = (message.blocks ?? []) as {
+            type: string;
+            name?: string;
+            text?: string;
+            isError?: boolean;
+          }[];
+          const results = blocks.filter((block) => block.type === "toolResult");
           rows.push({
             role: String(message.role),
             origin,
             text: blocks.map((block) => block.text ?? "").join(" "),
+            ...(results.length === 0
+              ? {}
+              : { error: results.some((block) => block.isError === true) }),
           });
           for (const block of blocks) {
             if (block.type === "toolCall" && block.name !== undefined) tools.push(block.name);
@@ -1099,7 +1137,8 @@ const runCase = async (
             index >= cursor &&
             (wanted.role === undefined || row.role === wanted.role) &&
             (wanted.origin === undefined || row.origin === wanted.origin) &&
-            (wanted.contains === undefined || row.text.includes(wanted.contains)),
+            (wanted.contains === undefined || row.text.includes(wanted.contains)) &&
+            (wanted.error === undefined || row.error === wanted.error),
         );
         if (found < 0) {
           failure(`no ${JSON.stringify(wanted)} after row ${cursor}: ${JSON.stringify(view.rows)}`);
@@ -1127,6 +1166,17 @@ const runCase = async (
     }
     for (const tool of expect.toolsCalled ?? []) {
       if (!view.tools.includes(tool)) failure(`the model never called ${tool}`);
+    }
+    for (const needle of expect.modelSaw ?? []) {
+      if (!model.requests.some((request) => request.body.includes(needle))) {
+        failure(`no model request carried ${JSON.stringify(needle)}`);
+      }
+    }
+    const firstRoot = model.requests.find((request) => !request.reflection);
+    for (const needle of expect.firstRequestSaw ?? []) {
+      if (firstRoot === undefined || !firstRoot.system.includes(needle)) {
+        failure(`the first root request's system prompt did not carry ${JSON.stringify(needle)}`);
+      }
     }
     for (const [path, needle] of Object.entries(expect.files ?? {})) {
       const body = await readFile(join(root, "bots", botId, "workspace", path), "utf8").catch(

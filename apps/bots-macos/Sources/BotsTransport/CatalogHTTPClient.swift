@@ -1,6 +1,23 @@
 import BotsCore
 import Foundation
 
+/// One skill the person ticked, as the daemon stores it (docs/bots/PROTOCOL.md, "Gateway
+/// settings"). `path` is the skill's own directory, written with `~` when it lives under the
+/// home, so the daemon expands it itself.
+public struct SelectedSkill: Codable, Sendable, Equatable {
+  public var name: String
+  public var version: String
+  public var description: String
+  public var path: String
+
+  public init(name: String, version: String, description: String, path: String) {
+    self.name = name
+    self.version = version
+    self.description = description
+    self.path = path
+  }
+}
+
 /// The model gateway settings the daemon stores (docs/bots/PROTOCOL.md, "Gateway
 /// settings"). The key never comes back: a client only learns whether one is set.
 public struct GatewaySettings: Decodable, Sendable, Equatable {
@@ -15,9 +32,12 @@ public struct GatewaySettings: Decodable, Sendable, Equatable {
   public var toolGroups: [String]
   /// The person's standing instruction, the first section of every bot's system prompt.
   public var corePrompt: String
+  /// The skills this person ticked for the machine's Bot service.
+  public var skills: [SelectedSkill]
 
   private enum CodingKeys: String, CodingKey {
-    case configured, provider, baseUrl, model, hasApiKey, thinkingLevel, toolGroups, corePrompt
+    case configured, provider, baseUrl, model, hasApiKey, thinkingLevel, toolGroups, corePrompt,
+      skills
   }
 
   public init(from decoder: any Decoder) throws {
@@ -34,6 +54,7 @@ public struct GatewaySettings: Decodable, Sendable, Equatable {
         "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "trigger",
       ]
     corePrompt = try container.decodeIfPresent(String.self, forKey: .corePrompt) ?? ""
+    skills = try container.decodeIfPresent([SelectedSkill].self, forKey: .skills) ?? []
   }
 }
 
@@ -324,6 +345,18 @@ public final class CatalogHTTPClient: CatalogPort, SecretPort, QuestionPort, Sen
     toolGroups: [String]
   ) async throws -> BotSettingsSnapshot {
     try await saveSettings(body: ["corePrompt": corePrompt, "toolGroups": toolGroups])
+  }
+
+  /// The 技能 page's one write: this list replaces what the daemon stored, and an empty list
+  /// clears it. Every other setting is left alone, because an absent field keeps its value.
+  public func saveSkills(_ skills: [SelectedSkill]) async throws {
+    let list = skills.map { skill in
+      [
+        "name": skill.name, "version": skill.version, "description": skill.description,
+        "path": skill.path,
+      ]
+    }
+    _ = try await raw(path: "/v1/settings", method: "PUT", body: ["skills": list])
   }
 
   private func saveSettings(body: [String: Any]) async throws -> BotSettingsSnapshot {

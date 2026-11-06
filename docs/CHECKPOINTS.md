@@ -1,5 +1,75 @@
 # 用户视角检查点
 
+## 2026-11-06 12:10 +08 — 技能 settings page, review round 3 (macOS)
+
+- 第三轮评审剩下的三个读取器边界都修掉了，每条先有失败测试：注释边界接受任意多个空格或一个制表符
+  （`>-  # x`、`>-\t# x`、`|  # x` 都按块标量处理，不再因为尾部空格/制表符匹配不上而变空）；
+  `|+`/`>+` 只有一行空行且没有内容时回答一个换行（没有空行仍然是空）；折叠块里“更深缩进行后面跟一个
+  空行”保留两个换行（`a\n  b\n\nc`）；恢复 `\r` 转义（上一轮新写的 `escape()` 漏了它，导致整个值丢失）。
+- 红证据：6 个新用例在上一版实现上全部失败（两个空格、制表符、`|` 带空格注释、`|+`/`>+` 仅空行、
+  折叠块深行后空行、`\r`）。期望值同样用本机 Ruby 的 YAML（Psych）对过（包括 `|+` 只有空行 → `"\n"`、
+  `>+` 同理、折叠块深行＋空行 → `"a\n  b\n\nc"`）。
+- 修好后：`apps/macos` `swift test` 381+52+78+37 = 548 个测试全绿（本轮新增 6 个）；
+  `swift format lint --strict` 干净；`npm run check:design` 与 `npm run test:design` 通过；
+  `./Scripts/coverage.sh` 2959/3120 = 94.8%（下限 90；`SkillScanner.swift` 98.62%）。
+- 这是最后一轮评审，没有后续审查；仍未验证：没有 `swift run`、没有真机肉眼验收，也没有大小写不敏感
+  卷的用例。
+
+## 2026-11-06 11:45 +08 — 技能 settings page, review round 2 (macOS)
+
+- 第二轮评审的五条都修掉了，每条先有失败测试：front matter 读取器先剥行尾注释再判断值类型
+  （`>- # summary` 不再显示标记），块标量按 YAML 语义（折叠块里更深缩进的行保留自己的换行与缩进），
+  双引号支持 `\x` `\u` `\U`，读不懂的值一律当作“没有值”（空格子、名字回落目录名）；manifest 改成
+  字节层判定 front matter（只读头部 64 KiB，body 里被截断的多字节字符不影响 front matter，空
+  manifest 也算一个技能）；manifest 用同一个描述符 `open(O_RDONLY|O_NONBLOCK)` + `fstat` 读，
+  检查与读之间被换成管道的文件既不会被读也不会卡住扫描；`reload()` 每次一个请求号，只有最新的请求
+  可以发布，被顶掉的请求直接退出不再重扫。
+- 红证据（对着上一版实现跑新测试）：scanner 10 处失败（块标记当值、键后注释、嵌套前的注释行、折叠块
+  的深缩进行、转义、空块、空 manifest、body 截断多字节字符等）；把 open 换成阻塞式后 “manifest 被
+  换成管道” 用例 2.1 s 超时失败；view model 的 “同范围两个 reload 乱序完成” 用例两处断言失败（旧实现
+  会用旧答案覆盖新答案，并多扫一次）。修好后：`apps/macos` `swift test` 375+52+78+37 = 542 个测试
+  全绿（本轮新增 17 个：scanner +16、view model +1）；`swift format lint --strict` 干净；
+  `npm run check:design` 与 `npm run test:design` 通过；`./Scripts/coverage.sh` 2934/3094 = 94.8%
+  （下限 90；`SkillScanner.swift` 98.75%、`SkillsSettingsViewModel.swift` 99.39%）。
+- 块标量的期望值用本机 Ruby 的 YAML（Psych）逐条对过（`|`/`|-`/`|+`/`>`/`>-`/`>+`、空块、折叠块里的
+  深缩进行、折叠块里的空行），没有引入第三方 YAML 库。
+- 未验证：仍按要求没有运行 `swift run`、没有动 dev App，这一页还没有真机肉眼验收；也没有大小写不敏感
+  卷的用例。
+
+## 2026-11-06 11:05 +08 — 技能 settings page, review fixes (macOS)
+
+- 第一轮评审的七条意见全部修掉，每条都先有失败测试：front matter 读取器重写（成对 `---`
+  定界、plain/单引号/双引号、`|` 与 `>` 块标量与 chomping、行尾注释、`metadata` 的直系
+  子键）；技能身份改用文件系统标识（`fileResourceIdentifier`）去重、`resolvingSymlinksInPath`
+  作 id，链接目录算一个技能且勾选跟着技能走；manifest 只读普通文件且最多读头部 64 KiB，
+  FIFO 不会卡住扫描；根目录按错误分类（不存在 = missing，权限不足 = unreadable）；扫描期间
+  增删根目录会丢弃旧结果并重扫当前范围；表头与行的四列改为同一水平位置。
+- 红证据（对着上一版实现跑新测试）：scanner 16 处失败、view model 两处（增/删根目录）失败、
+  表头列位置四处失败；去掉 manifest 类型检查后 FIFO 用例在 2.1 s 内超时失败。修好后：
+  `apps/macos` `swift test` 358+52+78+37 = 525 个测试全绿（本轮新增 23 个）；
+  `./Scripts/coverage.sh` 2831/2998 = 94.4%（下限 90；`SkillScanner.swift` 96.85%、
+  `SkillsSettingsViewModel.swift` 98.80%）；`swift format lint --strict` 干净；
+  `npm run check:design` 与 `npm run test:design` 通过。
+- 本机 `~/.agents/skills` 的 27 个真实技能全部解析正常（折叠/字面块、metadata.version、
+  行尾注释），此前 5 个会显示成 `|`、`>`、`>-`。
+- 未验证：仍按要求没有运行 `swift run`、没有动 dev App，这一页还没有真机肉眼验收；下一个
+  断点还是属主在 dev App 的“设置 → 技能”里看一眼列宽与扫描范围。
+
+## 2026-11-06 10:20 +08 — 技能 settings page (macOS)
+
+- 新增设置页“技能”：扫描范围（自动的 `~/.agents/skills` ＋ 本人添加的文件夹）与技能表
+  （名称/版本/描述/目录 ＋ 勾选、关键字、全部/已勾选/未勾选）。这一页**故意没有连到任何
+  Bot**：没有 daemon 调用、没有协议改动、没有 toolGroups 改动、没有新 HTTP 端点；勾选只记在
+  本机（`eagle.skills.customRoots`、`eagle.skills.selection`）。
+- 证据：`apps/macos` `swift test` 335+52+78+37 = 502 个测试全绿（含 23 个新测试）；
+  `./Scripts/coverage.sh` 2580/2736 = 94.3%（下限 90，新增 `SkillScanner.swift` 98.52%、
+  `SkillsSettingsViewModel.swift` 99.34%）；`swift format lint --strict` 干净；
+  `npm run check:design` 与 `npm run test:design`（91 个语法夹具）通过。
+  `EagleDevicesTests` 的 “Private device host” 在这台机器上依旧通过，没有复现已知的失败。
+- 未验证：按任务要求没有运行 `swift run`、没有动正在运行的 dev App，因此这一页还没有经过
+  真机肉眼验收；下一个断点是由属主在 dev App 的“设置 → 技能”里看一眼扫描范围、表格列宽
+  与空状态。
+
 ## 2026-11-06 09:20 +08 — Published macOS 0.20.0
 
 - Release commit `46aa0075` (`chore: release macos 0.20.0`) bumps
@@ -4077,3 +4147,24 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 - No production deployment or live Cloudflare/billing test was performed. Real
   model selection, installed-App first run, Herdr collection, viewer auth, D1 and
   physical two-Mac acceptance remain unverified. Only the steering pane remains.
+
+## 2026-11-06 13:57 +08 — The 技能 page's ticks reach a Bot
+
+- The reported gap is closed on every hop that exists here: the App pushes its ticks to
+  `PUT /v1/settings` (`skills`), the daemon stores them in `gateway.json`, `bots-skills`
+  lists them as the prompt index on every ask, and `skill_read({name})` returns one selected
+  `SKILL.md`. Passing evidence: `tests/eval/cases/skills-enabled.json` on a real daemon with a
+  scripted model (tool ran, the file's own sentence reached the model, an unselected name was
+  refused and the first result stayed), all 25 eval cases green, and `apps/bots` `npm run
+  check` green at 1 047 tests with 95.83% lines / 88.97% branches / 91.11% functions.
+- App side: ticks, root add/remove and a finished scan each push the selection through the
+  token client; a refused push keeps the tick, shows the daemon's message as a `.failure`
+  note and is retried on the next change or page visit. `swift test` in `apps/macos` passed
+  385 tests in 62 suites, `Scripts/coverage.sh` reported 94.8% of the logic layer,
+  `swift format lint --strict` was clean for both Swift packages and `npm run check:design`
+  passed.
+- Not verified: no real test-group Bot was asked through `eagle-dev`, no dev App was started
+  (`swift run` was out of scope for this task), and no installed-App or live-daemon
+  verification of the push happened here. The App's
+  push uses the same token and port every other settings page uses, but its end-to-end path
+  against a running daemon on this machine is still the owner's manual check.

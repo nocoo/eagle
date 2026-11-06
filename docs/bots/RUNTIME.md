@@ -329,6 +329,7 @@ Projection, which is also part of the mapping contract:
 | Search provider | `<XDG_CONFIG_HOME or ~/.config>/eagle-bots/providers.json` (0600) | Independent DeepSeek/Tavily keys with one selected provider. The `search` tool group is off by default. Its deferred `web_search`/`web_fetch` use a stable routing client that resolves the selected provider/key at invocation, including existing conversations; missing configuration is an error result, and failures never trigger fallback. Successful calls each book one `search` call |
 | Usage statistics | `<root>/usage.sqlite`, 90 days | `usage_daily(bot_id, day, source, tokens, calls, cost_usd)` plus `last_seen(bot_id, total_tokens, cost_usd)` so a cumulative model report becomes a delta. A source is a string (`model`, `search`), so a new spender needs no schema change; the first token-only `daily` table is migrated into the `model` source on open. Kept outside a bot's session, so deleting a bot keeps its history; pruned on boot and on write |
 | Model gateway | `<root>/gateway.json` (0600), dotenv fallback | The daemon registers one provider from the stored `{provider, baseUrl, model, apiKey}`. `PUT /v1/settings` rewrites the file, swaps the process-wide `Models` (the Harness reads it through a getter), binds the saved key directly to the provider auth resolver (the same path used on startup, without mutating process environment), and moves every bot to the new model in place with `conversation.configure({model})`; a closed bot opens with the catalog's new model. A bot naming another id before that settles `no_model` |
+| `skills` (daemon) | from `gateway.json`, default none | The App's ticks are the only input: the daemon never scans a folder for skills. The selection becomes the `bots-skills` prompt index and `skill_read`, read again on every ask, so a tick lands on the next turn instead of at the next Harness open (see "Skills" below) |
 | `contextRetentionMs`, `documentRetentionMs` | 600 000 (default) | Idle close frees memory; defaults keep reopen cheap |
 
 Each bot owns its settings object so one bot's policy cannot affect another
@@ -367,6 +368,40 @@ third-party plugins are explicitly outside the product scope.
   change and remains outside the client's current text-only tool-result shape.
 - A hard kill of the daemon can orphan an external process. Durable recovery records an
   interrupted unsafe call; it does not promise to undo effects or kill arbitrary old pids.
+
+### Skills
+
+`bots-skills` is installed whenever the runtime is given a selection reader, and it belongs to
+no tool group: the person's ticks are the switch, and a group switch would be a second,
+contradictory one.
+
+- Its one section re-reads the selection on every ask. With nothing ticked it renders nothing
+  at all; otherwise it lists each skill as `name · version — description` (the version is
+  left out when the skill states none), in the order the App pushed, on one line per skill.
+  Building the section does no filesystem work.
+- Its one tool, `skill_read({ name })`, reads `SKILL.md` inside that selected skill's
+  directory. It takes a name and never a path, so the model cannot turn it into a file
+  reader: the folder is resolved and its device and inode are recorded, the manifest is
+  resolved and has to stay inside that folder, the file is opened with `O_NONBLOCK` and
+  without following a final symlink, and the opened descriptor is checked with `fstat` — a
+  regular file, and the same one the path resolved to. The folder is then stated again and
+  must still be that directory, and the manifest is resolved once more from it, which has to
+  lead inside it again and end at the descriptor's inode: an intermediate directory of the
+  resolved path swapped for a symlink to another tree is refused that way. An unselected
+  name, a manifest that is gone, unreadable, outside the folder or not a regular file, or a
+  tree that changed under the read is refused with a message naming what is selected. The
+  checks are not atomic with the open, so a swap after the last one, or one made and unmade
+  between two, is not detected; the bytes read always come from the checked descriptor.
+- The read is bounded twice over: at most 64 KiB are pulled from the file, in chunks, and the
+  kept text is at most 32 000 characters and 4 096 lines, cut on a UTF-8 boundary. Every
+  budget leaves a prefix, so the returned text is the shortest of them and the
+  `[truncated at <n> <unit>]` note names the budget that produced it — 100 000 ASCII bytes
+  say `characters`, 40 000 short lines say `lines`. The tool declares output limits above
+  those budgets, so the harness neither cuts the manifest nor drops the note in its own
+  defaults (50 KiB and 2 000 lines).
+- `~/…` paths are expanded against the daemon's home, which is where the App scanned. A
+  selection change reaches a conversation that is already open: the section and the tool both
+  read the live list, and no `root.configure`, reopen or subscription is involved.
 
 ### Tool groups
 

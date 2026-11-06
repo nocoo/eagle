@@ -39,6 +39,7 @@ const EDGES: ReadonlyArray<{
       target.startsWith("src/core/") ||
       target.startsWith("src/protocol/") ||
       target.startsWith("src/server/") ||
+      target.startsWith("src/skills/") ||
       target === "src/tools/decision/address.ts",
   },
   {
@@ -59,6 +60,7 @@ const EDGES: ReadonlyArray<{
     allows: (target) =>
       target.startsWith("src/runtime/") ||
       target.startsWith("src/tools/") ||
+      target.startsWith("src/skills/") ||
       target === "src/core/domain.ts" ||
       target === "src/core/RuntimePort.ts",
   },
@@ -76,7 +78,13 @@ const EDGES: ReadonlyArray<{
   },
   // The tool extension is part of the adapter boundary: it defines pi-durable tools, so
   // it may import pi-durable and may not reach core, protocol or transport.
-  { prefix: "src/tools/", allows: (target) => target.startsWith("src/tools/") },
+  {
+    prefix: "src/tools/",
+    allows: (target) => target.startsWith("src/tools/") || target.startsWith("src/skills/"),
+  },
+  // The selection is one value with one reader: the settings store, the extension and the
+  // adapter name the same four strings, and this module never reaches back out of itself.
+  { prefix: "src/skills/", allows: (target) => target.startsWith("src/skills/") },
   { prefix: "src/log/", allows: (target) => target.startsWith("src/log/") },
 ];
 
@@ -169,6 +177,7 @@ test("the rules reject every forbidden edge", () => {
     { file: "src/protocol/frames.ts", specifier: "../runtime/pi/mapEvents.ts" },
     { file: "src/runtime/pi/mapEvents.ts", specifier: "../../protocol/encode.ts" },
     { file: "src/tools/registry.ts", specifier: "../core/BotDirectory.ts" },
+    { file: "src/skills/selection.ts", specifier: "../server/gateway.ts" },
     { file: "src/runtime/pi/mapEvents.ts", specifier: "../../core/BotDirectory.ts" },
     { file: "src/log/log.ts", specifier: "../server/auth.ts" },
     { file: "src/core/BotDirectory.ts", specifier: "../server/http.ts" },
@@ -206,6 +215,9 @@ test("the rules allow the documented edges", () => {
     { file: "src/peers/host.ts", specifier: "../core/Invocation.ts" },
     { file: "src/peers/host.ts", specifier: "../tools/types.ts" },
     { file: "src/peers/api.ts", specifier: "../server/http.ts" },
+    { file: "src/server/gateway.ts", specifier: "../skills/selection.ts" },
+    { file: "src/tools/skills/tools.ts", specifier: "../../skills/selection.ts" },
+    { file: "src/skills/selection.ts", specifier: "./selection.ts" },
   ];
   assert.deepEqual(
     violations(allowed.map(({ file, specifier }) => ({ file, dependencies: [specifier] }))),

@@ -12,6 +12,7 @@ import {
   type ThinkingLevel,
   type ToolGroup,
 } from "../core/domain.ts";
+import { normalizeSelectedSkills, type SelectedSkill } from "../skills/selection.ts";
 
 export type GatewayConfig = {
   readonly provider: string;
@@ -23,6 +24,8 @@ export type GatewayConfig = {
   readonly toolGroups: readonly ToolGroup[];
   /** The person's standing instruction, the first section of every bot's system prompt. */
   readonly corePrompt: string;
+  /** The skills this person ticked for the machine's Bot service (PROTOCOL.md, "Skills"). */
+  readonly skills: readonly SelectedSkill[];
 };
 
 export type PublicGateway = {
@@ -34,6 +37,7 @@ export type PublicGateway = {
   readonly thinkingLevel: ThinkingLevel;
   readonly toolGroups: readonly ToolGroup[];
   readonly corePrompt: string;
+  readonly skills: readonly SelectedSkill[];
 };
 
 /** What the gateway's own health endpoint says, when that origin has one. */
@@ -109,6 +113,7 @@ export type GatewayInput = {
   readonly thinkingLevel?: string;
   readonly toolGroups?: readonly string[];
   readonly corePrompt?: string;
+  readonly skills?: readonly SelectedSkill[];
 };
 
 const FILE = "gateway.json";
@@ -162,6 +167,7 @@ export const readGateway = async (root: string): Promise<GatewayConfig | undefin
         : DEFAULT_THINKING_LEVEL,
       toolGroups: readGroups(raw),
       corePrompt: typeof raw.corePrompt === "string" ? raw.corePrompt : DEFAULT_CORE_PROMPT,
+      skills: readSkills(raw.skills),
     };
   } catch {
     return undefined;
@@ -185,14 +191,41 @@ const readGroups = (raw: Record<string, unknown>): readonly ToolGroup[] => {
   return resolveToolGroups([...stored, ...gained]);
 };
 
+/**
+ * The stored selection, read tolerantly: a file an older daemon wrote has no field at all,
+ * and a hand-edited one that breaks a bound is read as no skills rather than as a crash. The
+ * App pushes the selection again on the next tick or page visit.
+ */
+const readSkills = (value: unknown): readonly SelectedSkill[] => {
+  const outcome = normalizeSelectedSkills(Array.isArray(value) ? value : []);
+  return "skills" in outcome ? outcome.skills : [];
+};
+
+/** How many settings files this daemon has written; it names the temporary files. */
+let temporaryCounter = 0;
+
 /** Writes the settings atomically with 0600: the key is a secret like the token. */
 export const writeGateway = async (root: string, config: GatewayConfig): Promise<void> => {
   await mkdir(root, { recursive: true, mode: 0o700 });
-  const temporary = `${gatewayPath(root)}.${process.pid}.tmp`;
+  // The temporary name is the daemon's own and it is unique per write: two writes that
+  // overlap must not share one file to write into.
+  temporaryCounter += 1;
+  const temporary = `${gatewayPath(root)}.${process.pid}.${temporaryCounter}.tmp`;
   const body = { ...config, version: FILE_VERSION };
   await writeFile(temporary, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
   await rename(temporary, gatewayPath(root));
 };
+
+/**
+ * A gateway is usable only when it names an endpoint, a model and a key. A file the 工具
+ * or 技能 page wrote before anyone configured one is not a gateway: it must not register a
+ * model and it must not become a Bot's default.
+ */
+export const isGatewayComplete = (config: GatewayConfig | undefined): boolean =>
+  config !== undefined &&
+  config.baseUrl.length > 0 &&
+  config.model.length > 0 &&
+  config.apiKey.length > 0;
 
 /**
  * The standing instruction as it is stored: trimmed, and bounded by the protocol's own limit.
@@ -224,15 +257,12 @@ export const gatewayFromEnv = (
         ? DEFAULT_TOOL_GROUPS
         : resolveToolGroups(env.BOTS_TOOL_GROUPS.split(",").map((name) => name.trim())),
     corePrompt: DEFAULT_CORE_PROMPT,
+    skills: [],
   };
 };
 
 export const publicGateway = (config: GatewayConfig | undefined): PublicGateway => ({
-  configured:
-    config !== undefined &&
-    config.baseUrl.length > 0 &&
-    config.model.length > 0 &&
-    config.apiKey.length > 0,
+  configured: isGatewayComplete(config),
   provider: config?.provider ?? DEFAULT_PROVIDER,
   baseUrl: config?.baseUrl ?? "",
   model: config?.model ?? "",
@@ -240,6 +270,7 @@ export const publicGateway = (config: GatewayConfig | undefined): PublicGateway 
   thinkingLevel: config?.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
   toolGroups: config?.toolGroups ?? DEFAULT_TOOL_GROUPS,
   corePrompt: config?.corePrompt ?? DEFAULT_CORE_PROMPT,
+  skills: config?.skills ?? [],
 });
 
 /** A gateway URL is http(s) and has no trailing slash, so `/models` appends cleanly. */
