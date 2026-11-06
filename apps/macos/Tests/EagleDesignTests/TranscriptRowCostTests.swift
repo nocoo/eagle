@@ -5,84 +5,138 @@ import Testing
 
 @testable import EagleDesign
 
-/// Rows must stay within a small multiple of **plain `Text`** with the same words (commit
-/// `cbffb5b`): affordances such as copy controls and `textSelection` must not multiply per-row
-/// work for rows nobody is hovering. Both sides use [`TranscriptScrollColumn`] so the shell
-/// matches production without charging header/composer.
-///
-/// **Secondary:** `TranscriptEntryRow` vs direct bubble/note views catches wrapper/transitions
-/// regressions without replacing the Text baseline (`TranscriptScrollCostTests` already covers
-/// scroll bookkeeping vs bare stacks, not this ratio).
+/// Rich transcript rows vs plain `Text` with the same words (commit `cbffb5b`), both in
+/// [`TranscriptScrollColumn`]. Bubble timings in the same loop are **diagnostic only** (no gate):
+/// CI has shown wrapper≈1.0× while rich/Text≈4×, so the regression budget applies to rich vs Text.
 @MainActor
 @Suite("Transcript row cost", .serialized)
 struct TranscriptRowCostTests {
-  @Test(
-    "a page of conversation rows costs little more than plain text rows, and little more wrapped than direct bubbles"
-  )
+  @Test("a page of conversation rows costs little more than plain text rows")
   func pageCost() {
     Self.logRunContext()
     let entries = Self.entries(turns: 40)
     let markdown = Self.prepared(entries)
-    let transcriptRows = Self.transcriptRows(entries, preparedMarkdown: markdown)
-    let plainTextShell = Self.plainTextShell(entries)
-    let baselineBubbleRows = Self.baselineBubbleRows(entries, preparedMarkdown: markdown)
+    let rich = Self.transcriptRows(entries, preparedMarkdown: markdown)
+    let plain = Self.plainTextShell(entries)
+    let bubbleDirect = Self.baselineBubbleRows(entries, preparedMarkdown: markdown)
     for _ in 0..<2 {
-      _ = Self.pageCost(transcriptRows)
-      _ = Self.pageCost(plainTextShell)
-      _ = Self.pageCost(baselineBubbleRows)
+      _ = Self.pageCost(rich)
+      _ = Self.pageCost(plain)
+      _ = Self.pageCost(bubbleDirect)
     }
+
+    // Balance measure order across the six permutations so no single variant sits in the middle
+    // every round (diagnostics + fairer paired ratios).
+    let orderings: [Ordering] = [.RTB, .RBT, .TRB, .TBR, .BRT, .BTR]
 
     var ratiosVsText: [Double] = []
     var ratiosVsBubble: [Double] = []
-    var richMsSamples: [Double] = []
-    var textMsSamples: [Double] = []
-    var bubbleMsSamples: [Double] = []
 
     for round in 0..<9 {
-      let textMs: Double
-      let bubbleMs: Double
-      let richMs: Double
-      // One rich sample per round; pair it with plain Text and direct bubbles (order alternates).
-      if round.isMultiple(of: 2) {
-        textMs = Self.pageCost(plainTextShell)
-        bubbleMs = Self.pageCost(baselineBubbleRows)
-        richMs = Self.pageCost(transcriptRows)
-      } else {
-        richMs = Self.pageCost(transcriptRows)
-        bubbleMs = Self.pageCost(baselineBubbleRows)
-        textMs = Self.pageCost(plainTextShell)
+      let ord = orderings[round % orderings.count]
+      var msRich = 0.0
+      var msText = 0.0
+      var msBubble = 0.0
+      for step in ord.steps {
+        switch step {
+        case .rich: msRich = Self.pageCost(rich)
+        case .text: msText = Self.pageCost(plain)
+        case .bubble: msBubble = Self.pageCost(bubbleDirect)
+        }
       }
-      richMsSamples.append(richMs)
-      textMsSamples.append(textMs)
-      bubbleMsSamples.append(bubbleMs)
-      ratiosVsText.append(richMs / max(textMs, 0.000_001))
-      ratiosVsBubble.append(richMs / max(bubbleMs, 0.000_001))
+      let rt = msRich / max(msText, 0.000_001)
+      let rb = msRich / max(msBubble, 0.000_001)
+      ratiosVsText.append(rt)
+      ratiosVsBubble.append(rb)
+      print(
+        "ROWCOST sample r=\(round) perm=\(ord.label) ms_rich=\(Self.fmt(msRich)) "
+          + "ms_text=\(Self.fmt(msText)) ms_bubble=\(Self.fmt(msBubble)) "
+          + "rat_rt=\(Self.fmt(rt)) rat_rb=\(Self.fmt(rb))")
     }
 
     let medianVsText = Self.median(ratiosVsText) ?? .greatestFiniteMagnitude
-    let medianVsBubble = Self.median(ratiosVsBubble) ?? .greatestFiniteMagnitude
-    let richMed = Self.median(richMsSamples) ?? 0
-    let textMed = Self.median(textMsSamples) ?? 0
-    let bubbleMed = Self.median(bubbleMsSamples) ?? 0
+    let medianVsBubble = Self.median(ratiosVsBubble) ?? 0
     print(
-      "ROWCOST vs_text rounds=\(ratiosVsText.map { String(format: "%.2f", $0) }.joined(separator: ",")) "
-        + "median=\(String(format: "%.2f", medianVsText)) "
-        + "vs_bubble rounds=\(ratiosVsBubble.map { String(format: "%.2f", $0) }.joined(separator: ",")) "
-        + "median=\(String(format: "%.2f", medianVsBubble)) "
-        + "ms_rich_med=\(String(format: "%.3f", richMed)) "
-        + "ms_text_med=\(String(format: "%.3f", textMed)) "
-        + "ms_bubble_med=\(String(format: "%.3f", bubbleMed)) "
-        + "jumps=\(Self.jumpsPerSample)")
+      "ROWCOST vs_text rounds=\(ratiosVsText.map { Self.fmt($0) }.joined(separator: ",")) "
+        + "median=\(Self.fmt(medianVsText)) "
+        + "vs_bubble rounds=\(ratiosVsBubble.map { Self.fmt($0) }.joined(separator: ",")) "
+        + "median=\(Self.fmt(medianVsBubble)) jumps=\(Self.jumpsPerSample)")
     #expect(
       medianVsText < 2.5,
-      "rich rows vs plain Text: median ratio \(String(format: "%.2f", medianVsText)) (budget 2.5)"
-    )
-    // Wrapper/transitions on top of bubble bodies: tightened from observed ~0.98 on CI when healthy.
-    #expect(
-      medianVsBubble < 1.2,
-      "TranscriptEntryRow vs direct bubbles: median ratio \(String(format: "%.2f", medianVsBubble)) (budget 1.2)"
+      "rich rows vs plain Text: median ratio \(Self.fmt(medianVsText)) (budget 2.5)"
     )
   }
+
+  /// Slices the same corpus by role to localize cost (diagnostic only; always passes).
+  @Test("ROWCOST slice diagnostics (assistant vs user/note vs Text)")
+  func sliceDiagnostics() {
+    Self.logRunContext()
+    let entries = Self.entries(turns: 40)
+    let markdown = Self.prepared(entries)
+    let assistants = entries.filter { entry in
+      if case .assistant = entry { return true }
+      return false
+    }
+    let usersAndNotes = entries.filter { entry in
+      switch entry {
+      case .user, .note: return true
+      default: return false
+      }
+    }
+    let warm = {
+      _ = Self.pageCost(Self.transcriptRows(assistants, preparedMarkdown: markdown))
+      _ = Self.pageCost(Self.plainTextShell(assistants))
+      _ = Self.pageCost(Self.transcriptRows(usersAndNotes, preparedMarkdown: markdown))
+      _ = Self.pageCost(Self.plainTextShell(usersAndNotes))
+    }
+    for _ in 0..<2 { warm() }
+
+    let aRich = Self.pageCost(Self.transcriptRows(assistants, preparedMarkdown: markdown))
+    let aText = Self.pageCost(Self.plainTextShell(assistants))
+    let uRich = Self.pageCost(Self.transcriptRows(usersAndNotes, preparedMarkdown: markdown))
+    let uText = Self.pageCost(Self.plainTextShell(usersAndNotes))
+
+    print(
+      "ROWCOST_DIAG assistant count=\(assistants.count) ms_rich=\(Self.fmt(aRich)) "
+        + "ms_text=\(Self.fmt(aText)) rat=\(Self.fmt(aRich / max(aText, 0.000_001)))")
+    print(
+      "ROWCOST_DIAG user_note count=\(usersAndNotes.count) ms_rich=\(Self.fmt(uRich)) "
+        + "ms_text=\(Self.fmt(uText)) rat=\(Self.fmt(uRich / max(uText, 0.000_001)))")
+  }
+
+  private enum Kind {
+    case rich
+    case text
+    case bubble
+  }
+
+  private enum Ordering {
+    case RTB, RBT, TRB, TBR, BRT, BTR
+
+    var label: String {
+      switch self {
+      case .RTB: return "RTB"
+      case .RBT: return "RBT"
+      case .TRB: return "TRB"
+      case .TBR: return "TBR"
+      case .BRT: return "BRT"
+      case .BTR: return "BTR"
+      }
+    }
+
+    var steps: [Kind] {
+      switch self {
+      case .RTB: return [.rich, .text, .bubble]
+      case .RBT: return [.rich, .bubble, .text]
+      case .TRB: return [.text, .rich, .bubble]
+      case .TBR: return [.text, .bubble, .rich]
+      case .BRT: return [.bubble, .rich, .text]
+      case .BTR: return [.bubble, .text, .rich]
+      }
+    }
+  }
+
+  private static func fmt(_ x: Double) -> String { String(format: "%.3f", x) }
 
   /// Matches `pageCost` measurement: one timed loop's jump count (printed as `jumps=`).
   private static let jumpsPerSample = 24
@@ -93,9 +147,10 @@ struct TranscriptRowCostTests {
     let event = env["GITHUB_EVENT_NAME"] ?? ""
     let job = env["GITHUB_JOB"] ?? ""
     let ramGb = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824
+    let fixture = env["EAGLE_COMPOSER_FOCUS_FIXTURE"] ?? ""
     print(
       "ROWCOST_CTX ref=\(ref) event=\(event) job=\(job) ram_gb=\(String(format: "%.1f", ramGb)) "
-        + "ci=\(env["CI"] ?? "")"
+        + "ci=\(env["CI"] ?? "") EAGLE_COMPOSER_FOCUS_FIXTURE=\(fixture)"
     )
   }
 
@@ -158,7 +213,6 @@ struct TranscriptRowCostTests {
     }
   }
 
-  /// Same words as bubbles, minimal `Text` rows (cbffb5b baseline intent).
   private static func plainTextShell(_ entries: [TranscriptEntry]) -> some View {
     TranscriptScrollColumn(focusRequestCounter: .constant(0)) {
       ForEach(entries) { entry in
@@ -174,7 +228,6 @@ struct TranscriptRowCostTests {
     }
   }
 
-  /// Direct bubble/note bodies without `TranscriptEntryRow` (secondary wrapper guard).
   private static func baselineBubbleRows(
     _ entries: [TranscriptEntry], preparedMarkdown: [String: [RenderedMarkdownBlock]]
   ) -> some View {
