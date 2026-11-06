@@ -10,11 +10,6 @@ public struct AssistantBubble: View, Equatable {
   private let preparedBlocks: [RenderedMarkdownBlock]?
   private let cornerRadius: CGFloat
   private let maxWidth: CGFloat
-  private let onInsertSelection: ((String) -> Void)?
-  private let onClearSelection: () -> Void
-  private let selectionSource: String
-  private let selectedText: String
-  private let selectionOverride: Bool?
   @StateObject private var model = MarkdownViewModel()
   @State private var hovering = false
 
@@ -23,42 +18,25 @@ public struct AssistantBubble: View, Equatable {
     streaming: Bool = false,
     preparedBlocks: [RenderedMarkdownBlock]? = nil,
     cornerRadius: CGFloat = Theme.Chat.assistantRadius,
-    maxWidth: CGFloat = Theme.Chat.rowMaxWidth,
-    onInsertSelection: ((String) -> Void)? = nil,
-    onClearSelection: @escaping () -> Void = {},
-    selectionSource: String = "",
-    selectedText: String = "",
-    selectionOverride: Bool? = nil
+    maxWidth: CGFloat = Theme.Chat.rowMaxWidth
   ) {
     self.text = text
     self.streaming = streaming
     self.preparedBlocks = preparedBlocks
     self.cornerRadius = cornerRadius
     self.maxWidth = maxWidth
-    self.onInsertSelection = onInsertSelection
-    self.onClearSelection = onClearSelection
-    self.selectionSource = selectionSource
-    self.selectedText = selectedText
-    self.selectionOverride = selectionOverride
   }
 
   public var body: some View {
     let blocks = preparedBlocks ?? model.blocks
-    let attributedText = BubbleTextBuilder.attributedString(blocks: blocks, streaming: streaming)
-    let sourceText = String(attributedText.characters)
-    let hasSelection =
-      selectionSource == sourceText
-      && !selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    let selectionEnabled =
-      selectionOverride
-      ?? (hovering || hasSelection
-        || ProcessInfo.processInfo.environment["EAGLE_COMPOSER_FOCUS_FIXTURE"] == "1")
     HStack(alignment: .bottom, spacing: Theme.Layout.rowGap) {
       HStack(alignment: .bottom, spacing: Theme.Layout.rowGap) {
-        bubbleContent(
-          blocks: blocks,
-          attributedText: attributedText,
-          selectionEnabled: selectionEnabled
+        selectable(
+          VStack(alignment: .leading, spacing: Theme.Chat.blockGap) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+              blockView(block, caret: streaming && index == blocks.count - 1)
+            }
+          }
         )
         .padding(.horizontal, Theme.Chat.bubbleHorizontalInset)
         .padding(.vertical, Theme.Chat.assistantVerticalInset)
@@ -66,11 +44,6 @@ public struct AssistantBubble: View, Equatable {
           RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(Theme.Palette.assistantFill)
         )
-        .overlay(alignment: .topTrailing) {
-          if hasSelection {
-            selectionAction
-          }
-        }
         .messageCopyAlignment()
         copyAction
       }
@@ -214,42 +187,15 @@ public struct AssistantBubble: View, Equatable {
     lhs.text == rhs.text && lhs.streaming == rhs.streaming
       && lhs.preparedBlocks == rhs.preparedBlocks
       && lhs.cornerRadius == rhs.cornerRadius && lhs.maxWidth == rhs.maxWidth
-      && lhs.selectionSource == rhs.selectionSource && lhs.selectedText == rhs.selectedText
-      && lhs.selectionOverride == rhs.selectionOverride
   }
 
   @ViewBuilder
-  private func bubbleContent(
-    blocks: [RenderedMarkdownBlock],
-    attributedText: AttributedString,
-    selectionEnabled: Bool
-  ) -> some View {
-    ZStack(alignment: .topLeading) {
-      VStack(alignment: .leading, spacing: Theme.Chat.blockGap) {
-        ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-          blockView(block, caret: streaming && index == blocks.count - 1)
-        }
-      }
-      .opacity(selectionEnabled ? 0 : 1)
-      .allowsHitTesting(!selectionEnabled)
-      if selectionEnabled {
-        if blocks.count == 1, case .paragraph = blocks[0] {
-          SelectableTranscriptText(attributedText: attributedText)
-            .lineSpacing(Theme.Chat.bodyLineSpacing)
-        } else {
-          SelectableTranscriptText(attributedText: attributedText)
-        }
-      }
+  private func selectable<Content: View>(_ content: Content) -> some View {
+    if hovering || ProcessInfo.processInfo.environment["EAGLE_COMPOSER_FOCUS_FIXTURE"] == "1" {
+      content.textSelection(.enabled)
+    } else {
+      content
     }
-  }
-
-  private var selectionAction: some View {
-    CardActionButton("发送到对话") {
-      let text = selectedText
-      onClearSelection()
-      onInsertSelection?(text)
-    }
-    .offset(y: -Theme.Form.actionHeight)
   }
 
   /// The copy action exists only for the row under the pointer: building a button per

@@ -157,7 +157,8 @@ onto it and through keyboard focus. Its reserved space prevents layout jumps. Co
 writes the original message source, including Markdown, to the clipboard and briefly
 shows a checkmark; failure reports a retryable copy error. An empty streaming bubble
 does not overwrite the clipboard. Copy feedback belongs to the leaf control, not the
-transcript or workspace view model.
+transcript or workspace view model. Native selection remains within the rendered text;
+there is no cross-block selection or action to insert selected text into the composer.
 
 ## CJK markdown emphasis
 
