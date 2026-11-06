@@ -1,5 +1,20 @@
 # Retrospective
 
+## 2026-11-06 — A hosting-view layout test did not reproduce a real hover shrink
+
+Bubbles changed their height on hover. The first fix kept the rich Markdown view as the
+layout owner and moved the selectable `Text` into an `overlay`; `NSHostingView.fittingSize`,
+`ImageRenderer` and a live window-hosted update all reported identical heights, so the
+remaining report was attributed to the wrong app window. The owner was on the Dev build:
+the `textSelection(.enabled)` text is AppKit-backed, and inside the real
+`ScrollView`/`LazyVStack` it still fed its shorter intrinsic height back to the parent.
+An `overlay` does not guarantee that the parent keeps its size in that context.
+
+Use `ZStack(alignment: .topLeading)` with the rich view always present: its max-based
+sizing keeps the bubble height anchored. Treat a single-view hosting test as evidence
+about that view, not about the real scroll hierarchy, and do not explain a reproduction
+away as user error before checking the layout owner.
+
 ## 2026-11-06 — A delegated coding pane carried another repository's task
 
 While shortening Bots device prompts, a freshly opened `group/coding` pane finished
