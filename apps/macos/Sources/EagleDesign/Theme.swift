@@ -19,7 +19,6 @@ public enum Theme {
     public static let onColor = Color.white
     public static let onColorSecondary = Color.white.opacity(0.9)
     public static let unreadHighlight = Color.white.opacity(0.22)
-    public static let hitSurface = Color.black.opacity(0.001)
     public static let modalScrim = Color.black.opacity(0.32)
     public static let avatarScrim = Color.black.opacity(0.36)
     public static let modalShadow = Color.black.opacity(0.28)
@@ -299,14 +298,11 @@ public enum Theme {
   }
 
   public enum Dialog {
-    public static let botWidth: CGFloat = 560
-    public static let createHeight: CGFloat = 712
-    public static let faceHeight: CGFloat = 640
-    public static let botHeaderHeight: CGFloat = 64
-    public static let createFooterHeight: CGFloat = 48
-    public static let editFooterHeight: CGFloat = 56
-    public static let nameFieldHeight: CGFloat = 44
-    public static let labelFieldHeight: CGFloat = 36
+    /// A bot dialog is one compact card: wide enough for five shapes and eight chips on a
+    /// row, and no taller than its own content.
+    public static let botWidth: CGFloat = 460
+    public static let compactHeaderHeight: CGFloat = 44
+    public static let footerHeight: CGFloat = 48
     public static let approvalMinWidth: CGFloat = 560
     public static let approvalWidth: CGFloat = 640
     public static let approvalMaxWidth: CGFloat = 760
@@ -314,12 +310,12 @@ public enum Theme {
     public static let approvalContentHeight: CGFloat = 420
     public static let approvalWindowHeight: CGFloat = 620
     public static let outerClearance: CGFloat = 24
-    public static let settingsRadius: CGFloat = 18
-    public static let settingsShadowRadius: CGFloat = 40
-    public static let settingsShadowY: CGFloat = 18
+    /// Every modal surface — settings, a bot's face, a peer transcript, a tool run — is one
+    /// card with the same radius, hairline and shadow.
+    public static let radius: CGFloat = 18
+    public static let shadowRadius: CGFloat = 40
+    public static let shadowY: CGFloat = 18
     public static let backdropBlur: CGFloat = 2
-    public static let peerShadowRadius: CGFloat = 34
-    public static let peerShadowY: CGFloat = 16
     public static let peerOverlayTrailing: CGFloat = 46
     public static let peerTranscriptClearance: CGFloat = 22
     public static let peerOverlayVertical: CGFloat = 28
@@ -572,7 +568,6 @@ public enum Theme {
     /// The dialog's conversation column: narrower than the panel, so a 560 pt bubble does not
     /// stretch a line across the window.
     public static let peerDialogColumnWidth: CGFloat = 900
-    public static let peerDialogRadius: CGFloat = 18
     public static let peerDialogInset: CGFloat = 24
     public static let peerDialogFooter: CGFloat = 56
     public static let conversationInset: CGFloat = 16

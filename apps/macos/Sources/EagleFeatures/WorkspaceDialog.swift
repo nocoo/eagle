@@ -1,12 +1,20 @@
 import EagleDesign
 
+/// Which transcript owns a tool run: the daemon's conversation, or the sample workspace.
+enum ToolRunOwner: Hashable {
+  case bot
+  case sample
+}
+
 /// What the shell shows over the workspace. One at a time: a dialog never stacks on
 /// another, and the workspace behind the scrim stops taking clicks.
 enum WorkspaceDialog: Hashable {
   case createBot
   case editFace(BotFace.Style)
   case peer(PeerExchange)
-  case toolRun([ToolRow])
+  /// A tool run is named by the entry that owns it, not by a copy of its rows: the detail
+  /// view reads the run from the transcript so a call in flight keeps updating.
+  case toolRun(id: String, owner: ToolRunOwner)
   case settings
 }
 

@@ -19,14 +19,20 @@ struct WorkspaceDialogTests {
   @Test("closing frees the slot and names what was up")
   func dismiss() throws {
     var state = WorkspaceDialogState()
-    let rows = [ToolRow(id: "tool-1", name: "read", subtitle: "path=notes.txt")]
-    state.present(.toolRun(rows))
+    state.present(.toolRun(id: "run-c_1", owner: .bot))
     let closed = state.dismiss()
-    #expect(closed == .toolRun(rows))
+    #expect(closed == .toolRun(id: "run-c_1", owner: .bot))
     #expect(!state.isPresenting)
     #expect(state.dismiss() == nil, "a second close has nothing to report")
     let reopened = state.present(.editFace(BotFace.Style(shape: .hex, tint: .violet)))
     #expect(reopened)
+  }
+
+  @Test("a tool run is opened by the entry that owns it, not by a copy of its rows")
+  func toolRunPayload() {
+    var state = WorkspaceDialogState()
+    state.present(.toolRun(id: "run-c_1", owner: .sample))
+    #expect(state.active == .toolRun(id: "run-c_1", owner: .sample))
   }
 
   @Test("a dialog keeps the values it was opened with")

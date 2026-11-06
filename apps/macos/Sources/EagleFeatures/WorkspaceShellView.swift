@@ -14,11 +14,12 @@ public struct WorkspaceShellView: View {
   @StateObject private var devices = DeviceSettingsViewModel.shared
   @StateObject private var bots = BotsWorkspaceViewModel()
   @StateObject private var chrome = SidebarChromeViewModel()
-  @State private var showsBotCreate = false
-  @State private var showsBotFaceEditor = false
-  @State private var showsSettings = false
-  /// The exchange a person opened from a folded row; nil while no dialog is up.
-  @State private var openedPeerExchange: PeerExchange?
+  /// The dialog the shell itself raised; a peer exchange reads from its transcript instead.
+  @State private var dialogs = WorkspaceDialogState()
+  /// The sample exchange a person opened from a folded row.
+  @State private var openedSampleExchange: PeerExchange?
+  /// Bumped on every dismissal so the composer takes the keyboard back.
+  @State private var focusRestore = 0
   @AppStorage("eagle.hideToolCalls") private var hideToolCalls = false
   @AppStorage("eagle.loadMockData") private var loadMockData = false
   private let onShowGallery: (@escaping () -> Void) -> Void
@@ -49,6 +50,31 @@ public struct WorkspaceShellView: View {
   /// Identifiers that belong to the sample workspace, so switching it off drops them.
   private var mockIDs: Set<String> {
     Set(list.groups.flatMap(\.items).map(\.id))
+  }
+
+  /// The one dialog on screen. A peer exchange is read from whichever transcript opened it,
+  /// so it can never stack with a dialog the shell is already showing.
+  private var activeDialog: WorkspaceDialog? {
+    if dialogs.active == nil,
+      let exchange = openedSampleExchange ?? bots.openedExchange
+    {
+      return .peer(exchange)
+    }
+    return dialogs.active
+  }
+
+  /// Opening is refused while something is already up: one dialog owns the window.
+  private func present(_ dialog: WorkspaceDialog) {
+    guard activeDialog == nil else { return }
+    dialogs.present(dialog)
+  }
+
+  /// Every dialog leaves the same way, so a pending exchange never surfaces after it.
+  private func closeDialog() {
+    openedSampleExchange = nil
+    bots.closeExchange()
+    dialogs.dismiss()
+    focusRestore += 1
   }
 
   private func dropSampleSelectionIfHidden() {
@@ -105,10 +131,16 @@ public struct WorkspaceShellView: View {
   /// The sample transcript carries its own exchanges, so opening one only needs the entry that
   /// holds it. A bot's exchanges will be read from the daemon by id.
   private func openPeerExchange(_ id: String) {
+    guard activeDialog == nil else { return }
     for case .peerExchange(_, let exchange) in chat.entries where exchange.id == id {
-      openedPeerExchange = exchange
+      openedSampleExchange = exchange
       return
     }
+  }
+
+  private func openBotExchange(_ id: String) {
+    guard activeDialog == nil else { return }
+    Task { await bots.openExchange(id) }
   }
 
   /// The sample transcript is only reachable while the sample data is switched on.
@@ -118,15 +150,56 @@ public struct WorkspaceShellView: View {
 
   public var body: some View {
     GeometryReader { viewport in
-      workspace(in: viewport.size)
+      ModalWorkspace(
+        showsDialog: activeDialog != nil,
+        workspace: { workspace(in: viewport.size) },
+        dialog: { dialogLayer(in: viewport.size) }
+      )
     }
+  }
+
+  @ViewBuilder private func dialogLayer(in available: CGSize) -> some View {
+    if let dialog = activeDialog {
+      WorkspaceDialogHost(
+        dialog: dialog,
+        available: available,
+        peerInsets: EdgeInsets(
+          top: Theme.Dialog.peerOverlayVertical,
+          leading: layout.showsSidebar
+            ? columns(in: available).sidebar + Theme.Metric.contentInset
+            : Theme.Metric.contentInset,
+          bottom: Theme.Dialog.peerOverlayVertical,
+          trailing: Theme.Dialog.peerOverlayTrailing
+        ),
+        settings: settings,
+        daemon: daemon,
+        devices: devices,
+        transcript: bots.transcript,
+        sampleTranscript: chat,
+        onCreate: { title, label, appearance in
+          closeDialog()
+          Task { await bots.createBot(title: title, label: label, appearance: appearance) }
+        },
+        onSaveFace: { appearance in
+          closeDialog()
+          Task { await bots.updateSelected(appearance: appearance) }
+        },
+        onDismiss: closeDialog
+      )
+    }
+  }
+
+  /// The effective side widths; a modal that has to keep clear of the sidebar uses the
+  /// same answer the columns themselves are framed with.
+  private func columns(in available: CGSize) -> (sidebar: CGFloat, inspector: CGFloat) {
+    Theme.Metric.columnWidths(
+      available: available.width, sidebar: layout.sidebarWidth, inspector: layout.inspectorWidth,
+      showsSidebar: layout.showsSidebar, showsInspector: showsInspector)
   }
 
   private func workspace(in available: CGSize) -> some View {
     let item = list.selectedItem
-    let columns = Theme.Metric.columnWidths(
-      available: available.width, sidebar: layout.sidebarWidth, inspector: layout.inspectorWidth,
-      showsSidebar: layout.showsSidebar, showsInspector: showsInspector)
+    let columns = columns(in: available)
     return ZStack(alignment: .bottomLeading) {
       ThreeColumnShell(
         availableWidth: available.width,
@@ -178,7 +251,7 @@ public struct WorkspaceShellView: View {
               }
             }
           },
-          onCreateBot: { showsBotCreate = true },
+          onCreateBot: { present(.createBot) },
           canCreateBot: bots.isConnected,
           onRenameItem: { id, title in
             if bots.owns(id) {
@@ -195,8 +268,8 @@ public struct WorkspaceShellView: View {
             }
           },
           onCollapse: { layout.toggleSidebar() },
-          onSettings: { showsSettings = true },
-          onGallery: { onShowGallery { showsSettings = true } },
+          onSettings: { present(.settings) },
+          onGallery: { onShowGallery { present(.settings) } },
           productVersion: AppVersion.current().display,
           onPinItem: { id in chrome.togglePin(id) },
           moveTargets: { id in moveTargets(for: id) },
@@ -226,7 +299,13 @@ public struct WorkspaceShellView: View {
             )
           }
           if selectedIsBot {
-            BotsConversationContent(bots: bots, layout: layout)
+            BotsConversationContent(
+              bots: bots,
+              layout: layout,
+              focusRestore: focusRestore,
+              onOpenPeerExchange: openBotExchange,
+              onOpenToolRun: { present(.toolRun(id: $0, owner: .bot)) }
+            )
           } else if selectedIsMock {
             ConversationColumn(
               title: item?.title ?? "依赖修复专家",
@@ -240,11 +319,13 @@ public struct WorkspaceShellView: View {
               isWaiting: chat.waiting,
               onShowSidebar: { layout.toggleSidebar() },
               onToggleInspector: { layout.toggleInspector() },
-              onOpenPeerExchange: { openPeerExchange($0) }
+              focusRestore: focusRestore,
+              onOpenPeerExchange: { openPeerExchange($0) },
+              onOpenToolRun: { present(.toolRun(id: $0, owner: .sample)) }
             )
           } else {
             NoConversationPlaceholder(
-              onCreate: { showsBotCreate = true },
+              onCreate: { present(.createBot) },
               onShowSidebar: { layout.toggleSidebar() },
               showsSidebar: layout.showsSidebar,
               daemonMessage: bots.error,
@@ -283,7 +364,8 @@ public struct WorkspaceShellView: View {
           face: selectedIsBot ? bots.selectedFace : nil,
           isBusy: selectedIsBot && bots.running,
           label: selectedIsBot ? bots.selectedLabel : nil,
-          onEditFace: selectedIsBot ? { showsBotFaceEditor = true } : nil,
+          onEditFace: selectedIsBot
+            ? { bots.selectedFace.map { present(.editFace($0)) } } : nil,
           onCommitName: selectedIsBot
             ? { title in Task { await bots.updateSelected(title: title) } } : nil,
           onCommitLabel: selectedIsBot
@@ -291,27 +373,15 @@ public struct WorkspaceShellView: View {
           computerContent: AnyView(
             DeviceInspectorView(model: devices) {
               settings.selection = .machines
-              showsSettings = true
+              present(.settings)
             })
         )
-        .sheet(isPresented: $showsBotFaceEditor) {
-          if let face = bots.selectedFace {
-            BotFaceEditorSheet(
-              initial: face,
-              onSave: { appearance in
-                showsBotFaceEditor = false
-                Task { await bots.updateSelected(appearance: appearance) }
-              },
-              onCancel: { showsBotFaceEditor = false }
-            )
-          }
-        }
       }
       .task {
         bots.onSelect = { id in list.selection = id }
         bots.onOpenSettings = {
           settings.selection = .bots
-          showsSettings = true
+          present(.settings)
         }
         await daemon.startIfNeeded()
       }
@@ -331,89 +401,28 @@ public struct WorkspaceShellView: View {
         // stays taken for as long as the process lives.
         bots.disconnect()
       }
-      .sheet(isPresented: $showsBotCreate) {
-        BotCreateSheet(
-          onCreate: { title, label, appearance in
-            showsBotCreate = false
-            Task { await bots.createBot(title: title, label: label, appearance: appearance) }
-          },
-          onCancel: { showsBotCreate = false }
-        )
-      }
       .onChange(of: loadMockData) { _, _ in dropSampleSelectionIfHidden() }
       .task { dropSampleSelectionIfHidden() }
       .onReceive(NotificationCenter.default.publisher(for: .eagleToggleSidebar)) { _ in
+        // A dialog owns the window: a menu shortcut must not move what is behind it.
+        guard activeDialog == nil else { return }
         layout.toggleSidebar()
       }
       .onReceive(NotificationCenter.default.publisher(for: .eagleToggleInspector)) { _ in
+        guard activeDialog == nil else { return }
         layout.toggleInspector()
       }
-
-      if let exchange = openedPeerExchange ?? bots.openedExchange {
-        // The sidebar stays visible, as the transcript behind the dialog keeps its context.
-        Theme.Palette.hitSurface
-          .ignoresSafeArea()
-          .onTapGesture {
-            openedPeerExchange = nil
-            bots.closeExchange()
-          }
-        PeerConversationDialog(exchange: exchange) {
-          openedPeerExchange = nil
-          bots.closeExchange()
-        }
-        .padding(
-          .leading,
-          layout.showsSidebar
-            ? columns.sidebar + Theme.Metric.contentInset : Theme.Metric.contentInset
-        )
-        .padding(.trailing, Theme.Dialog.peerOverlayTrailing)
-        .padding(.vertical, Theme.Dialog.peerOverlayVertical)
-        .transition(.opacity.combined(with: .scale(scale: Theme.Motion.overlayEntryScale)))
+      // An exchange that arrives after another dialog took the window is discarded rather
+      // than left pending behind it.
+      .onChange(of: bots.openedExchange) { _, exchange in
+        guard exchange != nil else { return }
+        if dialogs.active != nil || openedSampleExchange != nil { bots.closeExchange() }
       }
 
-    }
-    .animation(Theme.Motion.selection, value: openedPeerExchange)
-    // A small blur under the settings card: the window stays recognisable, only softened.
-    .blur(radius: showsSettings ? Theme.Dialog.backdropBlur : 0)
-    .animation(Theme.Motion.modal, value: showsSettings)
-    .overlay {
-      if showsSettings {
-        settingsOverlay(size: Theme.Metric.settingsSize(in: available))
-      }
     }
     .onReceive(NotificationCenter.default.publisher(for: .eagleToggleSettings)) { _ in
-      showsSettings = true
+      guard activeDialog == nil else { return }
+      present(.settings)
     }
-  }
-
-  /// Centred settings card over a blurred, dimmed copy of the window. The traffic lights are
-  /// hidden while it is open so the card owns the chrome.
-  private func settingsOverlay(size: CGSize) -> some View {
-    ZStack {
-      // The blur lives on the window itself (a few points); this layer only dims.
-      Theme.Palette.modalScrim
-        .ignoresSafeArea()
-        .onTapGesture { showsSettings = false }
-
-      SettingsView(
-        model: settings, onClose: { showsSettings = false }, daemon: daemon, devices: devices
-      )
-      .frame(width: size.width, height: size.height)
-      .background(
-        RoundedRectangle(cornerRadius: Theme.Dialog.settingsRadius, style: .continuous)
-          .fill(Theme.Palette.surface)
-      )
-      .clipShape(RoundedRectangle(cornerRadius: Theme.Dialog.settingsRadius, style: .continuous))
-      .overlay(
-        RoundedRectangle(cornerRadius: Theme.Dialog.settingsRadius, style: .continuous)
-          .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
-      )
-      .shadow(
-        color: Theme.Palette.modalShadow, radius: Theme.Dialog.settingsShadowRadius,
-        y: Theme.Dialog.settingsShadowY
-      )
-      .background(TrafficLights(hidden: true))
-    }
-    .transition(.opacity)
   }
 }

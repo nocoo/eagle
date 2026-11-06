@@ -3,16 +3,16 @@ import EagleDesign
 import SwiftUI
 
 /// Editing an existing bot's face: the same picker as creation, opened from the profile
-/// avatar. Apply writes the face to the daemon; the sidebar and inspector repaint from the
-/// catalog push.
-struct BotFaceEditorSheet: View {
+/// avatar. Saving writes both fields to the daemon; the sidebar and inspector repaint from
+/// the catalog push.
+public struct BotFaceEditorSheet: View {
   let onSave: (BotAppearance) -> Void
   let onCancel: () -> Void
 
   @State private var shape: BotFace.Shape
   @State private var tint: Theme.Palette.BotTint
 
-  init(
+  public init(
     initial: BotFace.Style,
     onSave: @escaping (BotAppearance) -> Void,
     onCancel: @escaping () -> Void
@@ -23,26 +23,25 @@ struct BotFaceEditorSheet: View {
     _tint = State(initialValue: initial.tint)
   }
 
-  var body: some View {
+  public var body: some View {
     VStack(spacing: 0) {
       HStack {
         Text("编辑头像")
-          .font(Theme.TypeScale.inspectorTitle)
+          .font(Theme.TypeScale.sectionTitle)
+          .foregroundStyle(Theme.Palette.textPrimary)
         Spacer()
-        IconButton(systemName: "xmark", label: "关闭", size: Theme.Metric.hitTarget, action: onCancel)
+        IconButton(
+          systemName: "xmark", label: "关闭", size: Theme.Metric.hitTarget, action: onCancel)
       }
       .padding(.horizontal, Theme.Metric.settingsCardInset)
-      .frame(height: Theme.Dialog.botHeaderHeight)
+      .frame(height: Theme.Dialog.compactHeaderHeight)
       Divider().overlay(Theme.Palette.line)
-      ScrollView {
-        VStack(spacing: Theme.Layout.sectionInset) {
-          BotFace(style: BotFace.Style(shape: shape, tint: tint), size: Theme.Picker.previewFace)
-            .padding(.top, Theme.Metric.contentInset)
-          BotFacePicker(shape: $shape, tint: tint) { tint = $0 }
-        }
-        .padding(.horizontal, Theme.Metric.settingsCardInset)
-        .padding(.bottom, Theme.Layout.groupGap)
+      VStack(spacing: Theme.Layout.sectionGap) {
+        BotFacePreview(style: BotFace.Style(shape: shape, tint: tint))
+        BotFacePicker(shape: $shape, tint: tint) { tint = $0 }
       }
+      .padding(.horizontal, Theme.Metric.settingsCardInset)
+      .padding(.vertical, Theme.Layout.sectionGap)
       Divider().overlay(Theme.Palette.line)
       HStack(spacing: Theme.Layout.controlGap) {
         Spacer()
@@ -57,9 +56,8 @@ struct BotFaceEditorSheet: View {
         }
       }
       .padding(.horizontal, Theme.Metric.settingsCardInset)
-      .frame(height: Theme.Dialog.editFooterHeight)
+      .frame(height: Theme.Dialog.footerHeight)
     }
-    .frame(width: Theme.Dialog.botWidth, height: Theme.Dialog.faceHeight)
-    .background(Theme.Palette.surface)
+    .frame(width: Theme.Dialog.botWidth)
   }
 }

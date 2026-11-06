@@ -29,14 +29,14 @@ struct TokenConsolidationTests {
     try expectColor(Theme.Palette.faceInk(.green), 0x1C1C1E, appearance: .darkAqua)
   }
 
-  @Test("overlay tokens retain opacity including the nearly transparent hit surface")
+  @Test("overlay tokens retain their opacity")
   func overlays() throws {
     let white: [(Color, CGFloat)] = [
       (Theme.Palette.onColor, 1), (Theme.Palette.onColorSecondary, 0.9),
       (Theme.Palette.unreadHighlight, 0.22),
     ]
     let black: [(Color, CGFloat)] = [
-      (Theme.Palette.hitSurface, 0.001), (Theme.Palette.modalScrim, 0.32),
+      (Theme.Palette.modalScrim, 0.32),
       (Theme.Palette.avatarScrim, 0.36), (Theme.Palette.modalShadow, 0.28),
       (Theme.Palette.peerAvatarShadow, 0.22),
       (Theme.Palette.accountShadow, 0.10), (Theme.Palette.roundShadow, 0.10),

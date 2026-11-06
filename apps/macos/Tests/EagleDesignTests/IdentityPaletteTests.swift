@@ -39,7 +39,7 @@ struct IdentityPaletteTests {
       Theme.Metric.rowHeight, Theme.Metric.avatarRow, Theme.Metric.headerControlHeight,
       Theme.Metric.composerHeight, Theme.Metric.footerHeight, Theme.Metric.participantAvatar,
       Theme.Form.actionHeight, Theme.Form.fieldHeight, Theme.Form.fieldInset,
-      Theme.Dialog.nameFieldHeight, Theme.Picker.swatchSize,
+      Theme.Inspector.nameHeight, Theme.Picker.swatchSize,
     ]
     for value in primary { #expect(value.truncatingRemainder(dividingBy: 4) == 0) }
     for value in [Theme.Layout.minimumGap, Theme.Layout.microGap, Theme.Layout.labelGap] {

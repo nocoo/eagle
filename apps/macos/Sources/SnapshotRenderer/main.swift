@@ -31,6 +31,11 @@ struct SnapshotRenderer {
       print("wrote isolated composition snapshots to \(directory.path)")
       return
     }
+    if CommandLine.arguments.contains("--dialogs-only") {
+      captureDialogs(in: directory)
+      print("wrote isolated dialog snapshots to \(directory.path)")
+      return
+    }
     if CommandLine.arguments.contains("--herdr-only") {
       do { try await captureHerdr(in: directory) } catch {
         print("Herdr snapshot failed: \(error)")
@@ -646,11 +651,125 @@ struct SnapshotRenderer {
             SettingsView(model: model, devices: devices, expandsProviderDetails: ["typesafe"])
               .defaultAppStorage(defaults)
               .frame(width: modal.width, height: modal.height)
-              .clipShape(RoundedRectangle(cornerRadius: Theme.Dialog.settingsRadius))
+              .clipShape(RoundedRectangle(cornerRadius: Theme.Dialog.radius))
           }
           .preferredColorScheme(scheme), size: size, named: "composition-settings-\(suffix)",
           in: directory, appearance: scheme == .dark ? .darkAqua : .aqua)
       }
+    }
+  }
+
+  /// The shell's dialogs over a synthetic workspace: every one of them behind the same
+  /// blurred, dimmed backdrop, with no daemon, device service or production fixture.
+  @MainActor
+  private static func captureDialogs(in directory: URL) {
+    let fixture = snapshotBotsSettings()
+    let domain = "EagleDialogSnapshots.\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: domain) else {
+      fatalError("isolated snapshot preferences are unavailable")
+    }
+    let devices = DeviceSettingsViewModel(
+      control: SnapshotDeviceControl(), defaults: defaults, requiresServiceAddress: false)
+    defer {
+      defaults.removePersistentDomain(forName: domain)
+      fixture.session.invalidateAndCancel()
+      try? FileManager.default.removeItem(at: fixture.settings.rootURL)
+    }
+    let size = CGSize(width: 1280, height: 760)
+    let face = BotFace.Style(shape: .pebble, tint: Theme.Palette.BotTint.teal)
+    let toolRows = [
+      ToolRow(
+        id: "c_1", name: "read_file", subtitle: "path=notes.txt · limit=50",
+        input: "{\n  \"path\": \"notes.txt\"\n}", output: "工作区里的内容", durationMs: 21),
+      ToolRow(
+        id: "c_2", name: "run_command", subtitle: "command=make check",
+        input: "{ \"command\": \"make check\" }", output: "$ make check\n2 packages formatted",
+        isRunning: true),
+    ]
+    var draft = BotsCreateDraft(tint: .violet)
+    draft.name = "研究员"
+    draft.label = "研究"
+    draft.shape = .star
+    let settings = SettingsViewModel(botsSettings: fixture.settings, urlSession: fixture.session)
+    settings.selection = .general
+
+    for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
+      let appearance: NSAppearance.Name = scheme == .dark ? .darkAqua : .aqua
+      let surfaces: [(String, EdgeInsets, AnyView)] = [
+        (
+          "create", EdgeInsets(),
+          AnyView(BotCreateSheet(draft: draft, onCreate: { _, _, _ in }, onCancel: {}))
+        ),
+        (
+          "face", EdgeInsets(),
+          AnyView(
+            BotFaceEditorSheet(
+              initial: BotFace.Style(shape: .star, tint: Theme.Palette.BotTint.teal),
+              onSave: { _ in }, onCancel: {}))
+        ),
+        (
+          "peer",
+          EdgeInsets(
+            top: Theme.Dialog.peerOverlayVertical,
+            leading: Theme.Metric.sidebarWidth + Theme.Metric.contentInset,
+            bottom: Theme.Dialog.peerOverlayVertical,
+            trailing: Theme.Dialog.peerOverlayTrailing),
+          AnyView(PeerConversationDialog(exchange: MockWorkspace.vesExchange, onClose: {}))
+        ),
+        ("tool", EdgeInsets(), AnyView(ToolRunDetailView(rows: toolRows, onClose: {}))),
+        (
+          "settings", EdgeInsets(),
+          AnyView(
+            SettingsView(model: settings, devices: devices)
+              .frame(
+                width: Theme.Metric.settingsSize(in: size).width,
+                height: Theme.Metric.settingsSize(in: size).height))
+        ),
+      ]
+      for (surface, insets, dialog) in surfaces {
+        capture(
+          ModalWorkspace(
+            showsDialog: true,
+            workspace: { dialogBackdrop(face: face) },
+            dialog: { ModalHost(insets: insets, onDismiss: {}) { dialog } }
+          )
+          .preferredColorScheme(scheme), size: size,
+          named: "dialog-\(surface)-\(name)", in: directory, appearance: appearance)
+      }
+    }
+  }
+
+  /// A synthetic three-column workspace: it exists only to sit behind a review capture.
+  @MainActor
+  private static func dialogBackdrop(face: BotFace.Style) -> some View {
+    let sections = [
+      SidebarSection(
+        id: "layout", title: "对话框验收",
+        items: [
+          SidebarItem(
+            id: "b_layout", title: "研究员", subtitle: "Synthetic backdrop", tag: "Synthetic",
+            face: face)
+        ])
+    ]
+    return ThreeColumnShell(
+      availableWidth: Theme.Metric.windowMinWidth, showsSidebar: true, showsInspector: true,
+      sidebarWidth: Theme.Metric.sidebarWidth, inspectorWidth: Theme.Metric.inspectorWidth
+    ) {
+      SidebarPanel(
+        sections: sections, selection: "b_layout", onSelect: { _ in }, unreadCount: 0,
+        productVersion: "0.0.0-dev-dialog-review")
+    } conversation: {
+      ConversationColumn(
+        title: "研究员", face: face,
+        entries: [
+          .user(id: "u_1", text: "把对话框的落位和背景压一下。", origin: nil),
+          .assistant(
+            id: "a_1", blocks: [.paragraph("背景模糊、前景清晰，整块卡片共用一套圆角和投影。")]),
+        ],
+        draft: .constant(""), onSend: {})
+    } inspector: {
+      InspectorColumn(
+        name: "研究员", subtitle: "Synthetic", tintIndex: 0, tab: .constant(.detail), face: face)
     }
   }
 

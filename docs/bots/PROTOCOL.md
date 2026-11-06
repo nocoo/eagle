@@ -676,7 +676,10 @@ with no ID normalization. Fixed vectors are `b_color0→violet`, `b_color1→blu
 `b_color2→pink`, `b_color4→red`, `b_color5→orange`, `b_color6→teal`,
 `b_color14→yellow`, `b_color32→green`. Names/group order never enter this hash.
 Explicit tints retain the full v1 closed set below. Null/unknown tints and tint-only
-creation are invalid. PATCH still requires both fields when appearance is supplied.
+creation are invalid. The App sends both fields explicitly, because its create form
+previews one canonical colour before the Bot exists; the hash above is the daemon's own
+default for creations that omit a tint (API/CLI), not a rule the App predicts.
+PATCH still requires both fields when appearance is supplied.
 Responses/events/storage remain complete, and existing records are never rehashed.
 There is no persisted auto/manual mode or create-then-PATCH sequence. Shape-only
 creation requires the updated daemon; clients must not retry a refusal with green.

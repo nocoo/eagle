@@ -4231,3 +4231,32 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   verification of the push happened here. The App's
   push uses the same token and port every other settings page uses, but its end-to-end path
   against a running daemon on this machine is still the owner's manual check.
+
+## 2026-11-07 06:29 +08 — one modal surface, compact bot dialogs
+
+- User-view state: the App's own dialogs (create, edit face, peer transcript, tool run,
+  settings) are now one card over a blurred, dimmed workspace. The create form is
+  460 × 458 instead of 560 × 712, with the inspector's identity card (portrait, name,
+  tag) instead of two tall inputs, and the colour the preview shows is the colour the
+  daemon is asked to store. Nothing was started or restarted: no Dev App, no daemon, no
+  Herdr collection, no authentication and no D1 hop is involved in this work, so those
+  hops are neither verified nor broken by it.
+- Evidence actually produced: `.local/macos-dialogs/dialog-{create,face,peer,tool,settings}-{light,dark}.png`
+  from `swift run --package-path apps/macos SnapshotRenderer .local/macos-dialogs
+  --dialogs-only`, which builds its own three-column backdrop, its own UserDefaults
+  suite, a stub HTTP session and `SnapshotDeviceControl`. Inspected by eye: create and
+  face are 460 pt wide and 458 pt tall, footer buttons are the 32 pt settings action,
+  the shape grid is two rows of five and the colours are eight on one row.
+- Automated: `swift test` in `apps/macos` passed 420 / 52 / 81 / 37 tests in four bundles,
+  `Scripts/coverage.sh` reported 94.8% of the logic layer (minimum 90), `swift format lint
+  --strict --recursive Sources Scripts Tests` was clean, and at the root `npm run
+  check:design` and `npm run test:design` (91 cases) passed.
+- Demonstrated failures before the fix: the two new behaviour suites were written first and
+  failed against the old code — the shell slot tests could not find `WorkspaceDialogState`,
+  and the modal background test failed three ways with `.disabled`/`.allowsHitTesting`
+  removed (native field still enabled, background send fired, workspace button fired).
+- Not verified here: a real keyboard Escape/Return in a key window (an offscreen test window
+  never becomes key, so focus and the menu path stay the owner's manual check), traffic-light
+  hiding and restore in a live window, Reduce Motion on a machine with the preference on
+  (the test reads the actual preference and only asserts the freeze when it is on), and
+  system alerts, which remain native and are not part of the shared host.
