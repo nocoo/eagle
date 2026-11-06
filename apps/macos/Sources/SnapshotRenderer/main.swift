@@ -559,21 +559,12 @@ struct SnapshotRenderer {
     guard let defaults = UserDefaults(suiteName: domain) else {
       fatalError("isolated snapshot preferences are unavailable")
     }
-    let home = FileManager.default.temporaryDirectory
-      .appendingPathComponent("eagle-dialog-home-\(UUID().uuidString)", isDirectory: true)
-    try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-    assertCaptureIsolation(defaults: defaults, home: home)
     let devices = DeviceSettingsViewModel(
       control: SnapshotDeviceControl(), defaults: defaults, requiresServiceAddress: false)
-    // The 技能 page reads a person's own folders and ticks by default; a capture gets its own
-    // suite, its own home and a push that goes nowhere.
-    let selection = SkillsSelection(defaults: defaults, push: { _ in })
-    let skills = SkillsSettingsViewModel(defaults: defaults, home: home, selection: selection)
     defer {
       defaults.removePersistentDomain(forName: domain)
       fixture.session.invalidateAndCancel()
       try? FileManager.default.removeItem(at: fixture.settings.rootURL)
-      try? FileManager.default.removeItem(at: home)
     }
     let face = BotFace.Style(shape: .blob, tint: Theme.Palette.BotTint.teal)
     let sections =
@@ -673,10 +664,10 @@ struct SnapshotRenderer {
   @MainActor
   private static func captureDialogs(in directory: URL) {
     let fixture = snapshotBotsSettings()
-    let domain = "EagleDialogSnapshots"
-    guard let defaults = UserDefaults(suiteName: domain) else {
-      fatalError("isolated snapshot preferences are unavailable")
-    }
+    // Every run owns its own suite: a shared domain would inherit an earlier run's values
+    // and let two captures delete each other's.
+    let preferences = IsolatedPreferences(prefix: "EagleDialogSnapshots")
+    let defaults = preferences.defaults
     let home = FileManager.default.temporaryDirectory
       .appendingPathComponent("eagle-dialog-home-\(UUID().uuidString)", isDirectory: true)
     try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
@@ -688,7 +679,7 @@ struct SnapshotRenderer {
     let selection = SkillsSelection(defaults: defaults, push: { _ in })
     let skills = SkillsSettingsViewModel(defaults: defaults, home: home, selection: selection)
     defer {
-      defaults.removePersistentDomain(forName: domain)
+      preferences.remove()
       fixture.session.invalidateAndCancel()
       try? FileManager.default.removeItem(at: fixture.settings.rootURL)
       try? FileManager.default.removeItem(at: home)

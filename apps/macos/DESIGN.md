@@ -315,12 +315,16 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run --package-pat
 ```
 
 It writes `dialog-{create,face,peer,tool,settings}-{light,dark}.png`. The capture reads no
-person's preferences: the suite is its own domain and is removed after the run, `.defaultAppStorage`
-points AppStorage at that suite, and the settings surface gets an explicit
+person's preferences: every run takes a fresh UUID-named suite (a shared domain would inherit
+an earlier run's values and let two captures delete each other's), `.defaultAppStorage` points
+AppStorage at that suite, the suite is removed when the run ends, and the settings surface gets
+an explicit
 `SkillsSettingsViewModel`/`SkillsSelection` rooted in a temporary home with a push that goes
 nowhere, so the 技能 page never scans the real `~/.agents/skills` or the real tick list. A
 built-in assertion proves the sentinel it writes is invisible to the standard defaults and
-that the scanned home is temporary before anything renders. Escape, Return, traffic lights and
+that the scanned home is temporary before anything renders, and the suite's own test proves
+two runs own different domains, cannot read each other and cannot delete each other. Any
+domain record cfprefsd keeps after the run reads back empty. Escape, Return, traffic lights and
 Reduce Motion are not certified by these images; they need a foreground window.
 
 Use SnapshotRenderer's `--composition-only` path for this phase's synthetic review:
