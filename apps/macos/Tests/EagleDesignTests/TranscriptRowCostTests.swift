@@ -5,57 +5,82 @@ import Testing
 
 @testable import EagleDesign
 
-/// Materializing a page of transcript **rows** must stay within a small multiple of the same
-/// entries built as direct bubble/note views (same shapes as [`TranscriptScrollCostTests`]
-/// `bareRows`), inside the **same** [`TranscriptScrollColumn`] shell as production. A `Text`-only
-/// baseline stayed far below row construction cost (CI: ~3ms vs ~13ms per jump), so the ratio
-/// measured **shell + row body** disparity, not “`TranscriptEntryRow` vs equivalent UI”.
+/// Rows must stay within a small multiple of **plain `Text`** with the same words (commit
+/// `cbffb5b`): affordances such as copy controls and `textSelection` must not multiply per-row
+/// work for rows nobody is hovering. Both sides use [`TranscriptScrollColumn`] so the shell
+/// matches production without charging header/composer.
+///
+/// **Secondary:** `TranscriptEntryRow` vs direct bubble/note views catches wrapper/transitions
+/// regressions without replacing the Text baseline (`TranscriptScrollCostTests` already covers
+/// scroll bookkeeping vs bare stacks, not this ratio).
 @MainActor
 @Suite("Transcript row cost", .serialized)
 struct TranscriptRowCostTests {
-  @Test("a page of conversation rows costs little more than direct bubble rows")
+  @Test(
+    "a page of conversation rows costs little more than plain text rows, and little more wrapped than direct bubbles"
+  )
   func pageCost() {
     Self.logRunContext()
     let entries = Self.entries(turns: 40)
     let markdown = Self.prepared(entries)
     let transcriptRows = Self.transcriptRows(entries, preparedMarkdown: markdown)
-    let baselineRows = Self.baselineBubbleRows(entries, preparedMarkdown: markdown)
-    // Warm both variants twice so caches and the hosting view path are hot before we score.
+    let plainTextShell = Self.plainTextShell(entries)
+    let baselineBubbleRows = Self.baselineBubbleRows(entries, preparedMarkdown: markdown)
     for _ in 0..<2 {
       _ = Self.pageCost(transcriptRows)
-      _ = Self.pageCost(baselineRows)
+      _ = Self.pageCost(plainTextShell)
+      _ = Self.pageCost(baselineBubbleRows)
     }
-    // Alternate measurement order; take the **median** ratio of paired samples (less optimistic
-    // than `min`, more stable than `mean` when one round spikes).
-    var ratios: [Double] = []
-    var transcriptRowMsSamples: [Double] = []
-    var baselineMsSamples: [Double] = []
+
+    var ratiosVsText: [Double] = []
+    var ratiosVsBubble: [Double] = []
+    var richMsSamples: [Double] = []
+    var textMsSamples: [Double] = []
+    var bubbleMsSamples: [Double] = []
+
     for round in 0..<9 {
-      let columnMs: Double
-      let baselineMs: Double
+      let textMs: Double
+      let bubbleMs: Double
+      let richMs: Double
+      // One rich sample per round; pair it with plain Text and direct bubbles (order alternates).
       if round.isMultiple(of: 2) {
-        baselineMs = Self.pageCost(baselineRows)
-        columnMs = Self.pageCost(transcriptRows)
+        textMs = Self.pageCost(plainTextShell)
+        bubbleMs = Self.pageCost(baselineBubbleRows)
+        richMs = Self.pageCost(transcriptRows)
       } else {
-        columnMs = Self.pageCost(transcriptRows)
-        baselineMs = Self.pageCost(baselineRows)
+        richMs = Self.pageCost(transcriptRows)
+        bubbleMs = Self.pageCost(baselineBubbleRows)
+        textMs = Self.pageCost(plainTextShell)
       }
-      transcriptRowMsSamples.append(columnMs)
-      baselineMsSamples.append(baselineMs)
-      ratios.append(columnMs / max(baselineMs, 0.000_001))
+      richMsSamples.append(richMs)
+      textMsSamples.append(textMs)
+      bubbleMsSamples.append(bubbleMs)
+      ratiosVsText.append(richMs / max(textMs, 0.000_001))
+      ratiosVsBubble.append(richMs / max(bubbleMs, 0.000_001))
     }
-    let ratio = Self.median(ratios) ?? .greatestFiniteMagnitude
-    let transcriptMed = Self.median(transcriptRowMsSamples) ?? 0
-    let baselineMed = Self.median(baselineMsSamples) ?? 0
+
+    let medianVsText = Self.median(ratiosVsText) ?? .greatestFiniteMagnitude
+    let medianVsBubble = Self.median(ratiosVsBubble) ?? .greatestFiniteMagnitude
+    let richMed = Self.median(richMsSamples) ?? 0
+    let textMed = Self.median(textMsSamples) ?? 0
+    let bubbleMed = Self.median(bubbleMsSamples) ?? 0
     print(
-      "ROWCOST rounds=\(ratios.map { String(format: "%.2f", $0) }.joined(separator: ",")) "
-        + "median=\(String(format: "%.2f", ratio)) "
-        + "ms_transcriptrow_med=\(String(format: "%.3f", transcriptMed)) "
-        + "ms_baseline_bubble_med=\(String(format: "%.3f", baselineMed)) "
+      "ROWCOST vs_text rounds=\(ratiosVsText.map { String(format: "%.2f", $0) }.joined(separator: ",")) "
+        + "median=\(String(format: "%.2f", medianVsText)) "
+        + "vs_bubble rounds=\(ratiosVsBubble.map { String(format: "%.2f", $0) }.joined(separator: ",")) "
+        + "median=\(String(format: "%.2f", medianVsBubble)) "
+        + "ms_rich_med=\(String(format: "%.3f", richMed)) "
+        + "ms_text_med=\(String(format: "%.3f", textMed)) "
+        + "ms_bubble_med=\(String(format: "%.3f", bubbleMed)) "
         + "jumps=\(Self.jumpsPerSample)")
     #expect(
-      ratio < 2.5,
-      "TranscriptEntryRow vs direct bubbles in shared shell: median ratio \(String(format: "%.2f", ratio)) (budget 2.5)"
+      medianVsText < 2.5,
+      "rich rows vs plain Text: median ratio \(String(format: "%.2f", medianVsText)) (budget 2.5)"
+    )
+    // Wrapper/transitions on top of bubble bodies: tightened from observed ~0.98 on CI when healthy.
+    #expect(
+      medianVsBubble < 1.2,
+      "TranscriptEntryRow vs direct bubbles: median ratio \(String(format: "%.2f", medianVsBubble)) (budget 1.2)"
     )
   }
 
@@ -116,7 +141,6 @@ struct TranscriptRowCostTests {
     }
   }
 
-  /// Production row views inside the shared transcript shell (no header/composer).
   private static func transcriptRows(
     _ entries: [TranscriptEntry], preparedMarkdown: [String: [RenderedMarkdownBlock]]
   ) -> some View {
@@ -134,8 +158,23 @@ struct TranscriptRowCostTests {
     }
   }
 
-  /// Same scroll shell as production; rows are the same bubble/note views as
-  /// `TranscriptScrollCostTests.bareRows` (no `TranscriptEntryRow` wrapper or transitions).
+  /// Same words as bubbles, minimal `Text` rows (cbffb5b baseline intent).
+  private static func plainTextShell(_ entries: [TranscriptEntry]) -> some View {
+    TranscriptScrollColumn(focusRequestCounter: .constant(0)) {
+      ForEach(entries) { entry in
+        switch entry {
+        case .user(_, let text, _), .note(_, let text, _):
+          Text(text)
+        case .assistant(_, let blocks, _):
+          Text(blocks.markdown)
+        default:
+          EmptyView()
+        }
+      }
+    }
+  }
+
+  /// Direct bubble/note bodies without `TranscriptEntryRow` (secondary wrapper guard).
   private static func baselineBubbleRows(
     _ entries: [TranscriptEntry], preparedMarkdown: [String: [RenderedMarkdownBlock]]
   ) -> some View {
