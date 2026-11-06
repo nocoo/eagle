@@ -180,6 +180,7 @@ final class CatalogActionTests: XCTestCase {
   func testActionFailuresAreVisibleAndTheNextSuccessClearsThem() async {
     let (model, catalog) = fixture()
     await model.createBot(title: "first")
+    let botId = try! XCTUnwrap(model.selection)
     catalog.actionError = ClientError("retry refused")
     await model.retryTask("t_1")
     XCTAssertEqual(model.error, "retry refused")
@@ -188,14 +189,14 @@ final class CatalogActionTests: XCTestCase {
     XCTAssertEqual(model.error, "stop refused")
     catalog.actionError = ClientError("agent refused")
     await model.setAgent(model: "m2", thinkingLevel: nil)
-    XCTAssertEqual(model.agentError(botId: "b_1", field: "model"), "agent refused")
+    XCTAssertEqual(model.agentError(botId: botId, field: "model"), "agent refused")
     catalog.actionError = nil
     await model.retryTask("t_1")
     XCTAssertNil(model.error)
     await model.setAgent(model: nil, thinkingLevel: "low")
-    XCTAssertNil(model.agentError(botId: "b_1", field: "thinking"))
+    XCTAssertNil(model.agentError(botId: botId, field: "thinking"))
     XCTAssertEqual(
-      model.agentError(botId: "b_1", field: "model"),
+      model.agentError(botId: botId, field: "model"),
       "agent refused",
       "another row's success does not erase this one"
     )
