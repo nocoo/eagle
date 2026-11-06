@@ -71,6 +71,36 @@ struct BubbleSelectionTests {
     }
   }
 
+  @Test("selectable code keeps its line spacing")
+  func selectableCodeSpacing() throws {
+    let source = Array(repeating: "echo hello", count: 10).joined(separator: "\n")
+    let blocks: [RenderedMarkdownBlock] = [.code(language: nil, body: source)]
+    func inkHeight(_ content: some View) throws -> Int {
+      let renderer = ImageRenderer(content: content.preferredColorScheme(.light))
+      renderer.scale = 1
+      let bitmap = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
+      var rows: [Int] = []
+      for y in 0..<bitmap.pixelsHigh {
+        for x in 0..<bitmap.pixelsWide {
+          guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+          if color.alphaComponent > 0.9 && color.redComponent < 0.25
+            && color.greenComponent < 0.25 && color.blueComponent < 0.25
+          {
+            rows.append(y)
+          }
+        }
+      }
+      return try #require(rows.max()) - #require(rows.min()) + 1
+    }
+    let normal = try inkHeight(
+      Text(source).font(Theme.TypeScale.code).foregroundStyle(Theme.Palette.textPrimary))
+    let selected = try inkHeight(
+      AssistantBubble(text: source, preparedBlocks: blocks, selectionOverride: true)
+        .frame(width: 420))
+    #expect(normal > 100)
+    #expect(abs(normal - selected) <= 1)
+  }
+
   @Test("insertion preserves the draft, trims whitespace and ignores empty text")
   func insertDraft() {
     var draft = "已有草稿"

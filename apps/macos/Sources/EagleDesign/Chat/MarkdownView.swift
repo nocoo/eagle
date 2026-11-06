@@ -233,8 +233,12 @@ public struct AssistantBubble: View, Equatable {
       .opacity(selectionEnabled ? 0 : 1)
       .allowsHitTesting(!selectionEnabled)
       if selectionEnabled {
-        SelectableTranscriptText(attributedText: attributedText)
-          .lineSpacing(Theme.Chat.bodyLineSpacing)
+        if blocks.count == 1, case .paragraph = blocks[0] {
+          SelectableTranscriptText(attributedText: attributedText)
+            .lineSpacing(Theme.Chat.bodyLineSpacing)
+        } else {
+          SelectableTranscriptText(attributedText: attributedText)
+        }
       }
     }
   }
