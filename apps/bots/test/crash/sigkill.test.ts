@@ -31,6 +31,17 @@ const startDaemon = async (root: string, env: Record<string, string>): Promise<D
   };
 };
 
+/** Reads until the wanted frame arrives: an answer, a catalog or an agent event can share the wire. */
+const nextOfType = async (
+  frames: ReturnType<typeof frameQueue>,
+  type: string,
+): Promise<Record<string, unknown>> => {
+  for (;;) {
+    const frame = await frames.next(20_000);
+    if (frame.type === type) return frame;
+  }
+};
+
 const connect = (daemon: Daemon): WebSocket =>
   new WebSocket(`ws://127.0.0.1:${daemon.port}/v1/socket`, {
     headers: { authorization: `Bearer ${daemon.token}` },
@@ -184,9 +195,9 @@ test("killing the daemon mid-answer loses no message and duplicates none", async
     const after = connect(running);
     const renewed = frameQueue(after);
     await send(after, hello);
-    await renewed.next();
+    await nextOfType(renewed, "welcome");
     await send(after, { type: "subscribe", botId, trace: "tr_crash_sub_2" });
-    const baseline = await renewed.next();
+    const baseline = await nextOfType(renewed, "snapshot");
     const messages = (baseline.value as { messages: Message[] }).messages;
     assert.deepEqual(
       messages.map((message) => [message.role, message.state]),
