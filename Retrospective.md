@@ -1,5 +1,17 @@
 # Retrospective
 
+## 2026-11-06 — A delegated coding pane carried another repository's task
+
+While shortening Bots device prompts, a freshly opened `group/coding` pane finished
+the Eagle commit and then continued a dependency-upgrade task for `raven-dev`: it
+created three commits there and left two staged files. The pane was closed as soon
+as the drift was visible; Eagle's own commit and gates were unaffected.
+
+A fresh pane is not proof that its model context is fresh. Check the pane's visible
+commands against the assigned cwd before letting it continue, and stop it on the
+first command outside the repository. Do not revert another repository's commits
+without the owner's confirmation.
+
 ## 2026-11-06 — `npm ci` removes node_modules before the mirror answered
 
 Preparing the 0.20.0 release caches, I ran `npm ci` against the Microsoft npm mirror.
