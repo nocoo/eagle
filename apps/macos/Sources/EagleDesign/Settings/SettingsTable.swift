@@ -20,6 +20,7 @@ public struct SettingsTableHeader: View {
       Text("描述")
         .font(Theme.TypeScale.note)
         .foregroundStyle(Theme.Palette.textSecondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
       Text("目录")
         .font(Theme.TypeScale.note)
         .foregroundStyle(Theme.Palette.textSecondary)

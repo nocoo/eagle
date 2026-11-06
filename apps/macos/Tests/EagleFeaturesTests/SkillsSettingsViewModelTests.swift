@@ -76,19 +76,6 @@ struct SkillsSettingsViewModelTests {
     #expect(unticked.selectedPaths.isEmpty, "an unticked skill is not remembered")
   }
 
-  @Test("a folder outside the home directory keeps its absolute path")
-  func rootOutsideHome() async throws {
-    let fixture = try SkillsFixture()
-    defer { fixture.cleanUp() }
-    let outside = FileManager.default.temporaryDirectory
-      .appendingPathComponent("eagle-skills-outside-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
-    let model = fixture.model()
-    await model.addRoots([outside])
-    #expect(model.rootRows.last?.displayPath == outside.standardizedFileURL.path)
-    #expect(model.rootRows.last?.removable == true)
-  }
-
   @Test("the filter narrows the list to ticked or unticked skills")
   func filterStates() async throws {
     let fixture = try SkillsFixture()
@@ -114,17 +101,19 @@ struct SkillsSettingsViewModelTests {
     let fixture = try SkillsFixture()
     defer { fixture.cleanUp() }
     try fixture.writeSkill(
-      "alpha", name: "alpha-skill", description: "Runs the acceptance.", version: "1.0.0")
+      "alpha-folder", name: "alpha-skill", description: "Runs the acceptance.", version: "1.0.0")
     try fixture.writeSkill(
-      "beta", name: "beta-skill", description: "Runs the release.", version: "2.0.0")
+      "beta-folder", name: "beta-skill", description: "Runs the release.", version: "2.0.0")
     let model = fixture.model()
     await model.reload()
     model.keyword = "ALPHA"
     #expect(model.visibleSkills.map(\.name) == ["alpha-skill"])
     model.keyword = "acceptance"
     #expect(model.visibleSkills.map(\.name) == ["alpha-skill"])
-    model.keyword = "beta"
-    #expect(model.visibleSkills.map(\.name) == ["beta-skill"])
+    model.keyword = "beta-folder"
+    #expect(
+      model.visibleSkills.map(\.name) == ["beta-skill"],
+      "a word that is only in the directory still finds the skill")
     model.keyword = "nothing here"
     #expect(model.visibleSkills.isEmpty)
     model.keyword = "   "
@@ -167,6 +156,103 @@ struct SkillsSettingsViewModelTests {
     #expect(row.status == .missing)
     #expect(row.detail == "找不到这个文件夹")
   }
+
+  @Test("a folder outside the home directory keeps its absolute path")
+  func rootOutsideHome() async throws {
+    let fixture = try SkillsFixture()
+    defer { fixture.cleanUp() }
+    let outside = FileManager.default.temporaryDirectory
+      .appendingPathComponent("eagle-skills-outside-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+    let model = fixture.model()
+    await model.addRoots([outside])
+    #expect(model.rootRows.last?.displayPath == outside.standardizedFileURL.path)
+    #expect(model.rootRows.last?.removable == true)
+  }
+
+  @Test("a skill reached through a linked root keeps its tick when the link goes away")
+  func tickSurvivesRemovedEntryPoint() async throws {
+    let fixture = try SkillsFixture()
+    defer { fixture.cleanUp() }
+    try fixture.writeSkill(
+      "alpha", name: "alpha-skill", description: "Runs alpha.", version: "1.0.0")
+    let automatic = fixture.home.appendingPathComponent(".agents/skills", isDirectory: true)
+    let link = fixture.home.appendingPathComponent("linked", isDirectory: true)
+    try FileManager.default.createSymbolicLink(
+      atPath: link.path, withDestinationPath: automatic.path)
+    let model = fixture.model()
+    await model.addRoots([link])
+    await model.reload()
+    let skill = try #require(model.skills.first)
+    #expect(model.skills.count == 1, "the link and the real folder are one skill")
+    model.setSelected(true, for: skill)
+
+    await model.removeRoot(link)
+    await model.reload()
+    #expect(model.skills.count == 1, "the skill is still there through the automatic root")
+    #expect(model.isSelected(skill), "the tick belongs to the skill, not to the way in")
+  }
+
+  @Test("a root that is added while a scan runs is scanned again")
+  func rootAddedDuringScan() async throws {
+    let fixture = try SkillsFixture()
+    defer { fixture.cleanUp() }
+    try fixture.writeSkill(
+      "alpha", name: "alpha-skill", description: "Runs alpha.", version: "1.0.0")
+    let extra = fixture.home.appendingPathComponent("extra", isDirectory: true)
+    try FileManager.default.createDirectory(at: extra, withIntermediateDirectories: true)
+    try fixture.writeSkill(
+      in: extra, "extra-skill", name: "extra-skill", description: "Runs extra.", version: "2.0.0")
+
+    let gate = ScanGate()
+    let model = fixture.model(scan: { roots in
+      await gate.wait()
+      return SkillScanner.scan(roots: roots)
+    })
+    await gate.arm()
+    let scanning = Task { await model.reload() }
+    while await !gate.isWaiting { try await Task.sleep(for: .milliseconds(5)) }
+    let adding = Task { await model.addRoots([extra]) }
+    while model.rootRows.count < 2 { try await Task.sleep(for: .milliseconds(5)) }
+    await gate.release()
+    await adding.value
+    await scanning.value
+    #expect(
+      model.skills.map(\.name).sorted() == ["alpha-skill", "extra-skill"],
+      "the scan that was running answered the old scope, so the new scope is scanned again")
+  }
+
+  @Test("a root that is removed while a scan runs is not published")
+  func rootRemovedDuringScan() async throws {
+    let fixture = try SkillsFixture()
+    defer { fixture.cleanUp() }
+    let extra = fixture.home.appendingPathComponent("extra", isDirectory: true)
+    try FileManager.default.createDirectory(at: extra, withIntermediateDirectories: true)
+    try fixture.writeSkill(
+      in: extra, "extra-skill", name: "extra-skill", description: "Runs extra.", version: "2.0.0")
+
+    let gate = ScanGate()
+    let model = fixture.model(scan: { roots in
+      await gate.wait()
+      return SkillScanner.scan(roots: roots)
+    })
+    await model.addRoots([extra])
+    await model.reload()
+    #expect(model.skills.map(\.name) == ["extra-skill"])
+
+    await gate.arm()
+    let scanning = Task { await model.reload() }
+    while await !gate.isWaiting { try await Task.sleep(for: .milliseconds(5)) }
+    let removing = Task { await model.removeRoot(extra) }
+    while model.rootRows.count > 1 { try await Task.sleep(for: .milliseconds(5)) }
+    await gate.release()
+    await removing.value
+    await scanning.value
+    #expect(model.rootRows.count == 1)
+    #expect(
+      model.skills.isEmpty,
+      "the scan that was running answered the old scope, so the new scope is scanned again")
+  }
 }
 
 /// A temporary home with its own defaults suite: the page's own state, never the machine's.
@@ -186,12 +272,22 @@ private struct SkillsFixture {
       withIntermediateDirectories: true)
   }
 
-  func model() -> SkillsSettingsViewModel {
-    SkillsSettingsViewModel(defaults: defaults, home: home)
+  func model(
+    scan: @escaping @Sendable ([URL]) async -> SkillScanResult = { SkillScanner.scan(roots: $0) }
+  ) -> SkillsSettingsViewModel {
+    SkillsSettingsViewModel(defaults: defaults, home: home, scan: scan)
   }
 
   func writeSkill(_ folder: String, name: String, description: String, version: String) throws {
-    let directory = home.appendingPathComponent(".agents/skills/\(folder)", isDirectory: true)
+    try writeSkill(
+      in: home.appendingPathComponent(".agents/skills"), folder, name: name,
+      description: description, version: version)
+  }
+
+  func writeSkill(
+    in root: URL, _ folder: String, name: String, description: String, version: String
+  ) throws {
+    let directory = root.appendingPathComponent(folder, isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let text = """
       ---
@@ -207,4 +303,27 @@ private struct SkillsFixture {
   func cleanUp() {
     defaults.removePersistentDomain(forName: suiteName)
   }
+}
+
+/// Holds a scan until the test lets it go, so the order of two scans can be pinned down.
+private actor ScanGate {
+  private var armed = false
+  private var pending: [CheckedContinuation<Void, Never>] = []
+
+  func arm() { armed = true }
+
+  func wait() async {
+    guard armed else { return }
+    armed = false
+    await withCheckedContinuation { continuation in
+      pending.append(continuation)
+    }
+  }
+
+  func release() {
+    for continuation in pending { continuation.resume() }
+    pending = []
+  }
+
+  var isWaiting: Bool { !pending.isEmpty }
 }

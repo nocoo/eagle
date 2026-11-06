@@ -65,13 +65,21 @@ public final class SkillsSettingsViewModel: ObservableObject {
 
   private let defaults: UserDefaults
   private let home: URL
+  /// How the folders are read. The scan runs off the main actor; the tests hand in their own
+  /// so the order of two scans can be pinned down.
+  private let scan: @Sendable ([URL]) async -> SkillScanResult
+  /// Counts the scope changes: a scan that answered an older scope is thrown away.
+  private var scopeVersion = 0
+  private var runningScans = 0
 
   public init(
     defaults: UserDefaults = .standard,
-    home: URL = FileManager.default.homeDirectoryForCurrentUser
+    home: URL = FileManager.default.homeDirectoryForCurrentUser,
+    scan: @escaping @Sendable ([URL]) async -> SkillScanResult = { SkillScanner.scan(roots: $0) }
   ) {
     self.defaults = defaults
     self.home = home
+    self.scan = scan
     self.selectedPaths = Set(defaults.stringArray(forKey: Self.selectionKey) ?? [])
   }
 
@@ -126,6 +134,7 @@ public final class SkillsSettingsViewModel: ObservableObject {
       paths.append(path)
     }
     defaults.set(paths, forKey: Self.customRootsKey)
+    scopeVersion += 1
     await reload()
   }
 
@@ -134,21 +143,35 @@ public final class SkillsSettingsViewModel: ObservableObject {
     let path = url.standardizedFileURL.path
     let paths = customRoots.map { $0.standardizedFileURL.path }.filter { $0 != path }
     defaults.set(paths, forKey: Self.customRootsKey)
+    scopeVersion += 1
     await reload()
   }
 
   /// Reads every root again. The selection is kept: a rescan does not forget what was ticked.
+  ///
+  /// A root that changes while a scan is running does not wait for it: the answer that comes
+  /// back is about the old scope, so it is thrown away and the current scope is scanned
+  /// again. The page therefore always ends with the scope that is stored now.
   public func reload() async {
-    guard !scanning else { return }
+    runningScans += 1
     scanning = true
-    defer { scanning = false }
-    let roots = scanRoots
-    let result = await Task.detached(priority: .userInitiated) {
-      SkillScanner.scan(roots: roots)
-    }.value
-    skills = result.skills
-    rootStatuses = Dictionary(
-      result.roots.map { ($0.id, $0.status) }, uniquingKeysWith: { first, _ in first })
+    defer {
+      runningScans -= 1
+      scanning = runningScans > 0
+    }
+    while true {
+      let version = scopeVersion
+      let roots = scanRoots
+      let scanner = scan
+      let result = await Task.detached(priority: .userInitiated) {
+        await scanner(roots)
+      }.value
+      guard version == scopeVersion else { continue }
+      skills = result.skills
+      rootStatuses = Dictionary(
+        result.roots.map { ($0.id, $0.status) }, uniquingKeysWith: { first, _ in first })
+      return
+    }
   }
 
   /// Whether a skill is ticked.

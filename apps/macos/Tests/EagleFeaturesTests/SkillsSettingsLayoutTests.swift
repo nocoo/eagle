@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ObjectiveC
 import SwiftUI
 import Testing
 
@@ -46,11 +47,55 @@ struct SkillsSettingsLayoutTests {
       "the empty state is written down")
   }
 
+  @Test("the table's header and its rows put their columns in the same places")
+  func columnsLineUp() async throws {
+    let fixture = try SkillsLayoutFixture()
+    defer { fixture.cleanUp() }
+    try fixture.writeSkill(
+      "alpha-dir", name: "alpha-skill", description: "Runs alpha.", version: "2.0.0")
+    let (_, window) = try await fixture.host()
+    defer { window.orderOut(nil) }
+    let nodes = entries(try #require(window.contentView))
+    func column(_ text: String) throws -> CGFloat {
+      let node = try #require(nodes.first { title($0) == text }, "no column named \(text)")
+      return try #require(frame(node), "\(text) has no frame").origin.x
+    }
+    let name = try column("名称")
+    let version = try column("版本")
+    let description = try column("描述")
+    let path = try column("目录")
+    #expect(name < version)
+    #expect(version < description)
+    #expect(description < path)
+    let rowName = try column("alpha-skill")
+    let rowVersion = try column("2.0.0")
+    let rowDescription = try column("Runs alpha.")
+    let rowPath = try column("~/.agents/skills/alpha-dir")
+    #expect(name == rowName, "the name column is one column")
+    #expect(version == rowVersion, "the version column is one column")
+    #expect(description == rowDescription, "the description column is one column")
+    #expect(
+      path == rowPath,
+      "the path column of the header is where the path column of a row is")
+  }
+
   private func title(_ node: NSObject) -> String? {
     for name in ["AXTitle", "AXDescription", "AXValue"] {
       if let value = attribute(node, name) as? String, !value.isEmpty { return value }
     }
     return nil
+  }
+
+  /// The frame an accessibility node reports. SwiftUI's own nodes answer `accessibilityFrame`,
+  /// which returns a struct, so the implementation is called directly.
+  private func frame(_ node: NSObject) -> NSRect? {
+    let selector = NSSelectorFromString("accessibilityFrame")
+    guard node.responds(to: selector),
+      let method = class_getInstanceMethod(type(of: node), selector)
+    else { return nil }
+    typealias Getter = @convention(c) (AnyObject, Selector) -> NSRect
+    let getter = unsafeBitCast(method_getImplementation(method), to: Getter.self)
+    return getter(node, selector)
   }
 
   private func attribute(_ node: NSObject, _ name: String) -> Any? {

@@ -50,9 +50,11 @@ or mathematical geometry into presentation tokens.
   the mark a row names (a bot's face in 用量); rows without one are unchanged.
 - A settings table is one shared component: SettingsTableHeader draws the column titles and
   SettingsTableRow draws one row (a checkbox, a name, a version, a description and a
-  directory). Both take their widths from the table tokens in Theme.Page, so every table's
-  columns line up; a caller supplies the values and the tick, and the checkbox is the only
-  part of a row that reacts to a click.
+  directory). Both take their widths from the table tokens in Theme.Page and the description
+  column takes the room that is left, so the header and its rows put the four columns at the
+  same horizontal places; the layout test measures that at the 960 pt settings width. A
+  caller supplies the values and the tick, and the checkbox is the only part of a row that
+  reacts to a click.
 - A transient answer is a toast, not a card row: ToastCenter holds one SettingsNotice (✅, ⚠️
   or neutral), SettingsScaffold floats it over the content and retires it after
   `Theme.Motion.toastDwell`, so saving never changes the height of the page that produced it.
@@ -174,18 +176,27 @@ call, no protocol change and no tool group carries it.
 - The scan roots are `~/.agents/skills` (always scanned, never removable, shown with a `~`)
   and the folders the person added with a native folder picker, in the order they were
   added. Each custom root has a 移除 button; the automatic root has none.
-- A skill is an immediate child directory of a root that carries a `SKILL.md`. Its leading
-  front matter gives the name, the description and the version; a version in a `metadata`
-  block counts, a missing name falls back to the folder name, and every other key is
-  ignored. A root that is missing or unreadable says so on its own row and never fails the
-  page.
-- The rows are ordered by name (case-insensitively) and then by path, and a directory that
-  two roots share is one row.
+- A skill is an immediate child directory of a root that carries a `SKILL.md`. The front
+  matter is the block between two column-0 `---` delimiters, and without a closing one there
+  is none at all. Plain, single quoted and double quoted scalars are read, a `|` block keeps
+  its lines, a `>` block folds them into one paragraph, a comment after a value is dropped,
+  and a version counts when it is a direct child of a `metadata` mapping. A missing name
+  falls back to the folder name and every other key is ignored.
+- A folder that is really the same folder — reached through a link, or through two roots —
+  is one skill with one row, and the row keeps the path the skill really lives at, so a tick
+  belongs to the skill and not to the way in.
+- A manifest that is not a regular file is never opened, and only the head of a manifest is
+  read, so one odd file cannot hold the scan up.
+- A root that is not there says so, and a root the process may not read says why; neither
+  fails the page.
+- The rows are ordered by name (case-insensitively) and then by path.
 - The list has a keyword field (name, description and directory) and a 全部/已勾选/未勾选
   filter, and it states the honest counts. Nothing is ticked until a person ticks it, and
   the ticks and the custom roots live in this App's own defaults.
 - The scan reads the filesystem off the main actor and publishes on it; 重新扫描 rescans
-  without losing the ticks.
+  without losing the ticks. A root that changes while a scan is running is scanned again:
+  the answer about the old scope is thrown away, so the page always shows the scope that is
+  stored now.
 
 ## Reference-led composition
 

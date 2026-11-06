@@ -1,5 +1,24 @@
 # 用户视角检查点
 
+## 2026-11-06 11:05 +08 — 技能 settings page, review fixes (macOS)
+
+- 第一轮评审的七条意见全部修掉，每条都先有失败测试：front matter 读取器重写（成对 `---`
+  定界、plain/单引号/双引号、`|` 与 `>` 块标量与 chomping、行尾注释、`metadata` 的直系
+  子键）；技能身份改用文件系统标识（`fileResourceIdentifier`）去重、`resolvingSymlinksInPath`
+  作 id，链接目录算一个技能且勾选跟着技能走；manifest 只读普通文件且最多读头部 64 KiB，
+  FIFO 不会卡住扫描；根目录按错误分类（不存在 = missing，权限不足 = unreadable）；扫描期间
+  增删根目录会丢弃旧结果并重扫当前范围；表头与行的四列改为同一水平位置。
+- 红证据（对着上一版实现跑新测试）：scanner 16 处失败、view model 两处（增/删根目录）失败、
+  表头列位置四处失败；去掉 manifest 类型检查后 FIFO 用例在 2.1 s 内超时失败。修好后：
+  `apps/macos` `swift test` 358+52+78+37 = 525 个测试全绿（本轮新增 23 个）；
+  `./Scripts/coverage.sh` 2831/2998 = 94.4%（下限 90；`SkillScanner.swift` 96.85%、
+  `SkillsSettingsViewModel.swift` 98.80%）；`swift format lint --strict` 干净；
+  `npm run check:design` 与 `npm run test:design` 通过。
+- 本机 `~/.agents/skills` 的 27 个真实技能全部解析正常（折叠/字面块、metadata.version、
+  行尾注释），此前 5 个会显示成 `|`、`>`、`>-`。
+- 未验证：仍按要求没有运行 `swift run`、没有动 dev App，这一页还没有真机肉眼验收；下一个
+  断点还是属主在 dev App 的“设置 → 技能”里看一眼列宽与扫描范围。
+
 ## 2026-11-06 10:20 +08 — 技能 settings page (macOS)
 
 - 新增设置页“技能”：扫描范围（自动的 `~/.agents/skills` ＋ 本人添加的文件夹）与技能表
