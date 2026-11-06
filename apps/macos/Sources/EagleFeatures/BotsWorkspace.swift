@@ -1398,7 +1398,7 @@ struct BotsPresenter {
         value: Self.thinkingLabel(level),
         selected: level,
         choices: levels.map {
-          InspectorChoiceRow.Choice(id: $0, title: $0)
+          InspectorChoiceRow.Choice(id: $0, title: Self.thinkingLabel($0))
         },
         isSaving: edit?.field == "thinking" && edit?.isSaving == true,
         error: errors["\(bot.id)/thinking"]

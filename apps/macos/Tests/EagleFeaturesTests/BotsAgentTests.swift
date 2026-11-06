@@ -64,6 +64,32 @@ struct BotsAgentTests {
     #expect(thinking.value == "极高")
   }
 
+  @Test("every thinking level offers its Chinese label but keeps the raw level as its id")
+  func levelTitlesAreChinese() throws {
+    let presenter = BotsPresenter()
+    let rows = presenter.agentChoices(
+      for: bot("b_1"),
+      agent: AgentView(
+        model: ModelRef(provider: "magpie", modelId: "auto/gpt-6-luna"),
+        thinkingLevel: "max",
+        instructions: ""
+      ),
+      models: ["auto/gpt-6-luna"],
+      detail: nil
+    )
+    let thinking = try #require(rows.first { $0.id == "thinking" })
+    #expect(
+      thinking.choices.map(\.id) == ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+      "the wire still sends the level the model knows"
+    )
+    #expect(
+      thinking.choices.map(\.title) == ["关闭", "极低", "低", "中", "高", "极高", "最高"],
+      "the menu speaks the inspector's language"
+    )
+    #expect(thinking.selected == "max")
+    #expect(thinking.value == "最高")
+  }
+
   @Test("a save shows only on the bot it was made for, and another selection keeps its own")
   func completionStaysWithItsBot() async throws {
     let catalog = StubCatalog()
