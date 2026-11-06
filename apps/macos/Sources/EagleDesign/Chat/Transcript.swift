@@ -15,6 +15,7 @@ public struct UserBubble: View {
   private let onClearSelection: () -> Void
   private let selectionSource: String
   private let selectedText: String
+  private let selectionOverride: Bool?
   @State private var hovering = false
 
   public init(
@@ -23,7 +24,8 @@ public struct UserBubble: View {
     onInsertSelection: ((String) -> Void)? = nil,
     onClearSelection: @escaping () -> Void = {},
     selectionSource: String = "",
-    selectedText: String = ""
+    selectedText: String = "",
+    selectionOverride: Bool? = nil
   ) {
     self.text = text
     self.origin = origin
@@ -31,6 +33,7 @@ public struct UserBubble: View {
     self.onClearSelection = onClearSelection
     self.selectionSource = selectionSource
     self.selectedText = selectedText
+    self.selectionOverride = selectionOverride
   }
 
   public var body: some View {
@@ -38,8 +41,9 @@ public struct UserBubble: View {
       selectionSource == text
       && !selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     let selectionEnabled =
-      hovering || hasSelection
-      || ProcessInfo.processInfo.environment["EAGLE_COMPOSER_FOCUS_FIXTURE"] == "1"
+      selectionOverride
+      ?? (hovering || hasSelection
+        || ProcessInfo.processInfo.environment["EAGLE_COMPOSER_FOCUS_FIXTURE"] == "1")
     HStack(spacing: Theme.Layout.rowGap) {
       Spacer(minLength: Theme.Chat.userLeadingSpace)
       HStack(alignment: .bottom, spacing: Theme.Layout.rowGap) {
@@ -73,10 +77,13 @@ public struct UserBubble: View {
           .font(Theme.TypeScale.pill)
           .foregroundStyle(Theme.Palette.onColorSecondary)
       }
-      if selectionEnabled {
-        SelectableTranscriptText(attributedText: BubbleTextBuilder.plainUserText(text))
-      } else {
+      ZStack(alignment: .topLeading) {
         messageText
+          .opacity(selectionEnabled ? 0 : 1)
+          .allowsHitTesting(!selectionEnabled)
+        if selectionEnabled {
+          SelectableTranscriptText(attributedText: BubbleTextBuilder.plainUserText(text))
+        }
       }
     }
   }

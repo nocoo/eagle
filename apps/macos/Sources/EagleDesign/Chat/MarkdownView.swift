@@ -14,6 +14,7 @@ public struct AssistantBubble: View, Equatable {
   private let onClearSelection: () -> Void
   private let selectionSource: String
   private let selectedText: String
+  private let selectionOverride: Bool?
   @StateObject private var model = MarkdownViewModel()
   @State private var hovering = false
 
@@ -26,7 +27,8 @@ public struct AssistantBubble: View, Equatable {
     onInsertSelection: ((String) -> Void)? = nil,
     onClearSelection: @escaping () -> Void = {},
     selectionSource: String = "",
-    selectedText: String = ""
+    selectedText: String = "",
+    selectionOverride: Bool? = nil
   ) {
     self.text = text
     self.streaming = streaming
@@ -37,6 +39,7 @@ public struct AssistantBubble: View, Equatable {
     self.onClearSelection = onClearSelection
     self.selectionSource = selectionSource
     self.selectedText = selectedText
+    self.selectionOverride = selectionOverride
   }
 
   public var body: some View {
@@ -47,8 +50,9 @@ public struct AssistantBubble: View, Equatable {
       selectionSource == sourceText
       && !selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     let selectionEnabled =
-      hovering || hasSelection
-      || ProcessInfo.processInfo.environment["EAGLE_COMPOSER_FOCUS_FIXTURE"] == "1"
+      selectionOverride
+      ?? (hovering || hasSelection
+        || ProcessInfo.processInfo.environment["EAGLE_COMPOSER_FOCUS_FIXTURE"] == "1")
     HStack(alignment: .bottom, spacing: Theme.Layout.rowGap) {
       HStack(alignment: .bottom, spacing: Theme.Layout.rowGap) {
         bubbleContent(
@@ -211,6 +215,7 @@ public struct AssistantBubble: View, Equatable {
       && lhs.preparedBlocks == rhs.preparedBlocks
       && lhs.cornerRadius == rhs.cornerRadius && lhs.maxWidth == rhs.maxWidth
       && lhs.selectionSource == rhs.selectionSource && lhs.selectedText == rhs.selectedText
+      && lhs.selectionOverride == rhs.selectionOverride
   }
 
   @ViewBuilder
@@ -219,13 +224,16 @@ public struct AssistantBubble: View, Equatable {
     attributedText: AttributedString,
     selectionEnabled: Bool
   ) -> some View {
-    if selectionEnabled {
-      SelectableTranscriptText(attributedText: attributedText)
-    } else {
+    ZStack(alignment: .topLeading) {
       VStack(alignment: .leading, spacing: Theme.Chat.blockGap) {
         ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
           blockView(block, caret: streaming && index == blocks.count - 1)
         }
+      }
+      .opacity(selectionEnabled ? 0 : 1)
+      .allowsHitTesting(!selectionEnabled)
+      if selectionEnabled {
+        SelectableTranscriptText(attributedText: attributedText)
       }
     }
   }
