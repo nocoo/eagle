@@ -381,16 +381,21 @@ contradictory one.
   Building the section does no filesystem work.
 - Its one tool, `skill_read({ name })`, reads `SKILL.md` inside that selected skill's
   directory. It takes a name and never a path, so the model cannot turn it into a file
-  reader: the folder and the manifest are resolved to their real paths, the manifest has to
-  stay inside that folder, the file is opened with `O_NONBLOCK` and without following a
-  final symlink, and the opened descriptor is checked with `fstat` — a regular file, and the
-  same one the path resolved to. An unselected name, a manifest that is gone, unreadable,
-  outside the folder or not a regular file is refused with a message naming what is selected.
+  reader: the folder is resolved and its device and inode are recorded, the manifest is
+  resolved and has to stay inside that folder, the file is opened with `O_NONBLOCK` and
+  without following a final symlink, and the opened descriptor is checked with `fstat` — a
+  regular file, and the same one the path resolved to. The folder is then stated again and
+  must still be that directory, and the path must still name the opened file, so a folder or
+  file swapped after resolution is a refusal. An unselected name, a manifest that is gone,
+  unreadable, outside the folder or not a regular file, or a tree that changed under the read
+  is refused with a message naming what is selected.
 - The read is bounded twice over: at most 64 KiB are pulled from the file, in chunks, and the
-  kept text is at most 32 000 characters and 4 096 lines, cut on a UTF-8 boundary. A cut adds
-  a `[truncated at <n> <unit>]` note, and the tool declares output limits above those
-  budgets, so the harness neither cuts the manifest nor drops the note in its own defaults
-  (50 KiB and 2 000 lines).
+  kept text is at most 32 000 characters and 4 096 lines, cut on a UTF-8 boundary. Every
+  budget leaves a prefix, so the returned text is the shortest of them and the
+  `[truncated at <n> <unit>]` note names the budget that produced it — 100 000 ASCII bytes
+  say `characters`, 40 000 short lines say `lines`. The tool declares output limits above
+  those budgets, so the harness neither cuts the manifest nor drops the note in its own
+  defaults (50 KiB and 2 000 lines).
 - `~/…` paths are expanded against the daemon's home, which is where the App scanned. A
   selection change reaches a conversation that is already open: the section and the tool both
   read the live list, and no `root.configure`, reopen or subscription is involved.

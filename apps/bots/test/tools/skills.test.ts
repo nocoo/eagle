@@ -3,7 +3,7 @@
 // `SKILL.md`. Discovery belongs to the App; nothing here scans a folder.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -16,6 +16,8 @@ import {
   normalizeSelectedSkills,
   readSelectedSkill,
   readSkillFile,
+  readSkillFolder,
+  resolveSkillFolder,
   type SelectedSkill,
   skillSection,
   trimIncompleteUtf8,
@@ -204,8 +206,12 @@ test("a manifest is read by bytes, not by characters: a huge file costs a bounde
       `read ${outcome.bytesRead} bytes, at most ${MAX_SKILL_FILE_BYTES + 1} are allowed`,
     );
     assert.ok(outcome.bytesRead < 8 * 1024 * 1024, "the whole file is never pulled into memory");
-    assert.equal(outcome.truncatedBy, "bytes");
-    assert.match(outcome.text, /\[truncated at \d+ bytes\]/);
+    assert.equal(
+      outcome.truncatedBy,
+      "characters",
+      "the read bound was reached, but the character budget is what the model receives",
+    );
+    assert.match(outcome.text, /\[truncated at \d+ characters\]/);
   } finally {
     await bench_.cleanup();
   }
@@ -301,6 +307,92 @@ test("the tail trim keeps every complete character and only drops a broken one",
     "a lone lead byte goes",
   );
   assert.deepEqual(trimIncompleteUtf8(Buffer.from("abc")), Buffer.from("abc"), "ascii stays");
+});
+
+test("the note names the budget that actually bound the text", async () => {
+  const bench_ = await bench();
+  try {
+    // 100 000 ASCII bytes: the read stops at the byte budget, but the character budget is
+    // what the model receives, so the note has to name that one.
+    const ascii = await writeSkillFile(bench_.root, "ascii", "a".repeat(100_000));
+    const kept = await readSkillFile(ascii);
+    assert.ok(kept.kind === "text");
+    assert.equal(kept.truncatedBy, "characters");
+    assert.equal(
+      kept.text,
+      `${"a".repeat(MAX_SKILL_FILE_CHARS)}\n\n[truncated at ${MAX_SKILL_FILE_CHARS} characters]`,
+    );
+
+    // 40 000 one-character lines: the read budget is reached, but the line budget decides.
+    const lines = await writeSkillFile(
+      bench_.root,
+      "lines",
+      `${Array.from({ length: 40_000 }, () => "x").join("\n")}\n`,
+    );
+    const byLines = await readSkillFile(lines);
+    assert.ok(byLines.kind === "text");
+    assert.equal(byLines.truncatedBy, "lines");
+    assert.equal(
+      byLines.text,
+      `${Array.from({ length: MAX_SKILL_FILE_LINES }, () => "x").join("\n")}\n\n[truncated at ${MAX_SKILL_FILE_LINES} lines]`,
+    );
+
+    // Three-byte characters: the read budget leaves the shortest prefix, so it is named.
+    const cjk = await writeSkillFile(bench_.root, "cjk", "字".repeat(40_000));
+    const byBytes = await readSkillFile(cjk);
+    assert.ok(byBytes.kind === "text");
+    assert.equal(byBytes.truncatedBy, "bytes");
+    assert.equal(
+      byBytes.text,
+      `${"字".repeat((MAX_SKILL_FILE_BYTES - 1) / 3)}\n\n[truncated at ${MAX_SKILL_FILE_BYTES} bytes]`,
+    );
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("a folder replaced after it was resolved is refused, not read", async () => {
+  const bench_ = await bench();
+  try {
+    const original = await writeSkillFile(bench_.root, "alpha", "原来这个目录的说明");
+    const resolved = await resolveSkillFolder(original);
+    assert.equal(resolved.kind, "folder");
+    assert.ok(resolved.kind === "folder");
+
+    // Another tree takes the folder's path: the tree that was validated is gone, and the
+    // manifest path now names a file in the new one.
+    const replacement = join(bench_.root, "replacement");
+    await mkdir(replacement, { recursive: true });
+    await writeFile(join(replacement, "SKILL.md"), "另一个目录里的说明");
+    await rename(original, join(bench_.root, "alpha-gone"));
+    await rename(replacement, original);
+
+    const outcome = await readSkillFolder(resolved.folder);
+    assert.equal(outcome.kind, "refusal");
+    assert.ok(outcome.kind === "refusal");
+    assert.match(outcome.reason, /folder changed/, "the folder's own identity is what refused");
+    assert.doesNotMatch(outcome.reason, /另一个目录里的说明/);
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("a folder replaced before it is resolved is read as it is now", async () => {
+  const bench_ = await bench();
+  try {
+    const original = await writeSkillFile(bench_.root, "alpha", "旧目录的说明");
+    const replacement = join(bench_.root, "replacement");
+    await mkdir(replacement, { recursive: true });
+    await writeFile(join(replacement, "SKILL.md"), "新目录的说明");
+    await rename(original, join(bench_.root, "alpha-gone"));
+    await rename(replacement, original);
+
+    const outcome = await readSkillFile(original);
+    assert.ok(outcome.kind === "text");
+    assert.match(outcome.text, /新目录的说明/, "resolution is the moment the tree is chosen");
+  } finally {
+    await bench_.cleanup();
+  }
 });
 
 test("a manifest with too many lines is cut at the line budget", async () => {

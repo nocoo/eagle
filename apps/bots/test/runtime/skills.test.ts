@@ -175,3 +175,58 @@ test("a manifest over the budget reaches the model with its truncation note", as
     await bench.cleanup();
   }
 });
+
+test("a manifest of 2 200 lines arrives whole: the harness line default is not the limit", async () => {
+  const bench = await createBench({ skills: () => [skill(join(bench.dir, "skills"))] });
+  try {
+    const directory = join(bench.dir, "skills");
+    await mkdir(directory, { recursive: true });
+    const lines = Array.from({ length: 2_200 }, (_value, index) => `l${index}`);
+    await writeFile(join(directory, "SKILL.md"), `${lines.join("\n")}\n`);
+    const handle = await bench.runtime.open(bench.spec());
+    try {
+      let seen = "";
+      await settle(handle, bench, [
+        assistant([toolCall("skill_read", { name: "alpha" })], { stopReason: "toolUse" }),
+        (context: { messages: unknown }) => {
+          seen = JSON.stringify(context.messages);
+          return text("读完了");
+        },
+      ]);
+      assert.equal(seen.includes("l2199"), true, "the last line reached the model");
+      assert.equal(seen.includes("[truncated at"), false, "nothing was cut, so nothing is noted");
+    } finally {
+      await handle.close(trace, 5_000);
+    }
+  } finally {
+    await bench.cleanup();
+  }
+});
+
+test("a manifest beyond the line budget reaches the model with its last kept line and note", async () => {
+  const bench = await createBench({ skills: () => [skill(join(bench.dir, "skills"))] });
+  try {
+    const directory = join(bench.dir, "skills");
+    await mkdir(directory, { recursive: true });
+    const lines = Array.from({ length: 4_100 }, (_value, index) => `l${index}`);
+    await writeFile(join(directory, "SKILL.md"), `${lines.join("\n")}\n`);
+    const handle = await bench.runtime.open(bench.spec());
+    try {
+      let seen = "";
+      await settle(handle, bench, [
+        assistant([toolCall("skill_read", { name: "alpha" })], { stopReason: "toolUse" }),
+        (context: { messages: unknown }) => {
+          seen = JSON.stringify(context.messages);
+          return text("读完了");
+        },
+      ]);
+      assert.equal(seen.includes("l4095"), true, "the last kept line reached the model");
+      assert.equal(seen.includes("l4096"), false, "the first dropped line did not");
+      assert.match(seen, /\[truncated at 4096 lines\]/, "the note named the line budget");
+    } finally {
+      await handle.close(trace, 5_000);
+    }
+  } finally {
+    await bench.cleanup();
+  }
+});

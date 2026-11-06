@@ -175,24 +175,37 @@ section renders nothing; its one tool refuses every name.
 
 | Tool | Input | Behavior | Replay |
 | --- | --- | --- | --- |
-| `skill_read` | `name` | The `SKILL.md` of one selected skill, read from inside that skill's stored directory; 64 KiB read, 32 000 characters and 4 096 lines kept, then a truncation note (declared output limits, so the harness never cuts the manifest or the note). Only a name is accepted, never a path: an unselected name, a manifest that is gone, unreadable, outside that directory or not a regular file is refused | SDK default unsafe |
+| `skill_read` | `name` | The `SKILL.md` of one selected skill, read from inside that skill's stored directory; 64 KiB read, 32 000 characters and 4 096 lines kept, then a truncation note naming the budget that bound the returned text (declared output limits, so the harness never cuts the manifest or the note). Only a name is accepted, never a path: an unselected name, a manifest that is gone, unreadable, outside that directory or not a regular file, or a folder swapped after it was resolved, is refused | SDK default unsafe |
 
 The prompt section is an index, one line per selected skill as `name · version —
 description`, re-read on every ask, plus one sentence telling the model to call `skill_read`
 before following a skill. Building it does no filesystem work, and the order is the order the
 App pushed. The daemon never scans a directory: a tick the App does not push does not exist
-here. The macOS 技能 page owns discovery, the ticks and the push
-(`apps/macos/Sources/EagleFeatures/SkillsSettingsViewModel.swift`).
+here. The macOS 技能 page owns discovery, and the App-scoped
+`SkillsSelection` owns the ticks and their one ordered push queue
+(`apps/macos/Sources/EagleFeatures/SkillsSelection.swift`): a page is a view of it, so a
+reopened window keeps the ticks and cannot start a second queue, and a scan that a newer
+page's scan superseded teaches the selection nothing and pushes nothing.
 
-The read itself assumes a model can ask for it: the skill's folder and its `SKILL.md` are
-resolved to their real paths, the manifest's real path must stay inside that folder, and the
-file is opened with `O_NONBLOCK` and without following a final symlink so a fifo cannot park
-the read and a swapped last component cannot be reached. The opened descriptor is what is
-checked (`fstat`): it must be a regular file and the same file the path resolved to, so a
-swap between the check and the read is refused rather than read. Only then are bytes pulled,
+The read itself assumes a model can ask for it: the skill's folder is resolved first and its
+device and inode are recorded, then the manifest is resolved, its real path must stay inside
+that folder, and the file is opened with `O_NONBLOCK` and without following a final symlink
+so a fifo cannot park the read and a swapped last component cannot be reached. The opened
+descriptor is what is checked (`fstat`): it must be a regular file and the same file the path
+resolved to; then the folder is stated again and must still be the directory that was
+resolved, and the manifest path must still name the opened file. A swapped folder or a
+swapped file is therefore a refusal, not a read of another tree. Only then are bytes pulled,
 and only `64 KiB` of them, cut on a UTF-8 boundary; the kept text is bounded by characters
-and lines, and the truncation note is inside the tool's declared output limits — the harness
-defaults (50 KiB, 2 000 lines) would otherwise cut the note away.
+and lines, and the truncation note names the budget that bound the returned text and sits
+inside the tool's declared output limits — the harness defaults (50 KiB, 2 000 lines) would
+otherwise cut the note away.
+
+What that guarantees and what it does not: the descriptor that is read is a regular file the
+validated folder held as `SKILL.md` when it was opened, and the path still names that file
+when the read starts. Node has no `openat` bound to a directory descriptor, so the two stats
+and the open are separate calls: a swapper that puts another tree in place and restores the
+original entirely between them is not detectable, and it would have to place the very file it
+wants read, which the folder then holds under that name anyway.
 
 ### Filesystem and coding
 

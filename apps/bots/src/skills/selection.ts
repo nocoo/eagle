@@ -223,39 +223,104 @@ const isInside = (directory: string, file: string): boolean => {
   return file.startsWith(prefix);
 };
 
+/** The unit each budget is counted in, for the note the model reads. */
+const BUDGET_UNIT: Readonly<Record<SkillTruncation, string>> = {
+  bytes: "bytes",
+  characters: "characters",
+  lines: "lines",
+};
+
 /**
- * One skill's `SKILL.md`, read the way a file has to be read when a model may ask for it:
- * the folder and the manifest are resolved to their real paths, the manifest has to stay
- * inside that folder, the file is opened without blocking and the opened descriptor is the
- * one that is checked, so a swap between the check and the read cannot slip through.
+ * The text the three budgets leave, and the budget that produced it.
+ *
+ * Every budget leaves a prefix of the decoded text, so the shortest prefix is the one the
+ * model receives; the note names that budget rather than the first one that happened to
+ * apply, so 100 000 ASCII bytes say `characters` and 40 000 short lines say `lines`.
  */
-export const readSkillFile = async (
-  directory: string,
-  limits: SkillFileLimits = SKILL_FILE_LIMITS,
-): Promise<SkillFileOutcome> => {
-  const realDirectory = await realpath(directory).catch(() => undefined);
-  if (realDirectory === undefined) {
+const boundText = (
+  decoded: string,
+  readBound: boolean,
+  limits: SkillFileLimits,
+): { readonly text: string; readonly truncatedBy?: SkillTruncation } => {
+  const candidates: { readonly by: SkillTruncation; readonly text: string }[] = [];
+  if (readBound) candidates.push({ by: "bytes", text: decoded });
+  const characters = cutCharacters(decoded, limits.maxChars);
+  if (characters.cut) candidates.push({ by: "characters", text: characters.text });
+  const lines = cutLines(decoded, limits.maxLines);
+  if (lines.cut) candidates.push({ by: "lines", text: lines.text });
+  if (candidates.length === 0) return { text: decoded };
+  const shortest = candidates.reduce((kept, next) =>
+    next.text.length < kept.text.length ? next : kept,
+  );
+  const bound =
+    shortest.by === "bytes"
+      ? limits.maxBytes
+      : shortest.by === "characters"
+        ? limits.maxChars
+        : limits.maxLines;
+  return {
+    text: `${shortest.text}\n\n[truncated at ${bound} ${BUDGET_UNIT[shortest.by]}]`,
+    truncatedBy: shortest.by,
+  };
+};
+
+/** A skill's folder as it was validated: its real path and the identity it had then. */
+export type SkillFolder = {
+  readonly path: string;
+  readonly dev: number;
+  readonly ino: number;
+};
+
+export type SkillFolderResolution =
+  | { readonly kind: "folder"; readonly folder: SkillFolder }
+  | { readonly kind: "refusal"; readonly reason: string };
+
+/** Resolves a selected skill's folder and records which directory it is, right now. */
+export const resolveSkillFolder = async (directory: string): Promise<SkillFolderResolution> => {
+  const path = await realpath(directory).catch(() => undefined);
+  if (path === undefined) {
     return { kind: "refusal", reason: "SKILL.md is not readable; it may have been removed" };
   }
-  const folder = await stat(realDirectory).catch(() => undefined);
+  const folder = await stat(path).catch(() => undefined);
   if (folder === undefined || !folder.isDirectory()) {
     return { kind: "refusal", reason: "the skill's folder is not a directory" };
   }
-  const realManifest = await realpath(join(realDirectory, "SKILL.md")).catch(() => undefined);
-  if (realManifest === undefined) {
+  return { kind: "folder", folder: { path, dev: folder.dev, ino: folder.ino } };
+};
+
+/**
+ * One validated folder's `SKILL.md`, read the way a file has to be read when a model may ask
+ * for it: the manifest is resolved, it has to stay inside that folder, the file is opened
+ * without blocking and without following a final symlink, and the opened descriptor is the
+ * one that is checked. The folder's own identity is checked again after the open, so a
+ * directory swapped for another one is a refusal rather than a read of the other tree.
+ *
+ * What is guaranteed: the descriptor that is read is a regular file that the validated
+ * folder held as `SKILL.md` at the moment it was opened, and the path still names that same
+ * file when the read starts. What is not: the three checks and the open are separate calls
+ * (Node has no `openat` scoped to a directory descriptor), so a swapper that puts another
+ * tree in place and restores it entirely between them is not detectable; it also has to
+ * place the very file it wants read, which the folder then holds under that name anyway.
+ */
+export const readSkillFolder = async (
+  folder: SkillFolder,
+  limits: SkillFileLimits = SKILL_FILE_LIMITS,
+): Promise<SkillFileOutcome> => {
+  const manifest = await realpath(join(folder.path, "SKILL.md")).catch(() => undefined);
+  if (manifest === undefined) {
     return { kind: "refusal", reason: "SKILL.md is not readable; it may have been removed" };
   }
-  if (!isInside(realDirectory, realManifest)) {
+  if (!isInside(folder.path, manifest)) {
     return { kind: "refusal", reason: "SKILL.md points outside the skill's folder" };
   }
-  const expected = await stat(realManifest).catch(() => undefined);
+  const expected = await stat(manifest).catch(() => undefined);
   if (expected === undefined || !expected.isFile()) {
     return { kind: "refusal", reason: "SKILL.md is not a regular file" };
   }
   // O_NONBLOCK keeps a fifo from parking the read forever; O_NOFOLLOW keeps the last
   // component from being a symlink that appeared after the paths were resolved.
   const handle = await open(
-    realManifest,
+    manifest,
     constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
   ).catch(() => undefined);
   if (handle === undefined) {
@@ -269,38 +334,39 @@ export const readSkillFile = async (
     if (opened.dev !== expected.dev || opened.ino !== expected.ino) {
       return { kind: "refusal", reason: "SKILL.md changed while it was read" };
     }
+    // The tree that was validated has to be the one the manifest path leads into: a folder
+    // replaced after it was resolved would otherwise read another tree and never notice.
+    const living = await stat(folder.path).catch(() => undefined);
+    if (living === undefined || living.dev !== folder.dev || living.ino !== folder.ino) {
+      return { kind: "refusal", reason: "the skill's folder changed while it was read" };
+    }
+    // And the path must still name the file this descriptor is, not one swapped in behind it.
+    const again = await stat(manifest).catch(() => undefined);
+    if (again === undefined || again.dev !== opened.dev || again.ino !== opened.ino) {
+      return { kind: "refusal", reason: "SKILL.md changed while it was read" };
+    }
     const { bytes, bytesRead, truncated } = await readBoundedBytes(handle, limits.maxBytes);
-    const complete = trimIncompleteUtf8(truncated ? bytes.subarray(0, limits.maxBytes) : bytes);
-    let text = complete.toString("utf8");
-    let truncatedBy: SkillTruncation | undefined = truncated ? "bytes" : undefined;
-    const characters = cutCharacters(text, limits.maxChars);
-    if (characters.cut) {
-      text = characters.text;
-      truncatedBy = truncatedBy ?? "characters";
-    }
-    const lines = cutLines(text, limits.maxLines);
-    if (lines.cut) {
-      text = lines.text;
-      truncatedBy = truncatedBy ?? "lines";
-    }
-    if (truncatedBy === undefined) return { kind: "text", text, bytesRead };
-    const bound =
-      truncatedBy === "bytes"
-        ? limits.maxBytes
-        : truncatedBy === "characters"
-          ? limits.maxChars
-          : limits.maxLines;
-    const unit =
-      truncatedBy === "bytes" ? "bytes" : truncatedBy === "characters" ? "characters" : "lines";
-    return {
-      kind: "text",
-      text: `${text}\n\n[truncated at ${bound} ${unit}]`,
-      bytesRead,
-      truncatedBy,
-    };
+    const decoded = trimIncompleteUtf8(
+      truncated ? bytes.subarray(0, limits.maxBytes) : bytes,
+    ).toString("utf8");
+    return { kind: "text", ...boundText(decoded, truncated, limits), bytesRead };
   } finally {
     await handle.close();
   }
+};
+
+/**
+ * One skill's `SKILL.md`, or why it cannot be read: resolve the folder, then read it. The
+ * split is what makes a folder swapped between the two a refusal: the identity recorded
+ * while resolving is checked again after the manifest is opened.
+ */
+export const readSkillFile = async (
+  directory: string,
+  limits: SkillFileLimits = SKILL_FILE_LIMITS,
+): Promise<SkillFileOutcome> => {
+  const resolved = await resolveSkillFolder(directory);
+  if (resolved.kind === "refusal") return resolved;
+  return readSkillFolder(resolved.folder, limits);
 };
 
 /**
