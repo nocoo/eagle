@@ -6,55 +6,56 @@ import Testing
 @testable import EagleDesign
 
 /// Materializing a page of transcript **rows** must stay within a small multiple of the same
-/// entries rendered as `Text`, inside the **same** transcript scroll shell as production
-/// (`TranscriptScrollColumn`: geometry reader, edge fades, scroll metrics). Comparing against
-/// a bare `ScrollView` counted chrome in the column side only and inflated PR vs main variance.
+/// entries built as direct bubble/note views (same shapes as [`TranscriptScrollCostTests`]
+/// `bareRows`), inside the **same** [`TranscriptScrollColumn`] shell as production. A `Text`-only
+/// baseline stayed far below row construction cost (CI: ~3ms vs ~13ms per jump), so the ratio
+/// measured **shell + row body** disparity, not “`TranscriptEntryRow` vs equivalent UI”.
 @MainActor
 @Suite("Transcript row cost", .serialized)
 struct TranscriptRowCostTests {
-  @Test("a page of conversation rows costs little more than plain text rows")
+  @Test("a page of conversation rows costs little more than direct bubble rows")
   func pageCost() {
     Self.logRunContext()
     let entries = Self.entries(turns: 40)
     let markdown = Self.prepared(entries)
     let transcriptRows = Self.transcriptRows(entries, preparedMarkdown: markdown)
-    let plainTextShell = Self.plainTextShell(entries)
+    let baselineRows = Self.baselineBubbleRows(entries, preparedMarkdown: markdown)
     // Warm both variants twice so caches and the hosting view path are hot before we score.
     for _ in 0..<2 {
       _ = Self.pageCost(transcriptRows)
-      _ = Self.pageCost(plainTextShell)
+      _ = Self.pageCost(baselineRows)
     }
     // Alternate measurement order; take the **median** ratio of paired samples (less optimistic
     // than `min`, more stable than `mean` when one round spikes).
     var ratios: [Double] = []
-    var columnMsSamples: [Double] = []
-    var plainMsSamples: [Double] = []
+    var transcriptRowMsSamples: [Double] = []
+    var baselineMsSamples: [Double] = []
     for round in 0..<9 {
       let columnMs: Double
-      let plainMs: Double
+      let baselineMs: Double
       if round.isMultiple(of: 2) {
-        plainMs = Self.pageCost(plainTextShell)
+        baselineMs = Self.pageCost(baselineRows)
         columnMs = Self.pageCost(transcriptRows)
       } else {
         columnMs = Self.pageCost(transcriptRows)
-        plainMs = Self.pageCost(plainTextShell)
+        baselineMs = Self.pageCost(baselineRows)
       }
-      columnMsSamples.append(columnMs)
-      plainMsSamples.append(plainMs)
-      ratios.append(columnMs / max(plainMs, 0.000_001))
+      transcriptRowMsSamples.append(columnMs)
+      baselineMsSamples.append(baselineMs)
+      ratios.append(columnMs / max(baselineMs, 0.000_001))
     }
     let ratio = Self.median(ratios) ?? .greatestFiniteMagnitude
-    let columnMed = Self.median(columnMsSamples) ?? 0
-    let plainMed = Self.median(plainMsSamples) ?? 0
+    let transcriptMed = Self.median(transcriptRowMsSamples) ?? 0
+    let baselineMed = Self.median(baselineMsSamples) ?? 0
     print(
       "ROWCOST rounds=\(ratios.map { String(format: "%.2f", $0) }.joined(separator: ",")) "
         + "median=\(String(format: "%.2f", ratio)) "
-        + "ms_column_med=\(String(format: "%.3f", columnMed)) "
-        + "ms_plain_med=\(String(format: "%.3f", plainMed)) "
+        + "ms_transcriptrow_med=\(String(format: "%.3f", transcriptMed)) "
+        + "ms_baseline_bubble_med=\(String(format: "%.3f", baselineMed)) "
         + "jumps=\(Self.jumpsPerSample)")
     #expect(
       ratio < 2.5,
-      "transcript rows vs Text in shared shell: median ratio \(String(format: "%.2f", ratio)) (budget 2.5)"
+      "TranscriptEntryRow vs direct bubbles in shared shell: median ratio \(String(format: "%.2f", ratio)) (budget 2.5)"
     )
   }
 
@@ -133,15 +134,21 @@ struct TranscriptRowCostTests {
     }
   }
 
-  /// Same scroll shell; rows are `Text` with the same string content as bubbles/notes.
-  private static func plainTextShell(_ entries: [TranscriptEntry]) -> some View {
+  /// Same scroll shell as production; rows are the same bubble/note views as
+  /// `TranscriptScrollCostTests.bareRows` (no `TranscriptEntryRow` wrapper or transitions).
+  private static func baselineBubbleRows(
+    _ entries: [TranscriptEntry], preparedMarkdown: [String: [RenderedMarkdownBlock]]
+  ) -> some View {
     TranscriptScrollColumn(focusRequestCounter: .constant(0)) {
       ForEach(entries) { entry in
         switch entry {
-        case .user(_, let text, _), .note(_, let text, _):
-          Text(text)
+        case .user(_, let text, let origin):
+          UserBubble(text, origin: origin)
         case .assistant(_, let blocks, _):
-          Text(blocks.markdown)
+          AssistantBubble(text: blocks.markdown, preparedBlocks: preparedMarkdown[entry.id])
+            .equatable()
+        case .note(_, let text, let tints):
+          DeliveryNote(text, avatars: tints.map(Theme.Palette.avatarTint))
         default:
           EmptyView()
         }
