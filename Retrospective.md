@@ -1,5 +1,19 @@
 # Retrospective
 
+## 2026-11-06 — `npm ci` removes node_modules before the mirror answered
+
+Preparing the 0.20.0 release caches, I ran `npm ci` against the Microsoft npm mirror.
+The mirror answered the metadata but returned 404 for the locked
+`wrangler-4.156.2.tgz`, and `npm ci` had already emptied `node_modules` before the
+failure, so the working tree was left without installed dependencies. A second
+`npm ci` against the Tencent mirror completed the install; the root gate, the browser
+suite and the macOS package tests then passed unchanged, and no lock file changed.
+
+Probe the mirror for the exact locked tarballs, not only for the package metadata,
+before running `npm ci` over an existing `node_modules`. The release build's own
+private caches are populated by the same command, so a stale mirror breaks the
+ad-hoc bundle exactly as it breaks the working tree.
+
 ## 2026-11-05 — App launch and configured port do not prove helper readiness
 
 The published 0.19.0 DMG matched its local SHA-256, mounted bundle and deep/strict

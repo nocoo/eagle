@@ -1,5 +1,42 @@
 # 用户视角检查点
 
+## 2026-11-06 09:20 +08 — Published macOS 0.20.0
+
+- Release commit `46aa0075` (`chore: release macos 0.20.0`) bumps
+  `apps/macos/Support/Version.json` to 0.20.0 and adds the `## macOS v0.20.0 — 2026-11-06`
+  changelog section. The annotated tag `macos-v0.20.0` ("macOS v0.20.0") points at that
+  exact commit. Root/site 0.14.3, Agent source 1.2.0 and npm onboarding 1.0.0 are unchanged;
+  no npm publication and no website version bump are part of this release.
+- Local gates with the official Node 26.13.0 distribution (Homebrew Node is rejected by the
+  portable-runtime check): root `npm run check` 310 tests, typecheck, Biome 213 files clean,
+  production build; `npm run test:browser` 191 passed with 11 existing conditional
+  exclusions; `apps/macos` `swift test` 311+52+78+37 = 478 tests in four bundles;
+  `./Scripts/coverage.sh` 2297/2450 = 93.8% (floor 90); `npm run check:design` passed.
+  The known `EagleDevicesTests` "Private device host" failure did not reproduce on this
+  machine: that suite passed here. No threshold was weakened and no test was skipped.
+- Exact-SHA Check for the release commit is green (run 42140722462, jobs `test` and
+  `macos`). The same gate set ran in the branch and tag pre-push hooks.
+- The ad-hoc release bundle `apps/macos/.build/device-release/Eagle for Mac.app` reports
+  `CFBundleShortVersionString` 0.20.0, passes `codesign --verify --deep --strict`
+  (adhoc, hardened runtime), records `DeviceSigning.json` mode `ad-hoc-release`, and
+  bundles Node 26.13.0 linked to system libraries only, Agent 1.2.0 and Bots 0.1.0 from
+  2 and 93 verified locked artifacts. The bundled CLI answers
+  `eagle 0.20.0 · daemon 0.1.0`.
+- The mounted DMG carries that bundle: version 0.20.0, deep/strict signature valid, bundled
+  CLI 0.20.0. `Eagle-for-Mac-0.20.0.dmg` is 114,856,525 bytes with sha256
+  `a4f5d9c9d671393b014d0a72fce67720aa4227b5aeba10ccc61c845aeec9675e`; `SHA256SUMS` is the
+  matching 91-byte sum file. The GitHub Release
+  `https://github.com/nocoo/eagle/releases/tag/macos-v0.20.0` (title "Eagle for Mac 0.20.0")
+  carries exactly those two assets, and the uploaded DMG digest equals the local file.
+- The App was not installed on this Mac: no `/Applications` copy was replaced, no
+  `--prepare-device-update` was run and the running source `Eagle Dev` App was left alone.
+  This claim advances `macos.latest` to 0.20.0 with the exact asset release URL.
+- Public `/api/live` after this claim's deployment answers `macos.latest` 0.20.0 with
+  `releaseUrl` `https://github.com/nocoo/eagle/releases/tag/macos-v0.20.0`; the site version
+  stays 0.14.3 and the deployed revision was `9da43fd9`. This line is added by the claim
+  commit's own amend, so the pushed commit is that revision's successor and is redeployed by
+  its Check/Deploy with the same claim.
+
 ## 2026-11-05 18:03 +08 — Published and installed macOS 0.19.0
 
 - Artifact/tag source is `8bb86ef` (`macos-v0.19.0`), with exact-SHA Check/Deploy
