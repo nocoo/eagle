@@ -158,7 +158,7 @@ public struct SettingsView: View {
         daemonSection(daemon)
       }
       sectionCard(
-        "模型网关", detail: "Bot 使用这台机器上的网关，保存后立即生效"
+        "模型网关", detail: "所有 Bot 共用这台网关；模型与思考等级只是新建 Bot 的默认值"
       ) {
         HStack(spacing: Theme.Layout.controlGap) {
           if model.gatewayBusy { SpinnerArc(size: Theme.Metric.spinnerSize) }
@@ -191,12 +191,15 @@ public struct SettingsView: View {
           .frame(width: Self.fieldWidth)
         }
         Divider().overlay(Theme.Palette.line)
-        SettingsSectionRow("模型", detail: "Bot 使用的模型 id，例如 auto/gpt-6-luna") {
+        SettingsSectionRow("默认模型", detail: "新建 Bot 使用的模型 id，例如 auto/gpt-6-luna") {
           SettingsTextField("模型 id", text: $model.gatewayModel)
             .frame(width: Self.fieldWidth)
         }
         Divider().overlay(Theme.Palette.line)
-        SettingsSectionRow("思考等级", detail: "Bot 的推理努力程度，保存后立即生效") {
+        SettingsSectionRow(
+          "默认思考等级",
+          detail: "新建 Bot 的推理努力程度；已有 Bot 在自己的检查器里单独调整"
+        ) {
           thinkingLevelMenu
         }
         Divider().overlay(Theme.Palette.line)

@@ -115,8 +115,8 @@ public protocol CatalogPort: AnyObject {
   func testProvider(id: String) async throws -> ProviderProbe
   /// Usage statistics over the retained window.
   func loadUsage(days: Int) async throws -> UsageReport
-  /// The model ids the gateway offers.
-  func loadModels() async throws -> [String]
+  /// The model ids the gateway offers, and what the daemon knows about each of them.
+  func loadModels() async throws -> GatewayModels
   /// The bot's own agent choice; nil fields are left alone.
   func setAgent(id: String, model: String?, thinkingLevel: String?) async throws -> BotSummary
   /// Runs one parked task again; the task graph reports it as live work.

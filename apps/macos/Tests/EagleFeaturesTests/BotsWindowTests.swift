@@ -441,7 +441,29 @@ final class StubCatalog: CatalogPort {
   var refuseDelete: Error?
   var models: [String] = ["auto/gpt-6-luna"]
   var agentChanges: [(String, String?, String?)] = []
+  /// Held open, so a save can be observed in flight.
+  var agentGate: Gate?
+  /// The daemon's refusal for the next change.
+  var agentError: Error?
   var retriedTasks: [(String, String)] = []
+
+  /// A latch a test opens when it wants a held call to finish.
+  final class Gate: @unchecked Sendable {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var opened = false
+
+    func wait() async {
+      if opened { return }
+      await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() async {
+      opened = true
+      continuation?.resume()
+      continuation = nil
+      await Task.yield()
+    }
+  }
 
   var providers: [ProviderSettings] = []
   var savedProviders: [(String, String?, Bool?)] = []
@@ -470,10 +492,24 @@ final class StubCatalog: CatalogPort {
     )
   }
 
-  func loadModels() async throws -> [String] { models }
+  func loadModels() async throws -> GatewayModels {
+    GatewayModels(
+      ids: models,
+      details: models.map {
+        ModelDetail(
+          id: $0, contextWindow: 272_000, maxTokens: 128_000, reasoning: true,
+          thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"])
+      }
+    )
+  }
 
   func setAgent(id: String, model: String?, thinkingLevel: String?) async throws -> BotSummary {
     agentChanges.append((id, model, thinkingLevel))
+    if let gate = agentGate {
+      agentGate = nil
+      await gate.wait()
+    }
+    if let agentError { throw agentError }
     guard let index = bots.firstIndex(where: { $0.id == id }) else {
       throw ClientError("no bot \(id)")
     }

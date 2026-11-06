@@ -72,26 +72,34 @@ public struct InspectorSectionView: View {
     case .choices(let rows):
       VStack(alignment: .leading, spacing: Theme.Metric.panelTaskRowGap) {
         ForEach(rows) { row in
-          HStack(spacing: Theme.Metric.panelSectionRowGap) {
-            Text(row.label)
-              .font(Theme.TypeScale.pill)
-              .foregroundStyle(Theme.Palette.textMuted)
-            Spacer(minLength: Theme.Layout.rowGap)
-            SelectionMenu(row.value, style: .inline) {
-              ForEach(row.choices) { choice in
-                Button {
-                  onChoose(row.id, choice.id)
-                } label: {
-                  if choice.id == row.selected {
-                    Label(choice.title, systemImage: "checkmark")
-                  } else {
-                    Text(choice.title)
+          VStack(alignment: .leading, spacing: Theme.Layout.rowGap) {
+            HStack(spacing: Theme.Metric.panelSectionRowGap) {
+              Text(row.label)
+                .font(Theme.TypeScale.pill)
+                .foregroundStyle(Theme.Palette.textMuted)
+              Spacer(minLength: Theme.Layout.rowGap)
+              SelectionMenu(row.value, style: .inline) {
+                ForEach(row.choices) { choice in
+                  Button {
+                    onChoose(row.id, choice.id)
+                  } label: {
+                    if choice.id == row.selected {
+                      Label(choice.title, systemImage: "checkmark")
+                    } else {
+                      Text(choice.title)
+                    }
                   }
                 }
               }
+              .disabled(row.isSaving)
+            }
+            .frame(height: Theme.Metric.panelTaskRowHeight)
+            if row.isSaving {
+              SettingsStatusNote("保存中…")
+            } else if let error = row.error {
+              SettingsStatusNote(error, kind: .failure)
             }
           }
-          .frame(height: Theme.Metric.panelTaskRowHeight)
         }
       }
     case .usage(let rows):

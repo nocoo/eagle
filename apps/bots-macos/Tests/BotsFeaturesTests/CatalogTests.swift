@@ -188,12 +188,12 @@ final class CatalogActionTests: XCTestCase {
     XCTAssertEqual(model.error, "stop refused")
     catalog.actionError = ClientError("agent refused")
     await model.setAgent(model: "m2", thinkingLevel: nil)
-    XCTAssertEqual(model.error, "agent refused")
+    XCTAssertEqual(model.agentEdit?.error, "agent refused")
     catalog.actionError = nil
     await model.retryTask("t_1")
     XCTAssertNil(model.error)
     await model.setAgent(model: nil, thinkingLevel: "low")
-    XCTAssertNil(model.error)
+    XCTAssertNil(model.agentEdit)
   }
 
   func testModelDiscoveryRetriesFailureAndCachesASuccessfulCatalog() async {
@@ -246,10 +246,17 @@ final class FakeCatalog: CatalogPort {
     )
   }
 
-  func loadModels() async throws -> [String] {
+  func loadModels() async throws -> GatewayModels {
     modelLoads += 1
     if let actionError { throw actionError }
-    return modelNames
+    return GatewayModels(
+      ids: modelNames,
+      details: modelNames.map {
+        ModelDetail(
+          id: $0, contextWindow: 272_000, maxTokens: 128_000, reasoning: true,
+          thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"])
+      }
+    )
   }
   func setAgent(id: String, model: String?, thinkingLevel: String?) async throws -> BotSummary {
     if let actionError { throw actionError }

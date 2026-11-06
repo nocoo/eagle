@@ -714,7 +714,12 @@ final class BotsWorkspaceViewModel: ObservableObject {
     let nextUsage = presenter.inspectorUsage(for: conversation.state.usage)
     if usage != nextUsage { usage = nextUsage }
     let nextChoices = presenter.agentChoices(
-      for: selected, agent: conversation.state.agent, models: app.models)
+      for: selected,
+      agent: conversation.state.agent,
+      models: app.models,
+      detail: app.modelDetails[selected.model.modelId],
+      edit: app.agentEdit?.botId == selected.id ? app.agentEdit : nil
+    )
     if choices != nextChoices { choices = nextChoices }
     let nextTriggers = conversation.state.triggers.map { trigger in
       InspectorTriggerRow(
@@ -1357,30 +1362,42 @@ struct BotsPresenter {
   }
 
   /// The inspector's 模型 rows: the bot's own model and reasoning level, each a menu of the
-  /// values the daemon accepts.
+  /// values the daemon accepts. The levels are the ones the bot's own model takes, so the
+  /// menu never offers a level the daemon would refuse.
   func agentChoices(
-    for bot: BotSummary, agent: AgentView?, models: [String]
+    for bot: BotSummary,
+    agent: AgentView?,
+    models: [String],
+    detail: ModelDetail? = nil,
+    edit: AppViewModel.AgentEdit? = nil
   ) -> [InspectorChoiceRow] {
     let modelChoices =
       models.contains(bot.model.modelId) || models.isEmpty
       ? models
       : [bot.model.modelId] + models
+    let level = agent?.thinkingLevel ?? "medium"
+    let levels =
+      detail?.thinkingLevels.isEmpty == false ? (detail?.thinkingLevels ?? []) : Self.thinkingLevels
     return [
       InspectorChoiceRow(
         id: "model",
         label: "模型",
         value: bot.model.modelId,
         selected: bot.model.modelId,
-        choices: modelChoices.map { InspectorChoiceRow.Choice(id: $0, title: $0) }
+        choices: modelChoices.map { InspectorChoiceRow.Choice(id: $0, title: $0) },
+        isSaving: edit?.field == "model" && edit?.isSaving == true,
+        error: edit?.field == "model" ? edit?.error : nil
       ),
       InspectorChoiceRow(
         id: "thinking",
         label: "思考等级",
-        value: Self.thinkingLabel(agent?.thinkingLevel ?? "medium"),
-        selected: agent?.thinkingLevel ?? "medium",
-        choices: Self.thinkingLevels.map {
+        value: Self.thinkingLabel(level),
+        selected: level,
+        choices: levels.map {
           InspectorChoiceRow.Choice(id: $0, title: $0)
-        }
+        },
+        isSaving: edit?.field == "thinking" && edit?.isSaving == true,
+        error: edit?.field == "thinking" ? edit?.error : nil
       ),
     ]
   }

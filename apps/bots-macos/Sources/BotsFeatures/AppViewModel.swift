@@ -218,22 +218,71 @@ public final class AppViewModel: ObservableObject {
 
   /// The gateway's models, loaded once for the per-bot picker.
   @Published public private(set) var models: [String] = []
+  /// What the daemon knows about each model it offers.
+  @Published public private(set) var modelDetails: [String: ModelDetail] = [:]
+  /// The gateway could not be asked for its models; the list the daemon knows stays.
+  @Published public private(set) var modelDiscoveryError: String?
 
   public func loadModelsIfNeeded() async {
     guard models.isEmpty else { return }
-    models = (try? await catalog.loadModels()) ?? []
+    guard let loaded = try? await catalog.loadModels() else { return }
+    models = loaded.ids
+    modelDetails = Dictionary(uniqueKeysWithValues: loaded.details.map { ($0.id, $0) })
+    modelDiscoveryError = loaded.discoveryError
   }
 
-  /// The selected bot's own model and reasoning level.
+  /// What one edit of a bot's pair is doing. The bot is named, so a change that lands
+  /// after the person selected another bot cannot answer for the one on screen.
+  public struct AgentEdit: Equatable, Sendable {
+    public let botId: String
+    /// The row being changed: `model` or `thinking`.
+    public let field: String
+    public let isSaving: Bool
+    /// The daemon's refusal, when the change did not land.
+    public let error: String?
+
+    public init(botId: String, field: String, isSaving: Bool, error: String? = nil) {
+      self.botId = botId
+      self.field = field
+      self.isSaving = isSaving
+      self.error = error
+    }
+  }
+
+  /// The pair change in flight, or the last refusal.
+  @Published public private(set) var agentEdit: AgentEdit?
+  /// One edit at a time: two changes cannot interleave on one bot.
+  private var agentTail: Task<Void, Never>?
+
+  /// The selected bot's own model and reasoning level. The bot is captured when the edit
+  /// starts, and the answer only touches that bot: a person who moved on sees their own
+  /// bot's state, not the answer to somebody else's edit.
   public func setAgent(model: String?, thinkingLevel: String?) async {
     guard let botId = selection else { return }
-    do {
-      _ = try await catalog.setAgent(id: botId, model: model, thinkingLevel: thinkingLevel)
-      await reload()
-      error = nil
-    } catch {
-      self.error = describe(error)
+    let field = model == nil ? "thinking" : "model"
+    let previous = agentTail
+    let edit = Task { @MainActor [weak self] in
+      await previous?.value
+      guard let self else { return }
+      self.agentEdit = AgentEdit(botId: botId, field: field, isSaving: true)
+      do {
+        _ = try await self.catalog.setAgent(id: botId, model: model, thinkingLevel: thinkingLevel)
+        await self.reload()
+        // The state belongs to the bot that asked for it, so the answer for one bot never
+        // describes another: a person who moved on sees their own bot's state.
+        if self.agentEdit?.botId == botId { self.agentEdit = nil }
+      } catch {
+        if self.selection == botId {
+          self.agentEdit = AgentEdit(
+            botId: botId, field: field, isSaving: false, error: describe(error))
+        } else if self.agentEdit?.botId == botId {
+          // Nobody is looking at that bot any more; the refusal goes with it.
+          self.agentEdit = nil
+        }
+      }
     }
+    agentTail = edit
+    await edit.value
   }
 
   /// Runs one parked task of the selected bot again.
