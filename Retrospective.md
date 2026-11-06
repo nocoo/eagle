@@ -2,18 +2,17 @@
 
 ## 2026-11-06 — A hosting-view layout test did not reproduce a real hover shrink
 
-Bubbles changed their height on hover. The first fix kept the rich Markdown view as the
-layout owner and moved the selectable `Text` into an `overlay`; `NSHostingView.fittingSize`,
-`ImageRenderer` and a live window-hosted update all reported identical heights, so the
-remaining report was attributed to the wrong app window. The owner was on the Dev build:
-the `textSelection(.enabled)` text is AppKit-backed, and inside the real
-`ScrollView`/`LazyVStack` it still fed its shorter intrinsic height back to the parent.
-An `overlay` does not guarantee that the parent keeps its size in that context.
+Bubbles appeared to shrink on hover. The first fix moved the selectable `Text` into an
+`overlay`; row-height tests passed, so the remaining report was attributed to the wrong
+app window. A second fix used a `ZStack` and claimed the AppKit text fed a shorter height
+back through `LazyVStack`. Neither explanation was verified; the owner was on the Dev build.
 
-Use `ZStack(alignment: .topLeading)` with the rich view always present: its max-based
-sizing keeps the bubble height anchored. Treat a single-view hosting test as evidence
-about that view, not about the real scroll hierarchy, and do not explain a reproduction
-away as user error before checking the layout owner.
+The actual font regression was that ordinary Markdown runs had no explicit font. The rich
+view supplied the 15-point body font, but the selectable view used the 13-point system
+body font. Bold runs kept their explicit 15-point font. A focused text-size test failed
+before the font fix and passed afterward. Row-height checks cannot establish typography
+when the hidden rich view still occupies space. Compare the rendered text itself, and do
+not dismiss the owner's reproduction or record an unverified hypothesis as fact.
 
 ## 2026-11-06 — A delegated coding pane carried another repository's task
 

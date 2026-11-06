@@ -25,6 +25,18 @@ struct BubbleSelectionTests {
     #expect(text.contains("\n"))
   }
 
+  @Test("selectable assistant text keeps the body font and inline styles")
+  func selectableTypography() {
+    for source in ["普通文本 normal text", "普通 **粗体** normal *italic* `code`"] {
+      let text = BubbleTextBuilder.attributedString(
+        blocks: [.paragraph(MarkdownDocument.inline(source))], streaming: false)
+      let regular = NSHostingView(rootView: Text(text).font(Theme.TypeScale.body))
+      let selectable = NSHostingView(rootView: SelectableTranscriptText(attributedText: text))
+      #expect(abs(regular.fittingSize.width - selectable.fittingSize.width) < 1)
+      #expect(abs(regular.fittingSize.height - selectable.fittingSize.height) < 1)
+    }
+  }
+
   @Test("insertion preserves the draft, trims whitespace and ignores empty text")
   func insertDraft() {
     var draft = "已有草稿"

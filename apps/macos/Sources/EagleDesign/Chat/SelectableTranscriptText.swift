@@ -91,6 +91,7 @@ struct SelectableTranscriptText: View {
 
   var body: some View {
     Text(attributedText)
+      .font(Theme.TypeScale.body)
       .textSelection(.enabled)
   }
 }
