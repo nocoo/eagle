@@ -44,7 +44,10 @@ or mathematical geometry into presentation tokens.
 - SelectionMenu owns the seven existing menu shells. Callers retain native menu-item
   Buttons, selection/checkmark rules, asynchronous actions and disabled options. Policy
   menus remain borderless; this is not a conversion to Picker. PillSelect requires an
-  explicit accessibility label and reuses this shell.
+  explicit accessibility label and reuses this shell. The inline shell fills the 28 pt
+  row it sits in: its title, the gap and the trailing chevron are one target, so the
+  chevron is as easy to hit as the title. The larger target stays invisible — the inline
+  shell paints no capsule and no border, and its row height does not change.
 - SettingsCard/SectionRow/Header, SettingsTextField/TextArea and SettingsActionButton
   remain the standard form primitives. SettingsSectionRow's optional leading slot carries
   the mark a row names (a bot's face in 用量); rows without one are unchanged.

@@ -35,7 +35,8 @@ public struct SelectionMenu<Content: View>: View {
 
     var inset: CGFloat {
       switch self {
-      case .inline, .policy: 0
+      case .policy: 0
+      case .inline: Theme.Layout.labelGap
       case .provider, .compact: Theme.Form.compactControlInset
       default: Theme.Form.controlInset
       }
@@ -43,7 +44,8 @@ public struct SelectionMenu<Content: View>: View {
 
     var height: CGFloat? {
       switch self {
-      case .inline, .policy: nil
+      case .policy: nil
+      case .inline: Theme.Metric.panelTaskRowHeight
       case .compact: Theme.Form.compactSelectorHeight
       case .action: Theme.Form.actionHeight
       default: Theme.Form.selectorHeight
@@ -81,17 +83,28 @@ public struct SelectionMenu<Content: View>: View {
     Menu {
       content
     } label: {
-      HStack(spacing: style.gap) {
-        titleText
-        Image(systemName: "chevron.down")
-          .font(style.glyphFont)
-          .foregroundStyle(style.glyphColor)
-      }
-      .font(style.textFont)
-      .foregroundStyle(Theme.Palette.textPrimary)
-      .padding(.horizontal, style.inset)
-      .frame(height: style.height)
-      .background { surface }
+      label
+    }
+  }
+
+  /// The inline shell fills the row it sits in, so its title, the gap and the trailing
+  /// chevron are one target. The other shells keep their own painted shape as the target.
+  @ViewBuilder private var label: some View {
+    let shell = HStack(spacing: style.gap) {
+      titleText
+      Image(systemName: "chevron.down")
+        .font(style.glyphFont)
+        .foregroundStyle(style.glyphColor)
+    }
+    .font(style.textFont)
+    .foregroundStyle(Theme.Palette.textPrimary)
+    .padding(.horizontal, style.inset)
+    .frame(height: style.height)
+    .background { surface }
+    if style == .inline {
+      shell.contentShape(Rectangle())
+    } else {
+      shell
     }
   }
 
@@ -100,7 +113,8 @@ public struct SelectionMenu<Content: View>: View {
   }
 
   @ViewBuilder private var surface: some View {
-    if style.height != nil {
+    // The inline shell has a height but no painted surface: its target stays invisible.
+    if style.height != nil, style != .inline {
       let fill = style == .surface && !hovering ? Theme.Palette.card : Theme.Palette.canvas
       if style == .action {
         RoundedRectangle(cornerRadius: Theme.Form.actionRadius, style: .continuous)
