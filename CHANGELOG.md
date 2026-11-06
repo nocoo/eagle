@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## macOS v0.20.0 — 2026-11-06
+
+- Report a Settings action through one window-level toast that animates in and retires
+  after three seconds, so saving never changes the page height. A page keeps saying
+  what it knows until its own state changes: empty lists, a refused read, a provider
+  probe and the device service error stay inline.
+- Drop the save button from 工具. Each switch writes itself through one queued request
+  and reports that switch ("已开启 搜索"), so a flip never lands an older set behind a
+  newer one, and a switch keeps the standing instruction the 提示词 page owns instead
+  of committing its draft.
+- Draw each bot's own face from the catalog in 用量 and fold the spend of deleted bots
+  into one 其他 row. A failed catalog read proves nothing and lists the report as it came.
+- Open Settings directly from the footer's product mark and gear. The account menu is no
+  longer presented by the shell; it stays an EagleDesign component the Gallery draws.
+- Development tooling only: a source run is now the `Eagle Dev` product, so the Dock
+  labels it Eagle Dev and its icon carries a red DEV ribbon. The released App is unchanged.
+- Keep website/Worker and npm Agent releases independent. This App includes the
+  current bundled runtime; no npm onboarding pin changes are part of this release.
+
 ## macOS v0.19.0 — 2026-11-05
 
 - Consolidate native colors, typography, spacing and controls in EagleDesign, with
