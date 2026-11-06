@@ -76,6 +76,7 @@ public struct ConversationColumn: View {
   private let onDismissError: () -> Void
   @State private var scroller = TranscriptScroller()
   @State private var composerFocusRequest = 0
+  @StateObject private var selectionModel = TranscriptSelectionModel()
 
   public init(
     title: String,
@@ -254,6 +255,13 @@ public struct ConversationColumn: View {
         }
       }
     }
+    .background { TranscriptSelectionObserver(model: selectionModel) }
+  }
+
+  private func insertSelection(_ selection: String) {
+    var next = draft
+    BubbleSelectionAction.insert(selection, into: &next)
+    draft = next
   }
 
   @ViewBuilder
@@ -262,7 +270,12 @@ public struct ConversationColumn: View {
     case .assistant(_, let blocks, let from):
       VStack(alignment: .leading, spacing: Theme.Layout.labelGap) {
         AssistantBubble(
-          text: blocks.markdown, preparedBlocks: preparedMarkdown[entry.id]
+          text: blocks.markdown,
+          preparedBlocks: preparedMarkdown[entry.id],
+          onInsertSelection: { insertSelection($0) },
+          onClearSelection: { selectionModel.clearSelection() },
+          selectionSource: selectionModel.sourceText,
+          selectedText: selectionModel.selectedText
         )
         .equatable()
         if let from {
@@ -278,7 +291,13 @@ public struct ConversationColumn: View {
       )
     case .streamingAssistant(_, let blocks):
       AssistantBubble(
-        text: blocks.markdown, streaming: true, preparedBlocks: preparedMarkdown[entry.id]
+        text: blocks.markdown,
+        streaming: true,
+        preparedBlocks: preparedMarkdown[entry.id],
+        onInsertSelection: { insertSelection($0) },
+        onClearSelection: { selectionModel.clearSelection() },
+        selectionSource: selectionModel.sourceText,
+        selectedText: selectionModel.selectedText
       )
       .equatable()
       .transition(
@@ -289,14 +308,21 @@ public struct ConversationColumn: View {
         )
       )
     case .user(_, let text, let origin):
-      UserBubble(text, origin: origin)
-        .transition(
-          .asymmetric(
-            insertion: .opacity.combined(
-              with: .scale(scale: Theme.Chat.messageEntryScale, anchor: .bottomTrailing)),
-            removal: .opacity
-          )
+      UserBubble(
+        text,
+        origin: origin,
+        onInsertSelection: { insertSelection($0) },
+        onClearSelection: { selectionModel.clearSelection() },
+        selectionSource: selectionModel.sourceText,
+        selectedText: selectionModel.selectedText
+      )
+      .transition(
+        .asymmetric(
+          insertion: .opacity.combined(
+            with: .scale(scale: Theme.Chat.messageEntryScale, anchor: .bottomTrailing)),
+          removal: .opacity
         )
+      )
     case .note(_, let text, let tintIndices):
       DeliveryNote(text, avatars: tintIndices.map(Theme.Palette.avatarTint))
     case .peerExchange(_, let exchange):

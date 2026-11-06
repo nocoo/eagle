@@ -146,7 +146,7 @@ public struct ParticipantBubble: View {
             ? 0
             : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(
               dividingBy: Theme.Motion.participantPeriod) / Theme.Motion.participantPeriod
-          RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous)
+          Capsule(style: .continuous)
             .strokeBorder(
               AngularGradient(
                 stops: [
@@ -164,7 +164,7 @@ public struct ParticipantBubble: View {
         .accessibilityHidden(true)
         .allowsHitTesting(false)
       } else {
-        RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous)
+        Capsule(style: .continuous)
           .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
           .allowsHitTesting(false)
       }

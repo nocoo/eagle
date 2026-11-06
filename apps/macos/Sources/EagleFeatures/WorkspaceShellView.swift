@@ -171,7 +171,13 @@ public struct WorkspaceShellView: View {
             }
           },
           onCreateSection: { list.createSection() },
-          onCreateGroup: { Task { await bots.createGroup() } },
+          onCreateGroup: { completion in
+            Task {
+              if let created = await bots.createGroup() {
+                completion(created.id, created.title)
+              }
+            }
+          },
           onCreateBot: { showsBotCreate = true },
           canCreateBot: bots.isConnected,
           onRenameItem: { id, title in
