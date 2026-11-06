@@ -447,6 +447,8 @@ final class StubCatalog: CatalogPort {
   var agentGate: Gate?
   /// The daemon's refusal for the next change.
   var agentError: Error?
+  /// The catalog takes the pair even when the conversation refuses it (saved, not applied).
+  var applyOnAgentError = false
   var retriedTasks: [(String, String)] = []
 
   /// A latch a test opens when it wants a held call to finish.
@@ -512,10 +514,11 @@ final class StubCatalog: CatalogPort {
       agentGate = nil
       await gate.wait()
     }
-    if let agentError { throw agentError }
     guard let index = bots.firstIndex(where: { $0.id == id }) else {
       throw ClientError("no bot \(id)")
     }
+    if applyOnAgentError, let model { bots[index].model.modelId = model }
+    if let agentError { throw agentError }
     if let model { bots[index].model.modelId = model }
     return bots[index]
   }

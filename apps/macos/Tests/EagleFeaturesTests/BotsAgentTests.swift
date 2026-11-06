@@ -173,6 +173,41 @@ struct BotsAgentTests {
     #expect(app.agentError(botId: "b_1", field: "thinking") == nil)
   }
 
+  @Test("selecting a bot retries a failed model discovery")
+  func selectionRetriesDiscovery() async throws {
+    let catalog = StubCatalog()
+    catalog.bots = [bot("b_1"), bot("b_2")]
+    catalog.models = ["auto/gpt-6-luna"]
+    catalog.modelDiscoveryError = "the gateway could not be asked for its models"
+    let app = app(catalog: catalog)
+    await app.loadModelsIfNeeded()
+    #expect(app.modelDiscoveryError != nil)
+
+    // The person does something ordinary: they open another bot.
+    catalog.models = ["auto/gpt-6-luna", "auto/gpt-6-sol"]
+    catalog.modelDiscoveryError = nil
+    app.select("b_2")
+    try await waitUntil { app.modelDiscoveryError == nil }
+    #expect(app.models == ["auto/gpt-6-luna", "auto/gpt-6-sol"], "the menu recovered")
+  }
+
+  @Test("a save the conversation refused still shows the model the catalog kept")
+  func savedButNotApplied() async throws {
+    let catalog = StubCatalog()
+    catalog.bots = [bot("b_1")]
+    catalog.agentError = ClientError(
+      "the bot now records auto/gpt-6-sol at high, but the running conversation did not take it"
+    )
+    // The catalog takes the pair even though the conversation refused it.
+    catalog.applyOnAgentError = true
+    let app = app(catalog: catalog)
+    await app.refresh()
+    app.select("b_1")
+    await app.setAgent(model: "auto/gpt-6-sol", thinkingLevel: "high")
+    #expect(app.selectedBot?.model.modelId == "auto/gpt-6-sol", "the row shows the saved model")
+    #expect(app.agentError(botId: "b_1", field: "model")?.contains("did not take it") == true)
+  }
+
   @Test("the model list carries what the daemon knows about each model")
   func modelDetailsLoad() async throws {
     let catalog = StubCatalog()

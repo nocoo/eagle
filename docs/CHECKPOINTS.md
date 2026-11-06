@@ -18,9 +18,16 @@
   前端：每行自己的拒绝保留（换 Bot、别的字段成功都不会擦掉），模型发现失败会重试并在检查器 模型 行显示。
 - 验收用例加强：`cli-agent-models` 用两个不同问题 + `modelRequestsSeen` 断言“带这个问题的那次请求”模型名
   与思考等级；把期望改成同一个模型会失败，证明它不是靠两个 Bot 同名或反思请求蒙过。
-- 门禁：`apps/bots` `npm run check` 1099 tests / 96.00% 行 / 89.13% 分支 / 91.28% 函数，`test:crash` 5/5；
-  `apps/bots-macos` 156、`apps/macos` 397 + 81 + 52 + 37；`swift format lint --strict` 两包干净；
-  `check:design` 与 `test:design`（91）通过；`npm --prefix apps/bots run eval` 26/26。
+- 门禁（第二轮修复后）：`apps/bots` `npm run check` 1099 tests / 96.00% 行 / 89.14% 分支 / 91.19% 函数，
+  `test:crash` 5/5；`apps/bots-macos` 156（coverage 90.9%）、`apps/macos` 399 + 81 + 52 + 37（coverage 94.8%）；
+  `swift format lint --strict` 两包干净；`check:design` 与 `test:design`（91）通过；
+  `npm --prefix apps/bots run eval` 26/26。
+- 第二轮评审后收紧了三条：provider id 属于守护进程（运行中改 provider 的保存是 400、不写文件，文档写明需重启；
+  同 provider 换地址/Key 仍即时生效；启动时把旧 provider 改写到目录失败就直接起不来，而不是标记后让 recovery
+  再用旧 provider 打开）；模型发现的迟到回答按 generation 丢弃，不会覆盖更新的列表或错误；close→reopen→PATCH
+  的唤醒顺序用一个受控测试钉住，`applied` 只记“这次 open 实际用的那一对”。保存但未应用时异常带 `saved` 标记，
+  HTTP 先广播目录真相再回 409；App 在保存失败时重读目录，行里显示已保存的模型加“未应用”错误；选中 Bot 会重试
+  失败的模型发现。
 - 未验证：真实网关上的两个模型与 `xhigh`/`max` 的上游接受度（网关不发布能力，只有抓包证据）；没有
   `swift run` 的开发 App 肉眼验收（协调者执行）；没有 Herdr 采集、查看器鉴权、D1、已安装 App 或真机双 Mac。
 

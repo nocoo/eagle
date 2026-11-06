@@ -284,6 +284,10 @@ public final class AppViewModel: ObservableObject {
         // never describes another.
         if self.agentEdit?.botId == botId { self.agentEdit = nil }
       } catch {
+        // The catalog may hold the pair the conversation refused ("saved but not
+        // applied"): reading it back is what lets the row show the saved model beside the
+        // refusal instead of the old one.
+        await self.reload()
         // The refusal is kept for the row that asked for it, whatever the person is
         // looking at now, and another field's success cannot erase it.
         self.agentErrors[key] = describe(error)
@@ -331,6 +335,9 @@ public final class AppViewModel: ObservableObject {
     if selection != botId, !exchanges.isEmpty { exchanges = [] }
     selection = botId
     conversation.select(botId: botId)
+    // Opening a bot is a person's action: a model list that failed to load is asked for
+    // again here, not only by a direct call, so the picker recovers by being used.
+    Task { @MainActor [weak self] in await self?.loadModelsIfNeeded() }
   }
 
   public func pendingOutbox(for botId: String) -> [OutboxEntry] {
