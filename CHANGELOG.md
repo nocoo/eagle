@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+## macOS v0.21.0 — 2026-11-07
+
+- Add a 技能 settings page: the always-scanned `~/.agents/skills` root plus folders added
+  with the native picker, and the skills found there with name, description and version.
+  A keyword field and an 全部/已勾选/未勾选 filter read honest counts, the scan runs off the
+  main actor, and the ticks and custom roots live in this App's defaults.
+- Make the ticks reach every Bot on this machine. A tick, an added or removed root or a
+  finished scan pushes the whole selection through the existing token client one push at a
+  time; a refusal keeps the tick and shows the daemon's own message. A Bot reads a selected
+  `SKILL.md` with `skill_read` and never accepts a path from the model: the manifest is
+  opened without following a final symlink, checked with `fstat`, and cut in bounded chunks
+  on a UTF-8 boundary, so an unselected, missing, swapped or escaping file is refused.
+- Give every Bot its own model and thinking level. The pair is one catalog write and one
+  runtime commit, the stored pair is configured on every open, and a change reaches the
+  next prepared request without interrupting the running one. The gateway publishes ids
+  only, so the inspector offers the same seven level names the daemon requests; the daemon
+  sends the level the person chose and the gateway decides what it takes, and a refusal is
+  the run's `model_error`, never a silent fallback. The gateway provider is fixed at boot,
+  discovery keeps what the daemon knew on failure, and settings name 默认模型 and
+  默认思考等级 for new Bots. The choices are labelled in Chinese.
+- Enlarge the inline menu to fill its 28 pt row and keep the chevron inside the filled band.
+- Draw every dialog on one modal surface: create, edit face, peer transcript, tool run and
+  settings share one dimmed, blurred backdrop and one card, the workspace behind stops
+  taking hits, Escape/close/scrim dismiss it, and a second dialog is refused so nothing
+  stacks. A late peer read or a background create that moves the selection no longer
+  reopens a stale dialog.
+- Compact the create dialog to an identity card plus the shared 5/5/8 picker, and give each
+  presentation one canonical colour chosen at random from the eight selectable faces so the
+  preview and the daemon agree. Animation honours Reduce Motion.
+- Restore the native SwiftUI message rendering: an ordinary row is one `Text` that turns
+  on selection only while it is hovered, so it pays for the selection machinery only under
+  the pointer. A new group's name enters edit mode, and the participant row's border follows
+  the capsule shape.
+- Bound the remote-device prompts: the local instruction names only the local protection
+  failure, and the device tools describe themselves as other-computer controls without the
+  old comparison and blanket prohibitions.
+- Keep website/Worker, npm Agent and App releases independent. This App bundles the current
+  Agent 1.2.0 and Bots 0.1.0 runtimes; no npm onboarding pin changes are part of this
+  release.
+
 ## macOS v0.20.0 — 2026-11-06
 
 - Report a Settings action through one window-level toast that animates in and retires
