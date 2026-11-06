@@ -50,7 +50,7 @@ struct CLISettingsLayoutTests {
 
     let button = try #require(
       entries(host).first { identifier($0) == "cli.copy.skill" })
-    #expect(title(button)?.contains("复制") == true)
+    #expect(axTitle(button)?.contains("复制") == true)
 
     let press = NSSelectorFromString("accessibilityPerformPress")
     try #require(button.responds(to: press))
@@ -63,13 +63,12 @@ struct CLISettingsLayoutTests {
     #expect(
       entries(host).compactMap(title).filter { $0 == "已复制" }.count == 1,
       "the pressed button says the copy happened")
-    // `SettingsActionButton` is plain `Button { Text(title) }`: AX can surface the label on
-    // AXTitle, AXDescription, or the button value. Poll MainActor + RunLoop until any field reads
-    // 「复制命令」, with dumps on timeout (no longer timeout cap increase).
-    try await waitForCopyCommandLabel(host: host)
+    // Visible label comes back on `accessibilityTitle` (AXTitle). Description/value are logged on
+    // timeout only for diagnosis.
+    try await waitForCopyCommandTitle(host: host)
   }
 
-  private func waitForCopyCommandLabel(host: NSView) async throws {
+  private func waitForCopyCommandTitle(host: NSView) async throws {
     let deadline = ContinuousClock.now.advanced(by: .seconds(6))
     var iteration = 0
     while true {
@@ -78,13 +77,14 @@ struct CLISettingsLayoutTests {
       host.displayIfNeeded()
       RunLoop.current.run(until: Date().addingTimeInterval(0.02))
       if let node = entries(host).first(where: { identifier($0) == "cli.copy.skill" }),
-        labelShowsCopyCommand(node)
+        axTitle(node) == "复制命令"
       {
         return
       }
       guard ContinuousClock.now < deadline else {
         print(
-          "CLI_COPY_DIAG timeout iteration=\(iteration) copy_skill=\(describeCopySkill(host: host))"
+          "CLI_COPY_DIAG timeout iteration=\(iteration) "
+            + "copy_skill=\(describeCopySkill(host: host))"
         )
         throw NSError(domain: "CLISettingsLayoutTests", code: 1)
       }
@@ -92,30 +92,28 @@ struct CLISettingsLayoutTests {
     }
   }
 
-  /// True when any common AX field matches the visible button title after reset.
-  private func labelShowsCopyCommand(_ node: NSObject) -> Bool {
-    let candidates = [
-      title(node),
-      attribute(node, "AXDescription") as? String,
-      attribute(node, "AXValue") as? String,
-    ].compactMap { $0 }
-    return candidates.contains { $0 == "复制命令" || $0.contains("复制命令") }
-  }
-
   private func describeCopySkill(host: NSView) -> String {
     guard let node = entries(host).first(where: { identifier($0) == "cli.copy.skill" }) else {
       return "missing cli.copy.skill"
     }
-    let t = title(node).map { "AXTitle=\($0)" } ?? "AXTitle=nil"
-    let d = (attribute(node, "AXDescription") as? String).map { "AXDescription=\($0)" } ?? "AXDescription=nil"
-    let v = (attribute(node, "AXValue") as? String).map { "AXValue=\($0)" } ?? "AXValue=nil"
+    let t = axTitle(node).map { "AXTitle=\($0)" } ?? "AXTitle=nil"
+    let dPart = (attribute(node, "AXDescription") as? String).map { "AXDescription=\($0)" }
+    let d = dPart ?? "AXDescription=nil"
+    let vPart = (attribute(node, "AXValue") as? String).map { "AXValue=\($0)" }
+    let v = vPart ?? "AXValue=nil"
     return "\(t) \(d) \(v)"
+  }
+
+  /// `accessibilityTitle` only — matches the on-screen `Text` in `SettingsActionButton`.
+  private func axTitle(_ node: NSObject) -> String? {
+    attribute(node, "AXTitle") as? String
   }
 
   private func identifier(_ node: NSObject) -> String? {
     attribute(node, "AXIdentifier") as? String
   }
 
+  /// First non-empty AX string among title, description, value (tree walks / broad scans).
   private func title(_ node: NSObject) -> String? {
     for name in ["AXTitle", "AXDescription", "AXValue"] {
       if let value = attribute(node, name) as? String, !value.isEmpty { return value }

@@ -68,8 +68,10 @@ struct TranscriptRowCostTests {
     )
   }
 
-  /// Isolates **prepared paragraph** path: every row is a short assistant turn with a single
-  /// `.paragraph` prepared block (AttributedString). Falsifies “markdown fences drive ROWCOST”.
+  /// Assistant-only rows with a single `.paragraph` prepared block (AttributedString), same
+  /// rendering path as `prepared()` in this file. Does not prove or disprove fenced **code**
+  /// blocks — those are flattened to paragraph AttributedString here anyway; it narrows
+  /// **corpus/row mix** vs the default `entries` transcript.
   @Test("ROWCOST experiment: assistant paragraphs only (diagnostic)")
   func paragraphOnlyAssistantExperiment() {
     Self.logRunContext()
@@ -232,19 +234,19 @@ struct TranscriptRowCostTests {
     entries: [TranscriptEntry], prepared: [String: [RenderedMarkdownBlock]]
   ) {
     var assistantFromBlocks = 0
-    var codeBlocksInTranscript = 0
+    var noteBlocksInTranscript = 0
     for entry in entries {
-      guard case .assistant(let id, let blocks, _) = entry else { continue }
+      guard case .assistant(_, let blocks, _) = entry else { continue }
       assistantFromBlocks += 1
       for block in blocks {
-        if case .note = block { codeBlocksInTranscript += 1 }
+        if case .note = block { noteBlocksInTranscript += 1 }
       }
     }
     let preparedCount = prepared.count
     print(
       "ROWCOST_FIXTURE assistant_entries=\(assistantFromBlocks) prepared_map=\(preparedCount) "
-        + "fenced_note_blocks_in_source=\(codeBlocksInTranscript) "
-        + "(prepared flatten to .paragraph AttributedString; code/table views not used)"
+        + "note_blocks_in_source=\(noteBlocksInTranscript) "
+        + "(prepared single .paragraph AttributedString each; not MarkdownView .code)"
     )
   }
 
