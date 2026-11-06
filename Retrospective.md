@@ -1,5 +1,17 @@
 # Retrospective
 
+## 2026-11-07 — Treat delegated prompts as shell data
+
+During the compact-dialog work, a coordinator prompt placed Swift snippets in
+backticks inside a double-quoted shell argument. Bash attempted command
+substitution and reported syntax errors, removing those API names from the
+instructions. No product file or live state was changed by the failed
+substitutions. A follow-up prompt restored the names with literal quoting.
+
+Quote delegated instructions as data, not executable shell text. In particular,
+do not place Markdown backticks inside a double-quoted command argument; use
+literal quoting or a correctly escaped input mechanism instead.
+
 ## 2026-11-07 — Verify bundle identity before attributing an Eagle process
 
 The per-Bot model implementation report called `/Applications/Eagle.app` the

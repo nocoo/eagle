@@ -1,5 +1,30 @@
 # 用户视角检查点
 
+## 2026-11-07 07:01 +08 — Compact Bot dialogs, final local verification
+
+- Code candidate `02b46e84`: creation is approximately 460 × 458 instead of
+  560 × 712, with inspector-like identity fields, standard settings actions,
+  one explicit canonical random tint per presentation, and the shared breathing
+  portrait. Creation, face editing, peer history, tool details and settings use
+  one blurred/dimmed modal surface; native alerts and system panels stay native.
+- Three review rounds closed the reported peer-read, tool-owner and capture-suite
+  isolation findings. Final native evidence: 427 + 52 + 81 + 37 tests, 94.8%
+  configured logic coverage, strict formatting and both design gates (91 tests).
+- Coordinator re-ran `npm run check`, `npm run test:browser` and
+  `npm run test:devices` with official Node 26.13.0 on the final code; all exited
+  0. Logs are `/tmp/eagle-*-dialogs-final3.log`. Earlier Homebrew-Node package
+  refusals are not a failure of this verified run.
+- The ten isolated review images under `.local/macos-dialogs` were regenerated;
+  light/dark create, face, peer, tool and settings compositions were inspected.
+  Static captures do not certify live keyboard behavior or animation.
+- The coordinator gracefully quit only its owned Dev process and reopened
+  `swift run "Eagle Dev"` from this checkout in right-side Herdr pane `w1J:p6`.
+  UI PID: 51719; its Bots daemon PID: 51862, listening on loopback 43117.
+  The build completed; existing WindowConfigurator concurrency warnings remain.
+- Owner acceptance is pending for actual clicks, Return/Escape, focus restoration,
+  traffic lights and Reduce Motion. No real model generation, Herdr collection,
+  viewer authentication, D1 or physical multi-Mac acceptance was run. No push.
+
 ## 2026-11-06 23:05 +08 — 每个 Bot 自己的模型与等级：评审第一轮修完
 
 - 模型发现不再借用 pi-ai 的 ModelsStore：同一个 provider 换地址/换 Key 后失败重试时，旧缓存的
