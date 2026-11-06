@@ -493,17 +493,23 @@ export type Failure = {
 export class ClassifiedFailure extends Error {
   readonly failure: Failure;
   readonly disposition: ErrorDisposition;
+  /**
+   * The catalog holds the change but the live conversation did not take it. A caller that
+   * broadcasts catalog truth still owes the client that fact, and the refusal says so.
+   */
+  readonly saved: boolean;
 
   constructor(
     failure: Failure,
     disposition: ErrorDisposition,
     message: string,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; saved?: boolean },
   ) {
     super(message, options);
     this.name = "ClassifiedFailure";
     this.failure = failure;
     this.disposition = disposition;
+    this.saved = options?.saved === true;
   }
 }
 

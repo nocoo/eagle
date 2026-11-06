@@ -308,6 +308,7 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
     ...(options.settings === undefined ? {} : { settings: options.settings }),
     ...(options.machinePrompt === undefined ? {} : { machinePrompt: options.machinePrompt }),
     ...(options.toolCatalog === undefined ? {} : { toolCatalog: options.toolCatalog }),
+    gatewayProvider: () => model.provider,
     version: "0.0.0-test",
     instance: "i_test",
     capabilities: {

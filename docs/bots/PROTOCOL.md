@@ -451,11 +451,18 @@ picker never has to know the gateway itself. The `agent` capability is `true`.
   configured with the stored pair before it resumes, so a reopened bot runs with what the
   catalog says and not with what an earlier session left behind.
 - **Two stores, no cross-store transaction.** The catalog is the truth and the live
-  conversation is a copy of it. The change reaches the conversation first; if the catalog
-  then cannot record it, the conversation is put back on the pair the catalog holds. If
-  that cannot be done either, the bot is closed and reported unavailable until it is
-  reopened: nothing keeps answering with a pair the catalog does not hold, and the
-  refusal is a distinct error, never a success.
+  conversation is a copy of it. The pair is prevalidated, written to the catalog, and only
+  then applied; a request prepared while the write is in flight still runs the pair it
+  had. If the conversation refuses the saved pair, the answer is a `409` that says it was
+  saved but not applied, the catalog event with the saved pair goes out first, and the
+  conversation keeps the old pair until the next change or a reopen applies it — a retry
+  re-applies rather than trusting catalog equality. Nothing falls back to the old pair
+  silently, and nothing claims an application that did not happen.
+- **The provider is the daemon's, not a setting.** A save that names another `provider`
+  while the daemon runs is a `400` and writes nothing: the provider id is what the
+  models and every open conversation were built against, so changing it is a restart.
+  The address and the key are the same provider with new coordinates and apply live to
+  every bot at once.
 
 An applied agent change is broadcast as a bot-scoped `agent` event, carrying the complete
 `AgentView` with `rev` and `trace`. It replaces only the current agent configuration; the

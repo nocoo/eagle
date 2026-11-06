@@ -1194,16 +1194,23 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
               agent.modelId === undefined || options.gatewayProvider === undefined
                 ? undefined
                 : { provider: options.gatewayProvider(), modelId: agent.modelId };
-            bot = await registry.setAgent(
-              id,
-              {
-                ...(model === undefined ? {} : { model }),
-                ...(agent.thinkingLevel === undefined
-                  ? {}
-                  : { thinkingLevel: agent.thinkingLevel }),
-              },
-              trace,
-            );
+            try {
+              bot = await registry.setAgent(
+                id,
+                {
+                  ...(model === undefined ? {} : { model }),
+                  ...(agent.thinkingLevel === undefined
+                    ? {}
+                    : { thinkingLevel: agent.thinkingLevel }),
+                },
+                trace,
+              );
+            } catch (error) {
+              // The catalog holds the pair even when the conversation refused it: the
+              // clients get the truth before the refusal that explains it.
+              if (error instanceof ClassifiedFailure && error.saved) broadcastCatalog();
+              throw error;
+            }
           }
           broadcastCatalog();
           json(response, 200, { bot });

@@ -9,8 +9,38 @@ import { join } from "node:path";
 import test from "node:test";
 import { WebSocket } from "ws";
 import { readConfig } from "../../src/config.ts";
+import type { RuntimeBotSpec, RuntimePort } from "../../src/core/RuntimePort.ts";
 import { startDaemon } from "../../src/main.ts";
-import { frameQueue, hello, send } from "../support/server.ts";
+import { FakeRuntime } from "../../src/testing/FakeRuntime.ts";
+import { frameQueue, hello, send, startStack } from "../support/server.ts";
+
+/** A runtime whose conversation refuses a new pair, so a saved change is not applied. */
+const runtimeRefusingAgent = (): { runtime: RuntimePort; configured: unknown[] } => {
+  const inner = new FakeRuntime();
+  const configured: unknown[] = [];
+  const runtime: RuntimePort = {
+    async open(spec: RuntimeBotSpec) {
+      const handle = await inner.open(spec);
+      return {
+        refreshTools: (trace: string) => handle.refreshTools(trace),
+        subscribe: (trace: string, sink: Parameters<typeof handle.subscribe>[1]) =>
+          handle.subscribe(trace, sink),
+        submit: (input: Parameters<typeof handle.submit>[0]) => handle.submit(input),
+        submission: (key: Parameters<typeof handle.submission>[0]) => handle.submission(key),
+        history: (input: Parameters<typeof handle.history>[0]) => handle.history(input),
+        abort: (trace: string) => handle.abort(trace),
+        recover: (trace: string) => handle.recover(trace),
+        busy: () => handle.busy(),
+        close: (trace: string, deadlineMs: number) => handle.close(trace, deadlineMs),
+        configureAgent: async (change: { model: { provider: string; modelId: string } }) => {
+          configured.push(change);
+          throw new Error("the conversation refuses the provider");
+        },
+      };
+    },
+  };
+  return { runtime, configured };
+};
 
 const gateway = {
   baseUrl: "http://127.0.0.1:9/v1",
@@ -141,6 +171,39 @@ test("the settings name the default for a new bot and leave an existing one alon
     }
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a pair the conversation refused is still the catalog's, and the refusal says so", async () => {
+  // The runtime refuses the pair while the catalog takes it: the clients read the saved
+  // truth from the catalog and the refusal explains that it was not applied.
+  const refused = runtimeRefusingAgent();
+  const stack = await startStack({ runtime: refused.runtime });
+  try {
+    const botId = await stack.createBot("已保存");
+    const patched = await fetch(`http://127.0.0.1:${stack.port}/v1/bots/${botId}`, {
+      method: "PATCH",
+      headers: {
+        authorization: `Bearer ${stack.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ model: "auto/gpt-6-sol", thinkingLevel: "high" }),
+    });
+    assert.equal(patched.status, 409, "the conversation did not take it");
+    const body = (await patched.json()) as { error: { message: string } };
+    assert.match(body.error.message, /did not take it/);
+    const catalog = await fetch(`http://127.0.0.1:${stack.port}/v1/bots`, {
+      headers: { authorization: `Bearer ${stack.token}` },
+    });
+    const bots = (await catalog.json()) as { bots: { id: string; model: { modelId: string } }[] };
+    assert.equal(
+      bots.bots.find((bot) => bot.id === botId)?.model.modelId,
+      "auto/gpt-6-sol",
+      "the catalog holds the pair the conversation refused",
+    );
+    assert.equal(refused.configured.length, 1, "the conversation was asked once");
+  } finally {
+    await stack.close();
   }
 });
 
@@ -351,8 +414,10 @@ test("a stored provider that differs from the gateway reaches the gateway's endp
       assert.equal(first.seen.at(-1)?.authorization, "Bearer sk-first-0000000000000000");
       assert.equal(first.seen.at(-1)?.model, "auto/a");
 
-      // The person moves the gateway: another provider id, address and key.
-      const saved = await fetch(`http://127.0.0.1:${daemon.port}/v1/settings`, {
+      // The provider id is the runtime the daemon built: moving it is a restart, so the
+      // save is refused and nothing is written.
+      const before = await readFile(join(root, "gateway.json"), "utf8");
+      const refused = await fetch(`http://127.0.0.1:${daemon.port}/v1/settings`, {
         method: "PUT",
         headers: {
           authorization: `Bearer ${daemon.token}`,
@@ -365,6 +430,23 @@ test("a stored provider that differs from the gateway reaches the gateway's endp
           apiKey: "sk-second-000000000000000",
         }),
       });
+      assert.equal(refused.status, 400, "a provider change is a restart, not a save");
+      assert.match(JSON.stringify(await refused.json()), /重启 Bot 服务/);
+      assert.equal(await readFile(join(root, "gateway.json"), "utf8"), before);
+
+      // The same provider with a new address and key applies live.
+      const saved = await fetch(`http://127.0.0.1:${daemon.port}/v1/settings`, {
+        method: "PUT",
+        headers: {
+          authorization: `Bearer ${daemon.token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          baseUrl: second.baseUrl,
+          model: "auto/a",
+          apiKey: "sk-second-000000000000000",
+        }),
+      });
       assert.equal(saved.status, 200);
       await turn("r_0190a1b4-5061-7c72-8d3e-4f5061728395", "第二个问题");
       assert.equal(second.seen.at(-1)?.authorization, "Bearer sk-second-000000000000000");
@@ -372,7 +454,7 @@ test("a stored provider that differs from the gateway reaches the gateway's endp
       const catalog = JSON.parse(await readFile(join(root, "catalog.json"), "utf8")) as {
         bots: { model: { provider: string } }[];
       };
-      assert.equal(catalog.bots[0]?.model.provider, "next");
+      assert.equal(catalog.bots[0]?.model.provider, "magpie", "the provider did not move");
     } finally {
       await daemon.close();
     }

@@ -606,12 +606,15 @@ daemon cannot describe is registered with the declared window and passes every l
 through, so a custom model is not silently lowered.
 
 The settings' model and thinking level are now the **defaults a new bot records**; saving
-them no longer rewrites an existing bot. Every bot stores its own pair, the inspector
+them no longer rewrites an existing bot, and a bot created before the level existed is
+given the current default once at startup. Every bot stores its own pair, the inspector
 changes it, and the change reaches the next prepared request: the running answer keeps the
 model and the level it started with, and nothing is aborted, reset or restarted. The pair
-is one catalog write and one runtime commit, so a bot never records a pair it does not run
-with; a level the model does not take is a `400` rather than a silent clamp, and a failed
-catalog write puts the conversation back on the pair it had.
+is prevalidated, written once to the catalog, and then applied; a conversation that refuses
+it answers `409` "saved but not applied" after the catalog event goes out, and the next
+change or a reopen applies it. The gateway's provider id cannot change under a running
+daemon (a save that names another is a `400`), because the models and the open
+conversations were built against it.
 
 The gateway publishes ids and nothing else, so the daemon infers no capability from a name:
 every model is registered with the daemon's declared caps (`BOTS_CONTEXT_WINDOW`,

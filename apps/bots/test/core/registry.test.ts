@@ -579,52 +579,6 @@ test("a migration that cannot be written fails the start instead of falling back
   }
 });
 
-test("a live bot follows the gateway's provider in one configuration", async () => {
-  const setup = await bench({ bots: ["a"] });
-  try {
-    await setup.registry.start();
-    await setup.registry.open("b_bot0", "tr_provider_live_0001");
-    await setup.registry.applyGatewayProvider("next", "tr_provider_live_0002");
-    assert.deepEqual(
-      setup.agents.map((agent) => agent.model.provider),
-      ["next"],
-      "one configuration moves the open conversation",
-    );
-  } finally {
-    await setup.registry.shutdown();
-    await setup.cleanup();
-  }
-});
-
-test("a bot that cannot follow the gateway is marked, and the others still do", async () => {
-  const setup = await bench({ bots: ["a", "b"] });
-  try {
-    await setup.registry.start();
-    await setup.registry.open("b_bot0", "tr_partial_0001");
-    await setup.registry.open("b_bot1", "tr_partial_0002");
-    // The second bot's conversation refuses the new provider.
-    setup.refuseAgentFor("b_bot1");
-    const failed = await setup.registry.applyGatewayProvider("next", "tr_partial_0003");
-    assert.equal(failed, 1, "one bot failed");
-    assert.equal(setup.registry.state("b_bot1"), "unavailable", "and it says so");
-    assert.equal(setup.registry.state("b_bot0"), "idle", "the other one is untouched");
-    assert.deepEqual(
-      setup.agents.map((agent) => agent.model.provider),
-      ["next"],
-      "only the bot that could take it was configured",
-    );
-    const stored = await setup.directory.load();
-    assert.deepEqual(
-      stored.map((bot) => bot.model.provider),
-      ["next", "next"],
-      "both catalogs hold the gateway's provider: nothing falls back to the old endpoint",
-    );
-  } finally {
-    await setup.registry.shutdown();
-    await setup.cleanup();
-  }
-});
-
 test("a gateway thinking-level change is the default for new bots only", async () => {
   const setup = await bench({ bots: ["a"] });
   try {
@@ -798,6 +752,56 @@ test("a request prepared while the catalog write is in flight keeps the pair it 
       ["faux-9"],
       "the conversation follows the catalog once it is written",
     );
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("a close, a reopen and a change settle in one order and the bot runs the saved pair", async () => {
+  let release: () => void = () => undefined;
+  const closed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const setup = await bench({ bots: ["a"], closeGate: closed });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_race_0001");
+    // The idle close starts and is held; the change waits for it; a reopen arrives while
+    // the change owns the settling window and waits for that.
+    await setup.timers.advance(1_000);
+    const edit = setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+      "tr_race_0002",
+    );
+    await settle();
+    const reopen = setup.registry.open("b_bot0", "tr_race_0003");
+    await settle();
+    release();
+    await edit;
+    await reopen;
+    // Whichever of the two won the wake order — the reopen installing its handle or the
+    // change configuring it — the conversation the bot keeps runs the pair the catalog
+    // holds, and it was configured exactly once.
+    const configured = setup.agents.at(-1);
+    const spec = setup.specs.at(-1);
+    const effective = configured?.model.modelId ?? spec?.model.modelId;
+    assert.equal(effective, "faux-9", "the conversation runs the saved pair");
+    assert.ok(setup.agents.length <= 1, "at most one configuration was needed");
+    // The same pair again is a no-op: `applied` names what the conversation really runs.
+    await setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+      "tr_race_0004",
+    );
+    assert.equal(
+      setup.agents.length,
+      configured === undefined ? 0 : 1,
+      "nothing was configured again",
+    );
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.model.modelId, "faux-9", "the catalog holds the saved pair");
   } finally {
     await setup.registry.shutdown();
     await setup.cleanup();

@@ -93,8 +93,11 @@ export class ModelRegistry {
   #listed = new Set<string>();
   /** The ids the registry holds, as the last install left them. */
   #ids: readonly string[] = [];
-  /** The provider id the collection currently holds, so a moved id can be removed. */
-  #installed: string | undefined;
+  /**
+   * Discovery generation. A reconfigure or a newer discovery makes an answer that is still
+   * in flight stale, so a late response cannot overwrite a fresher list or error.
+   */
+  #generation = 0;
   #discoveryError: string | undefined;
 
   constructor(options: ModelRegistryOptions) {
@@ -146,8 +149,12 @@ export class ModelRegistry {
     if (changed) this.#install();
   }
 
-  /** The gateway changed: the endpoint, the key and the provider are global. */
+  /**
+   * The gateway's endpoint or key changed. The provider id cannot: a running daemon keeps
+   * the provider it started with, and the settings refuse a change of id.
+   */
   reconfigure(options: ModelRegistryOptions): void {
+    this.#generation += 1;
     this.#options = options;
     this.#install();
   }
@@ -157,6 +164,7 @@ export class ModelRegistry {
    * already knows and is reported apart from a gateway that offers none.
    */
   async discover(): Promise<{ readonly ok: boolean; readonly error?: string }> {
+    this.#generation += 1;
     if (this.#options.baseUrl.length === 0 || this.#options.apiKey.length === 0) {
       this.#discoveryError = "the gateway has no address or no key";
       return { ok: false, error: this.#discoveryError };
@@ -164,8 +172,12 @@ export class ModelRegistry {
     // The daemon asks for the list itself. pi-ai's `refresh()` keeps a per-provider store
     // and would restore the models of the previous endpoint under the new key, so the
     // registry owns this: one answer, then one provider built from the current options.
+    const generation = this.#generation;
     const controller = new AbortController();
     const listed = await this.#fetchIds(controller.signal);
+    // A newer discovery or a gateway change makes this answer stale: it changes nothing,
+    // not the list and not the failure.
+    if (generation !== this.#generation) return { ok: true };
     if (listed === undefined) {
       this.#discoveryError = "the gateway could not be asked for its models";
       return { ok: false, error: this.#discoveryError };
@@ -196,13 +208,6 @@ export class ModelRegistry {
   /** One provider, rebuilt in place: the models it holds are the ones the daemon knows. */
   #install(): void {
     const options = this.#options;
-    // A provider id that moved must be gone from the collection: a live Harness reads the
-    // collection at each access, and a leftover provider still holds the old address and
-    // key. Removing it makes the old endpoint unreachable rather than merely unused.
-    if (this.#installed !== undefined && this.#installed !== options.provider) {
-      this.#models.deleteProvider(this.#installed);
-    }
-    this.#installed = options.provider;
     // Without an endpoint or a key there is no gateway to run a model against, so the
     // registry holds nothing and a run settles `no_model`.
     const configured = options.baseUrl.length > 0 && options.apiKey.length > 0;

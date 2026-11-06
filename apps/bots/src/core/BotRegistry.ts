@@ -388,48 +388,21 @@ export class BotRegistry {
    * The provider belongs to the gateway, not to a bot: every stored reference follows it,
    * while the model id each bot chose stays that bot's own.
    */
-  async applyGatewayProvider(provider: string, trace: string): Promise<number> {
-    let failed = 0;
+  async applyGatewayProvider(provider: string, trace: string): Promise<void> {
     for (const entry of this.#entries.values()) {
+      if (entry.config.model.provider === provider) continue;
       const at = (this.#options.now?.() ?? new Date()).toISOString();
-      const model = { provider, modelId: entry.config.model.modelId };
-      try {
-        if (entry.config.model.provider !== provider) {
-          entry.config = await this.#write(trace, entry.config.id, () =>
-            this.#options.directory.setAgent(entry.config.id, { model }, at),
-          );
-        }
-        // A conversation that is open has the previous provider in its agent document: one
-        // configuration moves it, so the next request resolves the gateway the daemon now
-        // has instead of failing `no_model`.
-        const level = this.#storedLevel(entry);
-        if (entry.handle?.configureAgent !== undefined && !entry.closing) {
-          await entry.handle.configureAgent({ model, thinkingLevel: level }, trace);
-          entry.applied = { model, thinkingLevel: level };
-        }
-      } catch (error) {
-        // One bot that cannot follow the gateway must not stop the daemon, and it must not
-        // keep answering through the old endpoint: it is marked unavailable and says why.
-        // Nothing here falls back to the previous provider.
-        failed += 1;
-        const failure = error instanceof ClassifiedFailure ? error.failure : newFailure("internal");
-        entry.state = "unavailable";
-        entry.unavailable = {
-          reason: failure.kind,
-          message: "the gateway's provider could not be applied to this bot",
-        };
-        // A forwarded failure, so it is a warning here: the runtime is the originating
-        // layer, and the bot's own state carries the reason to a client.
-        this.#options.log.emit("warn", "core", Events.openFail, {
-          trace,
-          botId: entry.config.id,
-          failure,
-          propagated: true,
-          detail: { reason: "upstream" },
-        });
-      }
+      // Boot only, before the recovery scan: a stored reference from another provider id
+      // is moved to the one the daemon started with. A change of the provider id itself is
+      // a restart (PROTOCOL.md, "Per-bot agent"), so this never runs under live work.
+      entry.config = await this.#write(trace, entry.config.id, () =>
+        this.#options.directory.setAgent(
+          entry.config.id,
+          { model: { provider, modelId: entry.config.model.modelId } },
+          at,
+        ),
+      );
     }
-    return failed;
   }
 
   /**
@@ -497,6 +470,11 @@ export class BotRegistry {
           finish = resolve;
         });
         entry.settling = window;
+        // An open that was waiting on the close we just waited for has resumed by now and
+        // may be in `opening`; it started before this window, so awaiting it cannot wait on
+        // us, and it must finish before the pair is written or it would install a handle
+        // built from the old catalog.
+        if (entry.opening !== undefined) await entry.opening.catch(() => undefined);
         try {
           // The catalog is the truth, so it is written first and the conversation follows.
           // A request prepared while the write is in flight still runs the pair it had, and
@@ -523,7 +501,7 @@ export class BotRegistry {
               newFailure("internal", "runtime"),
               "runtime",
               `the bot now records ${model.modelId} at ${level}, but the running conversation did not take it; the next change or a reopen applies it`,
-              { cause: error },
+              { cause: error, saved: true },
             );
           }
         } finally {
@@ -995,17 +973,22 @@ export class BotRegistry {
     entry.state = "opening";
     this.#options.log.emit("info", "core", Events.openStart, { trace, botId: entry.config.id });
     try {
-      const level = this.#storedLevel(entry);
+      const opened = {
+        model: entry.config.model,
+        thinkingLevel: this.#storedLevel(entry),
+      };
       const handle = await this.#options.openRuntime({
         id: entry.config.id,
         dir: this.#options.directory.botDir(entry.config.id),
-        model: entry.config.model,
-        thinkingLevel: level,
+        model: opened.model,
+        thinkingLevel: opened.thinkingLevel,
         toolGroups: resolveToolGroups(entry.config.toolGroups ?? this.#defaultToolGroups),
         trace,
       });
       entry.handle = handle;
-      entry.applied = { model: entry.config.model, thinkingLevel: level };
+      // What this open actually asked for: the spec above, never a re-read of the catalog
+      // that a concurrent change may have moved.
+      entry.applied = { model: opened.model, thinkingLevel: opened.thinkingLevel };
       if (this.#stopping) {
         entry.closing = true;
         const remaining = Math.max(1, (this.#shutdownDeadline ?? Date.now()) - Date.now());

@@ -138,28 +138,40 @@ test("a new endpoint and key under one provider never resurrect the old address"
   assert.equal(bodies.at(-1)?.authorization, "Bearer sk-b", "the discovery asked with it too");
 });
 
-test("a provider id that moves is removed from the collection", async () => {
+test("a late discovery answer cannot overwrite a newer one", async () => {
+  let releaseA: () => void = () => undefined;
+  const gateA = new Promise<void>((resolve) => {
+    releaseA = resolve;
+  });
+  let first = true;
+  const recorded: typeof fetch = (async () => {
+    if (first) {
+      first = false;
+      await gateA;
+      return new Response(JSON.stringify({ data: [{ id: "old/one" }] }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ data: [{ id: "new/one" }, { id: "new/two" }] }), {
+      status: 200,
+    });
+  }) as unknown as typeof fetch;
   const models = new ModelRegistry({
-    provider: "old",
+    provider: "magpie",
     baseUrl: "http://127.0.0.1:1/v1",
-    apiKey: "sk-old",
+    apiKey: "sk-a",
     contextWindow: 200_000,
     maxTokens: 8_192,
-    fetch: gateway({ data: [{ id: "auto/a" }] }),
+    fetch: recorded,
   });
-  models.ensure(["auto/a"]);
-  assert.ok(models.models.getModel("old", "auto/a") !== undefined);
-  models.reconfigure({
-    provider: "new",
-    baseUrl: "http://127.0.0.1:2/v1",
-    apiKey: "sk-new",
-    contextWindow: 200_000,
-    maxTokens: 8_192,
-  });
-  assert.equal(models.models.getProvider("old"), undefined, "the old provider is gone");
-  assert.equal(
-    models.models.getModel("new", "auto/a")?.baseUrl,
-    "http://127.0.0.1:2/v1",
-    "the model moved with it",
+  const stale = models.discover();
+  const fresh = models.discover();
+  assert.equal((await fresh).ok, true);
+  assert.deepEqual([...models.ids()].sort(), ["new/one", "new/two"]);
+  releaseA();
+  await stale;
+  assert.deepEqual(
+    [...models.ids()].sort(),
+    ["new/one", "new/two"],
+    "the older answer landed second and changed nothing",
   );
+  assert.equal(models.discoveryError, undefined, "and it did not invent a failure");
 });

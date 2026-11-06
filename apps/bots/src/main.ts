@@ -671,6 +671,14 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
   };
   const saveSettings = createSettingsSaver({
     current: () => gateway,
+    // The provider id names the runtime the daemon built its models and its conversations
+    // against. Moving it under a running daemon would hand every open conversation a
+    // provider its Harness has never resolved, so it is a restart, not a save. The address
+    // and the key are not: those are the same provider with new coordinates.
+    refuse: (next, current) =>
+      current !== undefined && next.provider !== current.provider
+        ? `provider 由 ${current.provider} 改为 ${next.provider} 需要重启 Bot 服务后再保存`
+        : undefined,
     write: async (config) => {
       await writeGateway(root, config);
       gateway = config;
@@ -689,7 +697,6 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
           contextWindow: windowTokens,
           maxTokens,
         });
-        await registry.applyGatewayProvider(config.provider, "tr_http_settings");
         registry.setDefaultModel({ provider: config.provider, modelId: config.model });
         modelRegistry.ensure([config.model]);
         await modelRegistry.discover();
