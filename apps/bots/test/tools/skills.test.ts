@@ -18,6 +18,7 @@ import {
   readSkillFile,
   type SelectedSkill,
   skillSection,
+  trimIncompleteUtf8,
 } from "../../src/skills/selection.ts";
 import { createToolRegistry, selectToolExtensions } from "../../src/tools/registry.ts";
 import {
@@ -222,6 +223,84 @@ test("a manifest cut by bytes ends on a character boundary", async () => {
   } finally {
     await bench_.cleanup();
   }
+});
+
+test("a four-byte character at the byte boundary survives whole", async () => {
+  const bench_ = await bench();
+  try {
+    // 21 844 three-byte characters and one emoji are exactly the byte budget, and the emoji's
+    // lead byte sits four bytes from the end: a scan that only looks back three would cut the
+    // complete character and leave a broken byte behind.
+    const emoji = "\u{1F600}";
+    const fill = "字".repeat((MAX_SKILL_FILE_BYTES - Buffer.byteLength(emoji)) / 3);
+    const exact = await writeSkillFile(bench_.root, "exact", `${fill}${emoji}`);
+    const kept = await readSkillFile(exact);
+    assert.ok(kept.kind === "text");
+    assert.equal(kept.truncatedBy, undefined, "the file fits the budget exactly");
+    assert.equal(kept.text.includes("\uFFFD"), false, "no half character reaches the model");
+    assert.equal(kept.text.endsWith(emoji), true, "the last character is whole");
+
+    const over = await writeSkillFile(bench_.root, "over", `${fill}${emoji}${"字".repeat(8)}`);
+    const cut = await readSkillFile(over);
+    assert.ok(cut.kind === "text");
+    assert.equal(cut.truncatedBy, "bytes");
+    assert.equal(cut.text.includes("\uFFFD"), false, "the cut keeps a character boundary");
+    assert.equal(
+      cut.text.slice(0, cut.text.indexOf("\n\n[truncated")).endsWith(emoji),
+      true,
+      "the emoji is kept whole, not cut into a broken byte",
+    );
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("a character cut inside itself is dropped, not decoded", async () => {
+  const bench_ = await bench();
+  try {
+    // The budget lands one byte into the next three-byte character.
+    const directory = await writeSkillFile(
+      bench_.root,
+      "partial",
+      "字".repeat(MAX_SKILL_FILE_BYTES / 3 + 2),
+    );
+    const outcome = await readSkillFile(directory);
+    assert.ok(outcome.kind === "text");
+    assert.equal(outcome.truncatedBy, "bytes");
+    assert.equal(outcome.text.includes("\uFFFD"), false, "the broken tail is gone");
+    assert.equal(
+      outcome.text,
+      `${"字".repeat((MAX_SKILL_FILE_BYTES - 1) / 3)}\n\n[truncated at ${MAX_SKILL_FILE_BYTES} bytes]`,
+    );
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("the tail trim keeps every complete character and only drops a broken one", () => {
+  const emoji = Buffer.from("\u{1F600}", "utf8");
+  assert.deepEqual(trimIncompleteUtf8(emoji), emoji, "a complete four-byte character stays");
+  assert.deepEqual(
+    trimIncompleteUtf8(Buffer.concat([Buffer.from("a"), emoji])),
+    Buffer.concat([Buffer.from("a"), emoji]),
+    "a complete character after another character stays",
+  );
+  assert.deepEqual(
+    trimIncompleteUtf8(Buffer.from([0xe4, 0xb8])),
+    Buffer.alloc(0),
+    "half of one goes",
+  );
+  assert.deepEqual(
+    trimIncompleteUtf8(emoji.subarray(0, 3)),
+    Buffer.alloc(0),
+    "three bytes of four go",
+  );
+  assert.deepEqual(
+    trimIncompleteUtf8(Buffer.from([0xf0])),
+    Buffer.alloc(0),
+    "a lone lead byte goes",
+  );
+  assert.deepEqual(trimIncompleteUtf8(Buffer.from("abc")), Buffer.from("abc"), "ascii stays");
 });
 
 test("a manifest with too many lines is cut at the line budget", async () => {

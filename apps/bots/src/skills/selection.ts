@@ -146,26 +146,36 @@ export type SkillFileOutcome =
     }
   | { readonly kind: "refusal"; readonly reason: string };
 
+/** The longest character UTF-8 has, in bytes. */
+const MAX_UTF8_BYTES = 4;
+
 /** The bytes one UTF-8 character takes, counted from its first byte. */
 const utf8SequenceLength = (lead: number): number => {
   if (lead < 0x80) return 1;
   if ((lead & 0xe0) === 0xc0) return 2;
   if ((lead & 0xf0) === 0xe0) return 3;
-  if ((lead & 0xf8) === 0xf0) return 4;
+  if ((lead & 0xf8) === 0xf0) return MAX_UTF8_BYTES;
   return 1;
 };
 
 /**
  * The tail of a cut file, without the half character at its end: a byte cut inside a
  * character would decode into a replacement character, so the incomplete character goes.
+ *
+ * The scan looks back four bytes, because the lead of a four-byte character sits three
+ * continuation bytes from the end: looking back only three would find no lead and cut a
+ * complete character apart.
  */
 export const trimIncompleteUtf8 = (bytes: Buffer): Buffer => {
-  for (let back = 1; back <= 3 && back <= bytes.length; back += 1) {
+  for (let back = 1; back <= MAX_UTF8_BYTES && back <= bytes.length; back += 1) {
     const byte = bytes[bytes.length - back] ?? 0;
     if ((byte & 0xc0) === 0x80) continue;
     return back >= utf8SequenceLength(byte) ? bytes : bytes.subarray(0, bytes.length - back);
   }
-  return bytes.length > 3 ? bytes.subarray(0, bytes.length - 3) : bytes;
+  // Four continuation bytes in a row are not UTF-8 at all: no character ends here.
+  return bytes.length > MAX_UTF8_BYTES
+    ? bytes.subarray(0, bytes.length - MAX_UTF8_BYTES)
+    : Buffer.alloc(0);
 };
 
 /**
