@@ -48,6 +48,11 @@ or mathematical geometry into presentation tokens.
 - SettingsCard/SectionRow/Header, SettingsTextField/TextArea and SettingsActionButton
   remain the standard form primitives. SettingsSectionRow's optional leading slot carries
   the mark a row names (a bot's face in 用量); rows without one are unchanged.
+- A settings table is one shared component: SettingsTableHeader draws the column titles and
+  SettingsTableRow draws one row (a checkbox, a name, a version, a description and a
+  directory). Both take their widths from the table tokens in Theme.Page, so every table's
+  columns line up; a caller supplies the values and the tick, and the checkbox is the only
+  part of a row that reacts to a click.
 - A transient answer is a toast, not a card row: ToastCenter holds one SettingsNotice (✅, ⚠️
   or neutral), SettingsScaffold floats it over the content and retires it after
   `Theme.Motion.toastDwell`, so saving never changes the height of the page that produced it.
@@ -158,6 +163,29 @@ recipes and semantic stroke widths are not padding-grid values. The physical res
 line uses SwiftUI pixelLength (1 pt at 1×, 0.5 pt at 2×) and aligns its inner edge without
 shrinking the existing 11 pt drag hit region or changing drag/clamp behavior. Card/focus
 outlines retain their semantic widths, distinct from physical-pixel separators.
+
+## The 技能 page
+
+The 技能 page (settings → 技能) says where skills come from and what was found there. It is
+deliberately **not connected to a Bot**: the page scans folders, remembers what a person
+ticked on this machine, and says plainly that nothing uses the selection yet. No daemon
+call, no protocol change and no tool group carries it.
+
+- The scan roots are `~/.agents/skills` (always scanned, never removable, shown with a `~`)
+  and the folders the person added with a native folder picker, in the order they were
+  added. Each custom root has a 移除 button; the automatic root has none.
+- A skill is an immediate child directory of a root that carries a `SKILL.md`. Its leading
+  front matter gives the name, the description and the version; a version in a `metadata`
+  block counts, a missing name falls back to the folder name, and every other key is
+  ignored. A root that is missing or unreadable says so on its own row and never fails the
+  page.
+- The rows are ordered by name (case-insensitively) and then by path, and a directory that
+  two roots share is one row.
+- The list has a keyword field (name, description and directory) and a 全部/已勾选/未勾选
+  filter, and it states the honest counts. Nothing is ticked until a person ticks it, and
+  the ticks and the custom roots live in this App's own defaults.
+- The scan reads the filesystem off the main actor and publishes on it; 重新扫描 rescans
+  without losing the ticks.
 
 ## Reference-led composition
 

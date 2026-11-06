@@ -290,6 +290,12 @@ public enum Theme {
     public static let emptyMaxWidth: CGFloat = 360
     public static let setupBannerVerticalInset: CGFloat = 8
     public static let deviceIconSlot: CGFloat = 16
+    /// A settings table's columns: the checkbox, the name, the version and the path keep a
+    /// width, and the description takes the room that is left.
+    public static let tableCheckboxWidth: CGFloat = 24
+    public static let tableNameWidth: CGFloat = 140
+    public static let tableVersionWidth: CGFloat = 72
+    public static let tablePathWidth: CGFloat = 220
   }
 
   public enum Dialog {

@@ -1,5 +1,20 @@
 # 用户视角检查点
 
+## 2026-11-06 10:20 +08 — 技能 settings page (macOS)
+
+- 新增设置页“技能”：扫描范围（自动的 `~/.agents/skills` ＋ 本人添加的文件夹）与技能表
+  （名称/版本/描述/目录 ＋ 勾选、关键字、全部/已勾选/未勾选）。这一页**故意没有连到任何
+  Bot**：没有 daemon 调用、没有协议改动、没有 toolGroups 改动、没有新 HTTP 端点；勾选只记在
+  本机（`eagle.skills.customRoots`、`eagle.skills.selection`）。
+- 证据：`apps/macos` `swift test` 335+52+78+37 = 502 个测试全绿（含 23 个新测试）；
+  `./Scripts/coverage.sh` 2580/2736 = 94.3%（下限 90，新增 `SkillScanner.swift` 98.52%、
+  `SkillsSettingsViewModel.swift` 99.34%）；`swift format lint --strict` 干净；
+  `npm run check:design` 与 `npm run test:design`（91 个语法夹具）通过。
+  `EagleDevicesTests` 的 “Private device host” 在这台机器上依旧通过，没有复现已知的失败。
+- 未验证：按任务要求没有运行 `swift run`、没有动正在运行的 dev App，因此这一页还没有经过
+  真机肉眼验收；下一个断点是由属主在 dev App 的“设置 → 技能”里看一眼扫描范围、表格列宽
+  与空状态。
+
 ## 2026-11-06 09:20 +08 — Published macOS 0.20.0
 
 - Release commit `46aa0075` (`chore: release macos 0.20.0`) bumps

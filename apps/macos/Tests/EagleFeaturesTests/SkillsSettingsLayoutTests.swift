@@ -1,0 +1,132 @@
+import AppKit
+import Foundation
+import SwiftUI
+import Testing
+
+@testable import EagleFeatures
+
+/// The 技能 page as a person meets it: the rendered tree carries the scan roots, the skill
+/// rows, the search field and the plain statement that nothing is connected to a Bot yet.
+@Suite("Skills settings layout", .serialized)
+@MainActor
+struct SkillsSettingsLayoutTests {
+  @Test("the page shows the scan roots, a skill row and the statement about Bots")
+  func skillsPage() async throws {
+    let fixture = try SkillsLayoutFixture()
+    defer { fixture.cleanUp() }
+    try fixture.writeSkill(
+      "alpha-dir", name: "alpha-skill", description: "Runs alpha.", version: "2.0.0")
+    let (model, window) = try await fixture.host()
+    defer { window.orderOut(nil) }
+    let nodes = entries(try #require(window.contentView))
+    #expect(nodes.contains { title($0) == "~/.agents/skills" }, "the automatic root is named")
+    #expect(nodes.contains { title($0) == "alpha-skill" }, "the skill's name is a column")
+    #expect(nodes.contains { title($0) == "2.0.0" }, "the skill's version is a column")
+    #expect(
+      nodes.compactMap(title).contains { $0.contains("alpha-dir") },
+      "the skill's directory is a column")
+    #expect(
+      nodes.compactMap(title).contains { $0.contains("搜索") },
+      "the keyword field is on the page")
+    #expect(
+      nodes.compactMap(title).contains { $0.contains("还没有连接到任何 Bot") },
+      "the page says plainly that no Bot uses these skills yet")
+    #expect(model.skills.count == 1)
+  }
+
+  @Test("a page with no skills says so instead of showing an empty table")
+  func emptyState() async throws {
+    let fixture = try SkillsLayoutFixture()
+    defer { fixture.cleanUp() }
+    let (_, window) = try await fixture.host()
+    defer { window.orderOut(nil) }
+    let nodes = entries(try #require(window.contentView))
+    #expect(
+      nodes.compactMap(title).contains { $0.contains("还没有找到技能") },
+      "the empty state is written down")
+  }
+
+  private func title(_ node: NSObject) -> String? {
+    for name in ["AXTitle", "AXDescription", "AXValue"] {
+      if let value = attribute(node, name) as? String, !value.isEmpty { return value }
+    }
+    return nil
+  }
+
+  private func attribute(_ node: NSObject, _ name: String) -> Any? {
+    let selector = NSSelectorFromString(
+      [
+        "AXTitle": "accessibilityTitle", "AXDescription": "accessibilityLabel",
+        "AXChildren": "accessibilityChildren", "AXValue": "accessibilityValue",
+      ][name] ?? name)
+    if node.responds(to: selector) { return node.perform(selector)?.takeUnretainedValue() }
+    let legacy = NSSelectorFromString("accessibilityAttributeValue:")
+    guard node.responds(to: legacy) else { return nil }
+    return node.perform(legacy, with: name)?.takeUnretainedValue()
+  }
+
+  private func entries(_ node: Any) -> [NSObject] {
+    guard let element = node as? NSObject else { return [] }
+    return [element] + ((attribute(element, "AXChildren") as? [Any]) ?? []).flatMap(entries)
+  }
+}
+
+/// A temporary home, its own defaults suite and a hosted settings window on the 技能 page.
+@MainActor
+private struct SkillsLayoutFixture {
+  let home: URL
+  let defaults: UserDefaults
+  private let suiteName: String
+
+  init() throws {
+    suiteName = "eagle.skills.layout.\(UUID().uuidString)"
+    defaults = try #require(UserDefaults(suiteName: suiteName))
+    home = FileManager.default.temporaryDirectory
+      .appendingPathComponent("eagle-skills-layout-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: home.appendingPathComponent(".agents/skills", isDirectory: true),
+      withIntermediateDirectories: true)
+  }
+
+  func writeSkill(_ folder: String, name: String, description: String, version: String) throws {
+    let directory = home.appendingPathComponent(".agents/skills/\(folder)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let text = """
+      ---
+      name: \(name)
+      description: \(description)
+      version: \(version)
+      ---
+      """
+    try text.write(
+      to: directory.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+  }
+
+  func host() async throws -> (SkillsSettingsViewModel, NSWindow) {
+    let skills = SkillsSettingsViewModel(defaults: defaults, home: home)
+    let model = SettingsViewModel()
+    model.selection = .skills
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    NSApplication.shared.perform(
+      NSSelectorFromString("accessibilitySetValue:forAttribute:"),
+      with: NSNumber(value: true), with: "AXEnhancedUserInterface")
+    let host = NSHostingView(rootView: SettingsView(model: model, skills: skills))
+    host.frame = NSRect(x: 0, y: 0, width: 960, height: 900)
+    let window = NSWindow(
+      contentRect: NSRect(x: -10000, y: -10000, width: 960, height: 900),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.contentView = host
+    window.orderFront(nil)
+    host.layoutSubtreeIfNeeded()
+    // The page scans the folders when it appears; wait for the answer instead of racing it.
+    for _ in 0..<100 where skills.skills.isEmpty {
+      try? await Task.sleep(for: .milliseconds(10))
+    }
+    host.layoutSubtreeIfNeeded()
+    return (skills, window)
+  }
+
+  func cleanUp() {
+    defaults.removePersistentDomain(forName: suiteName)
+  }
+}

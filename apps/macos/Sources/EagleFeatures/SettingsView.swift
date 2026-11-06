@@ -8,6 +8,8 @@ public struct SettingsView: View {
   /// The CLI page keeps its switch state, credentials and error message across redraws: a
   /// fresh view model per render silently discarded all three.
   @StateObject private var cli: CLISettingsViewModel
+  /// The 技能 page keeps its own state: the folders it scans and the skills a person ticked.
+  @StateObject private var skills: SkillsSettingsViewModel
   @ObservedObject private var devices: DeviceSettingsViewModel
   @AppStorage("eagle.appearance") private var appearance = "system"
   @AppStorage("eagle.hideToolCalls") private var hideToolCalls = false
@@ -26,6 +28,7 @@ public struct SettingsView: View {
 
   public init(
     model: SettingsViewModel = SettingsViewModel(),
+    skills: SkillsSettingsViewModel = SkillsSettingsViewModel(),
     onClose: @escaping () -> Void = {},
     daemon: BotsDaemonSupervisor? = nil,
     devices: DeviceSettingsViewModel = .shared,
@@ -35,6 +38,7 @@ public struct SettingsView: View {
   ) {
     _model = StateObject(wrappedValue: model)
     _cli = StateObject(wrappedValue: CLISettingsViewModel(toasts: model.toasts))
+    _skills = StateObject(wrappedValue: skills)
     _expandedToolGroups = State(initialValue: expandsToolGroups)
     _expandedProviderDetails = State(initialValue: expandsProviderDetails)
     self.onClose = onClose
@@ -55,6 +59,8 @@ public struct SettingsView: View {
         bots
       case .tools:
         tools
+      case .skills:
+        skillsPage
       case .prompts:
         prompts
       case .providers:
@@ -278,6 +284,106 @@ public struct SettingsView: View {
     case .running: return Theme.Palette.accentStrong
     case .failed: return Theme.Palette.destructive
     }
+  }
+
+  /// The 技能 page: the folders the App looks in, and the skills it found there. Nothing on
+  /// this page is connected to a Bot yet: a tick is a note this machine keeps until a Bot
+  /// can use it.
+  private var skillsPage: some View {
+    VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
+      skillRootsCard
+      skillListCard
+    }
+    .task { await skills.reload() }
+  }
+
+  /// Where skills are looked for: the automatic folder plus the ones a person added.
+  private var skillRootsCard: some View {
+    sectionCard("扫描范围", detail: "每个技能是一个含 SKILL.md 的子文件夹") {
+      HStack(spacing: Theme.Layout.controlGap) {
+        if skills.scanning { SpinnerArc(size: Theme.Metric.spinnerSize) }
+        SettingsActionButton("添加文件夹") { chooseSkillFolders() }
+        SettingsActionButton("重新扫描") { Task { await skills.reload() } }
+          .disabled(skills.scanning)
+      }
+    } body: {
+      ForEach(Array(skills.rootRows.enumerated()), id: \.element.id) { index, root in
+        if index > 0 { Divider().overlay(Theme.Palette.line) }
+        SettingsSectionRow(root.displayPath, detail: root.detail) {
+          if root.removable {
+            SettingsActionButton("移除") { Task { await skills.removeRoot(root.url) } }
+              .fixedSize()
+          }
+        }
+      }
+    }
+  }
+
+  /// The skills themselves: a keyword, a filter, and one row per skill.
+  private var skillListCard: some View {
+    sectionCard("技能", detail: "扫描到的技能；勾选只是先记下来，还没有连接到任何 Bot") {
+      HStack(spacing: Theme.Layout.controlGap) {
+        SettingsTextField("搜索名称、描述或目录", text: $skills.keyword)
+          .frame(width: Self.fieldWidth)
+        PillSelect(
+          "筛选",
+          options: [
+            .init(SkillsSettingsViewModel.Filter.all, "全部"),
+            .init(SkillsSettingsViewModel.Filter.selected, "已勾选"),
+            .init(SkillsSettingsViewModel.Filter.unselected, "未勾选"),
+          ],
+          selection: $skills.filter
+        )
+      }
+    } body: {
+      SettingsStatusNote("技能还没有连接到任何 Bot；这里的选择只保存在这台机器上。")
+      Divider().overlay(Theme.Palette.line)
+      SettingsStatusNote(
+        "共 \(skills.totalCount) 个技能 · 已勾选 \(skills.selectedCount) · 显示 \(skills.visibleCount)"
+      )
+      SettingsTableHeader()
+      Divider().overlay(Theme.Palette.line)
+      if skills.visibleSkills.isEmpty {
+        SettingsStatusNote(skillsEmptyText)
+      } else {
+        ForEach(skills.visibleSkills) { skill in
+          SettingsTableRow(
+            isOn: skillBinding(skill),
+            name: skill.name,
+            version: skill.version,
+            description: skill.description,
+            path: skills.displayPath(skill.directory)
+          )
+          Divider().overlay(Theme.Palette.line)
+        }
+      }
+    }
+  }
+
+  /// What the list says when it has nothing to show.
+  private var skillsEmptyText: String {
+    if skills.totalCount == 0 { return "还没有找到技能：检查上面的扫描范围" }
+    return "没有符合筛选条件的技能"
+  }
+
+  /// The tick of one skill; no other skill moves with it.
+  private func skillBinding(_ skill: SkillEntry) -> Binding<Bool> {
+    Binding(
+      get: { skills.isSelected(skill) },
+      set: { skills.setSelected($0, for: skill) }
+    )
+  }
+
+  /// The native folder picker: the person chooses the folders that hold skills.
+  private func chooseSkillFolders() {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = true
+    panel.prompt = "添加"
+    panel.message = "选择存放技能的文件夹"
+    guard panel.runModal() == .OK else { return }
+    Task { await skills.addRoots(panel.urls) }
   }
 
   /// The 提示词 page: the two core prompts, because they are the first sections of every

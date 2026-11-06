@@ -33,7 +33,16 @@ struct SettingsTests {
     #expect(SettingsSection.prompts.rawValue == "提示词")
     #expect(
       SettingsSection.allCases.map(\.rawValue)
-        == ["通用", "模型", "工具", "提示词", "服务", "密码", "设备", "CLI", "用量", "关于"])
+        == ["通用", "模型", "工具", "技能", "提示词", "服务", "密码", "设备", "CLI", "用量", "关于"])
+  }
+
+  @Test("the skills own a tab of their own, right after 工具")
+  func skillsSection() {
+    #expect(SettingsSection.skills.rawValue == "技能")
+    let cases = SettingsSection.allCases.map(\.rawValue)
+    #expect(cases.firstIndex(of: "技能") == cases.firstIndex(of: "工具").map { $0 + 1 })
+    #expect(cases.firstIndex(of: "提示词") == cases.firstIndex(of: "技能").map { $0 + 1 })
+    #expect(SettingsSection.skills.symbol == "square.stack.3d.up")
   }
 
   @Test("the passwords own a tab of their own, right after 服务")
