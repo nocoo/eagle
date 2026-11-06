@@ -120,6 +120,9 @@ stable rather than lucky once.
       { "role": "tool", "error": true, "contains": "refused" }  // the tool result failed
     ],
     "modelSaw": ["- alpha · 1.0.0 — Runs alpha."],  // text a model request carried
+    "modelRequestsSeen": [               // one root request per entry, by what it carried
+      { "contains": "A 专用问题", "model": "eval-model-a", "effort": "low" }
+    ],
     "atLeast": [                         // counts over the whole transcript
       { "origin": "schedule", "count": 2 },
       { "role": "assistant", "count": 1 }
@@ -184,8 +187,11 @@ root conversation does not change that root's request classification.
 - `cli-chat` — `chat send --wait`, `chat history`, `chat watch`, and an answer aborted
   while it is still in flight; the transcript must never carry that answer.
 - `cli-agent-models` — the gateway lists two models; the second bot is moved to the second
-  one and to `high` through `bots update`, and each bot's request names its own model. The
-  settings name the default for a new bot, so the first bot keeps the model it recorded.
+  one and to `high` through `bots update`. Each bot is asked a distinct question and
+  `modelRequestsSeen` asserts that the request carrying that question named that bot's
+  model and reasoning effort, so a run where both bots used one model (or the reflection
+  answered) fails. The settings name the default for a new bot, so the first bot keeps the
+  model it recorded.
 - `cli-isolation` — a real CLI turn and Bash tool prove the tool's home is the case home,
   not the runner's inherited home.
 - `cli-memory` — two CLI turns write and read a Bot-scoped memory.

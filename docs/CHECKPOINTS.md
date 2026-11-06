@@ -1,5 +1,29 @@
 # 用户视角检查点
 
+## 2026-11-06 23:05 +08 — 每个 Bot 自己的模型与等级：评审第一轮修完
+
+- 模型发现不再借用 pi-ai 的 ModelsStore：同一个 provider 换地址/换 Key 后失败重试时，旧缓存的
+  `baseUrl` 不会复活；改 provider id 时旧 provider 从集合里删除，活着的 Harness 取不到旧端点与旧 Key。
+  网关只发布 id，能力不按名字猜：窗口/上限是守护进程声明的 200000/8192，七个等级原样映射（`off` →
+  `none`），真实 Responses 抓包证明 `xhigh`/`max`/`none` 原样进请求体，上游拒绝就是本次运行报错。
+- 旧 Bot 缺 `thinkingLevel` 时在启动迁移里一次写死当前默认（在 prepare 与 recovery 之前），之后
+  `#storedLevel` 只读目录，不再回落到可变默认；只有新建 Bot 用默认。空动作/重开/只改等级/第二个 daemon
+  都保留第一次写入的等级。
+- provider 变更在 recovery 之前应用（`start(prepare)`），活着的会话收到一次 `configureAgent`；某个 Bot
+  跟不上时只把它标成 unavailable 并留一条 propagated warn，其余 Bot 继续，不回退旧端点。真实 HTTP 测试
+  证明两个 Bot 的请求分别打到 A、B 两个端点与 Key。
+- 换模型改为“目录先是真相”：先校验、写目录、再配置会话；会话拒绝时是“已保存但未应用”的显式错误，
+  `applied` 记录（而不是目录相等）决定同样的改动是否要再配置；重试会真的再配置，第三次才是空操作。
+  进行中的 warm-up open 先等待，整个改动持有 settling 窗口，安装后的 handle 收到新的一对。
+  前端：每行自己的拒绝保留（换 Bot、别的字段成功都不会擦掉），模型发现失败会重试并在检查器 模型 行显示。
+- 验收用例加强：`cli-agent-models` 用两个不同问题 + `modelRequestsSeen` 断言“带这个问题的那次请求”模型名
+  与思考等级；把期望改成同一个模型会失败，证明它不是靠两个 Bot 同名或反思请求蒙过。
+- 门禁：`apps/bots` `npm run check` 1099 tests / 96.00% 行 / 89.13% 分支 / 91.28% 函数，`test:crash` 5/5；
+  `apps/bots-macos` 156、`apps/macos` 397 + 81 + 52 + 37；`swift format lint --strict` 两包干净；
+  `check:design` 与 `test:design`（91）通过；`npm --prefix apps/bots run eval` 26/26。
+- 未验证：真实网关上的两个模型与 `xhigh`/`max` 的上游接受度（网关不发布能力，只有抓包证据）；没有
+  `swift run` 的开发 App 肉眼验收（协调者执行）；没有 Herdr 采集、查看器鉴权、D1、已安装 App 或真机双 Mac。
+
 ## 2026-11-06 20:51 +08 — 每个 Bot 自己的模型与思考等级
 
 - 设置里的模型/思考等级现在只是“新建 Bot 的默认值”，已有 Bot 不再被整体改写；每个 Bot 在目录里存

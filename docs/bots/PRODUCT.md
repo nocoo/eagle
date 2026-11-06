@@ -181,7 +181,10 @@ The gateway (address, key) is shared by every bot: one endpoint, one key, one pl
 change them. The model and the reasoning level are the bot's own.
 
 - The settings name the **defaults**: the model and the level a bot created from now on
-  records. Changing them never moves a bot that already exists.
+  records. Changing them never moves a bot that already exists — a bot created before the
+  level existed is given the current default once, so it stops following it.
+- The inspector stays usable while the bot is answering: only the row being saved is
+  disabled, and the rest of the panel keeps its state.
 - Every bot stores its own pair, and the inspector shows it and changes it. The change
   reaches the next request the bot prepares: an answer that is running keeps the model
   and the level it started with, and nothing is aborted, reset or restarted.

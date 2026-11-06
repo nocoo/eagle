@@ -41,7 +41,7 @@
         "send",
         "eval cli-agent-models",
         "--text",
-        "你用的是哪个模型？",
+        "A 专用问题：你用的是哪个模型？",
         "--wait",
         "--json"
       ],
@@ -55,7 +55,7 @@
         "send",
         "eval second",
         "--text",
-        "你用的是哪个模型？",
+        "B 专用问题：你用的是哪个模型？",
         "--wait",
         "--json"
       ],
@@ -70,10 +70,21 @@
         "contains": "第一个 Bot 用自己的模型回答了。"
       }
     ],
-    "modelSaw": ["\"model\":\"eval-model-b\""],
     "modelRequests": {
       "max": 4
     },
-    "noErrors": true
+    "noErrors": true,
+    "modelRequestsSeen": [
+      {
+        "contains": "A 专用问题",
+        "model": "eval-model-a",
+        "effort": "low"
+      },
+      {
+        "contains": "B 专用问题",
+        "model": "eval-model-b",
+        "effort": "high"
+      }
+    ]
   }
 }

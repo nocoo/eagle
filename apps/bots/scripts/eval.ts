@@ -80,6 +80,15 @@ type CaseFile = {
     /** Text any model request carried: how a case proves what the model was given. */
     readonly modelSaw?: readonly string[];
     /**
+     * One request per entry: the body carried `contains` and named exactly `model`, at
+     * `effort` when given. How a case proves which bot asked which model.
+     */
+    readonly modelRequestsSeen?: readonly {
+      readonly contains: string;
+      readonly model: string;
+      readonly effort?: string;
+    }[];
+    /**
      * Text the **first** non-reflection request's system content carried: how a case pins a
      * prompt section to the request a run actually starts with, not to a later replay.
      */
@@ -1174,6 +1183,28 @@ const runCase = async (
     }
     for (const tool of expect.toolsCalled ?? []) {
       if (!view.tools.includes(tool)) failure(`the model never called ${tool}`);
+    }
+    for (const wanted of expect.modelRequestsSeen ?? []) {
+      const match = model.requests.find(
+        (request) => !request.reflection && request.body.includes(wanted.contains),
+      );
+      if (match === undefined) {
+        failure(`no root model request carried ${wanted.contains}`);
+      }
+      const body = JSON.parse(match.body) as {
+        model?: string;
+        reasoning?: { effort?: string };
+      };
+      if (body.model !== wanted.model) {
+        failure(
+          `the request carrying ${wanted.contains} named ${String(body.model)}, expected ${wanted.model}`,
+        );
+      }
+      if (wanted.effort !== undefined && body.reasoning?.effort !== wanted.effort) {
+        failure(
+          `the request carrying ${wanted.contains} asked for ${String(body.reasoning?.effort)}, expected ${wanted.effort}`,
+        );
+      }
     }
     for (const needle of expect.modelSaw ?? []) {
       if (!model.requests.some((request) => request.body.includes(needle))) {

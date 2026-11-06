@@ -424,19 +424,25 @@ report.
 
 ## Per-bot agent
 
-`PATCH /v1/bots/:id` accepts `model` (an id the gateway lists) and `thinkingLevel` (one of
-the seven levels), which are that bot's own choice: the catalog records them and a live
-conversation follows in place. `GET /v1/models` is a read-only view of the gateway's model
-list and of what the daemon knows about each model, so a picker never has to know the
-gateway itself. The `agent` capability is `true`.
+`PATCH /v1/bots/:id` accepts `model` (any id the daemon will request: the gateway's list
+is a suggestion, and the gateway is the authority on whether the model exists) and
+`thinkingLevel` (one of the seven levels), which are that bot's own choice: the catalog
+records them and a live conversation follows in place. `GET /v1/models` is a read-only view
+of the gateway's model list and of what the daemon will request from each model, so a
+picker never has to know the gateway itself. The `agent` capability is `true`.
 
 - **The pair is one change.** A request that names a model, a level, or both is answered
   with the pair the bot ends up running with. The catalog is written once and the
   conversation is configured once, so a bot never records a model it does not run with.
 - **The level must be one of the seven.** Anything else, and a request that names no field
-  at all, is a `400 invalid_command` and nothing is written. A model the daemon can
-  describe more precisely — none today, because the gateway publishes ids only — narrows
-  the set it accepts.
+  at all, is a `400 invalid_command` and nothing is written. The check is against the
+  model the bot ends up with — a level-only request is judged against the model the bot
+  already stores — and it narrows only when the daemon has explicit metadata for that
+  model, which the ids-only gateway does not publish today.
+- **Any model id is accepted; the gateway is the authority.** A name the gateway does not
+  list is registered and kept across a discovery outage, so a bot that stores it keeps
+  working; the daemon never replaces it with the default. Whether the model exists is
+  answered by the next request, as the run's error.
 - **The change reaches the next request, not the running one.** A conversation that is
   answering keeps its answer: the model and the level of a request are fixed when it is
   prepared, so the change applies from the next prepared request. Nothing is aborted,
@@ -444,6 +450,12 @@ gateway itself. The `agent` capability is `true`.
 - **A closed bot takes the pair when it opens.** A conversation that was closed is
   configured with the stored pair before it resumes, so a reopened bot runs with what the
   catalog says and not with what an earlier session left behind.
+- **Two stores, no cross-store transaction.** The catalog is the truth and the live
+  conversation is a copy of it. The change reaches the conversation first; if the catalog
+  then cannot record it, the conversation is put back on the pair the catalog holds. If
+  that cannot be done either, the bot is closed and reported unavailable until it is
+  reopened: nothing keeps answering with a pair the catalog does not hold, and the
+  refusal is a distinct error, never a success.
 
 An applied agent change is broadcast as a bot-scoped `agent` event, carrying the complete
 `AgentView` with `rev` and `trace`. It replaces only the current agent configuration; the
@@ -455,9 +467,9 @@ additive event: older clients consume its revision and ignore it under I8.
 
 ```json
 { "models": ["auto/gpt-6-luna"],
-  "modelDetails": [{ "id": "auto/gpt-6-luna", "contextWindow": 272000,
-    "maxTokens": 128000, "reasoning": true,
-    "thinkingLevels": ["off", "low", "medium", "high", "xhigh", "max"] }] }
+  "modelDetails": [{ "id": "auto/gpt-6-luna", "contextWindow": 200000,
+    "maxTokens": 8192, "reasoning": true,
+    "thinkingLevels": ["off", "minimal", "low", "medium", "high", "xhigh", "max"] }] }
 ```
 
 `models` stays a list of ids, so a client that reads only it loses nothing.
