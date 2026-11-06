@@ -93,6 +93,7 @@ const bench = async (
   let busyGate = options.busyGate;
   let opens = 0;
   let closes = 0;
+  let closing = false;
   const closeDeadlines: number[] = [];
   const specs: RuntimeBotSpec[] = [];
   const agents: { model: { provider: string; modelId: string }; thinkingLevel: string }[] = [];
@@ -111,6 +112,8 @@ const bench = async (
           model: { provider: string; modelId: string };
           thinkingLevel: string;
         }) => {
+          // A conversation on its way out cannot take a new pair.
+          if (closing) throw new Error("the conversation is closing");
           agents.push(change);
         },
         configureToolGroups: async (groups: readonly string[]) => {
@@ -122,12 +125,14 @@ const bench = async (
         },
         close: async (_trace: string, deadlineMs: number) => {
           closes += 1;
+          closing = true;
           closeDeadlines.push(deadlineMs);
           if (options.waitDeadline === true) {
             await new Promise((resolve) => setTimeout(resolve, deadlineMs));
             return "timeout" as const;
           }
           if (options.closeGate !== undefined) await options.closeGate;
+          closing = false;
           if (options.closeOutcome === "rejected") throw new Error("close failed");
           if (options.closeOutcome === "timeout") return "timeout" as const;
           await handle.close("tr_close_probe", 100);
@@ -508,6 +513,42 @@ test("a failed catalog write puts the conversation back on the pair it had", asy
     );
     const stored = (await setup.directory.load())[0];
     assert.equal(stored?.model.modelId, "faux-1", "the catalog kept the old pair");
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("a change that arrives while the bot is closing is stored and the next open uses it", async () => {
+  let release: () => void = () => undefined;
+  const closed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const setup = await bench({ bots: ["a"], closeGate: closed });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_closing_0001");
+    // An idle close starts and is held open by the gate: the handle is on its way out.
+    await setup.timers.advance(1_000);
+    const edit = setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-7" }, thinkingLevel: "low" },
+      "tr_closing_0002",
+    );
+    await settle();
+    release();
+    await edit;
+    const stored = (await setup.directory.load())[0];
+    assert.equal(
+      stored?.model.modelId,
+      "faux-7",
+      "the pair is the catalog's, even without a handle",
+    );
+    assert.equal(stored?.thinkingLevel, "low");
+    await setup.registry.open("b_bot0", "tr_closing_0003");
+    const spec = setup.specs.at(-1);
+    assert.equal(spec?.model.modelId, "faux-7", "the reopened bot runs with the stored pair");
+    assert.equal(spec?.thinkingLevel, "low");
   } finally {
     await setup.registry.shutdown();
     await setup.cleanup();

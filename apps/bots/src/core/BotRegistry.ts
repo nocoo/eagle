@@ -416,32 +416,42 @@ export class BotRegistry {
         );
       }
       const at = (this.#options.now?.() ?? new Date()).toISOString();
-      const handle = entry.handle;
-      // The live conversation follows first: a conversation that refuses the pair must
-      // not be recorded as having it.
-      if (handle?.configureAgent !== undefined) {
-        await handle.configureAgent({ model, thinkingLevel: level }, trace);
-      }
+      // The edit holds a lease while it runs, and it waits for a close that is already in
+      // flight: an idle close must not take the handle away in the middle of the change.
+      // A close that wins leaves no handle, and then the catalog alone records the pair
+      // the next open configures.
+      const leased = this.touch(botId);
       try {
-        const config = await this.#write(trace, botId, () =>
-          this.#options.directory.setAgent(botId, { model, thinkingLevel: level }, at),
-        );
-        entry.config = config;
-      } catch (error) {
-        // The catalog is the truth: a conversation that took the pair and a catalog that
-        // did not would run two different pairs. The old pair goes back.
+        if (entry.settling !== undefined) await entry.settling.catch(() => undefined);
+        const handle = entry.handle;
+        // The live conversation follows first: a conversation that refuses the pair must
+        // not be recorded as having it.
         if (handle?.configureAgent !== undefined) {
-          await handle
-            .configureAgent(
-              {
-                model: current.model,
-                thinkingLevel: currentLevel,
-              },
-              trace,
-            )
-            .catch(() => undefined);
+          await handle.configureAgent({ model, thinkingLevel: level }, trace);
         }
-        throw error;
+        try {
+          const config = await this.#write(trace, botId, () =>
+            this.#options.directory.setAgent(botId, { model, thinkingLevel: level }, at),
+          );
+          entry.config = config;
+        } catch (error) {
+          // The catalog is the truth: a conversation that took the pair and a catalog that
+          // did not would run two different pairs. The old pair goes back.
+          if (handle?.configureAgent !== undefined) {
+            await handle
+              .configureAgent(
+                {
+                  model: current.model,
+                  thinkingLevel: currentLevel,
+                },
+                trace,
+              )
+              .catch(() => undefined);
+          }
+          throw error;
+        }
+      } finally {
+        if (leased) this.release(botId);
       }
       return this.#summary(entry);
     });
