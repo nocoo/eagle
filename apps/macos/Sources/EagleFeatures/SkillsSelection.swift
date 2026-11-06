@@ -35,6 +35,9 @@ public final class SkillsSelection: ObservableObject {
   private let push: SkillPush
   /// The skills the newest scan found, in its order: a push names only these.
   private var scanned: [ScannedSkill] = []
+  /// Which scan is the newest. A page takes a number before it scans, and only that scan may
+  /// teach this machine what exists, so only it may push.
+  private var scanGeneration = 0
   /// The one queue every tick goes through.
   private var pushTask: Task<Void, Never>?
 
@@ -60,10 +63,21 @@ public final class SkillsSelection: ObservableObject {
     selectedPaths.contains(skill.id)
   }
 
-  /// What the newest scan found, in its order. A skill the scan no longer finds is not
-  /// pushed as if it still existed.
-  func learn(_ skills: [ScannedSkill]) {
+  /// A page asks for the next generation before it scans. A scan that was superseded while it
+  /// ran must not answer: two pages share one selection, and the list that arrives last is not
+  /// the newest one.
+  public func beginScan() -> Int {
+    scanGeneration += 1
+    return scanGeneration
+  }
+
+  /// What a scan found, if no newer scan began after it. A skill the scan no longer finds is
+  /// not pushed as if it still existed, and a superseded scan teaches nothing.
+  @discardableResult
+  func learn(_ skills: [ScannedSkill], generation: Int) -> Bool {
+    guard generation == scanGeneration else { return false }
     scanned = skills
+    return true
   }
 
   /// The ticked skills as the daemon stores them, in the order the page lists them.

@@ -171,6 +171,9 @@ public final class SkillsSettingsViewModel: ObservableObject {
     requestCounter += 1
     let request = requestCounter
     newestRequest = request
+    // The shared selection decides which scan is the newest across every window: this one
+    // must not teach the machine an older list after another page already did.
+    let generation = selection.beginScan()
     runningScans += 1
     scanning = true
     defer {
@@ -187,8 +190,9 @@ public final class SkillsSettingsViewModel: ObservableObject {
     rootStatuses = Dictionary(
       result.roots.map { ($0.id, $0.status) }, uniquingKeysWith: { first, _ in first })
     // A push names the version, description and path this scan found, so the selection is
-    // told what exists before anything is sent.
-    selection.learn(
+    // told what exists before anything is sent. A newer page's scan makes this one stale, and
+    // a stale scan neither teaches the selection nor pushes.
+    let learned = selection.learn(
       result.skills.map { skill in
         ScannedSkill(
           id: skill.id,
@@ -199,7 +203,9 @@ public final class SkillsSettingsViewModel: ObservableObject {
             path: displayPath(skill.directory)
           )
         )
-      })
+      },
+      generation: generation)
+    guard learned else { return }
     // The scan is also what a page visit sends: the same path is how a failed push is tried
     // again.
     selection.pushSelection()

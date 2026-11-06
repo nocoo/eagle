@@ -30,6 +30,29 @@ private actor SkillPushTimeline {
   }
 }
 
+/// Holds one scan open, so a newer page's scan can finish while it is still running.
+private actor ScanGate {
+  private var armed = false
+  private var pending: [CheckedContinuation<Void, Never>] = []
+
+  func arm() { armed = true }
+
+  func wait() async {
+    guard armed else { return }
+    armed = false
+    await withCheckedContinuation { continuation in
+      pending.append(continuation)
+    }
+  }
+
+  func release() {
+    for continuation in pending { continuation.resume() }
+    pending = []
+  }
+
+  var isWaiting: Bool { !pending.isEmpty }
+}
+
 /// A push that always answers with the daemon's own refusal.
 private actor PushFailure {
   func push(_ skills: [SelectedSkill]) async throws {
@@ -69,8 +92,11 @@ private struct SelectionFixture {
       to: directory.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
   }
 
-  func page(_ selection: SkillsSelection) -> SkillsSettingsViewModel {
-    SkillsSettingsViewModel(defaults: defaults, home: home, selection: selection)
+  func page(
+    _ selection: SkillsSelection,
+    scan: @escaping @Sendable ([URL]) async -> SkillScanResult = { SkillScanner.scan(roots: $0) }
+  ) -> SkillsSettingsViewModel {
+    SkillsSettingsViewModel(defaults: defaults, home: home, scan: scan, selection: selection)
   }
 
   func cleanUp() {
@@ -166,6 +192,53 @@ struct SkillsSelectionTests {
     #expect(second.isSelected(alpha))
     #expect(second.selectedSkills.map(\.name) == ["alpha-skill"])
     #expect(second.pushNote == nil)
+  }
+
+  @Test("an older page's late scan cannot push the list it found")
+  func staleScanCannotPush() async throws {
+    let fixture = try SelectionFixture()
+    defer { fixture.cleanUp() }
+    let timeline = SkillPushTimeline()
+    let selection = SkillsSelection(
+      defaults: fixture.defaults, push: { try await timeline.push($0) })
+    let gate = ScanGate()
+    let older = fixture.page(
+      selection,
+      scan: { roots in
+        await gate.wait()
+        return SkillScanner.scan(roots: roots)
+      })
+    // The newer page sees the machine as it is now: alpha's folder is gone.
+    let newer = fixture.page(
+      selection,
+      scan: { roots in
+        let result = SkillScanner.scan(roots: roots)
+        return SkillScanResult(
+          skills: result.skills.filter { $0.name == "beta-skill" }, roots: result.roots)
+      })
+    await older.reload()
+    await selection.awaitPush()
+    let alpha = try #require(older.skills.first { $0.name == "alpha-skill" })
+    older.setSelected(true, for: alpha)
+    await selection.awaitPush()
+
+    await gate.arm()
+    let stale = Task { await older.reload() }
+    while await !gate.isWaiting { try await Task.sleep(for: .milliseconds(5)) }
+    await newer.reload()
+    await selection.awaitPush()
+    #expect(selection.selectedSkills.isEmpty, "the newer page learned a machine without alpha")
+    let pushes = await timeline.events.filter { $0.hasPrefix("start:") }.count
+
+    await gate.release()
+    await stale.value
+    await selection.awaitPush()
+    #expect(
+      await timeline.last.map(\.name) == [],
+      "the daemon keeps the newer list: the stale scan never pushes")
+    #expect(
+      await timeline.events.filter { $0.hasPrefix("start:") }.count == pushes,
+      "the stale scan sends nothing at all")
   }
 
   @Test("a refusal is part of the shared state, so every page says it")
