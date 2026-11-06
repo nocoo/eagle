@@ -74,6 +74,7 @@ test("saved gateway credentials authorize model requests on every daemon boot", 
       thinkingLevel: "medium",
       toolGroups: ["core", "herdr"],
       corePrompt: "你是一个务实、友好的 agent。",
+      skills: [],
     });
     let botId: string | undefined;
     for (const boot of [1, 2]) {
@@ -881,6 +882,85 @@ test("the daemon reads the machine prompt and saves the core prompt", async () =
   } finally {
     if (previous === undefined) delete process.env.BOTS_MACHINE_AGENTS;
     else process.env.BOTS_MACHINE_AGENTS = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// The ticks the App pushes are the daemon's only skill input (PROTOCOL.md, "Gateway
+// settings"): stored beside the gateway, reported back, and bounded where it is written.
+test("the daemon stores the skills the App pushed and refuses a broken selection", async () => {
+  const root = await daemonRoot("bots-main-skills-");
+  try {
+    const config = readConfig({ argv: ["--root", root, "--port", "0"], env: {} });
+    const daemon = await startDaemon(config);
+    const authorized = (path: string, init: RequestInit = {}) =>
+      fetch(`http://127.0.0.1:${daemon.port}${path}`, {
+        ...init,
+        headers: {
+          authorization: `Bearer ${daemon.token}`,
+          "content-type": "application/json",
+          ...(init.headers ?? {}),
+        },
+      });
+    try {
+      const skill = {
+        name: "humanizer-zh",
+        version: "1.0.0",
+        description: "去除文本里的 AI 痕迹。",
+        path: "~/.agents/skills/humanizer-zh",
+      };
+      const initial = (await (await authorized("/v1/settings")).json()) as {
+        settings: { skills: unknown[] };
+      };
+      assert.deepEqual(initial.settings.skills, [], "a machine without ticks stores none");
+
+      const saved = await authorized("/v1/settings", {
+        method: "PUT",
+        body: JSON.stringify({ skills: [skill] }),
+      });
+      assert.equal(saved.status, 200);
+      assert.deepEqual(
+        ((await saved.json()) as { settings: { skills: unknown[] } }).settings.skills,
+        [skill],
+      );
+      assert.deepEqual((await readGateway(root))?.skills, [skill]);
+
+      const absent = await authorized("/v1/settings", {
+        method: "PUT",
+        body: JSON.stringify({ corePrompt: "只说结论。" }),
+      });
+      assert.equal(absent.status, 200);
+      assert.deepEqual(
+        ((await absent.json()) as { settings: { skills: unknown[] } }).settings.skills,
+        [skill],
+        "an absent field keeps the stored ticks",
+      );
+
+      for (const body of [
+        { skills: [skill, skill] },
+        { skills: [{ ...skill, path: "relative/alpha" }] },
+        { skills: [{ ...skill, description: "x".repeat(501) }] },
+      ]) {
+        const refused = await authorized("/v1/settings", {
+          method: "PUT",
+          body: JSON.stringify(body),
+        });
+        assert.equal(refused.status, 400, `${JSON.stringify(body)} is refused`);
+        const error = (await refused.json()) as { error: { kind: string } };
+        assert.equal(error.error.kind, "invalid_command");
+      }
+      assert.deepEqual((await readGateway(root))?.skills, [skill], "a refusal writes nothing");
+
+      const cleared = await authorized("/v1/settings", {
+        method: "PUT",
+        body: JSON.stringify({ skills: [] }),
+      });
+      assert.equal(cleared.status, 200);
+      assert.deepEqual((await readGateway(root))?.skills, []);
+    } finally {
+      await daemon.close();
+    }
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

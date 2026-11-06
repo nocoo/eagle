@@ -16,6 +16,7 @@ test("the settings endpoints read, validate, save and test behind the bearer", a
     thinkingLevel: "medium",
     toolGroups: ["core", "coding", "herdr"],
     corePrompt: "你是一个务实、友好的 agent。",
+    skills: [],
   };
   const saves: GatewayInput[] = [];
   const tests: GatewayInput[] = [];
@@ -38,6 +39,7 @@ test("the settings endpoints read, validate, save and test behind the bearer", a
         thinkingLevel: "medium",
         toolGroups: ["core", "coding", "herdr"],
         corePrompt: input.corePrompt ?? "你是一个务实、友好的 agent。",
+        skills: input.skills ?? [],
       };
       return { settings: stored };
     },
@@ -125,6 +127,7 @@ test("the core prompt is saved with the gateway, and the machine prompt is read-
     thinkingLevel: "medium",
     toolGroups: ["persona", "machine", "core", "coding"],
     corePrompt: "旧的人格",
+    skills: [],
   };
   const settings: GatewayApi = {
     public: () => stored,
@@ -177,6 +180,7 @@ test("the settings read carries the tool catalogue, and says nothing when it has
       thinkingLevel: "medium",
       toolGroups: ["core", "coding"],
       corePrompt: "",
+      skills: [],
     }),
     save: async () => ({ settings: settings.public() }),
     test: async () => ({ ok: true, message: "ok", latencyMs: 1 }),
@@ -211,5 +215,78 @@ test("the settings read carries the tool catalogue, and says nothing when it has
     assert.equal(body.tools, undefined, "an older daemon publishes no catalogue");
   } finally {
     await without.close();
+  }
+});
+
+test("the skills selection is validated on the wire and crosses it additively", async () => {
+  let stored: PublicGateway = {
+    configured: true,
+    provider: "magpie",
+    baseUrl: "http://127.0.0.1:3425/v1",
+    model: "auto/gpt-6-astra",
+    hasApiKey: true,
+    thinkingLevel: "medium",
+    toolGroups: ["persona", "machine", "core", "coding"],
+    corePrompt: "只说结论。",
+    skills: [],
+  };
+  const saves: GatewayInput[] = [];
+  const settings: GatewayApi = {
+    public: () => stored,
+    save: async (input) => {
+      saves.push(input);
+      if (input.skills !== undefined) stored = { ...stored, skills: input.skills };
+      return { settings: stored };
+    },
+    test: async () => ({ ok: true, message: "ok", latencyMs: 1 }),
+  };
+  const stack = await startStack({ settings });
+  const put = (body: unknown) =>
+    fetch(`http://127.0.0.1:${stack.port}/v1/settings`, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${stack.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  try {
+    const skill = {
+      name: "humanizer-zh",
+      version: "1.0.0",
+      description: "去除文本里的 AI 痕迹。",
+      path: "~/.agents/skills/humanizer-zh",
+    };
+
+    const absent = await put({ corePrompt: "只说结论。" });
+    assert.equal(absent.status, 200);
+    assert.equal(saves.at(-1)?.skills, undefined, "an absent field keeps what is stored");
+
+    const saved = await put({ skills: [skill] });
+    assert.equal(saved.status, 200);
+    const body = (await saved.json()) as { settings: PublicGateway };
+    assert.deepEqual(body.settings.skills, [skill]);
+    assert.deepEqual(saves.at(-1)?.skills, [skill]);
+
+    const read = (await (
+      await fetch(`http://127.0.0.1:${stack.port}/v1/settings`, {
+        headers: { authorization: `Bearer ${stack.token}` },
+      })
+    ).json()) as { settings: PublicGateway };
+    assert.deepEqual(read.settings.skills, [skill], "GET reports the same shape");
+
+    const cleared = await put({ skills: [] });
+    assert.equal(cleared.status, 200);
+    assert.deepEqual(((await cleared.json()) as { settings: PublicGateway }).settings.skills, []);
+
+    for (const malformed of [[{ name: "alpha" }], [null], "alpha", [{ name: 5 }]]) {
+      const refused = await put({ skills: malformed });
+      assert.equal(refused.status, 400, `${JSON.stringify(malformed)} is refused`);
+      const error = (await refused.json()) as { error: { kind: string; message: string } };
+      assert.equal(error.error.kind, "invalid_command");
+      assert.match(error.error.message, /skill/i);
+    }
+  } finally {
+    await stack.close();
   }
 });

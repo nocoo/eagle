@@ -329,6 +329,7 @@ Projection, which is also part of the mapping contract:
 | Search provider | `<XDG_CONFIG_HOME or ~/.config>/eagle-bots/providers.json` (0600) | Independent DeepSeek/Tavily keys with one selected provider. The `search` tool group is off by default. Its deferred `web_search`/`web_fetch` use a stable routing client that resolves the selected provider/key at invocation, including existing conversations; missing configuration is an error result, and failures never trigger fallback. Successful calls each book one `search` call |
 | Usage statistics | `<root>/usage.sqlite`, 90 days | `usage_daily(bot_id, day, source, tokens, calls, cost_usd)` plus `last_seen(bot_id, total_tokens, cost_usd)` so a cumulative model report becomes a delta. A source is a string (`model`, `search`), so a new spender needs no schema change; the first token-only `daily` table is migrated into the `model` source on open. Kept outside a bot's session, so deleting a bot keeps its history; pruned on boot and on write |
 | Model gateway | `<root>/gateway.json` (0600), dotenv fallback | The daemon registers one provider from the stored `{provider, baseUrl, model, apiKey}`. `PUT /v1/settings` rewrites the file, swaps the process-wide `Models` (the Harness reads it through a getter), binds the saved key directly to the provider auth resolver (the same path used on startup, without mutating process environment), and moves every bot to the new model in place with `conversation.configure({model})`; a closed bot opens with the catalog's new model. A bot naming another id before that settles `no_model` |
+| `skills` (daemon) | from `gateway.json`, default none | The App's ticks are the only input: the daemon never scans a folder for skills. The selection becomes the `bots-skills` prompt index and `skill_read`, read again on every ask, so a tick lands on the next turn instead of at the next Harness open (see "Skills" below) |
 | `contextRetentionMs`, `documentRetentionMs` | 600 000 (default) | Idle close frees memory; defaults keep reopen cheap |
 
 Each bot owns its settings object so one bot's policy cannot affect another
@@ -367,6 +368,25 @@ third-party plugins are explicitly outside the product scope.
   change and remains outside the client's current text-only tool-result shape.
 - A hard kill of the daemon can orphan an external process. Durable recovery records an
   interrupted unsafe call; it does not promise to undo effects or kill arbitrary old pids.
+
+### Skills
+
+`bots-skills` is installed whenever the runtime is given a selection reader, and it belongs to
+no tool group: the person's ticks are the switch, and a group switch would be a second,
+contradictory one.
+
+- Its one section re-reads the selection on every ask. With nothing ticked it renders nothing
+  at all; otherwise it lists each skill as `name · version — description` (the version is
+  left out when the skill states none), in the order the App pushed, on one line per skill.
+  Building the section does no filesystem work.
+- Its one tool, `skill_read({ name })`, reads `SKILL.md` inside that selected skill's
+  directory. It takes a name and never a path, so the model cannot turn it into a file
+  reader: an unselected name, a manifest that is gone, unreadable or not a regular file is
+  refused with a message naming what is selected. The text is cut at 32 000 characters with a
+  `[truncated at 32000 characters]` note.
+- `~/…` paths are expanded against the daemon's home, which is where the App scanned. A
+  selection change reaches a conversation that is already open: the section and the tool both
+  read the live list, and no `root.configure`, reopen or subscription is involved.
 
 ### Tool groups
 

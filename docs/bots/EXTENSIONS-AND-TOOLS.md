@@ -92,6 +92,7 @@ because extensions can capture Bot-specific services and directories.
 | `search` | `bots-search`, `tool-search` | Optional, **off by default** | `tool_search` is offered; `web_search` and `web_fetch` are deferred |
 | `decision` | `bots-decision`, `tool-search` | Optional, **off by default** | `tool_search` is offered; `decide`, `classify`, `assess`, `rate` and `judge` are deferred |
 | `trigger` | `bots-trigger`, `tool-search` | Optional, **on by default** | `tool_search` is offered; the five `trigger_*` tools are deferred |
+| — (no group) | `bots-skills` | The person's ticks, not a switch | `skill_read`, eager: no loader |
 
 `ask_user` is the person-interface tool: it takes one to five questions, each single or
 multiple choice with two to eight options, and returns at once. The questions are the call's
@@ -132,14 +133,33 @@ loader. The normal daemon installs search even before configuration: its tools
 can explain a missing selection without making an external request. A test/host
 that supplies no search client installs no search extension or loader for it.
 
-There are **41 tool names** with all current groups registered: five filesystem/coding tools,
+There are **42 tool names** with all current groups registered: five filesystem/coding tools,
 two pull-report tools, three child-agent tools, eight Herdr tools, two search tools, five
 decision tools, five trigger tools, three peer tools, five memory tools, three shared-device
-tools (installed when the daemon supplies a device socket) and one SDK loader. A root
+tools (installed when the daemon supplies a device socket), `skill_read` and one SDK loader. A root
 conversation selects those three eagerly only when local status says remote is configured;
 local coding tools remain available under local policy. With the default selection (no
 `search`, no `decision`, no `peers`) eager selected tools are offered at once. Herdr,
 decision and trigger tools wait behind `tool_search`.
+
+### Skills
+
+The App discovers skills and the daemon stores the person's ticks (PROTOCOL.md, "Gateway
+settings"). `bots-skills` is installed whenever the daemon has a selection to read and is
+selected whatever the tool groups are: the ticks are the switch, so there is no group row,
+no `toolGroups` name and nothing to configure per Bot. With nothing ticked the extension's
+section renders nothing; its one tool refuses every name.
+
+| Tool | Input | Behavior | Replay |
+| --- | --- | --- | --- |
+| `skill_read` | `name` | The `SKILL.md` of one selected skill, read from inside that skill's stored directory; 32 000 characters then a truncation note. Only a name is accepted, never a path: an unselected name or a manifest that is gone, unreadable or not a regular file is refused | SDK default unsafe |
+
+The prompt section is an index, one line per selected skill as `name · version —
+description`, re-read on every ask, plus one sentence telling the model to call `skill_read`
+before following a skill. Building it does no filesystem work, and the order is the order the
+App pushed. The daemon never scans a directory: a tick the App does not push does not exist
+here. The macOS 技能 page owns discovery, the ticks and the push
+(`apps/macos/Sources/EagleFeatures/SkillsSettingsViewModel.swift`).
 
 ### Filesystem and coding
 
@@ -304,8 +324,9 @@ uses the existing reconnect path; errors retain their single origin identity.
 - First-party domain tools use singular `domain_verb`: `memory_read`,
   `web_fetch`, `agent_list`, `peer_send`. Groups are product categories; they need
   not be identical to prefixes (`search` groups the `web_*` tools).
-- An extension uses `bots-<group>`; existing `bots-tools` is the core name.
-  Preserve native `coding-tools` and `tool-search`. No duplicate tool names
+- An extension uses `bots-<group>`; existing `bots-tools` is the core name, and
+  `bots-skills` is named for what it carries rather than a switchable group, because the
+  person's ticks are the switch. Preserve native `coding-tools` and `tool-search`. No duplicate tool names
   across our extensions, even though the SDK permits name-based composition.
 - One operation has one name. Use arguments for scope/target, not duplicate
   `shared_memory_*` and `private_memory_*` families. Do not add synonymous

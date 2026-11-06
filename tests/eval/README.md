@@ -168,6 +168,9 @@ root conversation does not change that root's request classification.
   `--repeat 3` to prove it is stable (≈2 minutes per round).
 - `complex-self-trigger` — the model creates its own webhook trigger with
   `trigger_create`, and a delivery then reaches it.
+- `skills-enabled` — the App's ticks cross `PUT /v1/settings`, appear in the prompt, and a
+  scripted model reads one with `skill_read`; a name that was never selected is refused
+  without losing the first result.
 - `cli-surface` — the release-facing basics through the CLI: `--version`, `--skill`,
   `health`, `whoami`, `usage`, and the documented exit codes 2, 3 and 4.
 - `cli-catalog` — groups and bots created, renamed, reordered, moved and deleted only

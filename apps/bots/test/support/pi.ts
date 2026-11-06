@@ -20,6 +20,7 @@ import {
   type PiRuntimeOptions,
   type PiSettings,
 } from "../../src/runtime/pi/PiDurableRuntime.ts";
+import type { SelectedSkill } from "../../src/skills/selection.ts";
 import type { SearchClient } from "../../src/tools/search/client.ts";
 import type { MemoryToolHost, NoteToolHost, SecretsToolHost } from "../../src/tools/types.ts";
 import type { UsageMeter } from "../../src/tools/usage.ts";
@@ -48,6 +49,8 @@ export type BenchOptions = {
   /** The two core prompts, when a test asserts what the model actually receives. */
   readonly corePrompt?: () => string | undefined;
   readonly machinePrompt?: () => { readonly path: string; readonly text: string } | undefined;
+  /** The skills the person ticked, when a test asserts what the model is offered. */
+  readonly skills?: () => readonly SelectedSkill[];
   /** The bot's own sidebar line, when a test asserts what a run leaves behind. */
   readonly note?: (spec: RuntimeBotSpec) => NoteToolHost | undefined;
   /** The memory host, when a test asserts what a run wrote to a person's files. */
@@ -76,6 +79,7 @@ export const createBench = async (options: BenchOptions = {}): Promise<Bench> =>
     ...(options.usage === undefined ? {} : { usage: options.usage }),
     ...(options.corePrompt === undefined ? {} : { corePrompt: options.corePrompt }),
     ...(options.machinePrompt === undefined ? {} : { machinePrompt: options.machinePrompt }),
+    ...(options.skills === undefined ? {} : { skills: options.skills }),
     ...(options.note === undefined ? {} : { note: options.note }),
     ...(options.memory === undefined ? {} : { memory: options.memory }),
     ...(options.secrets === undefined ? {} : { secrets: options.secrets }),

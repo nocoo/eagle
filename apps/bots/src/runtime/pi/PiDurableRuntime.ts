@@ -43,6 +43,7 @@ import type {
 } from "../../core/RuntimePort.ts";
 import { type DeclaredEvent, declareEvent } from "../../log/events.ts";
 import type { Log } from "../../log/log.ts";
+import type { SelectedSkill } from "../../skills/selection.ts";
 import type { DecisionClient } from "../../tools/decision/client.ts";
 import { SocketDevicePort } from "../../tools/devices/port.ts";
 import { createHerdrClient } from "../../tools/herdr/client.ts";
@@ -198,6 +199,8 @@ export type PiRuntimeOptions = {
   readonly corePrompt?: () => string | undefined;
   /** The machine's own instructions file; read per request so an edit lands on the next turn. */
   readonly machinePrompt?: () => MachinePrompt | undefined;
+  /** The skills this person ticked for the machine's Bot service, read on every ask. */
+  readonly skills?: () => readonly SelectedSkill[];
 };
 
 async function remoteCapability(path: string | undefined): Promise<RemoteCapability> {
@@ -269,6 +272,7 @@ export class PiDurableRuntime implements RuntimePort {
         ...(this.#options.machinePrompt === undefined
           ? {}
           : { machine: this.#options.machinePrompt }),
+        ...(this.#options.skills === undefined ? {} : { skills: this.#options.skills }),
         ...(this.#options.deviceSocket === undefined
           ? {}
           : {

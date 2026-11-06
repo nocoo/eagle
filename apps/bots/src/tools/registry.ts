@@ -46,6 +46,7 @@ import { PULLS_TOOLS_EXTENSION, pullsExtension } from "./pulls/tools.ts";
 import type { SearchClient } from "./search/client.ts";
 import { SEARCH_TOOLS_EXTENSION, searchExtension } from "./search/tools.ts";
 import { SECRETS_TOOLS_EXTENSION, secretsExtension } from "./secrets/tools.ts";
+import { SKILLS_EXTENSION, type SkillToolsOptions, skillsExtension } from "./skills/tools.ts";
 import {
   type createTriggerTools,
   TRIGGER_TOOLS_EXTENSION,
@@ -62,6 +63,11 @@ import type {
 } from "./types.ts";
 
 export const BOTS_TOOLS_EXTENSION = "bots-tools";
+/**
+ * Selected by being installed, not by a tool group: the App's ticks are the switch, and a
+ * group switch would be a second, contradictory one (docs/bots/EXTENSIONS-AND-TOOLS.md).
+ */
+const GROUP_FREE_EXTENSIONS: readonly string[] = [SKILLS_EXTENSION];
 const toolSearch = createToolSearchExtension();
 const GROUP_EXTENSIONS: Record<ToolGroup, readonly string[]> = {
   persona: [PERSONA_EXTENSION],
@@ -93,6 +99,7 @@ export const selectToolExtensions = (
   );
   const names = new Set<string>();
   if (remoteConfigured && installed.has(DEVICE_EXTENSION)) names.add(DEVICE_EXTENSION);
+  for (const name of GROUP_FREE_EXTENSIONS) if (installed.has(name)) names.add(name);
   for (const group of resolveToolGroups(groups)) {
     const [owner, ...rest] = GROUP_EXTENSIONS[group];
     // A group whose own tools are not installed contributes nothing, not even its loader:
@@ -265,6 +272,8 @@ export type ToolRegistryOptions = {
   readonly pulls?: Parameters<typeof pullsExtension>[0];
   /** The bot's own sidebar note; absent only in a build with no catalog around it. */
   readonly note?: NoteToolHost;
+  /** The skills the person ticked; read per ask, so a tick lands on the next turn. */
+  readonly skills?: SkillToolsOptions["read"];
   /** The clock the note's age is read against; the daemon's own when absent. */
   readonly now?: () => number;
 };
@@ -298,6 +307,7 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
   // who this bot is comes before what it can do (docs/bots/PRODUCT.md, "Core prompts").
   if (options.persona !== undefined) registry.install(personaExtension(options.persona));
   if (options.machine !== undefined) registry.install(machineExtension(options.machine));
+  if (options.skills !== undefined) registry.install(skillsExtension({ read: options.skills }));
   registry.install(
     defineExtension({
       name: BOTS_TOOLS_EXTENSION,

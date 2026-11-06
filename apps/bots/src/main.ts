@@ -69,6 +69,7 @@ import {
 import { acquireLock, LockError } from "./server/singleton.ts";
 import { toServerEvent } from "./server/socket.ts";
 import { UsageStore } from "./server/usage.ts";
+import { normalizeSelectedSkills } from "./skills/selection.ts";
 import { ADDRESS_REFUSED, decisionRoot } from "./tools/decision/address.ts";
 import type { DecisionClient } from "./tools/decision/client.ts";
 import { probeDecision, systemOne } from "./tools/decision/systemone.ts";
@@ -453,6 +454,8 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     usage: usageStore,
     corePrompt: () => gateway?.corePrompt,
     machinePrompt: () => machinePrompt(),
+    // The App's ticks are the only input: the daemon never scans a folder for skills.
+    skills: () => gateway?.skills ?? [],
     search: () => providers.client,
     decision: () => providers.decision,
     trigger: async (spec) =>
@@ -682,7 +685,9 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
         input.apiKey !== undefined ||
         input.provider !== undefined ||
         input.thinkingLevel !== undefined;
-      const needsGateway = touchesGateway || gateway !== undefined;
+      // A file the 工具 page wrote before anyone configured a gateway is not a gateway: it
+      // must not make every later save demand fields the person never set.
+      const needsGateway = touchesGateway || (gateway?.baseUrl.length ?? 0) > 0;
       if (needsGateway && baseUrl.length === 0) {
         return { settings: publicGateway(gateway), error: "网关地址必须是 http(s) URL" };
       }
@@ -713,6 +718,11 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
         };
       }
       const toolGroups = resolveToolGroups(requestedGroups ?? gateway?.toolGroups);
+      // An absent field keeps the stored ticks; an empty array is the person clearing them.
+      const selection = normalizeSelectedSkills(input.skills ?? gateway?.skills ?? []);
+      if ("error" in selection) {
+        return { settings: publicGateway(gateway), error: selection.error };
+      }
       const next: GatewayConfig = {
         provider,
         baseUrl,
@@ -721,6 +731,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
         thinkingLevel,
         toolGroups,
         corePrompt,
+        skills: selection.skills,
       };
       await writeGateway(root, next);
       gateway = next;
