@@ -63,10 +63,30 @@ struct CLISettingsLayoutTests {
     #expect(
       entries(host).compactMap(title).filter { $0 == "已复制" }.count == 1,
       "the pressed button says the copy happened")
-    try await Task.sleep(for: .milliseconds(2200))
-    #expect(
-      entries(host).compactMap(title).contains("复制命令"),
-      "and the label comes back so it can be pressed again")
+    // MainActor copy reset can land slightly after the 2s Task in `CLISettingsView.copy`; wait on
+    // the accessibility title instead of a fixed tail sleep so slow CI does not flake.
+    try await waitUntil {
+      host.layoutSubtreeIfNeeded()
+      guard
+        let current = self.entries(host).first(where: { self.identifier($0) == "cli.copy.skill" }),
+        let t = self.title(current)
+      else { return false }
+      return t == "复制命令"
+    }
+    let copyButton = try #require(
+      entries(host).first { identifier($0) == "cli.copy.skill" })
+    #expect(title(copyButton)?.contains("复制命令") == true)
+  }
+
+  private func waitUntil(_ condition: @escaping () -> Bool) async throws {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(6))
+    while true {
+      if condition() { return }
+      guard ContinuousClock.now < deadline else {
+        throw NSError(domain: "CLISettingsLayoutTests", code: 1)
+      }
+      try await Task.sleep(for: .milliseconds(20))
+    }
   }
 
   private func identifier(_ node: NSObject) -> String? {
