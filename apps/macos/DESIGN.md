@@ -143,14 +143,19 @@ the sidebar and the composer are unreachable, the native composer field is disab
 focus is released, and the menu shortcuts that move columns or open settings are ignored.
 Closing a dialog bumps the conversation's focus request so the composer takes the keyboard
 back. One typed presentation exists at a time — a peer exchange is read from whichever
-transcript raised it — so a second surface can never appear behind the person's back, and an
-exchange that lands after another dialog took the window is discarded rather than left
-pending.
+transcript raised it — so a second surface can never appear behind the person's back. A peer
+read is a request with a generation: opening one, presenting any dialog or closing a dialog
+invalidates the reads still in flight, so an answer that lands after the window moved on is
+dropped instead of reopening itself, while a deliberate new ask still opens.
 
-Tool details are named by the entry that owns the run, never by a copy of its rows: the
-dialog observes the transcript that holds it, so a call still running keeps updating while
-the dialog is open. Peer content keeps its scroll, its live updates and its close-only
-behaviour.
+Tool details are named by the entry that owns the run and by the transcript's owner — a bot
+id, or the sample workspace — never by a copy of its rows: the dialog observes the transcript
+that holds it, so a call still running keeps updating while the dialog is open. The owner is
+part of the route because the transcript view model is shared: when the selection moves to
+another bot (a create that lands in the background does exactly that), the detail closes
+instead of showing another conversation's rows under the old entry id. Every other dialog is
+about the window and survives a selection change. Peer content keeps its scroll, its live
+updates and its close-only behaviour.
 
 The create and face cards are 460 pt wide and as tall as their content (about 458 pt), not
 the earlier 560 × 712 sheet. The create form is an inspector-shaped identity card (portrait,
@@ -309,8 +314,14 @@ suite, a stub HTTP session and `SnapshotDeviceControl`:
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run --package-path apps/macos SnapshotRenderer .local/macos-dialogs --dialogs-only
 ```
 
-It writes `dialog-{create,face,peer,tool,settings}-{light,dark}.png`. Escape, Return, traffic
-lights and Reduce Motion are not certified by these images; they need a foreground window.
+It writes `dialog-{create,face,peer,tool,settings}-{light,dark}.png`. The capture reads no
+person's preferences: the suite is its own domain and is removed after the run, `.defaultAppStorage`
+points AppStorage at that suite, and the settings surface gets an explicit
+`SkillsSettingsViewModel`/`SkillsSelection` rooted in a temporary home with a push that goes
+nowhere, so the 技能 page never scans the real `~/.agents/skills` or the real tick list. A
+built-in assertion proves the sentinel it writes is invisible to the standard defaults and
+that the scanned home is temporary before anything renders. Escape, Return, traffic lights and
+Reduce Motion are not certified by these images; they need a foreground window.
 
 Use SnapshotRenderer's `--composition-only` path for this phase's synthetic review:
 

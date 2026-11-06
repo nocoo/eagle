@@ -63,9 +63,11 @@ public struct WorkspaceShellView: View {
     return dialogs.active
   }
 
-  /// Opening is refused while something is already up: one dialog owns the window.
+  /// Opening is refused while something is already up: one dialog owns the window. Taking
+  /// the window also drops a peer read that has not landed yet.
   private func present(_ dialog: WorkspaceDialog) {
     guard activeDialog == nil else { return }
+    bots.cancelPeerRead()
     dialogs.present(dialog)
   }
 
@@ -136,6 +138,18 @@ public struct WorkspaceShellView: View {
       openedSampleExchange = exchange
       return
     }
+  }
+
+  /// The conversation a tool run would belong to right now: its bot, or the sample workspace.
+  private var conversationOwner: ToolRunOwner {
+    selectedIsBot ? .bot(id: bots.selectedId ?? "") : .sample
+  }
+
+  /// A tool detail is bound to the transcript that opened it; when the conversation moves on,
+  /// the dialog closes instead of showing another bot's rows under the old entry id.
+  private func closeStaleToolRun() {
+    guard let dialog = dialogs.active, !dialog.belongs(to: conversationOwner) else { return }
+    closeDialog()
   }
 
   private func openBotExchange(_ id: String) {
@@ -304,7 +318,7 @@ public struct WorkspaceShellView: View {
               layout: layout,
               focusRestore: focusRestore,
               onOpenPeerExchange: openBotExchange,
-              onOpenToolRun: { present(.toolRun(id: $0, owner: .bot)) }
+              onOpenToolRun: { present(.toolRun(id: $0, owner: conversationOwner)) }
             )
           } else if selectedIsMock {
             ConversationColumn(
@@ -412,6 +426,8 @@ public struct WorkspaceShellView: View {
         guard activeDialog == nil else { return }
         layout.toggleInspector()
       }
+      .onChange(of: bots.selectedId) { _, _ in closeStaleToolRun() }
+      .onChange(of: list.selection) { _, _ in closeStaleToolRun() }
       // An exchange that arrives after another dialog took the window is discarded rather
       // than left pending behind it.
       .onChange(of: bots.openedExchange) { _, exchange in

@@ -559,12 +559,21 @@ struct SnapshotRenderer {
     guard let defaults = UserDefaults(suiteName: domain) else {
       fatalError("isolated snapshot preferences are unavailable")
     }
+    let home = FileManager.default.temporaryDirectory
+      .appendingPathComponent("eagle-dialog-home-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    assertCaptureIsolation(defaults: defaults, home: home)
     let devices = DeviceSettingsViewModel(
       control: SnapshotDeviceControl(), defaults: defaults, requiresServiceAddress: false)
+    // The 技能 page reads a person's own folders and ticks by default; a capture gets its own
+    // suite, its own home and a push that goes nowhere.
+    let selection = SkillsSelection(defaults: defaults, push: { _ in })
+    let skills = SkillsSettingsViewModel(defaults: defaults, home: home, selection: selection)
     defer {
       defaults.removePersistentDomain(forName: domain)
       fixture.session.invalidateAndCancel()
       try? FileManager.default.removeItem(at: fixture.settings.rootURL)
+      try? FileManager.default.removeItem(at: home)
     }
     let face = BotFace.Style(shape: .blob, tint: Theme.Palette.BotTint.teal)
     let sections =
@@ -664,16 +673,25 @@ struct SnapshotRenderer {
   @MainActor
   private static func captureDialogs(in directory: URL) {
     let fixture = snapshotBotsSettings()
-    let domain = "EagleDialogSnapshots.\(UUID().uuidString)"
+    let domain = "EagleDialogSnapshots"
     guard let defaults = UserDefaults(suiteName: domain) else {
       fatalError("isolated snapshot preferences are unavailable")
     }
+    let home = FileManager.default.temporaryDirectory
+      .appendingPathComponent("eagle-dialog-home-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    assertCaptureIsolation(defaults: defaults, home: home)
     let devices = DeviceSettingsViewModel(
       control: SnapshotDeviceControl(), defaults: defaults, requiresServiceAddress: false)
+    // The 技能 page reads a person's own folders and ticks by default; a capture gets its own
+    // suite, its own home and a push that goes nowhere.
+    let selection = SkillsSelection(defaults: defaults, push: { _ in })
+    let skills = SkillsSettingsViewModel(defaults: defaults, home: home, selection: selection)
     defer {
       defaults.removePersistentDomain(forName: domain)
       fixture.session.invalidateAndCancel()
       try? FileManager.default.removeItem(at: fixture.settings.rootURL)
+      try? FileManager.default.removeItem(at: home)
     }
     let size = CGSize(width: 1280, height: 760)
     let face = BotFace.Style(shape: .pebble, tint: Theme.Palette.BotTint.teal)
@@ -720,7 +738,7 @@ struct SnapshotRenderer {
         (
           "settings", EdgeInsets(),
           AnyView(
-            SettingsView(model: settings, devices: devices)
+            SettingsView(model: settings, skills: skills, devices: devices)
               .frame(
                 width: Theme.Metric.settingsSize(in: size).width,
                 height: Theme.Metric.settingsSize(in: size).height))
@@ -733,10 +751,28 @@ struct SnapshotRenderer {
             workspace: { dialogBackdrop(face: face) },
             dialog: { ModalHost(insets: insets, onDismiss: {}) { dialog } }
           )
+          .defaultAppStorage(defaults)
           .preferredColorScheme(scheme), size: size,
           named: "dialog-\(surface)-\(name)", in: directory, appearance: appearance)
       }
     }
+  }
+
+  /// A capture must not read the person's own preferences. A sentinel written to the isolated
+  /// suite is invisible to the standard one, and the skills home is a temporary folder; nothing
+  /// here writes a real preference or needs a credential.
+  @MainActor
+  private static func assertCaptureIsolation(defaults: UserDefaults, home: URL) {
+    let key = "eagle.snapshot.isolationProbe"
+    let sentinel = UUID().uuidString
+    defaults.set(sentinel, forKey: key)
+    precondition(
+      UserDefaults.standard.string(forKey: key) != sentinel,
+      "the dialog capture shares the standard preferences")
+    defaults.removeObject(forKey: key)
+    precondition(
+      home.path.hasPrefix(FileManager.default.temporaryDirectory.path),
+      "the dialog capture would scan a real home folder")
   }
 
   /// A synthetic three-column workspace: it exists only to sit behind a review capture.

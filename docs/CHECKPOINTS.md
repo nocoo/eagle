@@ -4260,3 +4260,28 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   hiding and restore in a live window, Reduce Motion on a machine with the preference on
   (the test reads the actual preference and only asserts the freeze when it is on), and
   system alerts, which remain native and are not part of the shared host.
+
+## 2026-11-07 06:49 +08 — round-1 fixes on the modal surface
+
+- Three review findings fixed, each with a failing test first. (1) A peer read is now a
+  generation in `BotsWorkspaceViewModel`: `openExchange` tags its request, `cancelPeerRead()`
+  (called when any dialog takes the window) and `closeExchange()` invalidate what is in
+  flight. Red before the fix: with the generation removed, "a read that lands after a dialog
+  came and went" and "a deliberate read after all of that still opens" both failed on
+  `openedExchange == nil`. (2) A tool run's route carries its owner — `.bot(id:)` or `.sample`
+  — and `WorkspaceDialog.belongs(to:)` closes it when the conversation moves on, so a create
+  that lands while a detail is open no longer leaves another bot's rows under the old entry
+  id. Red before the fix: `belongs` always true failed the ownership assertions. (3) The
+  isolated dialog capture now points `.defaultAppStorage` at its own suite and gives settings
+  an explicit `SkillsSettingsViewModel`/`SkillsSelection` on a temporary home with a stub push,
+  with a built-in assertion that its sentinel is invisible to the standard defaults.
+- Validation of record: the coordinator ran the root `check` (tests, typecheck, lint, build),
+  `test:browser` and `test:devices` with official Node 26.13 on `5cbd1137`, all EXIT 0. This
+  machine's own root `npm test` is 309/311 because its Homebrew Node links a non-system
+  library, which the device-runtime test refuses by design; that is an environment fact, not
+  a red gate. The Swift, format, coverage and design gates are re-run on this change.
+- `apps/macos` after the fixes: `swift test` (four bundles), `swift format lint --strict`,
+  `Scripts/coverage.sh`, root `check:design` and `test:design`, and
+  `SnapshotRenderer .local/macos-dialogs --dialogs-only` regenerated the ten captures. The
+  capture leaves no key behind: its domain reads back empty. Escape/Return in a key window,
+  live traffic lights, focus hand-off and Reduce Motion on an enabled machine remain manual.

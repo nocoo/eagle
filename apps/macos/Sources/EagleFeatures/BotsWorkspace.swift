@@ -84,6 +84,9 @@ final class BotsWorkspaceViewModel: ObservableObject {
   @Published private(set) var exchanges: [PeerExchangeSummary] = []
   /// The exchange a person opened from a row; nil while no dialog is up.
   @Published private(set) var openedExchange: PeerExchange?
+  /// Which peer read is the newest. A dialog can come and go while one is in flight, so a
+  /// late answer must not reopen a transcript nobody is looking at any more.
+  private var peerRead = 0
   private var loadingExchanges = false
   /// Whether the previous publish saw a run in flight: an exchange can only start inside one.
   private var wasRunning = false
@@ -422,9 +425,14 @@ final class BotsWorkspaceViewModel: ObservableObject {
   }
 
   /// Opens one exchange: the row only carries the summary, so the round trip is read now.
+  /// Only the newest read may publish; a newer ask, a close or a dialog taking the window
+  /// invalidates the ones already in flight.
   func openExchange(_ exchangeId: String) async {
     guard let app else { return }
+    peerRead += 1
+    let request = peerRead
     guard let detail = await app.peerDetail(exchangeId) else { return }
+    guard request == peerRead else { return }
     let refs = detail.participants.map {
       presenter.peerRef(id: $0.id, title: $0.title, bots: app.bots)
     }
@@ -449,7 +457,13 @@ final class BotsWorkspaceViewModel: ObservableObject {
   }
 
   func closeExchange() {
+    peerRead += 1
     if openedExchange != nil { openedExchange = nil }
+  }
+
+  /// Another dialog took the window: a peer read still in flight is no longer wanted.
+  func cancelPeerRead() {
+    peerRead += 1
   }
 
   /// The selected bot as the catalog describes it, for the inspector's profile.

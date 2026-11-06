@@ -450,6 +450,8 @@ final class StubCatalog: CatalogPort {
   /// The catalog takes the pair even when the conversation refuses it (saved, not applied).
   var applyOnAgentError = false
   var retriedTasks: [(String, String)] = []
+  /// Held open, so a create can be observed in flight.
+  var createGate: Gate?
 
   /// A latch a test opens when it wants a held call to finish.
   final class Gate: @unchecked Sendable {
@@ -573,6 +575,7 @@ final class StubCatalog: CatalogPort {
   func create(
     title: String, label: String?, appearance: BotCreationAppearance
   ) async throws -> BotSummary {
+    if let createGate { await createGate.wait() }
     let bot = BotSummary(
       id: "b_new",
       title: title,
