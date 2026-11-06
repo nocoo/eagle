@@ -125,25 +125,14 @@ public struct AssistantBubble: View, Equatable {
           .padding(.horizontal, Theme.Chat.codeInset)
           .padding(.top, Theme.Chat.codeHeaderInset)
       }
-      if Self.codeBodyIsCompactForBubble(body) {
-        // Small fenced blocks (typical one-liner shell lines) avoid a nested horizontal
-        // `ScrollView`, which showed up as heavy assistant-only work in ROWCOST slice logs.
+      ScrollView(.horizontal, showsIndicators: false) {
         Text(body)
           .font(Theme.TypeScale.code)
           .foregroundStyle(Theme.Palette.textPrimary)
-          .fixedSize(horizontal: false, vertical: true)
+
+          .fixedSize(horizontal: true, vertical: true)
           .padding(.horizontal, Theme.Chat.codeInset)
           .padding(.vertical, Theme.Chat.codeVerticalInset)
-      } else {
-        ScrollView(.horizontal, showsIndicators: false) {
-          Text(body)
-            .font(Theme.TypeScale.code)
-            .foregroundStyle(Theme.Palette.textPrimary)
-
-            .fixedSize(horizontal: true, vertical: true)
-            .padding(.horizontal, Theme.Chat.codeInset)
-            .padding(.vertical, Theme.Chat.codeVerticalInset)
-        }
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -155,16 +144,6 @@ public struct AssistantBubble: View, Equatable {
       RoundedRectangle(cornerRadius: Theme.Chat.codeRadius, style: .continuous)
         .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
     )
-  }
-
-  /// True when every line is short enough to wrap within the assistant bubble without a nested
-  /// horizontal scroll host (width bound is conservative vs `Theme.Chat.bubbleMaxWidth`).
-  private static func codeBodyIsCompactForBubble(_ body: String) -> Bool {
-    let lines = body.split(separator: "\n", omittingEmptySubsequences: false)
-    guard !lines.isEmpty else { return true }
-    let maxLen = lines.map(\.count).max() ?? 0
-    // 88 chars ≲ bubble content width at typical font sizes inside bubbleMaxWidth.
-    return maxLen <= 88 && body.count <= 4000
   }
 
   /// A grid, not raw pipes: header cells are dim and semibold, body cells wrap, and the

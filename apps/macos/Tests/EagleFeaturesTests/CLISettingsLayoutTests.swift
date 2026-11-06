@@ -63,30 +63,53 @@ struct CLISettingsLayoutTests {
     #expect(
       entries(host).compactMap(title).filter { $0 == "已复制" }.count == 1,
       "the pressed button says the copy happened")
-    // MainActor copy reset can land slightly after the 2s Task in `CLISettingsView.copy`; wait on
-    // the accessibility title instead of a fixed tail sleep so slow CI does not flake.
-    try await waitUntil {
-      host.layoutSubtreeIfNeeded()
-      guard
-        let current = self.entries(host).first(where: { self.identifier($0) == "cli.copy.skill" }),
-        let t = self.title(current)
-      else { return false }
-      return t == "复制命令"
-    }
-    let copyButton = try #require(
-      entries(host).first { identifier($0) == "cli.copy.skill" })
-    #expect(title(copyButton)?.contains("复制命令") == true)
+    // `SettingsActionButton` is plain `Button { Text(title) }`: AX can surface the label on
+    // AXTitle, AXDescription, or the button value. Poll MainActor + RunLoop until any field reads
+    // 「复制命令」, with dumps on timeout (no longer timeout cap increase).
+    try await waitForCopyCommandLabel(host: host)
   }
 
-  private func waitUntil(_ condition: @escaping () -> Bool) async throws {
+  private func waitForCopyCommandLabel(host: NSView) async throws {
     let deadline = ContinuousClock.now.advanced(by: .seconds(6))
+    var iteration = 0
     while true {
-      if condition() { return }
+      iteration += 1
+      host.layoutSubtreeIfNeeded()
+      host.displayIfNeeded()
+      RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+      if let node = entries(host).first(where: { identifier($0) == "cli.copy.skill" }),
+        labelShowsCopyCommand(node)
+      {
+        return
+      }
       guard ContinuousClock.now < deadline else {
+        print(
+          "CLI_COPY_DIAG timeout iteration=\(iteration) copy_skill=\(describeCopySkill(host: host))"
+        )
         throw NSError(domain: "CLISettingsLayoutTests", code: 1)
       }
       try await Task.sleep(for: .milliseconds(20))
     }
+  }
+
+  /// True when any common AX field matches the visible button title after reset.
+  private func labelShowsCopyCommand(_ node: NSObject) -> Bool {
+    let candidates = [
+      title(node),
+      attribute(node, "AXDescription") as? String,
+      attribute(node, "AXValue") as? String,
+    ].compactMap { $0 }
+    return candidates.contains { $0 == "复制命令" || $0.contains("复制命令") }
+  }
+
+  private func describeCopySkill(host: NSView) -> String {
+    guard let node = entries(host).first(where: { identifier($0) == "cli.copy.skill" }) else {
+      return "missing cli.copy.skill"
+    }
+    let t = title(node).map { "AXTitle=\($0)" } ?? "AXTitle=nil"
+    let d = (attribute(node, "AXDescription") as? String).map { "AXDescription=\($0)" } ?? "AXDescription=nil"
+    let v = (attribute(node, "AXValue") as? String).map { "AXValue=\($0)" } ?? "AXValue=nil"
+    return "\(t) \(d) \(v)"
   }
 
   private func identifier(_ node: NSObject) -> String? {

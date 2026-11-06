@@ -16,6 +16,7 @@ struct TranscriptRowCostTests {
     Self.logRunContext()
     let entries = Self.entries(turns: 40)
     let markdown = Self.prepared(entries)
+    Self.logPreparedFixture(entries: entries, prepared: markdown)
     let rich = Self.transcriptRows(entries, preparedMarkdown: markdown)
     let plain = Self.plainTextShell(entries)
     let bubbleDirect = Self.baselineBubbleRows(entries, preparedMarkdown: markdown)
@@ -67,12 +68,39 @@ struct TranscriptRowCostTests {
     )
   }
 
+  /// Isolates **prepared paragraph** path: every row is a short assistant turn with a single
+  /// `.paragraph` prepared block (AttributedString). Falsifies “markdown fences drive ROWCOST”.
+  @Test("ROWCOST experiment: assistant paragraphs only (diagnostic)")
+  func paragraphOnlyAssistantExperiment() {
+    Self.logRunContext()
+    let line =
+      "这一段用来模拟真实回答的长度，中英文混排，带 `inline code` 与 **粗体**。"
+    let entries: [TranscriptEntry] = (0..<40).map { index in
+      .assistant(id: "p\(index)", blocks: [.paragraph(line)])
+    }
+    let prepared: [String: [RenderedMarkdownBlock]] = Dictionary(
+      uniqueKeysWithValues: entries.compactMap { entry -> (String, [RenderedMarkdownBlock])? in
+        guard case .assistant(let id, _, _) = entry else { return nil }
+        return (id, [.paragraph(AttributedString(line))])
+      })
+    for _ in 0..<2 {
+      _ = Self.pageCost(Self.transcriptRows(entries, preparedMarkdown: prepared))
+      _ = Self.pageCost(Self.plainTextShell(entries))
+    }
+    let msRich = Self.pageCost(Self.transcriptRows(entries, preparedMarkdown: prepared))
+    let msText = Self.pageCost(Self.plainTextShell(entries))
+    print(
+      "ROWCOST_EXPT paragraph_only count=\(entries.count) ms_rich=\(Self.fmt(msRich)) "
+        + "ms_text=\(Self.fmt(msText)) rat=\(Self.fmt(msRich / max(msText, 0.000_001)))")
+  }
+
   /// Slices the same corpus by role to localize cost (diagnostic only; always passes).
   @Test("ROWCOST slice diagnostics (assistant vs user/note vs Text)")
   func sliceDiagnostics() {
     Self.logRunContext()
     let entries = Self.entries(turns: 40)
     let markdown = Self.prepared(entries)
+    Self.logPreparedFixture(entries: entries, prepared: markdown)
     let assistants = entries.filter { entry in
       if case .assistant = entry { return true }
       return false
@@ -194,6 +222,30 @@ struct TranscriptRowCostTests {
         result[id] = [.paragraph(AttributedString(blocks.markdown))]
       }
     }
+  }
+
+  /// Documents which assistant blocks exist in the transcript vs what `prepared()` supplies
+  /// (`AttributedString` in a single `.paragraph` each). ROWCOST Text baseline uses
+  /// `blocks.markdown` strings; rich rows use `AssistantBubble` + prepared blocks on this path
+  /// (not `MarkdownViewModel` parsing into `.code` / tables).
+  private static func logPreparedFixture(
+    entries: [TranscriptEntry], prepared: [String: [RenderedMarkdownBlock]]
+  ) {
+    var assistantFromBlocks = 0
+    var codeBlocksInTranscript = 0
+    for entry in entries {
+      guard case .assistant(let id, let blocks, _) = entry else { continue }
+      assistantFromBlocks += 1
+      for block in blocks {
+        if case .note = block { codeBlocksInTranscript += 1 }
+      }
+    }
+    let preparedCount = prepared.count
+    print(
+      "ROWCOST_FIXTURE assistant_entries=\(assistantFromBlocks) prepared_map=\(preparedCount) "
+        + "fenced_note_blocks_in_source=\(codeBlocksInTranscript) "
+        + "(prepared flatten to .paragraph AttributedString; code/table views not used)"
+    )
   }
 
   private static func transcriptRows(
