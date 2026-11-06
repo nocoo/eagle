@@ -72,7 +72,8 @@ struct CLISettingsLayoutTests {
       entries(host).first { identifier($0) == "cli.copy.skill" })
     #expect(
       labelText(afterPress, slot: labelSlot) == "已复制",
-      "same AX field as initial shows 已复制 after press; \(describeCopySkill(node: afterPress))")
+      "same AX field as initial shows 已复制 after press; "
+        + "\(describeCopySkill(node: afterPress))")
     try await waitForLabelReset(host: host, slot: labelSlot)
   }
 
@@ -112,7 +113,8 @@ struct CLISettingsLayoutTests {
     case axValue = "AXValue"
   }
 
-  /// First non-empty among Title → Description → Value (AppKit maps `Text` label inconsistently).
+  /// First non-empty among Title → Description → Value.
+  /// AppKit maps `Text` labels to these fields inconsistently.
   private func labelSlotAndText(_ node: NSObject) -> (LabelAttribute, String)? {
     for slot in [LabelAttribute.axTitle, .axDescription, .axValue] {
       if let s = labelText(node, slot: slot), !s.isEmpty { return (slot, s) }
