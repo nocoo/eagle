@@ -778,6 +778,80 @@ struct SkillScannerTests {
     #expect(result.skills.isEmpty, "a pipe is not a manifest")
   }
 
+  @Test("a comment separated by more than one space is still a comment")
+  func commentAfterSeveralSpaces() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      "---\nname: alpha-skill\ndescription: >-  # a note\n  first line\n  second line\n---\n")
+    let result = SkillScanner.scan(roots: [root])
+    #expect(result.skills.first?.description == "first line second line")
+  }
+
+  @Test("a comment separated by a tab is still a comment")
+  func commentAfterTab() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      "---\nname: alpha-skill\ndescription: >-\t# a note\n  first line\n  second line\n---\n")
+    let result = SkillScanner.scan(roots: [root])
+    #expect(result.skills.first?.description == "first line second line")
+  }
+
+  @Test("a literal block with a spaced comment is still a block")
+  func literalBlockWithSpacedComment() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      "---\nname: alpha-skill\ndescription: |  # a note\n  first line\n---\n")
+    let result = SkillScanner.scan(roots: [root])
+    #expect(result.skills.first?.description == "first line\n")
+  }
+
+  @Test("a kept block with one blank line and no content is one newline")
+  func keptBlockWithOnlyBlankLine() throws {
+    let root = try temporaryRoot()
+    try writeSkill(root, "alpha", "---\nname: alpha-skill\ndescription: |+\n\n---\n")
+    #expect(SkillScanner.scan(roots: [root]).skills.first?.description == "\n")
+    let folded = try temporaryRoot()
+    try writeSkill(folded, "beta", "---\nname: beta-skill\ndescription: >+\n\n---\n")
+    #expect(SkillScanner.scan(roots: [folded]).skills.first?.description == "\n")
+  }
+
+  @Test("a folded block keeps the break of a deeper line and the blank after it")
+  func foldedBlockDeeperLineThenBlank() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      """
+      ---
+      name: alpha-skill
+      description: >-
+        a
+          b
+
+        c
+      ---
+      """)
+    let result = SkillScanner.scan(roots: [root])
+    #expect(result.skills.first?.description == "a\n  b\n\nc")
+  }
+
+  @Test("a carriage return escape is decoded")
+  func carriageReturnEscape() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      #"""
+      ---
+      name: "alpha-skill"
+      description: "a\rb"
+      ---
+      """#)
+    let result = SkillScanner.scan(roots: [root])
+    #expect(result.skills.first?.description == "a\rb")
+  }
+
   private func temporaryRoot() throws -> URL {
     let url = FileManager.default.temporaryDirectory
       .appendingPathComponent("eagle-skill-scan-\(UUID().uuidString)", isDirectory: true)

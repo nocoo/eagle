@@ -287,12 +287,14 @@ struct SkillFrontMatter: Equatable {
 /// - A plain scalar, a single quoted scalar (a doubled quote is one quote) and a double
 ///   quoted scalar.
 /// - The six block forms: `|`, `|-`, `|+`, `>`, `>-` and `>+`. A literal block keeps its
-///   lines, a folded block joins the lines of a paragraph with a space, and a line that is
-///   more indented than the block keeps its own line break.
-/// - The escapes a double quoted value may hold: `\n`, `\t`, `\"`, `\\`, and the code points
-///   `\x`, `\u` and `\U`.
+///   lines, a folded block joins the lines of a paragraph with a space, a blank line keeps a
+///   line break of its own, and a line that is more indented than the block keeps the break
+///   around it.
+/// - The escapes a double quoted value may hold: `\n`, `\t`, `\r`, `\"`, `\\`, and the code
+///   points `\x`, `\u` and `\U`.
 ///
-/// A comment that follows a value is dropped, and a `#` inside quotes is part of the value.
+/// A comment that follows a value — after any number of spaces or one tab — is dropped, and a
+/// `#` inside quotes is part of the value.
 /// A value the reader cannot read is no value at all: the cell stays empty and the skill is
 /// named after its folder. Every other key, and every sequence, is ignored.
 struct YamlReader {
@@ -313,6 +315,13 @@ struct YamlReader {
     var isFolded: Bool {
       if case .folded = self { return true }
       return false
+    }
+
+    var keepsEveryNewline: Bool {
+      switch self {
+      case .literal(.keep), .folded(.keep): return true
+      default: return false
+      }
     }
   }
 
@@ -405,7 +414,8 @@ struct YamlReader {
     return nil
   }
 
-  /// The value of a key without its comment, and the quote it was written in.
+  /// The value of a key without its comment, and the quote it was written in. A comment
+  /// starts at a hash that follows a space or a tab, however many of them there are.
   private static func splitValue(_ raw: String) -> (text: String, quote: Character?) {
     let trimmed = raw.trimmingCharacters(in: .whitespaces)
     guard let first = trimmed.first else { return ("", nil) }
@@ -415,10 +425,20 @@ struct YamlReader {
     }
     // A value that starts with a hash is a comment, so the value is empty.
     if first == "#" { return ("", nil) }
-    if let comment = trimmed.range(of: " #") {
-      return (String(trimmed[..<comment.lowerBound]), nil)
+    var search = trimmed.startIndex
+    while let hash = trimmed[search...].firstIndex(of: "#") {
+      if let previous = trimmed[..<hash].last, previous == " " || previous == "\t" {
+        return (trimTrailingWhitespace(String(trimmed[..<hash])), nil)
+      }
+      search = trimmed.index(after: hash)
     }
     return (trimmed, nil)
+  }
+
+  /// The text without the spaces and tabs at its end.
+  private static func trimTrailingWhitespace(_ text: String) -> String {
+    guard let last = text.lastIndex(where: { $0 != " " && $0 != "\t" }) else { return "" }
+    return String(text[...last])
   }
 
   /// Where a quoted value ends, or nothing when the quote is never closed.
@@ -534,7 +554,10 @@ struct YamlReader {
       guard line.count >= base else { return line.trimmingCharacters(in: .whitespaces) }
       return String(line.dropFirst(base))
     }
-    guard !lines.isEmpty else { return "" }
+    guard !lines.isEmpty else {
+      // A block with no content is empty; one that keeps its newlines keeps the blank ones.
+      return block.keepsEveryNewline ? String(repeating: "\n", count: trailing) : ""
+    }
     let text = block.isFolded ? folded(lines) : lines.joined(separator: "\n")
     switch block {
     case .literal(let chomp), .folded(let chomp):
@@ -546,31 +569,37 @@ struct YamlReader {
     }
   }
 
-  /// A folded block: the lines of a paragraph join with a space, a blank line starts a new
-  /// one, and a line that is more indented than the block keeps its own line break.
+  /// A folded block: the lines of a paragraph join with a space, a blank line keeps a line
+  /// break of its own, and a line that is more indented than the block keeps the break
+  /// around it.
   private func folded(_ lines: [String]) -> String {
     var result = ""
     var wroteAny = false
-    var afterBlank = false
-    var previousMoreIndented = false
+    var lastWasMoreIndented = false
+    var blanks = 0
     for line in lines {
       if line.isEmpty {
-        result += "\n"
-        wroteAny = true
-        afterBlank = true
-        previousMoreIndented = false
+        blanks += 1
         continue
       }
       // The lines are already de-indented, so a line that still carries spaces is more
       // indented than the block.
       let moreIndented = line.prefix { $0 == " " }.count > 0
-      if wroteAny, !afterBlank {
-        result += previousMoreIndented || moreIndented ? "\n" : " "
+      if wroteAny {
+        if blanks > 0 {
+          // A deeper line kept its break before the blank, and the blank keeps its own.
+          if lastWasMoreIndented { result += "\n" }
+          result += String(repeating: "\n", count: blanks)
+        } else if lastWasMoreIndented || moreIndented {
+          result += "\n"
+        } else {
+          result += " "
+        }
       }
       result += line
       wroteAny = true
-      afterBlank = false
-      previousMoreIndented = moreIndented
+      lastWasMoreIndented = moreIndented
+      blanks = 0
     }
     return result
   }
@@ -615,6 +644,7 @@ struct YamlReader {
     switch raw[next] {
     case "n": return ("\n", raw.index(after: next))
     case "t": return ("\t", raw.index(after: next))
+    case "r": return ("\r", raw.index(after: next))
     case "\"": return ("\"", raw.index(after: next))
     case "\\": return ("\\", raw.index(after: next))
     case "x": return codePoint(raw, after: next, digits: 2)
