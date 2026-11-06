@@ -75,7 +75,6 @@ struct CLISettingsLayoutTests {
       iteration += 1
       host.layoutSubtreeIfNeeded()
       host.displayIfNeeded()
-      RunLoop.current.run(until: Date().addingTimeInterval(0.02))
       if let node = entries(host).first(where: { identifier($0) == "cli.copy.skill" }),
         axTitle(node) == "复制命令"
       {
@@ -88,6 +87,8 @@ struct CLISettingsLayoutTests {
         )
         throw NSError(domain: "CLISettingsLayoutTests", code: 1)
       }
+      // Yield; do not call RunLoop.run from async (Swift 6 blocks that). Layout + sleep lets
+      // MainActor run the 2s reset Task from `CLISettingsView.copy`.
       try await Task.sleep(for: .milliseconds(20))
     }
   }
