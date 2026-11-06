@@ -385,10 +385,13 @@ contradictory one.
   resolved and has to stay inside that folder, the file is opened with `O_NONBLOCK` and
   without following a final symlink, and the opened descriptor is checked with `fstat` — a
   regular file, and the same one the path resolved to. The folder is then stated again and
-  must still be that directory, and the path must still name the opened file, so a folder or
-  file swapped after resolution is a refusal. An unselected name, a manifest that is gone,
-  unreadable, outside the folder or not a regular file, or a tree that changed under the read
-  is refused with a message naming what is selected.
+  must still be that directory, and the manifest is resolved once more from it, which has to
+  lead inside it again and end at the descriptor's inode: an intermediate directory of the
+  resolved path swapped for a symlink to another tree is refused that way. An unselected
+  name, a manifest that is gone, unreadable, outside the folder or not a regular file, or a
+  tree that changed under the read is refused with a message naming what is selected. The
+  checks are not atomic with the open, so a swap after the last one, or one made and unmade
+  between two, is not detected; the bytes read always come from the checked descriptor.
 - The read is bounded twice over: at most 64 KiB are pulled from the file, in chunks, and the
   kept text is at most 32 000 characters and 4 096 lines, cut on a UTF-8 boundary. Every
   budget leaves a prefix, so the returned text is the shortest of them and the

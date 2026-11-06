@@ -187,25 +187,31 @@ here. The macOS 技能 page owns discovery, and the App-scoped
 reopened window keeps the ticks and cannot start a second queue, and a scan that a newer
 page's scan superseded teaches the selection nothing and pushes nothing.
 
-The read itself assumes a model can ask for it: the skill's folder is resolved first and its
-device and inode are recorded, then the manifest is resolved, its real path must stay inside
-that folder, and the file is opened with `O_NONBLOCK` and without following a final symlink
-so a fifo cannot park the read and a swapped last component cannot be reached. The opened
-descriptor is what is checked (`fstat`): it must be a regular file and the same file the path
-resolved to; then the folder is stated again and must still be the directory that was
-resolved, and the manifest path must still name the opened file. A swapped folder or a
-swapped file is therefore a refusal, not a read of another tree. Only then are bytes pulled,
-and only `64 KiB` of them, cut on a UTF-8 boundary; the kept text is bounded by characters
-and lines, and the truncation note names the budget that bound the returned text and sits
-inside the tool's declared output limits — the harness defaults (50 KiB, 2 000 lines) would
-otherwise cut the note away.
+The read itself assumes a model can ask for it. It runs as separate steps, and each one is a
+check in its own right: the folder is resolved and its device and inode are recorded; the
+manifest is resolved and its real path must be inside that folder; the file is opened with
+`O_NONBLOCK` and without following a final symlink, so a fifo cannot park the read and a last
+component swapped for a symlink is refused; the opened descriptor is checked with `fstat`, so
+it must be a regular file and the same file that path named; the folder is stated again and
+must still be the directory that was resolved; and finally the manifest is resolved once more
+from that folder and must still lead inside it and end at the inode the descriptor is.
 
-What that guarantees and what it does not: the descriptor that is read is a regular file the
-validated folder held as `SKILL.md` when it was opened, and the path still names that file
-when the read starts. Node has no `openat` bound to a directory descriptor, so the two stats
-and the open are separate calls: a swapper that puts another tree in place and restores the
-original entirely between them is not detectable, and it would have to place the very file it
-wants read, which the folder then holds under that name anyway.
+The last check is the one an intermediate directory needs: a resolved path is a string, so a
+subdirectory along it can be replaced by a symlink to another tree while the folder's own
+identity stays untouched. With it, a swapped folder, a swapped intermediate directory or a
+swapped file is a refusal, not a read of another tree.
+
+What those checks prove, and what they do not: each is a fact about the moment it ran, and
+the checks and the open are separate calls — Node has no `openat` bound to a directory
+descriptor — so the composite does not establish that the tree held still for the whole call.
+A swap that happens after the last check is not detected, and neither is one made and unmade
+between two checks; the bytes that are read still come from the descriptor that was opened
+and checked, so such a swap cannot redirect this read, but nothing here proves the file still
+"belongs" to that folder later. Only after those checks are bytes pulled, and only `64 KiB`
+of them, cut on a UTF-8 boundary; the kept text is bounded by characters and lines, and the
+truncation note names the budget that bound the returned text and sits inside the tool's
+declared output limits — the harness defaults (50 KiB, 2 000 lines) would otherwise cut the
+note away.
 
 ### Filesystem and coding
 

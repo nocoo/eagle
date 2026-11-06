@@ -288,39 +288,51 @@ export const resolveSkillFolder = async (directory: string): Promise<SkillFolder
   return { kind: "folder", folder: { path, dev: folder.dev, ino: folder.ino } };
 };
 
-/**
- * One validated folder's `SKILL.md`, read the way a file has to be read when a model may ask
- * for it: the manifest is resolved, it has to stay inside that folder, the file is opened
- * without blocking and without following a final symlink, and the opened descriptor is the
- * one that is checked. The folder's own identity is checked again after the open, so a
- * directory swapped for another one is a refusal rather than a read of the other tree.
- *
- * What is guaranteed: the descriptor that is read is a regular file that the validated
- * folder held as `SKILL.md` at the moment it was opened, and the path still names that same
- * file when the read starts. What is not: the three checks and the open are separate calls
- * (Node has no `openat` scoped to a directory descriptor), so a swapper that puts another
- * tree in place and restores it entirely between them is not detectable; it also has to
- * place the very file it wants read, which the folder then holds under that name anyway.
- */
-export const readSkillFolder = async (
-  folder: SkillFolder,
-  limits: SkillFileLimits = SKILL_FILE_LIMITS,
-): Promise<SkillFileOutcome> => {
-  const manifest = await realpath(join(folder.path, "SKILL.md")).catch(() => undefined);
-  if (manifest === undefined) {
+export type ManifestPathResolution =
+  | { readonly kind: "path"; readonly path: string }
+  | { readonly kind: "refusal"; readonly reason: string };
+
+/** Resolves `SKILL.md` from a pinned folder; the manifest has to stay inside that folder. */
+export const resolveManifestPath = async (folder: SkillFolder): Promise<ManifestPathResolution> => {
+  const path = await realpath(join(folder.path, "SKILL.md")).catch(() => undefined);
+  if (path === undefined) {
     return { kind: "refusal", reason: "SKILL.md is not readable; it may have been removed" };
   }
-  if (!isInside(folder.path, manifest)) {
+  if (!isInside(folder.path, path)) {
     return { kind: "refusal", reason: "SKILL.md points outside the skill's folder" };
   }
-  const expected = await stat(manifest).catch(() => undefined);
+  return { kind: "path", path };
+};
+
+/**
+ * The resolved manifest as it is read.
+ *
+ * Each check is a fact about its own moment, in this order: the path names a regular file;
+ * the opened descriptor is that file (`fstat` dev and inode); the pinned folder is still the
+ * directory that was resolved; and a fresh resolution from that folder now leads inside it
+ * and ends at the same inode. The last one is what a swapped intermediate component needs:
+ * the resolved path is a string, so any directory along it can be replaced by a symlink to
+ * another tree while the folder's own identity stays untouched.
+ *
+ * Because the checks and the open are separate calls (Node has no `openat` scoped to a
+ * directory descriptor), the composite proves no more than that each fact held when it was
+ * observed: a swap that happens after the last check is not detected, and a tree that is
+ * changed and restored between two checks is not seen either. What is read is the descriptor
+ * that was opened and checked, so a later swap cannot change which file those bytes come from.
+ */
+export const readSkillManifest = async (
+  folder: SkillFolder,
+  path: string,
+  limits: SkillFileLimits = SKILL_FILE_LIMITS,
+): Promise<SkillFileOutcome> => {
+  const expected = await stat(path).catch(() => undefined);
   if (expected === undefined || !expected.isFile()) {
     return { kind: "refusal", reason: "SKILL.md is not a regular file" };
   }
   // O_NONBLOCK keeps a fifo from parking the read forever; O_NOFOLLOW keeps the last
   // component from being a symlink that appeared after the paths were resolved.
   const handle = await open(
-    manifest,
+    path,
     constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
   ).catch(() => undefined);
   if (handle === undefined) {
@@ -340,9 +352,13 @@ export const readSkillFolder = async (
     if (living === undefined || living.dev !== folder.dev || living.ino !== folder.ino) {
       return { kind: "refusal", reason: "the skill's folder changed while it was read" };
     }
-    // And the path must still name the file this descriptor is, not one swapped in behind it.
-    const again = await stat(manifest).catch(() => undefined);
-    if (again === undefined || again.dev !== opened.dev || again.ino !== opened.ino) {
+    // And the path has to lead back to the very descriptor being read, resolved again from
+    // the pinned folder: an intermediate directory of the resolved path can be swapped for a
+    // symlink to another tree without touching the folder's identity.
+    const settled = await resolveManifestPath(folder);
+    if (settled.kind === "refusal") return settled;
+    const current = await stat(settled.path).catch(() => undefined);
+    if (current === undefined || current.dev !== opened.dev || current.ino !== opened.ino) {
       return { kind: "refusal", reason: "SKILL.md changed while it was read" };
     }
     const { bytes, bytesRead, truncated } = await readBoundedBytes(handle, limits.maxBytes);
@@ -356,17 +372,19 @@ export const readSkillFolder = async (
 };
 
 /**
- * One skill's `SKILL.md`, or why it cannot be read: resolve the folder, then read it. The
- * split is what makes a folder swapped between the two a refusal: the identity recorded
- * while resolving is checked again after the manifest is opened.
+ * One skill's `SKILL.md`, or why it cannot be read: resolve the folder, resolve the manifest
+ * inside it, then read it. The steps are separate so a tree swapped between two of them is a
+ * refusal rather than a read, and so each step can be observed on its own.
  */
 export const readSkillFile = async (
   directory: string,
   limits: SkillFileLimits = SKILL_FILE_LIMITS,
 ): Promise<SkillFileOutcome> => {
-  const resolved = await resolveSkillFolder(directory);
-  if (resolved.kind === "refusal") return resolved;
-  return readSkillFolder(resolved.folder, limits);
+  const folder = await resolveSkillFolder(directory);
+  if (folder.kind === "refusal") return folder;
+  const manifest = await resolveManifestPath(folder.folder);
+  if (manifest.kind === "refusal") return manifest;
+  return readSkillManifest(folder.folder, manifest.path, limits);
 };
 
 /**

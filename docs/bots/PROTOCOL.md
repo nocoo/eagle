@@ -193,12 +193,17 @@ Gateway rules:
   discovery, so the selection is the whole input. Every selected skill becomes one line of
   every bot's system prompt and reachable through `skill_read` by its name
   (EXTENSIONS-AND-TOOLS.md, "Skills"). `path` is the skill's own directory: `SKILL.md` is read
-  from inside it, its real path has to stay there, the file is opened without blocking and
-  only a regular file is read, and the folder's device and inode are checked again after the
-  open, so a folder swapped after it was resolved is refused rather than read (the two stats
-  and the open are separate calls, so a swap completed and undone entirely between them is
-  not detectable — EXTENSIONS-AND-TOOLS.md, "Skills"). `~/…` is expanded against the daemon's
-  home, and `GET /v1/settings`
+  from inside it and only a regular file is read. The read makes four separate checks, each a
+  fact about its own moment: the resolved manifest path is inside that directory; the opened
+  descriptor is the file that path named (`fstat` device and inode); the directory is still
+  the one that was resolved; and a fresh resolution from it leads inside it again and ends at
+  the same inode. A folder, an intermediate directory of the resolved path, or the file
+  itself swapped in place is therefore refused rather than read. The checks and the open are
+  separate calls — Node has no `openat` bound to a directory descriptor — so a swap that
+  happens after the last check, or one made and unmade between two checks, is not detected:
+  it cannot change which file the already-open descriptor reads, but nothing here proves the
+  tree stayed still for the whole call (EXTENSIONS-AND-TOOLS.md, "Skills"). `~/…` is expanded
+  against the daemon's home, and `GET /v1/settings`
   reports the list back in the same shape. A file written before the field reads as no
   skills; a hand-edited file that breaks a bound is read as no skills too, and the App pushes
   the selection again on the next tick or page visit.

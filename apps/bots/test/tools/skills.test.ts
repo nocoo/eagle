@@ -16,7 +16,8 @@ import {
   normalizeSelectedSkills,
   readSelectedSkill,
   readSkillFile,
-  readSkillFolder,
+  readSkillManifest,
+  resolveManifestPath,
   resolveSkillFolder,
   type SelectedSkill,
   skillSection,
@@ -367,11 +368,48 @@ test("a folder replaced after it was resolved is refused, not read", async () =>
     await rename(original, join(bench_.root, "alpha-gone"));
     await rename(replacement, original);
 
-    const outcome = await readSkillFolder(resolved.folder);
+    const path = await resolveManifestPath(resolved.folder);
+    assert.ok(path.kind === "path");
+    const outcome = await readSkillManifest(resolved.folder, path.path);
     assert.equal(outcome.kind, "refusal");
     assert.ok(outcome.kind === "refusal");
     assert.match(outcome.reason, /folder changed/, "the folder's own identity is what refused");
     assert.doesNotMatch(outcome.reason, /另一个目录里的说明/);
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("an intermediate directory of the manifest path cannot be swapped for an outside tree", async () => {
+  const bench_ = await bench();
+  try {
+    const selected = join(bench_.root, "selected");
+    await mkdir(join(selected, "sub"), { recursive: true });
+    await writeFile(join(selected, "sub", "SKILL.md"), "这个技能自己的说明\n");
+    // A legitimate link inside the folder: SKILL.md → sub/SKILL.md.
+    await symlink(join("sub", "SKILL.md"), join(selected, "SKILL.md"));
+    const legitimate = await readSkillFile(selected);
+    assert.ok(legitimate.kind === "text");
+    assert.match(legitimate.text, /这个技能自己的说明/, "the legitimate link is read");
+
+    const resolved = await resolveSkillFolder(selected);
+    assert.ok(resolved.kind === "folder");
+    const path = await resolveManifestPath(resolved.folder);
+    assert.ok(path.kind === "path", "the manifest resolves inside the folder before the swap");
+
+    // The reproduction: the manifest path is resolved, then its subdirectory is replaced by
+    // a symlink to a tree outside, and it is never restored. The folder's own identity is
+    // untouched, so the root pin alone still agrees with the outside file.
+    const outside = join(bench_.root, "outside");
+    await mkdir(outside, { recursive: true });
+    await writeFile(join(outside, "SKILL.md"), "OUTSIDE-SENTINEL\n");
+    await rename(join(selected, "sub"), join(bench_.root, "sub-gone"));
+    await symlink(outside, join(selected, "sub"));
+
+    const outcome = await readSkillManifest(resolved.folder, path.path);
+    assert.equal(outcome.kind, "refusal", "the swapped path is refused, not read");
+    assert.ok(outcome.kind === "refusal");
+    assert.doesNotMatch(outcome.reason, /OUTSIDE-SENTINEL/);
   } finally {
     await bench_.cleanup();
   }
