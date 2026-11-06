@@ -7,10 +7,11 @@ import Testing
 @MainActor
 @Suite("Conversation transcript focus")
 struct ConversationTranscriptFocusTests {
-  /// Tapping the clear area behind the transcript (below short content) must bump the same
-  /// counter `Composer` observes via `focusRequest`, so the field re-focuses.
+  /// Increments the same counter passed to `Composer.focusRequest` when the person taps the
+  /// padded transcript background (not the bubble). This only asserts the shared binding is
+  /// driven by the tap path; it does not read `firstResponder` on the `TextField`.
   @Test("tapping blank transcript forwards focus to composer")
-  func tapBackgroundIncrementsSharedFocusCounter() {
+  func tapBackgroundIncrementsSharedFocusCounter() async throws {
     final class Counter {
       var value = 0
     }
@@ -44,23 +45,36 @@ struct ConversationTranscriptFocusTests {
     defer {
       window.contentView = nil
     }
-    host.layoutSubtreeIfNeeded()
-    host.displayIfNeeded()
-    RunLoop.main.run(until: Date().addingTimeInterval(0.08))
 
-    guard let scroll = Self.scrollView(in: host), let document = scroll.documentView else {
-      Issue.record("Expected NSScrollView with document for transcript")
-      return
+    try await Self.waitUntil {
+      host.layoutSubtreeIfNeeded()
+      host.displayIfNeeded()
+      return Self.scrollView(in: host)?.documentView != nil
     }
+
+    let scroll = try #require(Self.scrollView(in: host))
+    let document = try #require(scroll.documentView)
     scroll.layoutSubtreeIfNeeded()
     document.layoutSubtreeIfNeeded()
-    // Short content with min-height document: aim low in the document to hit padding, not the row.
+    // Short content with min-height document: aim low to hit padding, not the row.
     let docBounds = document.bounds
-    let pointInDoc = NSPoint(x: docBounds.midX, y: docBounds.minY + max(24, docBounds.height * 0.08))
+    let paddingY = max(24, docBounds.height * 0.08)
+    let pointInDoc = NSPoint(x: docBounds.midX, y: docBounds.minY + paddingY)
     let locInWindow = document.convert(pointInDoc, to: nil)
     Self.postClick(at: locInWindow, in: window)
-    RunLoop.main.run(until: Date().addingTimeInterval(0.06))
-    #expect(counter.value == 1)
+
+    try await Self.waitUntil { counter.value == 1 }
+  }
+
+  private static func waitUntil(_ condition: @escaping () throws -> Bool) async throws {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+    while true {
+      if try condition() { return }
+      guard ContinuousClock.now < deadline else {
+        throw NSError(domain: "ConversationTranscriptFocusTests", code: 1)
+      }
+      try await Task.sleep(for: .milliseconds(10))
+    }
   }
 
   private static func postClick(at locationInWindow: NSPoint, in window: NSWindow) {
