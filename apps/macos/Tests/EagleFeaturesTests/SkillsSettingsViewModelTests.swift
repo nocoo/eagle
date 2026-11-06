@@ -190,7 +190,40 @@ struct SkillsSettingsViewModelTests {
     await model.removeRoot(link)
     await model.reload()
     #expect(model.skills.count == 1, "the skill is still there through the automatic root")
-    #expect(model.isSelected(skill), "the tick belongs to the skill, not to the way in")
+    let kept = try #require(model.skills.first)
+    #expect(model.isSelected(kept), "the tick belongs to the skill, not to the way in")
+    #expect(model.selectedCount == 1)
+  }
+
+  @Test("two reloads of the same scope publish only the newest answer")
+  func overlappingReloads() async throws {
+    let fixture = try SkillsFixture()
+    defer { fixture.cleanUp() }
+    let gate = ScanGate()
+    let calls = ScanCalls()
+    let model = fixture.model(scan: { _ in
+      let call = await calls.next()
+      await gate.wait()
+      return SkillScanResult(
+        skills: [
+          SkillEntry(
+            id: "call-\(call)", name: "call-\(call)", version: "", description: "",
+            directory: URL(fileURLWithPath: "/tmp/call-\(call)"))
+        ],
+        roots: [])
+    })
+    await gate.arm()
+    let first = Task { await model.reload() }
+    while await !gate.isWaiting { try await Task.sleep(for: .milliseconds(5)) }
+    let second = Task { await model.reload() }
+    await second.value
+    #expect(model.skills.map(\.name) == ["call-2"], "the newest answer is the one on the page")
+    await gate.release()
+    await first.value
+    #expect(
+      model.skills.map(\.name) == ["call-2"],
+      "the answer that arrives last is the older one, and it does not publish")
+    #expect(await calls.count == 2, "one scan per accepted request, and no rescan")
   }
 
   @Test("a root that is added while a scan runs is scanned again")
@@ -326,4 +359,16 @@ private actor ScanGate {
   }
 
   var isWaiting: Bool { !pending.isEmpty }
+}
+
+/// Counts how many scans were asked for.
+private actor ScanCalls {
+  private var calls = 0
+
+  func next() -> Int {
+    calls += 1
+    return calls
+  }
+
+  var count: Int { calls }
 }

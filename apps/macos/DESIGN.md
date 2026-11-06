@@ -178,15 +178,20 @@ call, no protocol change and no tool group carries it.
   added. Each custom root has a 移除 button; the automatic root has none.
 - A skill is an immediate child directory of a root that carries a `SKILL.md`. The front
   matter is the block between two column-0 `---` delimiters, and without a closing one there
-  is none at all. Plain, single quoted and double quoted scalars are read, a `|` block keeps
-  its lines, a `>` block folds them into one paragraph, a comment after a value is dropped,
-  and a version counts when it is a direct child of a `metadata` mapping. A missing name
-  falls back to the folder name and every other key is ignored.
+  is none at all. Plain, single quoted and double quoted scalars are read, the six block
+  forms (`|`, `|-`, `|+`, `>`, `>-`, `>+`) are read, a comment that follows a value is dropped
+  before the value is looked at, and a `#` inside quotes stays part of the value. A version
+  counts when it is a direct child of a `metadata` mapping. A value the reader cannot read is
+  no value at all: the cell stays empty and the skill is named after its folder. A missing
+  name falls back to the folder name and every other key, and every sequence, is ignored.
 - A folder that is really the same folder — reached through a link, or through two roots —
   is one skill with one row, and the row keeps the path the skill really lives at, so a tick
   belongs to the skill and not to the way in.
-- A manifest that is not a regular file is never opened, and only the head of a manifest is
-  read, so one odd file cannot hold the scan up.
+- A manifest is read through one descriptor that is opened without blocking and checked with
+  `fstat` before a byte is read, so a pipe — even one that replaces the manifest after the
+  check — is never read and never holds the scan up. Only the head of a manifest is read, and
+  the front matter is decided on those bytes, so a character that the cut split in half
+  cannot take the front matter with it. An empty manifest is a skill without front matter.
 - A root that is not there says so, and a root the process may not read says why; neither
   fails the page.
 - The rows are ordered by name (case-insensitively) and then by path.
@@ -194,9 +199,11 @@ call, no protocol change and no tool group carries it.
   filter, and it states the honest counts. Nothing is ticked until a person ticks it, and
   the ticks and the custom roots live in this App's own defaults.
 - The scan reads the filesystem off the main actor and publishes on it; 重新扫描 rescans
-  without losing the ticks. A root that changes while a scan is running is scanned again:
-  the answer about the old scope is thrown away, so the page always shows the scope that is
-  stored now.
+  without losing the ticks. Every reload is a request of its own and only the newest one
+  answers the page: a request that a newer one has superseded leaves the page alone and
+  does not scan again, so an older answer can never overwrite a newer one. A root that
+  changes while a scan is running therefore ends with a scan of the scope that is stored
+  now.
 
 ## Reference-led composition
 

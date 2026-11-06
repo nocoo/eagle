@@ -510,6 +510,274 @@ struct SkillScannerTests {
     #expect(result.skills.first?.description.isEmpty == true)
   }
 
+  @Test("a comment after a block marker does not become the value")
+  func commentAfterBlockMarker() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      """
+      ---
+      name: alpha-skill
+      description: >- # a summary of the block
+        first line
+        second line
+      ---
+      """)
+    let result = SkillScanner.scan(roots: [root])
+    let skill = try #require(result.skills.first)
+    #expect(skill.description == "first line second line")
+  }
+
+  @Test("a comment after a key does not lose what is under it")
+  func commentAfterKey() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      """
+      ---
+      name: alpha-skill
+      metadata: # the versions live here
+        version: "1.1.3"
+      ---
+      """)
+    let result = SkillScanner.scan(roots: [root])
+    let skill = try #require(result.skills.first)
+    #expect(skill.version == "1.1.3")
+    #expect(skill.name == "alpha-skill")
+  }
+
+  @Test("a comment line before a nested mapping does not decide its indentation")
+  func commentBeforeNestedMapping() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      """
+      ---
+      name: alpha-skill
+      metadata:
+      # a note about the version
+        version: "2.0.0"
+      ---
+      """)
+    let result = SkillScanner.scan(roots: [root])
+    let skill = try #require(result.skills.first)
+    #expect(skill.version == "2.0.0")
+  }
+
+  @Test("a deeper indented line in a folded block keeps its line break")
+  func foldedBlockWithDeeperLine() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      """
+      ---
+      name: alpha-skill
+      description: >
+        first line
+        second line
+          deeper line
+        last line
+      ---
+      """)
+    let result = SkillScanner.scan(roots: [root])
+    #expect(
+      result.skills.first?.description == "first line second line\n  deeper line\nlast line\n",
+      "the deeper line keeps its own indentation and its own line break")
+  }
+
+  @Test("a literal block keeps the indentation of a deeper line")
+  func literalBlockWithDeeperLine() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      """
+      ---
+      name: alpha-skill
+      description: |
+        first line
+          deeper line
+      ---
+      """)
+    let result = SkillScanner.scan(roots: [root])
+    #expect(result.skills.first?.description == "first line\n  deeper line\n")
+  }
+
+  @Test("a folded block that keeps its newlines keeps them all")
+  func foldedBlockKeepsEveryNewline() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      """
+      ---
+      name: alpha-skill
+      description: >+
+        first line
+
+
+      ---
+      """)
+    let result = SkillScanner.scan(roots: [root])
+    #expect(result.skills.first?.description == "first line\n\n\n")
+  }
+
+  @Test("a blank line in a folded block starts a new paragraph")
+  func foldedBlockWithBlankLine() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      """
+      ---
+      name: alpha-skill
+      description: >
+        first
+
+        second
+      ---
+      """)
+    let result = SkillScanner.scan(roots: [root])
+    #expect(result.skills.first?.description == "first\nsecond\n")
+  }
+
+  @Test("a double quoted value decodes the escapes YAML defines")
+  func escapedCodePoints() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      #"""
+      ---
+      name: "alpha-skill"
+      description: "\u4E2D \x41 \U0001F600"
+      ---
+      """#)
+    let result = SkillScanner.scan(roots: [root])
+    #expect(result.skills.first?.description == "中 A 😀")
+  }
+
+  @Test("an empty block that keeps its newlines is still empty")
+  func emptyKeptBlock() throws {
+    let root = try temporaryRoot()
+    try writeSkill(root, "alpha", "---\nname: alpha-skill\ndescription: |+\n---\n")
+    let result = SkillScanner.scan(roots: [root])
+    #expect(result.skills.first?.description == "")
+    let folded = try temporaryRoot()
+    try writeSkill(folded, "beta", "---\nname: beta-skill\ndescription: >+\n---\n")
+    #expect(SkillScanner.scan(roots: [folded]).skills.first?.description == "")
+  }
+
+  @Test("a hash inside quotes is part of the value")
+  func hashInsideQuotes() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      """
+      ---
+      name: "alpha-skill"
+      description: "the # sign stays"
+      version: '1.2 # not a comment'
+      ---
+      """)
+    let result = SkillScanner.scan(roots: [root])
+    let skill = try #require(result.skills.first)
+    #expect(skill.description == "the # sign stays")
+    #expect(skill.version == "1.2 # not a comment")
+  }
+
+  @Test("a key without a value is no value at all")
+  func emptyValueIsNoValue() throws {
+    let root = try temporaryRoot()
+    try writeSkill(root, "alpha", "---\nname:\ndescription:\n---\n")
+    let result = SkillScanner.scan(roots: [root])
+    let skill = try #require(result.skills.first)
+    #expect(skill.name == "alpha", "the folder names the skill")
+    #expect(skill.description.isEmpty)
+  }
+
+  @Test("a value the reader cannot read is no value at all")
+  func unreadableScalarIsNoValue() throws {
+    let root = try temporaryRoot()
+    try writeSkill(
+      root, "alpha",
+      """
+      ---
+      description: |2
+        first line
+      ---
+      """)
+    let result = SkillScanner.scan(roots: [root])
+    let skill = try #require(result.skills.first)
+    #expect(skill.description.isEmpty, "an unreadable value is an empty cell")
+    #expect(skill.name == "alpha", "and the folder names the skill")
+  }
+
+  @Test("an empty manifest still lists the skill under its folder name")
+  func emptyManifest() throws {
+    let root = try temporaryRoot()
+    try writeSkill(root, "alpha", "")
+    let result = SkillScanner.scan(roots: [root])
+    let skill = try #require(result.skills.first)
+    #expect(skill.name == "alpha")
+    #expect(skill.description.isEmpty)
+    #expect(skill.version.isEmpty)
+  }
+
+  @Test("a body that is cut in the middle of a character keeps its front matter")
+  func bodyCutInsideCharacter() throws {
+    let root = try temporaryRoot()
+    let head = "---\nname: alpha-skill\ndescription: Runs alpha.\n---\n\n"
+    let padding = SkillScanner.manifestReadLimit - head.utf8.count - 1
+    let body = String(repeating: "a", count: padding) + "中" + String(repeating: "b", count: 32)
+    try writeSkill(root, "alpha", head + body)
+    let result = SkillScanner.scan(roots: [root])
+    let skill = try #require(result.skills.first)
+    #expect(skill.name == "alpha-skill")
+    #expect(skill.description == "Runs alpha.")
+  }
+
+  @Test("front matter that ends beyond the cap is no front matter")
+  func frontMatterBeyondCap() throws {
+    let root = try temporaryRoot()
+    let filler = String(repeating: "c", count: SkillScanner.manifestReadLimit + 64)
+    try writeSkill(
+      root, "alpha",
+      """
+      ---
+      name: alpha-skill
+      description: \(filler)
+      ---
+      """)
+    let result = SkillScanner.scan(roots: [root])
+    let skill = try #require(result.skills.first)
+    #expect(skill.name == "alpha", "the skill is still listed")
+    #expect(skill.description.isEmpty)
+  }
+
+  @Test("a manifest that is swapped for a pipe after the check is not read")
+  func manifestSwappedForPipe() async throws {
+    let root = try temporaryRoot()
+    let directory = root.appendingPathComponent("alpha", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let manifest = directory.appendingPathComponent("SKILL.md")
+    try "---\nname: alpha-skill\n---\n".write(to: manifest, atomically: true, encoding: .utf8)
+    let done = ScanCompletion()
+    let scan = Task.detached {
+      let result = SkillScanner.scan(roots: [root]) {
+        // The window between the check that a manifest is a regular file and the read.
+        try? FileManager.default.removeItem(at: manifest)
+        _ = mkfifo(manifest.path, 0o644)
+      }
+      await done.mark()
+      return result
+    }
+    for _ in 0..<40 {
+      if await done.isDone { break }
+      try? await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(await done.isDone, "the scan does not wait on a pipe")
+    guard await done.isDone else { return }
+    let result = await scan.value
+    #expect(result.skills.isEmpty, "a pipe is not a manifest")
+  }
+
   private func temporaryRoot() throws -> URL {
     let url = FileManager.default.temporaryDirectory
       .appendingPathComponent("eagle-skill-scan-\(UUID().uuidString)", isDirectory: true)

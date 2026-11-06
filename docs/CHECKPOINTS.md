@@ -1,5 +1,26 @@
 # 用户视角检查点
 
+## 2026-11-06 11:45 +08 — 技能 settings page, review round 2 (macOS)
+
+- 第二轮评审的五条都修掉了，每条先有失败测试：front matter 读取器先剥行尾注释再判断值类型
+  （`>- # summary` 不再显示标记），块标量按 YAML 语义（折叠块里更深缩进的行保留自己的换行与缩进），
+  双引号支持 `\x` `\u` `\U`，读不懂的值一律当作“没有值”（空格子、名字回落目录名）；manifest 改成
+  字节层判定 front matter（只读头部 64 KiB，body 里被截断的多字节字符不影响 front matter，空
+  manifest 也算一个技能）；manifest 用同一个描述符 `open(O_RDONLY|O_NONBLOCK)` + `fstat` 读，
+  检查与读之间被换成管道的文件既不会被读也不会卡住扫描；`reload()` 每次一个请求号，只有最新的请求
+  可以发布，被顶掉的请求直接退出不再重扫。
+- 红证据（对着上一版实现跑新测试）：scanner 10 处失败（块标记当值、键后注释、嵌套前的注释行、折叠块
+  的深缩进行、转义、空块、空 manifest、body 截断多字节字符等）；把 open 换成阻塞式后 “manifest 被
+  换成管道” 用例 2.1 s 超时失败；view model 的 “同范围两个 reload 乱序完成” 用例两处断言失败（旧实现
+  会用旧答案覆盖新答案，并多扫一次）。修好后：`apps/macos` `swift test` 375+52+78+37 = 542 个测试
+  全绿（本轮新增 17 个：scanner +16、view model +1）；`swift format lint --strict` 干净；
+  `npm run check:design` 与 `npm run test:design` 通过；`./Scripts/coverage.sh` 2934/3094 = 94.8%
+  （下限 90；`SkillScanner.swift` 98.75%、`SkillsSettingsViewModel.swift` 99.39%）。
+- 块标量的期望值用本机 Ruby 的 YAML（Psych）逐条对过（`|`/`|-`/`|+`/`>`/`>-`/`>+`、空块、折叠块里的
+  深缩进行、折叠块里的空行），没有引入第三方 YAML 库。
+- 未验证：仍按要求没有运行 `swift run`、没有动 dev App，这一页还没有真机肉眼验收；也没有大小写不敏感
+  卷的用例。
+
 ## 2026-11-06 11:05 +08 — 技能 settings page, review fixes (macOS)
 
 - 第一轮评审的七条意见全部修掉，每条都先有失败测试：front matter 读取器重写（成对 `---`

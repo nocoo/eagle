@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// One skill a scan found: the directory that holds it and what its `SKILL.md` says about it.
@@ -76,13 +77,22 @@ public enum SkillScanner: Sendable {
 
   /// Scans every root in order. A skill that two roots share is one row, and the rows are
   /// ordered by name (case-insensitively) and then by path.
-  public static func scan(roots: [URL]) -> SkillScanResult {
+  ///
+  /// `beforeManifestRead` runs between the check that a manifest is a regular file and the
+  /// read of that manifest. It is a seam for the tests: a file that is swapped for a pipe in
+  /// that window must still not be read.
+  public static func scan(
+    roots: [URL], beforeManifestRead: (@Sendable () -> Void)? = nil
+  ) -> SkillScanResult {
     var skills: [SkillEntry] = []
     var identities = Set<Data>()
     var paths = Set<String>()
     var reports: [SkillRootReport] = []
     for root in roots {
-      reports.append(scanRoot(root, into: &skills, identities: &identities, paths: &paths))
+      reports.append(
+        scanRoot(
+          root, into: &skills, identities: &identities, paths: &paths,
+          beforeManifestRead: beforeManifestRead))
     }
     skills.sort { left, right in
       let byName = left.name.lowercased().compare(right.name.lowercased())
@@ -96,7 +106,8 @@ public enum SkillScanner: Sendable {
     _ root: URL,
     into skills: inout [SkillEntry],
     identities: inout Set<Data>,
-    paths: inout Set<String>
+    paths: inout Set<String>,
+    beforeManifestRead: (@Sendable () -> Void)?
   ) -> SkillRootReport {
     let identifier = root.standardizedFileURL.path
     let resolved = root.resolvingSymlinksInPath()
@@ -128,10 +139,10 @@ public enum SkillScanner: Sendable {
       // The same folder under two roots, or under two links, is one skill.
       if let identity, !identities.insert(identity).inserted { continue }
       guard paths.insert(directory.path).inserted else { continue }
-      guard let text = readManifest(at: directory.appendingPathComponent(manifestName)) else {
-        continue
-      }
-      let front = SkillFrontMatter.parse(text)
+      beforeManifestRead?()
+      let manifest = readManifest(at: directory.appendingPathComponent(manifestName))
+      guard case .frontMatter(let block) = manifest else { continue }
+      let front = SkillFrontMatter.parse(block)
       skills.append(
         SkillEntry(
           id: directory.path,
@@ -156,21 +167,77 @@ public enum SkillScanner: Sendable {
     return identifier
   }
 
-  /// The head of a manifest, and nothing else. A file that is not a regular file — a pipe, a
-  /// device — is never opened, because opening one would wait for a writer that may never
-  /// come.
-  private static func readManifest(at url: URL) -> String? {
+  /// What a manifest turned out to be.
+  private enum Manifest {
+    /// It is not a regular file, or it could not be opened: it is not a manifest.
+    case notAFile
+    /// The front matter of the manifest, empty when the manifest has none.
+    case frontMatter(String)
+  }
+
+  /// The front matter of a manifest, and nothing else.
+  ///
+  /// A file that is not a regular file — a pipe, a device — is never read, and the check and
+  /// the read use one descriptor, so a file that is swapped in between cannot be read
+  /// either. Only the head of the manifest is read, and the front matter is decided on those
+  /// bytes: a character that the cut split in half can only be in the body, so it does not
+  /// take the front matter with it.
+  private static func readManifest(at url: URL) -> Manifest {
     let resolved = url.resolvingSymlinksInPath()
-    guard
-      let attributes = try? FileManager.default.attributesOfItem(atPath: resolved.path),
-      let type = attributes[.type] as? FileAttributeType, type == .typeRegular,
-      let handle = try? FileHandle(forReadingFrom: resolved)
-    else { return nil }
-    defer { try? handle.close() }
-    guard let data = try? handle.read(upToCount: manifestReadLimit), !data.isEmpty else {
-      return nil
+    let descriptor = open(resolved.path, O_RDONLY | O_NONBLOCK)
+    guard descriptor >= 0 else { return .notAFile }
+    defer { close(descriptor) }
+    var information = stat()
+    guard fstat(descriptor, &information) == 0,
+      information.st_mode & UInt16(S_IFMT) == UInt16(S_IFREG)
+    else { return .notAFile }
+    let bytes = readBytes(descriptor, limit: manifestReadLimit)
+    guard let block = frontMatter(in: bytes) else { return .frontMatter("") }
+    return .frontMatter(block)
+  }
+
+  /// At most `limit` bytes from a descriptor that is already open.
+  private static func readBytes(_ descriptor: Int32, limit: Int) -> Data {
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: 16 * 1024)
+    while data.count < limit {
+      let wanted = min(buffer.count, limit - data.count)
+      let count = Darwin.read(descriptor, &buffer, wanted)
+      if count > 0 {
+        data.append(buffer, count: count)
+        continue
+      }
+      if count == 0 { break }
+      if errno == EINTR { continue }
+      break
     }
-    return String(data: data, encoding: .utf8)
+    return data
+  }
+
+  /// The front matter in a prefix of a manifest's bytes: the block between the two `---`
+  /// delimiters. The block is decided on the bytes, so a character that the prefix cut in
+  /// half — which can only be in the body — does not take the front matter with it.
+  private static func frontMatter(in bytes: Data) -> String? {
+    let lines = bytes.split(separator: 0x0A, omittingEmptySubsequences: false)
+    guard let first = lines.first, isDelimiter(Data(first)) else { return nil }
+    guard let end = lines.indices.dropFirst().first(where: { isDelimiter(Data(lines[$0])) })
+    else { return nil }
+    var decoded: [String] = []
+    for line in lines[1..<end] {
+      var content = Data(line)
+      if content.last == 0x0D { content.removeLast() }
+      guard let text = String(data: content, encoding: .utf8) else { return nil }
+      decoded.append(text)
+    }
+    return decoded.joined(separator: "\n")
+  }
+
+  /// A delimiter is a `---` in the first column: one inside a block is part of the block.
+  private static func isDelimiter(_ line: Data) -> Bool {
+    var content = line
+    if content.last == 0x0D { content.removeLast() }
+    while content.last == 0x20 || content.last == 0x09 { content.removeLast() }
+    return content == Data("---".utf8)
   }
 
   /// What an error means for a scan root: a folder that is not there is missing, and
@@ -186,8 +253,11 @@ public enum SkillScanner: Sendable {
   }
 }
 
-/// The leading front matter of a `SKILL.md`, read without a YAML library: only the keys the
+/// The front matter of a `SKILL.md`, read without a YAML library: only the keys the
 /// page shows are taken, and the scalars that really occur are understood.
+///
+/// The text is the block itself: what lies between the two `---` delimiters of the
+/// manifest. A manifest without a closing delimiter has no front matter at all.
 struct SkillFrontMatter: Equatable {
   var name: String?
   var description: String?
@@ -195,18 +265,8 @@ struct SkillFrontMatter: Equatable {
 
   static func parse(_ text: String) -> SkillFrontMatter {
     var front = SkillFrontMatter()
-    let lines =
-      text
-      .replacingOccurrences(of: "\r\n", with: "\n")
-      .replacingOccurrences(of: "\r", with: "\n")
-      .split(separator: "\n", omittingEmptySubsequences: false)
-      .map(String.init)
-    // The front matter is the block between two column-0 delimiters. Without a closing one
-    // there is no front matter at all.
-    guard lines.first?.trimmingCharacters(in: .whitespaces) == "---",
-      let end = lines.indices.dropFirst().first(where: { isDelimiter(lines[$0]) })
-    else { return front }
-    var reader = YamlReader(lines: Array(lines[1..<end]))
+    var reader = YamlReader(
+      lines: text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init))
     let mapping = reader.parseMapping(indent: 0)
     front.name = mapping.scalar("name")
     front.description = mapping.scalar("description")
@@ -217,16 +277,24 @@ struct SkillFrontMatter: Equatable {
     }
     return front
   }
-
-  /// A delimiter is a `---` in the first column: one inside a block is part of the block.
-  private static func isDelimiter(_ line: String) -> Bool {
-    guard !line.hasPrefix(" "), !line.hasPrefix("\t") else { return false }
-    return line.trimmingCharacters(in: .whitespaces) == "---"
-  }
 }
 
-/// A small reader for the front matter of a manifest: the mapping at the top level, one
-/// level of nesting under it, and the scalars YAML really uses.
+/// A small reader for the front matter of a manifest.
+///
+/// It reads the mapping at the top level and one level of nesting under it, and it reads the
+/// scalars that really occur in a skill manifest:
+///
+/// - A plain scalar, a single quoted scalar (a doubled quote is one quote) and a double
+///   quoted scalar.
+/// - The six block forms: `|`, `|-`, `|+`, `>`, `>-` and `>+`. A literal block keeps its
+///   lines, a folded block joins the lines of a paragraph with a space, and a line that is
+///   more indented than the block keeps its own line break.
+/// - The escapes a double quoted value may hold: `\n`, `\t`, `\"`, `\\`, and the code points
+///   `\x`, `\u` and `\U`.
+///
+/// A comment that follows a value is dropped, and a `#` inside quotes is part of the value.
+/// A value the reader cannot read is no value at all: the cell stays empty and the skill is
+/// named after its folder. Every other key, and every sequence, is ignored.
 struct YamlReader {
   /// One value of a mapping.
   enum Value: Equatable {
@@ -301,15 +369,23 @@ struct YamlReader {
         continue
       }
       let key = String(line.content[..<separator]).trimmingCharacters(in: .whitespaces)
-      let rest = String(line.content[line.content.index(after: separator)...])
-        .trimmingCharacters(in: .whitespaces)
+      let raw = String(line.content[line.content.index(after: separator)...])
       index += 1
-      if let block = blockStyle(rest) {
-        result[key] = .scalar(blockValue(collectBlock(indent: line.indent), block))
-      } else if rest.isEmpty {
+      // The comment is taken off before the value is looked at, so a comment after a block
+      // marker does not turn the marker into the value.
+      let value = YamlReader.splitValue(raw)
+      if let quote = value.quote {
+        guard let text = YamlReader.quoted(value.text, quote: quote) else { continue }
+        result[key] = .scalar(text)
+      } else if value.text.isEmpty {
         result[key] = nestedValue(indent: line.indent)
+      } else if let block = blockStyle(value.text) {
+        result[key] = .scalar(blockValue(collectBlock(indent: line.indent), block))
+      } else if value.text.hasPrefix("|") || value.text.hasPrefix(">") {
+        // A block marker this reader does not know: there is no value at all.
+        continue
       } else {
-        result[key] = .scalar(scalar(rest))
+        result[key] = .scalar(value.text)
       }
     }
     return result
@@ -325,6 +401,48 @@ struct YamlReader {
         if next == content.endIndex || content[next] == " " { return position }
       }
       position = content.index(after: position)
+    }
+    return nil
+  }
+
+  /// The value of a key without its comment, and the quote it was written in.
+  private static func splitValue(_ raw: String) -> (text: String, quote: Character?) {
+    let trimmed = raw.trimmingCharacters(in: .whitespaces)
+    guard let first = trimmed.first else { return ("", nil) }
+    if first == "\"" || first == "'" {
+      guard let end = closingQuote(trimmed, quote: first) else { return (trimmed, first) }
+      return (String(trimmed[...end]), first)
+    }
+    // A value that starts with a hash is a comment, so the value is empty.
+    if first == "#" { return ("", nil) }
+    if let comment = trimmed.range(of: " #") {
+      return (String(trimmed[..<comment.lowerBound]), nil)
+    }
+    return (trimmed, nil)
+  }
+
+  /// Where a quoted value ends, or nothing when the quote is never closed.
+  private static func closingQuote(_ raw: String, quote: Character) -> String.Index? {
+    var position = raw.index(after: raw.startIndex)
+    while position < raw.endIndex {
+      let character = raw[position]
+      if character == quote {
+        if quote == "'" {
+          let next = raw.index(after: position)
+          if next < raw.endIndex, raw[next] == "'" {
+            position = raw.index(after: next)
+            continue
+          }
+        }
+        return position
+      }
+      if quote == "\"", character == "\\" {
+        let next = raw.index(after: position)
+        guard next < raw.endIndex else { return nil }
+        position = raw.index(after: next)
+        continue
+      }
+      position = raw.index(after: position)
     }
     return nil
   }
@@ -348,7 +466,8 @@ struct YamlReader {
     var end = index
     while end < lines.count {
       let line = lines[end]
-      if line.content.isEmpty {
+      // A comment line says nothing about the indentation of the block below it.
+      if line.content.isEmpty || line.content.hasPrefix("#") {
         end += 1
         continue
       }
@@ -357,7 +476,7 @@ struct YamlReader {
       end += 1
     }
     guard childIndent > 0 else { return .scalar("") }
-    let first = lines[index..<end].first { !$0.content.isEmpty }
+    let first = lines[index..<end].first { !$0.content.isEmpty && !$0.content.hasPrefix("#") }
     if let first, first.content.hasPrefix("- ") || first.content == "-" {
       index = end
       return .other
@@ -415,47 +534,51 @@ struct YamlReader {
       guard line.count >= base else { return line.trimmingCharacters(in: .whitespaces) }
       return String(line.dropFirst(base))
     }
+    guard !lines.isEmpty else { return "" }
     let text = block.isFolded ? folded(lines) : lines.joined(separator: "\n")
     switch block {
     case .literal(let chomp), .folded(let chomp):
       switch chomp {
       case .strip: return text
       case .keep: return text + String(repeating: "\n", count: trailing + 1)
-      case .clip: return text.isEmpty ? "" : text + "\n"
+      case .clip: return text + "\n"
       }
     }
   }
 
-  /// A folded block: the lines of a paragraph join with a space, and a blank line starts a
-  /// new one.
+  /// A folded block: the lines of a paragraph join with a space, a blank line starts a new
+  /// one, and a line that is more indented than the block keeps its own line break.
   private func folded(_ lines: [String]) -> String {
     var result = ""
-    var afterBreak = false
-    for (offset, line) in lines.enumerated() {
+    var wroteAny = false
+    var afterBlank = false
+    var previousMoreIndented = false
+    for line in lines {
       if line.isEmpty {
         result += "\n"
-        afterBreak = true
+        wroteAny = true
+        afterBlank = true
+        previousMoreIndented = false
         continue
       }
-      if offset > 0, !afterBreak { result += " " }
+      // The lines are already de-indented, so a line that still carries spaces is more
+      // indented than the block.
+      let moreIndented = line.prefix { $0 == " " }.count > 0
+      if wroteAny, !afterBlank {
+        result += previousMoreIndented || moreIndented ? "\n" : " "
+      }
       result += line
-      afterBreak = false
+      wroteAny = true
+      afterBlank = false
+      previousMoreIndented = moreIndented
     }
     return result
   }
 
-  /// A scalar as YAML reads it: plain, single quoted or double quoted.
-  private func scalar(_ raw: String) -> String {
-    if raw.hasPrefix("\"") { return YamlReader.quoted(raw, quote: "\"") }
-    if raw.hasPrefix("'") { return YamlReader.quoted(raw, quote: "'") }
-    var text = raw
-    if let comment = text.range(of: " #") { text = String(text[..<comment.lowerBound]) }
-    return text.trimmingCharacters(in: .whitespaces)
-  }
-
   /// A quoted scalar: the closing quote ends the value, and the escapes YAML defines are
-  /// decoded.
-  private static func quoted(_ raw: String, quote: Character) -> String {
+  /// decoded. A value that is never closed, or that holds an escape this reader does not
+  /// know, is no value at all.
+  private static func quoted(_ raw: String, quote: Character) -> String? {
     var result = ""
     var position = raw.index(after: raw.startIndex)
     while position < raw.endIndex {
@@ -469,33 +592,56 @@ struct YamlReader {
             continue
           }
         }
-        break
+        return result
       }
       if quote == "\"", character == "\\" {
-        let next = raw.index(after: position)
-        guard next < raw.endIndex else { break }
-        switch raw[next] {
-        case "n": result.append("\n")
-        case "t": result.append("\t")
-        case "r": result.append("\r")
-        case "\"": result.append("\"")
-        case "\\": result.append("\\")
-        default: result.append(raw[next])
-        }
-        position = raw.index(after: next)
+        guard let escaped = escape(raw, at: position) else { return nil }
+        result += escaped.text
+        position = escaped.next
         continue
       }
       result.append(character)
       position = raw.index(after: position)
     }
-    return result
+    return nil
+  }
+
+  /// One escape of a double quoted value.
+  private static func escape(
+    _ raw: String, at position: String.Index
+  ) -> (text: String, next: String.Index)? {
+    let next = raw.index(after: position)
+    guard next < raw.endIndex else { return nil }
+    switch raw[next] {
+    case "n": return ("\n", raw.index(after: next))
+    case "t": return ("\t", raw.index(after: next))
+    case "\"": return ("\"", raw.index(after: next))
+    case "\\": return ("\\", raw.index(after: next))
+    case "x": return codePoint(raw, after: next, digits: 2)
+    case "u": return codePoint(raw, after: next, digits: 4)
+    case "U": return codePoint(raw, after: next, digits: 8)
+    default: return nil
+    }
+  }
+
+  /// A code point written as hex digits.
+  private static func codePoint(
+    _ raw: String, after position: String.Index, digits: Int
+  ) -> (text: String, next: String.Index)? {
+    let start = raw.index(after: position)
+    guard let end = raw.index(start, offsetBy: digits, limitedBy: raw.endIndex), end > start
+    else { return nil }
+    guard let value = UInt32(String(raw[start..<end]), radix: 16),
+      let scalar = Unicode.Scalar(value)
+    else { return nil }
+    return (String(Character(scalar)), end)
   }
 }
 
 extension Dictionary where Key == String, Value == YamlReader.Value {
-  /// The value of a key, when it is a scalar.
+  /// The value of a key, when it is a scalar that holds something.
   func scalar(_ key: String) -> String? {
-    guard case .scalar(let value) = self[key] else { return nil }
+    guard case .scalar(let value) = self[key], !value.isEmpty else { return nil }
     return value
   }
 
