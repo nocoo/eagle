@@ -1,56 +1,86 @@
 import AppKit
+import Foundation
 import SwiftUI
 import Testing
 
 @testable import EagleDesign
 
-/// Materializing a page of transcript rows must stay within a small multiple of plain text
-/// rows. Scrolling rebuilds every row that enters the viewport, so per-row view count is
-/// what a reader feels as smoothness: a copy button and a bubble card cost milliseconds a
-/// page if they are built for rows nobody is pointing at.
+/// Materializing a page of transcript **rows** must stay within a small multiple of the same
+/// entries rendered as `Text`, inside the **same** transcript scroll shell as production
+/// (`TranscriptScrollColumn`: geometry reader, edge fades, scroll metrics). Comparing against
+/// a bare `ScrollView` counted chrome in the column side only and inflated PR vs main variance.
 @MainActor
 @Suite("Transcript row cost", .serialized)
 struct TranscriptRowCostTests {
   @Test("a page of conversation rows costs little more than plain text rows")
   func pageCost() {
+    Self.logRunContext()
     let entries = Self.entries(turns: 40)
     let markdown = Self.prepared(entries)
-    let columnView = ConversationColumn(
-      title: "Bot", tintIndex: 1, entries: entries,
-      preparedMarkdown: markdown, draft: .constant(""), onSend: {})
-    let plainView = Self.plainText(entries)
+    let transcriptRows = Self.transcriptRows(entries, preparedMarkdown: markdown)
+    let plainTextShell = Self.plainTextShell(entries)
     // Warm both variants twice so caches and the hosting view path are hot before we score.
-    // A single warm pair still left occasional CI noise when the second view paid first-layout
-    // work during measured rounds.
     for _ in 0..<2 {
-      _ = Self.pageCost(columnView)
-      _ = Self.pageCost(plainView)
+      _ = Self.pageCost(transcriptRows)
+      _ = Self.pageCost(plainTextShell)
     }
-    // Each round times column and plain back-to-back on the same load. Measuring column
-    // *before* plain warmed the run loop and font caches that plain reuses but column does
-    // not, so plain looked artificially fast and every round's ratio sat above the bound
-    // (2.51 on CI) even when the structural cost was fine. Alternate order and keep the
-    // **lowest** ratio: plain-first rounds are the least upward-biased; interference still
-    // only adds time, and a real regression raises every round.
+    // Alternate measurement order; take the **median** ratio of paired samples (less optimistic
+    // than `min`, more stable than `mean` when one round spikes).
     var ratios: [Double] = []
+    var columnMsSamples: [Double] = []
+    var plainMsSamples: [Double] = []
     for round in 0..<9 {
-      let column: Double
-      let plain: Double
+      let columnMs: Double
+      let plainMs: Double
       if round.isMultiple(of: 2) {
-        plain = Self.pageCost(plainView)
-        column = Self.pageCost(columnView)
+        plainMs = Self.pageCost(plainTextShell)
+        columnMs = Self.pageCost(transcriptRows)
       } else {
-        column = Self.pageCost(columnView)
-        plain = Self.pageCost(plainView)
+        columnMs = Self.pageCost(transcriptRows)
+        plainMs = Self.pageCost(plainTextShell)
       }
-      ratios.append(column / max(plain, 0.000_001))
+      columnMsSamples.append(columnMs)
+      plainMsSamples.append(plainMs)
+      ratios.append(columnMs / max(plainMs, 0.000_001))
     }
-    let ratio = ratios.min() ?? .greatestFiniteMagnitude
+    let ratio = Self.median(ratios) ?? .greatestFiniteMagnitude
+    let columnMed = Self.median(columnMsSamples) ?? 0
+    let plainMed = Self.median(plainMsSamples) ?? 0
     print(
       "ROWCOST rounds=\(ratios.map { String(format: "%.2f", $0) }.joined(separator: ",")) "
-        + "min=\(String(format: "%.2f", ratio))")
+        + "median=\(String(format: "%.2f", ratio)) "
+        + "ms_column_med=\(String(format: "%.3f", columnMed)) "
+        + "ms_plain_med=\(String(format: "%.3f", plainMed)) "
+        + "jumps=\(Self.jumpsPerSample)")
     #expect(
-      ratio < 2.5, "a page of conversation rows costs \(String(format: "%.1f", ratio))x plain text")
+      ratio < 2.5,
+      "transcript rows vs Text in shared shell: median ratio \(String(format: "%.2f", ratio)) (budget 2.5)"
+    )
+  }
+
+  /// Matches `pageCost` measurement: one timed loop's jump count (printed as `jumps=`).
+  private static let jumpsPerSample = 24
+
+  private static func logRunContext() {
+    let env = ProcessInfo.processInfo.environment
+    let ref = env["GITHUB_REF"] ?? ""
+    let event = env["GITHUB_EVENT_NAME"] ?? ""
+    let job = env["GITHUB_JOB"] ?? ""
+    let ramGb = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824
+    print(
+      "ROWCOST_CTX ref=\(ref) event=\(event) job=\(job) ram_gb=\(String(format: "%.1f", ramGb)) "
+        + "ci=\(env["CI"] ?? "")"
+    )
+  }
+
+  private static func median(_ values: [Double]) -> Double? {
+    guard !values.isEmpty else { return nil }
+    let sorted = values.sorted()
+    let mid = sorted.count / 2
+    if sorted.count % 2 == 1 {
+      return sorted[mid]
+    }
+    return (sorted[mid - 1] + sorted[mid]) / 2
   }
 
   private static func entries(turns: Int) -> [TranscriptEntry] {
@@ -85,27 +115,43 @@ struct TranscriptRowCostTests {
     }
   }
 
-  private static func plainText(_ entries: [TranscriptEntry]) -> some View {
-    ScrollView {
-      LazyVStack(alignment: .leading, spacing: Theme.Metric.turnGap) {
-        ForEach(entries) { entry in
-          switch entry {
-          case .user(_, let text, _), .note(_, let text, _):
-            Text(text)
-          case .assistant(_, let blocks, _):
-            Text(blocks.markdown)
-          default:
-            EmptyView()
-          }
+  /// Production row views inside the shared transcript shell (no header/composer).
+  private static func transcriptRows(
+    _ entries: [TranscriptEntry], preparedMarkdown: [String: [RenderedMarkdownBlock]]
+  ) -> some View {
+    TranscriptScrollColumn {
+      ForEach(entries) { entry in
+        TranscriptEntryRow(
+          entry: entry,
+          preparedMarkdown: preparedMarkdown,
+          onOpenPeerExchange: nil,
+          onAnswerCard: nil,
+          onAnswerSecret: nil
+        )
+        .id(entry.id)
+      }
+    }
+  }
+
+  /// Same scroll shell; rows are `Text` with the same string content as bubbles/notes.
+  private static func plainTextShell(_ entries: [TranscriptEntry]) -> some View {
+    TranscriptScrollColumn {
+      ForEach(entries) { entry in
+        switch entry {
+        case .user(_, let text, _), .note(_, let text, _):
+          Text(text)
+        case .assistant(_, let blocks, _):
+          Text(blocks.markdown)
+        default:
+          EmptyView()
         }
       }
-      .padding(.horizontal, Theme.Metric.conversationInset)
     }
   }
 
   /// Milliseconds for one page-sized jump; each jump materializes a fresh viewport of rows.
   private static func pageCost(_ view: some View) -> Double {
-    let jumps = 24
+    let jumps = jumpsPerSample
     let host = NSHostingView(rootView: view)
     host.frame = NSRect(x: 0, y: 0, width: 760, height: 700)
     let window = NSWindow(
@@ -122,10 +168,6 @@ struct TranscriptRowCostTests {
     let clip = scroll.contentView
     let page = clip.bounds.height - 40
     var offset: CGFloat = 0
-    // Time layout *and* display for each jump. `ConversationColumn` builds heavier rows than
-    // `Text`; layout-only timing made the plain baseline nearly free so the ratio rose into the
-    // 3x range on main while PR Check still looked green on a warmer PR branch. Keeping
-    // `displayIfNeeded` inside the loop preserves a fair “work per page scroll” comparison.
     let start = ContinuousClock.now
     for _ in 0..<jumps {
       let limit = max(0, (scroll.documentView?.frame.height ?? 0) - clip.bounds.height)
