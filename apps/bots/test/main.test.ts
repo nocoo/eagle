@@ -965,6 +965,160 @@ test("the daemon stores the skills the App pushed and refuses a broken selection
   }
 });
 
+// The pages of the settings window save one thing each: the 技能 page must not undo the
+// 模型网关 page's choices, and a machine without a gateway stays unconfigured (PROTOCOL.md,
+// "Gateway settings").
+test("a skills-only save leaves the model, the thinking level and the tool groups alone", async () => {
+  const root = await daemonRoot("bots-main-skills-only-");
+  try {
+    const config = readConfig({ argv: ["--root", root, "--port", "0"], env: {} });
+    const daemon = await startDaemon(config);
+    const authorized = (path: string, init: RequestInit = {}) =>
+      fetch(`http://127.0.0.1:${daemon.port}${path}`, {
+        ...init,
+        headers: {
+          authorization: `Bearer ${daemon.token}`,
+          "content-type": "application/json",
+          ...(init.headers ?? {}),
+        },
+      });
+    try {
+      const gateway = await authorized("/v1/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          baseUrl: "http://127.0.0.1:9/v1",
+          model: "auto/gpt-6-luna",
+          apiKey: "sk-main-skills-000000000",
+          thinkingLevel: "medium",
+          toolGroups: ["core", "herdr"],
+        }),
+      });
+      assert.equal(gateway.status, 200);
+
+      const created = await authorized("/v1/bots", {
+        method: "POST",
+        body: JSON.stringify({ title: "技能" }),
+      });
+      const botId = ((await created.json()) as { bot: { id: string } }).bot.id;
+      // The bot chooses its own agent: a page visit must not take that choice away.
+      const patched = await authorized(`/v1/bots/${botId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ model: "other-model", thinkingLevel: "xhigh" }),
+      });
+      assert.equal(patched.status, 200);
+
+      const saved = await authorized("/v1/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          skills: [
+            {
+              name: "alpha",
+              version: "1.0.0",
+              description: "Runs alpha.",
+              path: "~/.agents/skills/alpha",
+            },
+          ],
+        }),
+      });
+      assert.equal(saved.status, 200);
+
+      const catalog = JSON.parse(await readFile(join(root, "catalog.json"), "utf8")) as {
+        bots: { id: string; thinkingLevel?: string; model: { modelId: string } }[];
+      };
+      const bot = catalog.bots.find((entry) => entry.id === botId);
+      assert.equal(bot?.thinkingLevel, "xhigh", "the bot keeps its own level");
+      assert.equal(bot?.model.modelId, "other-model", "the bot keeps its own model");
+      const stored = await readGateway(root);
+      assert.equal(stored?.thinkingLevel, "medium", "the stored level is untouched");
+      assert.deepEqual(
+        stored?.toolGroups,
+        ["core", "coding", "herdr"],
+        "the stored groups are untouched",
+      );
+      assert.equal(stored?.model, "auto/gpt-6-luna", "the stored model is untouched");
+      assert.equal(stored?.skills.length, 1, "the ticks are stored");
+    } finally {
+      await daemon.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a skills-only save on a machine without a gateway stays unconfigured after a restart", async () => {
+  const root = await daemonRoot("bots-main-skills-restart-");
+  try {
+    const config = readConfig({ argv: ["--root", root, "--port", "0"], env: {} });
+    const first = await startDaemon(config);
+    try {
+      const saved = await fetch(`http://127.0.0.1:${first.port}/v1/settings`, {
+        method: "PUT",
+        headers: {
+          authorization: `Bearer ${first.token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          skills: [
+            {
+              name: "alpha",
+              version: "1.0.0",
+              description: "Runs alpha.",
+              path: "~/.agents/skills/alpha",
+            },
+          ],
+        }),
+      });
+      assert.equal(saved.status, 200);
+    } finally {
+      await first.close();
+    }
+
+    const second = await startDaemon(config);
+    try {
+      const shown = (await (
+        await fetch(`http://127.0.0.1:${second.port}/v1/settings`, {
+          headers: { authorization: `Bearer ${second.token}` },
+        })
+      ).json()) as { settings: { configured: boolean; skills: unknown[] } };
+      assert.equal(shown.settings.configured, false, "the machine is still unconfigured");
+      assert.equal(shown.settings.skills.length, 1, "the ticks survived the restart");
+
+      const bot = await second.registry.create("重启", "tr_create_restart");
+      const handle = await second.registry.open(bot.id, "tr_open_restart");
+      try {
+        await handle.submit({
+          requestId: "r_restart_1",
+          text: "你好",
+          whenBusy: "followUp",
+          trace: "tr_restart",
+        });
+        await waitFor(async () => {
+          const record = await handle.submission({ requestId: "r_restart_1" });
+          return record?.status === "done" || record?.status === "unanswered";
+        }, "the run settles");
+        const record = await handle.submission({ requestId: "r_restart_1" });
+        assert.equal(record?.status, "unanswered");
+        assert.equal(record?.reason, "no_model", "no model is configured, and none is asked for");
+      } finally {
+        await handle.close("tr_restart", 5_000);
+      }
+      const catalog = JSON.parse(await readFile(join(root, "catalog.json"), "utf8")) as {
+        bots: { id: string; model: { modelId: string } }[];
+      };
+      const stored = catalog.bots.find((entry) => entry.id === bot.id);
+      assert.notEqual(
+        stored?.model.modelId,
+        "",
+        "the bot has the daemon's default, not an empty id",
+      );
+    } finally {
+      await second.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("the daemon mounts the secret routes and keeps the store out of the way", async () => {
   const root = await daemonRoot("bots-main-secrets-");
   const home = await mkdtemp(join(tmpdir(), "bots-main-secrets-home-"));

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import type { FauxResponseStep } from "@earendil-works/pi-ai";
 import type { RuntimeEvent, RuntimeHandle } from "../../src/core/RuntimePort.ts";
-import type { SelectedSkill } from "../../src/skills/selection.ts";
+import { MAX_SKILL_FILE_BYTES, type SelectedSkill } from "../../src/skills/selection.ts";
 import {
   assistant,
   type Bench,
@@ -109,6 +109,65 @@ test("skill_read answers with the manifest, and the model can follow it", async 
       ]);
       assert.equal(sawResult, true, "the manifest's own text reached the model");
       assert.match(answer, /先说结论/);
+    } finally {
+      await handle.close(trace, 5_000);
+    }
+  } finally {
+    await bench.cleanup();
+  }
+});
+
+test("a long manifest reaches the model whole: the tool's own limits are the harness's", async () => {
+  const bench = await createBench({ skills: () => [skill(join(bench.dir, "skills"))] });
+  try {
+    const directory = join(bench.dir, "skills");
+    await mkdir(directory, { recursive: true });
+    // 20 000 Chinese characters are 60 000 bytes: more than the harness's own 50 KiB
+    // default, which used to cut the manifest away without saying so.
+    const ending = "这是技能的最后一句";
+    await writeFile(join(directory, "SKILL.md"), `${"字".repeat(20_000)}\n${ending}\n`);
+    const handle = await bench.runtime.open(bench.spec());
+    try {
+      let seen = "";
+      await settle(handle, bench, [
+        assistant([toolCall("skill_read", { name: "alpha" })], { stopReason: "toolUse" }),
+        (context: { messages: unknown }) => {
+          seen = JSON.stringify(context.messages);
+          return text(seen.includes(ending) ? "读完了" : "没读完");
+        },
+      ]);
+      assert.equal(seen.includes(ending), true, "the whole manifest reached the model");
+      assert.equal((seen.match(/字/g) ?? []).length >= 20_000, true, "no character was cut away");
+    } finally {
+      await handle.close(trace, 5_000);
+    }
+  } finally {
+    await bench.cleanup();
+  }
+});
+
+test("a manifest over the budget reaches the model with its truncation note", async () => {
+  const bench = await createBench({ skills: () => [skill(join(bench.dir, "skills"))] });
+  try {
+    const directory = join(bench.dir, "skills");
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, "SKILL.md"), "字".repeat(40_000));
+    const handle = await bench.runtime.open(bench.spec());
+    try {
+      let seen = "";
+      await settle(handle, bench, [
+        assistant([toolCall("skill_read", { name: "alpha" })], { stopReason: "toolUse" }),
+        (context: { messages: unknown }) => {
+          seen = JSON.stringify(context.messages);
+          return text("读完了");
+        },
+      ]);
+      assert.match(seen, /\[truncated at \d+ bytes\]/, "the note says where the text stops");
+      assert.equal(
+        seen.includes("字".repeat(MAX_SKILL_FILE_BYTES)),
+        false,
+        "the manifest is cut, not the note",
+      );
     } finally {
       await handle.close(trace, 5_000);
     }

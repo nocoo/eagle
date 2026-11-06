@@ -3,7 +3,13 @@
 // without the bearer token.
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { GatewayApi, GatewayInput, PublicGateway } from "../../src/server/gateway.ts";
+import type {
+  GatewayApi,
+  GatewayConfig,
+  GatewayInput,
+  PublicGateway,
+} from "../../src/server/gateway.ts";
+import { createSettingsSaver } from "../../src/server/settings.ts";
 import { startStack } from "../support/server.ts";
 
 test("the settings endpoints read, validate, save and test behind the bearer", async () => {
@@ -289,4 +295,79 @@ test("the skills selection is validated on the wire and crosses it additively", 
   } finally {
     await stack.close();
   }
+});
+
+test("two saves that overlap keep both fields: the second reads what the first stored", async () => {
+  let stored: GatewayConfig | undefined;
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const applied: (readonly string[])[] = [];
+  const save = createSettingsSaver({
+    current: () => stored,
+    write: async (config) => {
+      await gate;
+      stored = config;
+    },
+    apply: async (_config, carried) => {
+      applied.push([
+        ...(carried.model ? ["model"] : []),
+        ...(carried.thinkingLevel ? ["level"] : []),
+        ...(carried.toolGroups ? ["groups"] : []),
+      ]);
+    },
+  });
+  const first = save({ corePrompt: "第一条人格" });
+  const second = save({
+    skills: [
+      { name: "alpha", version: "1.0.0", description: "Runs alpha.", path: "/skills/alpha" },
+    ],
+  });
+  release();
+  const answers = await Promise.all([first, second]);
+  assert.equal(answers[0]?.error, undefined);
+  assert.equal(answers[1]?.error, undefined);
+  assert.equal(stored?.corePrompt, "第一条人格", "the first save's field survived");
+  assert.equal(stored?.skills.length, 1, "the second save's field survived");
+  assert.deepEqual(applied, [[], []], "neither save named a field to apply");
+});
+
+test("a save applies only the fields it carries", async () => {
+  let stored: GatewayConfig | undefined;
+  const applied: (readonly string[])[] = [];
+  const save = createSettingsSaver({
+    current: () => stored,
+    write: async (config) => {
+      stored = config;
+    },
+    apply: async (_config, carried) => {
+      applied.push([
+        ...(carried.model ? ["model"] : []),
+        ...(carried.thinkingLevel ? ["level"] : []),
+        ...(carried.toolGroups ? ["groups"] : []),
+      ]);
+    },
+  });
+  await save({
+    baseUrl: "http://127.0.0.1:3425/v1",
+    model: "auto/gpt-6-astra",
+    apiKey: "sk-x",
+    thinkingLevel: "high",
+    toolGroups: ["core", "herdr"],
+  });
+  await save({
+    skills: [
+      { name: "alpha", version: "1.0.0", description: "Runs alpha.", path: "/skills/alpha" },
+    ],
+  });
+  assert.deepEqual(applied[0], ["model", "level", "groups"]);
+  assert.deepEqual(applied[1], [], "a skills-only save applies nothing");
+  assert.equal(stored?.thinkingLevel, "high", "the stored level is untouched");
+  assert.deepEqual(
+    stored?.toolGroups,
+    ["core", "coding", "herdr"],
+    "the stored groups are untouched",
+  );
+  assert.equal(stored?.model, "auto/gpt-6-astra", "the stored model is untouched");
 });

@@ -1,6 +1,7 @@
 // What the settings page shows before a person decides (docs/bots/PROTOCOL.md, "Tool
 // catalogue"): every group names the tools it would give a bot, in the daemon's own words.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createCatalogRegistry, describeToolCatalog } from "../../src/tools/registry.ts";
 
@@ -72,4 +73,43 @@ test("describing the surface never executes a tool", () => {
   assert.ok(page.length > 0);
   // The catalogue's hosts refuse every call, so only the descriptions exist.
   assert.ok(page.every((tool) => typeof tool.name === "string"));
+});
+
+// The documented inventory (EXTENSIONS-AND-TOOLS.md, "Tool names") is derived from the
+// registry: a tool that is added, renamed or removed cannot leave the documentation behind.
+test("the documented tool inventory is the registry's own surface", () => {
+  const installed = new Set(
+    createCatalogRegistry({ skills: () => [] })
+      .snapshot()
+      .installed()
+      .flatMap((extension) => (extension.tools ?? []).map((tool) => tool.name)),
+  );
+  const doc = readFileSync(
+    new URL("../../../../docs/bots/EXTENSIONS-AND-TOOLS.md", import.meta.url),
+    "utf8",
+  );
+  const stated = /There are \*\*(\d+) tool names\*\*/.exec(doc);
+  assert.ok(stated !== null, "the doc states how many tool names there are");
+
+  const start = doc.indexOf("### Tool names");
+  assert.ok(start >= 0, "the doc lists the tool names");
+  const rest = doc.slice(start);
+  const end = rest.indexOf("\n### ", 1);
+  const inventory = end === -1 ? rest : rest.slice(0, end);
+  const rows = inventory
+    .split("\n")
+    .map((line) => /^\| ([^|]+?) \| (.+) \|$/.exec(line))
+    .flatMap((match) => {
+      if (match === null) return [];
+      const names = [...(match[2] ?? "").matchAll(/`([^`]+)`/g)].map((found) => found[1] ?? "");
+      return names.length === 0 ? [] : [{ group: match[1] ?? "", names }];
+    });
+  const documented = rows.flatMap((row) => row.names);
+  assert.equal(new Set(documented).size, documented.length, "no tool is listed twice");
+  assert.deepEqual(
+    [...new Set(documented)].sort(),
+    [...installed].sort(),
+    "every installed tool is documented, and nothing else is",
+  );
+  assert.equal(Number(stated[1]), installed.size, "the stated count is the registry's count");
 });

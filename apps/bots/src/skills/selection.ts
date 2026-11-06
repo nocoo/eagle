@@ -1,9 +1,10 @@
 // The skills a person ticked (docs/bots/EXTENSIONS-AND-TOOLS.md, "Skills"): the App owns
 // discovery, so the selection is the daemon's only input. Nothing here scans a folder, and
 // nothing here accepts a path from the model: a name selects one entry of this list.
-import { readFileSync, statSync } from "node:fs";
+import { constants } from "node:fs";
+import { type FileHandle, open, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 /** One ticked skill, exactly as the App reports it (docs/bots/PROTOCOL.md, "Gateway settings"). */
 export type SelectedSkill = {
@@ -19,8 +20,12 @@ export const MAX_SKILL_NAME = 80;
 export const MAX_SKILL_VERSION = 40;
 export const MAX_SKILL_DESCRIPTION = 500;
 export const MAX_SKILL_PATH = 1_024;
-/** The most of one `SKILL.md` a Bot reads in one call: a skill is instructions, not a manual. */
-export const MAX_SKILL_FILE = 32_000;
+/** The most characters of one `SKILL.md` a Bot reads in one call: a skill is instructions, not a manual. */
+export const MAX_SKILL_FILE_CHARS = 32_000;
+/** The most bytes one read pulls from the file, so a huge manifest cannot fill the memory. */
+export const MAX_SKILL_FILE_BYTES = 64 * 1024;
+/** The most lines one read keeps, so a long file stays a readable instruction. */
+export const MAX_SKILL_FILE_LINES = 4_096;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -112,15 +117,191 @@ export type SkillRead = { readonly text: string } | { readonly refusal: string }
 export const expandSkillPath = (path: string, home: string = homedir()): string =>
   path.startsWith("~/") ? join(home, path.slice(2)) : path;
 
+/** The three budgets one manifest read answers to; each of them is a hard bound. */
+export type SkillFileLimits = {
+  /** The most bytes pulled from the file, so the read costs a bounded amount of memory. */
+  readonly maxBytes: number;
+  /** The most characters kept in the answer. */
+  readonly maxChars: number;
+  /** The most lines kept in the answer. */
+  readonly maxLines: number;
+};
+
+export const SKILL_FILE_LIMITS: SkillFileLimits = {
+  maxBytes: MAX_SKILL_FILE_BYTES,
+  maxChars: MAX_SKILL_FILE_CHARS,
+  maxLines: MAX_SKILL_FILE_LINES,
+};
+
+/** Which budget ended the text, and so what the note says. */
+export type SkillTruncation = "bytes" | "characters" | "lines";
+
+export type SkillFileOutcome =
+  | {
+      readonly kind: "text";
+      readonly text: string;
+      /** How many bytes the file gave us; the bound is what makes a huge file harmless. */
+      readonly bytesRead: number;
+      readonly truncatedBy?: SkillTruncation;
+    }
+  | { readonly kind: "refusal"; readonly reason: string };
+
+/** The bytes one UTF-8 character takes, counted from its first byte. */
+const utf8SequenceLength = (lead: number): number => {
+  if (lead < 0x80) return 1;
+  if ((lead & 0xe0) === 0xc0) return 2;
+  if ((lead & 0xf0) === 0xe0) return 3;
+  if ((lead & 0xf8) === 0xf0) return 4;
+  return 1;
+};
+
+/**
+ * The tail of a cut file, without the half character at its end: a byte cut inside a
+ * character would decode into a replacement character, so the incomplete character goes.
+ */
+export const trimIncompleteUtf8 = (bytes: Buffer): Buffer => {
+  for (let back = 1; back <= 3 && back <= bytes.length; back += 1) {
+    const byte = bytes[bytes.length - back] ?? 0;
+    if ((byte & 0xc0) === 0x80) continue;
+    return back >= utf8SequenceLength(byte) ? bytes : bytes.subarray(0, bytes.length - back);
+  }
+  return bytes.length > 3 ? bytes.subarray(0, bytes.length - 3) : bytes;
+};
+
+/**
+ * The bytes of the manifest, at most one past the budget: the extra byte is what tells a
+ * file that is exactly at the budget from one that continues past it.
+ */
+const readBoundedBytes = async (
+  handle: FileHandle,
+  maxBytes: number,
+): Promise<{ readonly bytes: Buffer; readonly bytesRead: number; readonly truncated: boolean }> => {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  const chunk = Buffer.allocUnsafe(8 * 1024);
+  while (total <= maxBytes) {
+    const wanted = Math.min(chunk.length, maxBytes + 1 - total);
+    if (wanted <= 0) break;
+    const { bytesRead } = await handle.read(chunk, 0, wanted, null);
+    if (bytesRead === 0) break;
+    chunks.push(Buffer.from(chunk.subarray(0, bytesRead)));
+    total += bytesRead;
+  }
+  return { bytes: Buffer.concat(chunks, total), bytesRead: total, truncated: total > maxBytes };
+};
+
+/** The text at most `maxChars` characters long, never splitting a character in half. */
+const cutCharacters = (text: string, maxChars: number): { text: string; cut: boolean } => {
+  if (text.length <= maxChars) return { text, cut: false };
+  let end = maxChars;
+  const code = text.charCodeAt(end - 1);
+  if (code >= 0xd800 && code <= 0xdbff) end -= 1;
+  return { text: text.slice(0, end), cut: true };
+};
+
+/** The text at most `maxLines` lines long; a trailing newline does not make another line. */
+const cutLines = (text: string, maxLines: number): { text: string; cut: boolean } => {
+  const lines = text.split("\n");
+  if (text.endsWith("\n")) lines.pop();
+  if (lines.length <= maxLines) return { text, cut: false };
+  return { text: lines.slice(0, maxLines).join("\n"), cut: true };
+};
+
+/** A path is inside a folder when it is under it; the folder itself is not inside itself. */
+const isInside = (directory: string, file: string): boolean => {
+  const prefix = directory.endsWith(sep) ? directory : `${directory}${sep}`;
+  return file.startsWith(prefix);
+};
+
+/**
+ * One skill's `SKILL.md`, read the way a file has to be read when a model may ask for it:
+ * the folder and the manifest are resolved to their real paths, the manifest has to stay
+ * inside that folder, the file is opened without blocking and the opened descriptor is the
+ * one that is checked, so a swap between the check and the read cannot slip through.
+ */
+export const readSkillFile = async (
+  directory: string,
+  limits: SkillFileLimits = SKILL_FILE_LIMITS,
+): Promise<SkillFileOutcome> => {
+  const realDirectory = await realpath(directory).catch(() => undefined);
+  if (realDirectory === undefined) {
+    return { kind: "refusal", reason: "SKILL.md is not readable; it may have been removed" };
+  }
+  const folder = await stat(realDirectory).catch(() => undefined);
+  if (folder === undefined || !folder.isDirectory()) {
+    return { kind: "refusal", reason: "the skill's folder is not a directory" };
+  }
+  const realManifest = await realpath(join(realDirectory, "SKILL.md")).catch(() => undefined);
+  if (realManifest === undefined) {
+    return { kind: "refusal", reason: "SKILL.md is not readable; it may have been removed" };
+  }
+  if (!isInside(realDirectory, realManifest)) {
+    return { kind: "refusal", reason: "SKILL.md points outside the skill's folder" };
+  }
+  const expected = await stat(realManifest).catch(() => undefined);
+  if (expected === undefined || !expected.isFile()) {
+    return { kind: "refusal", reason: "SKILL.md is not a regular file" };
+  }
+  // O_NONBLOCK keeps a fifo from parking the read forever; O_NOFOLLOW keeps the last
+  // component from being a symlink that appeared after the paths were resolved.
+  const handle = await open(
+    realManifest,
+    constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
+  ).catch(() => undefined);
+  if (handle === undefined) {
+    return { kind: "refusal", reason: "SKILL.md is not readable; it may have been removed" };
+  }
+  try {
+    const opened = await handle.stat();
+    if (!opened.isFile()) {
+      return { kind: "refusal", reason: "SKILL.md is not a regular file" };
+    }
+    if (opened.dev !== expected.dev || opened.ino !== expected.ino) {
+      return { kind: "refusal", reason: "SKILL.md changed while it was read" };
+    }
+    const { bytes, bytesRead, truncated } = await readBoundedBytes(handle, limits.maxBytes);
+    const complete = trimIncompleteUtf8(truncated ? bytes.subarray(0, limits.maxBytes) : bytes);
+    let text = complete.toString("utf8");
+    let truncatedBy: SkillTruncation | undefined = truncated ? "bytes" : undefined;
+    const characters = cutCharacters(text, limits.maxChars);
+    if (characters.cut) {
+      text = characters.text;
+      truncatedBy = truncatedBy ?? "characters";
+    }
+    const lines = cutLines(text, limits.maxLines);
+    if (lines.cut) {
+      text = lines.text;
+      truncatedBy = truncatedBy ?? "lines";
+    }
+    if (truncatedBy === undefined) return { kind: "text", text, bytesRead };
+    const bound =
+      truncatedBy === "bytes"
+        ? limits.maxBytes
+        : truncatedBy === "characters"
+          ? limits.maxChars
+          : limits.maxLines;
+    const unit =
+      truncatedBy === "bytes" ? "bytes" : truncatedBy === "characters" ? "characters" : "lines";
+    return {
+      kind: "text",
+      text: `${text}\n\n[truncated at ${bound} ${unit}]`,
+      bytesRead,
+      truncatedBy,
+    };
+  } finally {
+    await handle.close();
+  }
+};
+
 /**
  * One selected skill's `SKILL.md`, or why it cannot be read. Only a name is accepted: the
  * path comes from the selection, so the model can never turn this into a file reader.
  */
-export const readSelectedSkill = (
+export const readSelectedSkill = async (
   skills: readonly SelectedSkill[],
   name: string,
   home: string = homedir(),
-): SkillRead => {
+): Promise<SkillRead> => {
   const skill = skills.find((entry) => entry.name === name);
   if (skill === undefined) {
     const known = skills.map((entry) => entry.name).join(", ");
@@ -131,20 +312,7 @@ export const readSelectedSkill = (
           : `no skill named ${name} is selected on this machine; selected: ${known}`,
     };
   }
-  const manifest = join(expandSkillPath(skill.path, home), "SKILL.md");
-  let text: string;
-  try {
-    if (!statSync(manifest).isFile()) {
-      return { refusal: `${name}: SKILL.md is not a regular file` };
-    }
-    text = readFileSync(manifest, "utf8");
-  } catch {
-    return { refusal: `${name}: SKILL.md is not readable; it may have been removed` };
-  }
-  return {
-    text:
-      text.length > MAX_SKILL_FILE
-        ? `${text.slice(0, MAX_SKILL_FILE)}\n\n[truncated at ${MAX_SKILL_FILE} characters]`
-        : text,
-  };
+  const outcome = await readSkillFile(expandSkillPath(skill.path, home));
+  if (outcome.kind === "refusal") return { refusal: `${name}: ${outcome.reason}` };
+  return { text: outcome.text };
 };

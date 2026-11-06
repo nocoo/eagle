@@ -133,14 +133,37 @@ loader. The normal daemon installs search even before configuration: its tools
 can explain a missing selection without making an external request. A test/host
 that supplies no search client installs no search extension or loader for it.
 
-There are **42 tool names** with all current groups registered: five filesystem/coding tools,
-two pull-report tools, three child-agent tools, eight Herdr tools, two search tools, five
-decision tools, five trigger tools, three peer tools, five memory tools, three shared-device
-tools (installed when the daemon supplies a device socket), `skill_read` and one SDK loader. A root
+There are **44 tool names** with all current groups registered, the shared-device socket
+installed and the person's ticks read: the table below is that list, and a test derives it
+from the registry so the numbers cannot drift. A root
 conversation selects those three eagerly only when local status says remote is configured;
 local coding tools remain available under local policy. With the default selection (no
 `search`, no `decision`, no `peers`) eager selected tools are offered at once. Herdr,
-decision and trigger tools wait behind `tool_search`.
+decision and trigger tools wait behind `tool_search`. Without a device socket the shared
+device extension is absent and `bots-herdr` keeps all eight of its tools instead of the
+three `herdr_list`, `herdr_wait` and `herdr_read` it is reduced to under the shared device
+policy.
+
+### Tool names
+
+Every tool name the daemon installs in that configuration, one row per extension group:
+
+| Group | Tool names |
+| --- | --- |
+| `core` | `list`, `note_set`, `ask_user` |
+| `coding` | `read`, `write`, `edit`, `bash` |
+| `coding` (pull reports) | `pr_register`, `pr_list` |
+| `memory` | `memory_list`, `memory_search`, `memory_read`, `memory_write`, `memory_delete` |
+| `secrets` | `secret_request`, `secret_list`, `secret_read`, `secret_delete` |
+| `agents` | `agent_spawn`, `agent_send`, `agent_stop` |
+| `herdr` | `herdr_list`, `herdr_wait`, `herdr_read` |
+| `search` | `web_search`, `web_fetch` |
+| `decision` | `decide`, `classify`, `assess`, `rate`, `judge` |
+| `trigger` | `trigger_create`, `trigger_list`, `trigger_update`, `trigger_enable`, `trigger_delete` |
+| `peers` | `peer_list`, `peer_send`, `peer_read` |
+| shared devices | `remote_status`, `remote_execute`, `remote_operation` |
+| skills (no group) | `skill_read` |
+| SDK loader (no group) | `tool_search` |
 
 ### Skills
 
@@ -152,7 +175,7 @@ section renders nothing; its one tool refuses every name.
 
 | Tool | Input | Behavior | Replay |
 | --- | --- | --- | --- |
-| `skill_read` | `name` | The `SKILL.md` of one selected skill, read from inside that skill's stored directory; 32 000 characters then a truncation note. Only a name is accepted, never a path: an unselected name or a manifest that is gone, unreadable or not a regular file is refused | SDK default unsafe |
+| `skill_read` | `name` | The `SKILL.md` of one selected skill, read from inside that skill's stored directory; 64 KiB read, 32 000 characters and 4 096 lines kept, then a truncation note (declared output limits, so the harness never cuts the manifest or the note). Only a name is accepted, never a path: an unselected name, a manifest that is gone, unreadable, outside that directory or not a regular file is refused | SDK default unsafe |
 
 The prompt section is an index, one line per selected skill as `name · version —
 description`, re-read on every ask, plus one sentence telling the model to call `skill_read`
@@ -160,6 +183,16 @@ before following a skill. Building it does no filesystem work, and the order is 
 App pushed. The daemon never scans a directory: a tick the App does not push does not exist
 here. The macOS 技能 page owns discovery, the ticks and the push
 (`apps/macos/Sources/EagleFeatures/SkillsSettingsViewModel.swift`).
+
+The read itself assumes a model can ask for it: the skill's folder and its `SKILL.md` are
+resolved to their real paths, the manifest's real path must stay inside that folder, and the
+file is opened with `O_NONBLOCK` and without following a final symlink so a fifo cannot park
+the read and a swapped last component cannot be reached. The opened descriptor is what is
+checked (`fstat`): it must be a regular file and the same file the path resolved to, so a
+swap between the check and the read is refused rather than read. Only then are bytes pulled,
+and only `64 KiB` of them, cut on a UTF-8 boundary; the kept text is bounded by characters
+and lines, and the truncation note is inside the tool's declared output limits — the harness
+defaults (50 KiB, 2 000 lines) would otherwise cut the note away.
 
 ### Filesystem and coding
 

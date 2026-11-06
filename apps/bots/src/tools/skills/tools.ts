@@ -9,7 +9,13 @@ import {
   section,
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
-import { readSelectedSkill, type SelectedSkill, skillSection } from "../../skills/selection.ts";
+import {
+  MAX_SKILL_FILE_BYTES,
+  MAX_SKILL_FILE_LINES,
+  readSelectedSkill,
+  type SelectedSkill,
+  skillSection,
+} from "../../skills/selection.ts";
 
 export const SKILLS_EXTENSION = "bots-skills";
 export const SKILLS_SECTION = "bots-skills";
@@ -30,7 +36,7 @@ export const createSkillTools = (options: SkillToolsOptions): readonly ToolRegis
       name: Type.String({ description: "The selected skill's name, from the prompt's list" }),
     }),
     execute: async (args) => {
-      const outcome = readSelectedSkill(
+      const outcome = await readSelectedSkill(
         options.read(),
         args.name,
         options.home === undefined ? undefined : options.home(),
@@ -38,6 +44,13 @@ export const createSkillTools = (options: SkillToolsOptions): readonly ToolRegis
       return "text" in outcome
         ? { output: [{ type: "text" as const, text: outcome.text }] }
         : { output: [{ type: "text" as const, text: outcome.refusal }], isError: true };
+    },
+    // The read's own budgets are the limits: the harness must not cut the manifest (or the
+    // truncation note) a second time, with its own smaller defaults.
+    outputLimits: {
+      maxBytes: MAX_SKILL_FILE_BYTES + 4_096,
+      maxLines: MAX_SKILL_FILE_LINES + 16,
+      retain: "head",
     },
   }),
 ];

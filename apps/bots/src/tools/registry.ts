@@ -202,8 +202,14 @@ export const describeToolCatalog = (registry: RegistryReader): readonly ToolGrou
   }));
 };
 
-/** The registry the catalogue describes: every group built, none of it bound to a bot. */
-export const createCatalogRegistry = (): RegistryReader =>
+/**
+ * The registry the catalogue describes: every group built, none of it bound to a bot. The
+ * skills reader is optional because a skill tick is not a group: the documentation counts
+ * the surface with it, and `describeToolCatalog` never lists it.
+ */
+export const createCatalogRegistry = (
+  options: { readonly skills?: SkillToolsOptions["read"] } = {},
+): RegistryReader =>
   createToolRegistry(
     { root: "/" },
     {
@@ -219,6 +225,7 @@ export const createCatalogRegistry = (): RegistryReader =>
       pulls: catalogPulls,
       note: catalogNote,
       secrets: catalogSecrets,
+      ...(options.skills === undefined ? {} : { skills: options.skills }),
     },
   );
 

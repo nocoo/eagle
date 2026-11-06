@@ -116,8 +116,10 @@ stable rather than lucky once.
   "expect": {
     "messages": [                        // exact order, each check optional
       { "role": "user", "origin": "webhook", "contains": "deploy 2f1a failed" },
-      { "role": "assistant", "contains": "修好了" }
+      { "role": "assistant", "contains": "修好了" },
+      { "role": "tool", "error": true, "contains": "refused" }  // the tool result failed
     ],
+    "modelSaw": ["- alpha · 1.0.0 — Runs alpha."],  // text a model request carried
     "atLeast": [                         // counts over the whole transcript
       { "origin": "schedule", "count": 2 },
       { "role": "assistant", "count": 1 }
@@ -168,9 +170,13 @@ root conversation does not change that root's request classification.
   `--repeat 3` to prove it is stable (≈2 minutes per round).
 - `complex-self-trigger` — the model creates its own webhook trigger with
   `trigger_create`, and a delivery then reaches it.
-- `skills-enabled` — the App's ticks cross `PUT /v1/settings`, appear in the prompt, and a
-  scripted model reads one with `skill_read`; a name that was never selected is refused
-  without losing the first result.
+- `skills-enabled` — the App's ticks cross `PUT /v1/settings`; the next model request's
+  system prompt carries the skill's index line; a scripted model reads the file with
+  `skill_read`, the file's own sentence reaches the tool result and the following model
+  request; a `SKILL.md` that exists on disk but was never ticked is refused with an error
+  result naming the selection, and its text appears in no row. It does not prove the model's
+  choice (the model is scripted) or the 技能 page's push (the settings PUT stands in for it);
+  the prompt index is also covered deterministically in `apps/bots/test/runtime/skills.test.ts`.
 - `cli-surface` — the release-facing basics through the CLI: `--version`, `--skill`,
   `health`, `whoami`, `usage`, and the documented exit codes 2, 3 and 4.
 - `cli-catalog` — groups and bots created, renamed, reordered, moved and deleted only

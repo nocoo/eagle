@@ -2,15 +2,20 @@
 // the selection and offers an index of it in the prompt plus one tool that reads a selected
 // `SKILL.md`. Discovery belongs to the App; nothing here scans a folder.
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 import type { Extension } from "@earendil-works/pi-durable";
 import {
-  MAX_SKILL_FILE,
+  MAX_SKILL_FILE_BYTES,
+  MAX_SKILL_FILE_CHARS,
+  MAX_SKILL_FILE_LINES,
   normalizeSelectedSkills,
   readSelectedSkill,
+  readSkillFile,
   type SelectedSkill,
   skillSection,
 } from "../../src/skills/selection.ts";
@@ -171,12 +176,132 @@ test("a directory where the manifest belongs is not read", async () => {
 test("an oversized manifest is cut and says where", async () => {
   const bench_ = await bench();
   try {
-    const directory = await writeSkillFile(bench_.root, "alpha", "字".repeat(MAX_SKILL_FILE + 100));
+    const directory = await writeSkillFile(
+      bench_.root,
+      "alpha",
+      "字".repeat(MAX_SKILL_FILE_CHARS + 100),
+    );
     const outcome = await call(() => [skill({ path: directory })], "alpha");
     assert.equal(outcome.isError, undefined);
     assert.ok(outcome.output.startsWith("字".repeat(10)));
-    assert.match(outcome.output, new RegExp(`\\[truncated at ${MAX_SKILL_FILE} characters\\]`));
-    assert.ok(outcome.output.length < MAX_SKILL_FILE + 200);
+    assert.match(outcome.output, /\[truncated at \d+ (bytes|characters|lines)\]/);
+    assert.ok(outcome.output.length < MAX_SKILL_FILE_CHARS + 200);
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("a manifest is read by bytes, not by characters: a huge file costs a bounded read", async () => {
+  const bench_ = await bench();
+  try {
+    const directory = await writeSkillFile(bench_.root, "alpha", "a".repeat(8 * 1024 * 1024));
+    const outcome = await readSkillFile(directory);
+    assert.equal(outcome.kind, "text");
+    assert.ok(outcome.kind === "text");
+    assert.ok(
+      outcome.bytesRead <= MAX_SKILL_FILE_BYTES + 1,
+      `read ${outcome.bytesRead} bytes, at most ${MAX_SKILL_FILE_BYTES + 1} are allowed`,
+    );
+    assert.ok(outcome.bytesRead < 8 * 1024 * 1024, "the whole file is never pulled into memory");
+    assert.equal(outcome.truncatedBy, "bytes");
+    assert.match(outcome.text, /\[truncated at \d+ bytes\]/);
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("a manifest cut by bytes ends on a character boundary", async () => {
+  const bench_ = await bench();
+  try {
+    // Every character is three bytes, so a byte cut lands inside one unless it is repaired.
+    const directory = await writeSkillFile(bench_.root, "alpha", "字".repeat(100_000));
+    const outcome = await readSkillFile(directory);
+    assert.ok(outcome.kind === "text");
+    assert.equal(outcome.text.includes("\uFFFD"), false, "no broken character reaches the model");
+    assert.equal(outcome.text.startsWith("字"), true);
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("a manifest with too many lines is cut at the line budget", async () => {
+  const bench_ = await bench();
+  try {
+    const directory = await writeSkillFile(
+      bench_.root,
+      "alpha",
+      `${Array.from({ length: MAX_SKILL_FILE_LINES + 100 }, () => "x").join("\n")}\n`,
+    );
+    const outcome = await readSkillFile(directory);
+    assert.ok(outcome.kind === "text");
+    assert.equal(outcome.truncatedBy, "lines");
+    assert.match(outcome.text, new RegExp(`\\[truncated at ${MAX_SKILL_FILE_LINES} lines\\]`));
+    const lines = outcome.text.split("\n");
+    assert.equal(lines.length <= MAX_SKILL_FILE_LINES + 3, true, "the note is the only extra");
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("a manifest outside the skill's folder is refused and its text never leaks", async () => {
+  const bench_ = await bench();
+  try {
+    const outside = join(bench_.root, "outside.md");
+    await writeFile(outside, "这个文件不在技能目录里");
+    const directory = join(bench_.root, "alpha");
+    await mkdir(directory, { recursive: true });
+    await symlink(outside, join(directory, "SKILL.md"));
+    const outcome = await call(() => [skill({ path: directory })], "alpha");
+    assert.equal(outcome.isError, true);
+    assert.match(outcome.output, /outside|不在技能目录/);
+    assert.doesNotMatch(outcome.output, /这个文件不在技能目录里/);
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("a manifest swapped for a symlink to a folder is refused", async () => {
+  const bench_ = await bench();
+  try {
+    const directory = join(bench_.root, "alpha");
+    await mkdir(join(directory, "elsewhere"), { recursive: true });
+    await symlink(join(directory, "elsewhere"), join(directory, "SKILL.md"));
+    const outcome = await call(() => [skill({ path: directory })], "alpha");
+    assert.equal(outcome.isError, true);
+    assert.match(outcome.output, /regular file/);
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("a fifo is refused instead of hanging the read", async () => {
+  const bench_ = await bench();
+  try {
+    const directory = join(bench_.root, "alpha");
+    await mkdir(directory, { recursive: true });
+    await promisify(execFile)("mkfifo", [join(directory, "SKILL.md")]);
+    const outcome = await Promise.race([
+      call(() => [skill({ path: directory })], "alpha"),
+      new Promise<never>((_resolve, reject) =>
+        setTimeout(() => reject(new Error("the read hung on a fifo")), 5_000),
+      ),
+    ]);
+    assert.equal(outcome.isError, true);
+    assert.match(outcome.output, /regular file/);
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("a skill folder that is a symlink is resolved, and its own manifest is read", async () => {
+  const bench_ = await bench();
+  try {
+    const real = await writeSkillFile(bench_.root, "real", "真实目录里的说明");
+    const linked = join(bench_.root, "linked");
+    await symlink(real, linked);
+    const outcome = await call(() => [skill({ path: linked })], "alpha");
+    assert.equal(outcome.isError, undefined);
+    assert.match(outcome.output, /真实目录里的说明/);
   } finally {
     await bench_.cleanup();
   }
@@ -286,7 +411,7 @@ test("skill_read sees the selection it was built with", async () => {
   try {
     const directory = await writeSkillFile(bench_.root, "alpha", "范围之内的说明");
     const selection = [skill({ path: directory })];
-    const outcome = readSelectedSkill(selection, "alpha");
+    const outcome = await readSelectedSkill(selection, "alpha");
     assert.ok("text" in outcome);
     assert.match(outcome.text, /范围之内的说明/);
   } finally {

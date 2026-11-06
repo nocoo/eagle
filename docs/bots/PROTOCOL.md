@@ -47,7 +47,7 @@ Runtime details live in [RUNTIME.md](RUNTIME.md), layers in
 | Any HTTP body | 256 KiB, measured as received (the shared frame cap) | HTTP `500` before the body is parsed |
 | `settings.corePrompt` (HTTP) | 4 000 characters after trimming | HTTP `400` |
 | `settings.skills` (HTTP) | ≤ 50 entries; `name` 1–80, `version` ≤ 40, `description` ≤ 500 characters after whitespace collapse; `path` ≤ 1 024 and absolute or `~/…`; one entry per name | HTTP `400` |
-| `skill_read` result | 32 000 characters, then a truncation note | — |
+| `skill_read` result | 64 KiB read from the file; 32 000 characters and 4 096 lines kept, then a truncation note | — |
 | Any single frame | 256 KiB, measured on the **encoded** frame | Close `1008`; a daemon-produced frame that cannot fit is dropped and the socket closes `1008`, because the client cannot decode it either |
 | Single message payload | ≤ 96 KiB encoded | Withheld and replaced by a notice, see below |
 | `notice` text | ≤ 500 bytes, and for the withheld case a fixed constant | — |
@@ -193,7 +193,9 @@ Gateway rules:
   discovery, so the selection is the whole input. Every selected skill becomes one line of
   every bot's system prompt and reachable through `skill_read` by its name
   (EXTENSIONS-AND-TOOLS.md, "Skills"). `path` is the skill's own directory: `SKILL.md` is read
-  from inside it, `~/…` is expanded against the daemon's home, and `GET /v1/settings`
+  from inside it (its real path has to stay there, the file is opened without blocking and
+  only a regular file is read), `~/…` is expanded against the daemon's home, and
+  `GET /v1/settings`
   reports the list back in the same shape. A file written before the field reads as no
   skills; a hand-edited file that breaks a bound is read as no skills too, and the App pushes
   the selection again on the next tick or page visit.
