@@ -27,7 +27,7 @@ struct SelectionMenuStyleTests {
         Theme.Palette.textPrimary
       ),
       (
-        .inline, nil, 0, 4, Theme.TypeScale.pill, Theme.TypeScale.Glyph.microChevron,
+        .inline, 28, 6, 4, Theme.TypeScale.pill, Theme.TypeScale.Glyph.microChevron,
         Theme.Palette.textMuted
       ),
       (.policy, nil, 0, 6, Theme.TypeScale.note, Theme.TypeScale.note, Theme.Palette.textPrimary),

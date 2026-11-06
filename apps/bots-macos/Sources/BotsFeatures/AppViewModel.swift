@@ -218,22 +218,84 @@ public final class AppViewModel: ObservableObject {
 
   /// The gateway's models, loaded once for the per-bot picker.
   @Published public private(set) var models: [String] = []
+  /// What the daemon knows about each model it offers.
+  @Published public private(set) var modelDetails: [String: ModelDetail] = [:]
+  /// The gateway could not be asked for its models; the list the daemon knows stays.
+  @Published public private(set) var modelDiscoveryError: String?
 
   public func loadModelsIfNeeded() async {
-    guard models.isEmpty else { return }
-    models = (try? await catalog.loadModels()) ?? []
+    // A discovery that failed keeps the ids the daemon knows, so an empty list is not the
+    // only reason to ask again: the error is.
+    guard models.isEmpty || modelDiscoveryError != nil else { return }
+    guard let loaded = try? await catalog.loadModels() else { return }
+    models = loaded.ids
+    modelDetails = Dictionary(uniqueKeysWithValues: loaded.details.map { ($0.id, $0) })
+    modelDiscoveryError = loaded.discoveryError
   }
 
-  /// The selected bot's own model and reasoning level.
+  /// What one edit of a bot's pair is doing. The bot is named, so a change that lands
+  /// after the person selected another bot cannot answer for the one on screen.
+  public struct AgentEdit: Equatable, Sendable {
+    public let botId: String
+    /// The row being changed: `model` or `thinking`.
+    public let field: String
+    public let isSaving: Bool
+    /// The daemon's refusal, when the change did not land.
+    public let error: String?
+
+    public init(botId: String, field: String, isSaving: Bool, error: String? = nil) {
+      self.botId = botId
+      self.field = field
+      self.isSaving = isSaving
+      self.error = error
+    }
+  }
+
+  /// The pair change in flight, or the last one.
+  @Published public private(set) var agentEdit: AgentEdit?
+  /// The last refusal for one bot's field, kept until that field succeeds: a person who
+  /// looks at another bot and comes back still reads what happened here.
+  @Published public private(set) var agentErrors: [String: String] = [:]
+  /// One edit at a time: two changes cannot interleave on one bot.
+  private var agentTail: Task<Void, Never>?
+
+  /// The refusal for one row, if that row's last change did not land.
+  public func agentError(botId: String, field: String) -> String? {
+    agentErrors["\(botId)/\(field)"]
+  }
+
+  /// The selected bot's own model and reasoning level. The bot is captured when the edit
+  /// starts, and the answer only touches that bot: a person who moved on sees their own
+  /// bot's state, not the answer to somebody else's edit.
   public func setAgent(model: String?, thinkingLevel: String?) async {
     guard let botId = selection else { return }
-    do {
-      _ = try await catalog.setAgent(id: botId, model: model, thinkingLevel: thinkingLevel)
-      await reload()
-      error = nil
-    } catch {
-      self.error = describe(error)
+    let field = model == nil ? "thinking" : "model"
+    let previous = agentTail
+    let edit = Task { @MainActor [weak self] in
+      await previous?.value
+      guard let self else { return }
+      let key = "\(botId)/\(field)"
+      self.agentEdit = AgentEdit(botId: botId, field: field, isSaving: true)
+      do {
+        _ = try await self.catalog.setAgent(id: botId, model: model, thinkingLevel: thinkingLevel)
+        await self.reload()
+        self.agentErrors.removeValue(forKey: key)
+        // The saving state belongs to the bot that asked for it, so the answer for one bot
+        // never describes another.
+        if self.agentEdit?.botId == botId { self.agentEdit = nil }
+      } catch {
+        // The catalog may hold the pair the conversation refused ("saved but not
+        // applied"): reading it back is what lets the row show the saved model beside the
+        // refusal instead of the old one.
+        await self.reload()
+        // The refusal is kept for the row that asked for it, whatever the person is
+        // looking at now, and another field's success cannot erase it.
+        self.agentErrors[key] = describe(error)
+        if self.agentEdit?.botId == botId { self.agentEdit = nil }
+      }
     }
+    agentTail = edit
+    await edit.value
   }
 
   /// Runs one parked task of the selected bot again.
@@ -273,6 +335,9 @@ public final class AppViewModel: ObservableObject {
     if selection != botId, !exchanges.isEmpty { exchanges = [] }
     selection = botId
     conversation.select(botId: botId)
+    // Opening a bot is a person's action: a model list that failed to load is asked for
+    // again here, not only by a direct call, so the picker recovers by being used.
+    Task { @MainActor [weak self] in await self?.loadModelsIfNeeded() }
   }
 
   public func pendingOutbox(for botId: String) -> [OutboxEntry] {

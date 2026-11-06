@@ -51,6 +51,13 @@ type Entry = {
   config: BotConfig;
   /** The wire state; `closing` is internal and never leaves the registry. */
   state: BotState;
+  /** The pair the live conversation was configured with, once it has one. */
+  applied:
+    | {
+        readonly model: { readonly provider: string; readonly modelId: string };
+        readonly thinkingLevel: string;
+      }
+    | undefined;
   closing: boolean;
   handle: RuntimeHandle | undefined;
   opening: Promise<RuntimeHandle> | undefined;
@@ -79,6 +86,15 @@ export type RegistryOptions = {
   readonly thinkingLevel?: string;
   /** The tool groups a newly created bot records; settings can change it at runtime. */
   readonly toolGroups?: readonly ToolGroup[];
+  /**
+   * What the daemon knows about a model: the reasoning levels it accepts. A level the
+   * model cannot take is refused before anything is written.
+   */
+  readonly agentSupport?: (model: { readonly provider: string; readonly modelId: string }) => {
+    readonly levels: readonly string[];
+  };
+  /** Registers a model a bot names, so the daemon can run it. */
+  readonly ensureModel?: (modelId: string) => void;
   readonly log: Log;
   readonly idleCloseMs: number;
   readonly quarantineRetryMs: number;
@@ -137,6 +153,8 @@ export class BotRegistry {
   #defaultThinkingLevel: string;
   /** The tool groups a newly created bot records; settings can change it at runtime. */
   #defaultToolGroups: readonly ToolGroup[];
+  /** One queue per bot: two agent changes cannot interleave on one catalog. */
+  readonly #agentQueues = new Map<string, Promise<unknown>>();
   /** The sidebar groups, refreshed on load and after every mutation. */
   #groups: readonly BotGroup[] = [];
   readonly #boot: () => string;
@@ -160,8 +178,11 @@ export class BotRegistry {
       });
   }
 
-  /** Loads the catalog, finishes an interrupted delete, then scans for active work. */
-  async start(): Promise<void> {
+  /**
+   * Loads the catalog, finishes an interrupted delete, gives a bot created before the
+   * level existed the level it runs with today, then scans for active work.
+   */
+  async start(prepare?: () => Promise<void>): Promise<void> {
     const trace = this.#boot();
     this.#groups = await this.#options.directory.loadGroups().catch(() => []);
     let bots: readonly BotConfig[];
@@ -187,7 +208,19 @@ export class BotRegistry {
         cause: error,
       });
     }
-    for (const config of bots) {
+    for (let config of bots) {
+      // A bot created before the level was stored keeps running with the level it has
+      // today, written once: after this it is its own, and a later change of the daemon's
+      // default cannot move it.
+      if (config.thinkingLevel === undefined) {
+        config = await this.#write(trace, config.id, () =>
+          this.#options.directory.setAgent(
+            config.id,
+            { thinkingLevel: this.#defaultThinkingLevel },
+            (this.#options.now?.() ?? new Date()).toISOString(),
+          ),
+        );
+      }
       this.#entries.set(config.id, {
         config,
         state: "catalogued",
@@ -198,12 +231,17 @@ export class BotRegistry {
         activity: 0,
         deleting: false,
         leaseWaiters: [],
+        applied: undefined,
         unavailable: undefined,
         cancelIdle: undefined,
         cancelRetry: undefined,
         settling: undefined,
       });
     }
+    // The gateway's stored settings describe every bot, so they are applied before the
+    // scan resumes anything: a recovered run must resolve the provider and the model the
+    // catalog now holds.
+    await prepare?.();
     await this.#recover(trace);
   }
 
@@ -336,69 +374,41 @@ export class BotRegistry {
     return this.#summary(entry);
   }
 
-  /** Settings changed the gateway: new bots use the new model, existing ones on reopen. */
+  /** Settings changed the gateway: new bots use the new model, existing ones keep theirs. */
   setDefaultModel(model: { readonly provider: string; readonly modelId: string }): void {
     this.#defaultModel = model;
   }
 
-  /**
-   * Applies a reasoning level to every bot: the catalog records it and a live conversation
-   * follows in place, so no answer has to be interrupted.
-   */
-  async applyThinkingLevel(thinkingLevel: string, trace: string): Promise<void> {
+  /** Settings changed the reasoning level: new bots use it, existing ones keep theirs. */
+  setDefaultThinkingLevel(thinkingLevel: string): void {
     this.#defaultThinkingLevel = thinkingLevel;
-    for (const entry of this.#entries.values()) {
-      if (entry.config.thinkingLevel === thinkingLevel) continue;
-      const at = (this.#options.now?.() ?? new Date()).toISOString();
-      try {
-        const config = await this.#write(trace, entry.config.id, () =>
-          this.#options.directory.setThinkingLevel(entry.config.id, thinkingLevel, at),
-        );
-        entry.config = config;
-        if (entry.handle?.configureThinkingLevel !== undefined) {
-          await entry.handle.configureThinkingLevel(thinkingLevel, trace);
-        }
-      } catch {
-        // One bot that cannot be written must not stop the others.
-      }
-    }
   }
 
   /**
-   * Applies a gateway model to every bot: the catalog records it, a live conversation is
-   * moved in place (its session keeps its history), and a closed one opens with it later.
+   * The provider belongs to the gateway, not to a bot: every stored reference follows it,
+   * while the model id each bot chose stays that bot's own.
    */
-  async applyModel(
-    model: { readonly provider: string; readonly modelId: string },
-    trace: string,
-  ): Promise<void> {
-    this.#defaultModel = model;
+  async applyGatewayProvider(provider: string, trace: string): Promise<void> {
     for (const entry of this.#entries.values()) {
-      if (
-        entry.config.model.provider === model.provider &&
-        entry.config.model.modelId === model.modelId
-      ) {
-        continue;
-      }
+      if (entry.config.model.provider === provider) continue;
       const at = (this.#options.now?.() ?? new Date()).toISOString();
-      try {
-        const config = await this.#write(trace, entry.config.id, () =>
-          this.#options.directory.setModel(entry.config.id, model, at),
-        );
-        entry.config = config;
-        if (entry.handle?.configureModel !== undefined) {
-          await entry.handle.configureModel(model, trace);
-        }
-      } catch {
-        // One bot that cannot be written must not stop the others; the failed entry keeps
-        // its old model and the next save retries it.
-      }
+      // Boot only, before the recovery scan: a stored reference from another provider id
+      // is moved to the one the daemon started with. A change of the provider id itself is
+      // a restart (PROTOCOL.md, "Per-bot agent"), so this never runs under live work.
+      entry.config = await this.#write(trace, entry.config.id, () =>
+        this.#options.directory.setAgent(
+          entry.config.id,
+          { model: { provider, modelId: entry.config.model.modelId } },
+          at,
+        ),
+      );
     }
   }
 
   /**
-   * Per-bot agent choice (the `agent` capability): the catalog records it and a live
-   * conversation follows in place, so no answer has to be interrupted.
+   * One bot's own pair, in one change: the model it runs with and the reasoning level it
+   * runs at. The catalog is written once, the conversation is configured once, and a
+   * request that is already in flight keeps the model it was prepared with.
    */
   async setAgent(
     botId: string,
@@ -409,30 +419,114 @@ export class BotRegistry {
     trace: string,
   ): Promise<BotSummary> {
     const entry = this.#entry(botId, trace);
-    const at = (this.#options.now?.() ?? new Date()).toISOString();
-    let config = entry.config;
-    if (change.model !== undefined && change.model.modelId !== config.model.modelId) {
-      config = await this.#write(trace, botId, () =>
-        this.#options.directory.setModel(
-          botId,
-          change.model as NonNullable<typeof change.model>,
-          at,
-        ),
-      );
-      if (entry.handle?.configureModel !== undefined) {
-        await entry.handle.configureModel(change.model, trace);
+    return this.#serializeAgent(botId, async () => {
+      const current = entry.config;
+      const currentLevel = this.#storedLevel(entry);
+      const model = change.model ?? current.model;
+      const level = change.thinkingLevel ?? currentLevel;
+      const sameModel =
+        change.model === undefined ||
+        (change.model.provider === current.model.provider &&
+          change.model.modelId === current.model.modelId);
+      const sameLevel = level === currentLevel;
+      // What the live conversation runs, when it is open. A catalog that already holds the
+      // pair is not a reason to skip a configuration: a previous attempt may have saved it
+      // and failed to apply it.
+      const applied = entry.handle === undefined ? undefined : entry.applied;
+      const upToDate =
+        applied !== undefined &&
+        applied.model.provider === model.provider &&
+        applied.model.modelId === model.modelId &&
+        applied.thinkingLevel === level;
+      if (sameModel && sameLevel && (applied === undefined || upToDate)) {
+        return this.#summary(entry);
       }
-    }
-    if (change.thinkingLevel !== undefined && change.thinkingLevel !== config.thinkingLevel) {
-      config = await this.#write(trace, botId, () =>
-        this.#options.directory.setThinkingLevel(botId, change.thinkingLevel as string, at),
-      );
-      if (entry.handle?.configureThinkingLevel !== undefined) {
-        await entry.handle.configureThinkingLevel(change.thinkingLevel as string, trace);
+      // The pair has to be one the model accepts, and that is checked before anything is
+      // written: a bot never records a pair it cannot run with.
+      if (change.model !== undefined) this.#options.ensureModel?.(change.model.modelId);
+      const support = this.#options.agentSupport?.(model);
+      if (support !== undefined && !support.levels.includes(level)) {
+        throw new ClassifiedFailure(
+          newFailure("invalid_command"),
+          "not_admitted",
+          `${model.modelId} does not support the ${level} thinking level`,
+        );
       }
-    }
-    entry.config = config;
-    return this.#summary(entry);
+      const at = (this.#options.now?.() ?? new Date()).toISOString();
+      // The edit holds a lease while it runs, and it waits for a close that is already in
+      // flight: an idle close must not take the handle away in the middle of the change.
+      // A close that wins leaves no handle, and then the catalog alone records the pair
+      // the next open configures.
+      const leased = this.touch(botId);
+      try {
+        // A warm-up or a reopen built its spec from the pair the catalog had. It is awaited
+        // first, and the whole change then owns the settling window so no new open starts
+        // in the middle: an open that slipped in would otherwise install a handle with the
+        // old pair while the catalog already holds the new one.
+        if (entry.opening !== undefined) await entry.opening.catch(() => undefined);
+        if (entry.settling !== undefined) await entry.settling.catch(() => undefined);
+        let finish: () => void = () => undefined;
+        const window = new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        entry.settling = window;
+        // An open that was waiting on the close we just waited for has resumed by now and
+        // may be in `opening`; it started before this window, so awaiting it cannot wait on
+        // us, and it must finish before the pair is written or it would install a handle
+        // built from the old catalog.
+        if (entry.opening !== undefined) await entry.opening.catch(() => undefined);
+        try {
+          // The catalog is the truth, so it is written first and the conversation follows.
+          // A request prepared while the write is in flight still runs the pair it had, and
+          // nothing claims the change until the catalog holds it.
+          if (!(sameModel && sameLevel)) {
+            const config = await this.#write(trace, botId, () =>
+              this.#options.directory.setAgent(botId, { model, thinkingLevel: level }, at),
+            );
+            entry.config = config;
+          }
+          const handle = entry.handle;
+          if (handle?.configureAgent === undefined) {
+            entry.applied = undefined;
+            return this.#summary(entry);
+          }
+          try {
+            await handle.configureAgent({ model, thinkingLevel: level }, trace);
+            entry.applied = { model, thinkingLevel: level };
+          } catch (error) {
+            // Saved but not applied. The catalog is broadcast with the pair it holds, and
+            // the refusal says what is true: this conversation still runs the old pair, and
+            // the next change or a reopen applies the saved one.
+            throw new ClassifiedFailure(
+              newFailure("internal", "runtime"),
+              "runtime",
+              `the bot now records ${model.modelId} at ${level}, but the running conversation did not take it; the next change or a reopen applies it`,
+              { cause: error, saved: true },
+            );
+          }
+        } finally {
+          if (entry.settling === window) entry.settling = undefined;
+          finish();
+        }
+      } finally {
+        if (leased) this.release(botId);
+      }
+      return this.#summary(entry);
+    });
+  }
+
+  /** One agent change at a time per bot: two patches cannot interleave on one catalog. */
+  #serializeAgent<T>(botId: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.#agentQueues.get(botId) ?? Promise.resolve();
+    const run = previous.then(work, work);
+    this.#agentQueues.set(
+      botId,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return run;
   }
 
   /** Runs one parked task again; the task graph then reports it as live work. */
@@ -560,6 +654,7 @@ export class BotRegistry {
     const entry: Entry = {
       config,
       state: "catalogued",
+      applied: undefined,
       closing: false,
       handle: undefined,
       opening: undefined,
@@ -706,8 +801,12 @@ export class BotRegistry {
     // closed is never waited on by the drain it belongs to (TRIGGERS.md §3.6). Opening during
     // that window would create a second Harness over one sqlite file, and the close would
     // then clear the handle it never owned (ARCHITECTURE.md, "Bot lifecycle").
-    if (entry.settling !== undefined) {
-      await entry.settling.catch(() => undefined);
+    // A close, a change or a delete owns the bot while its window is set. Waiting once is
+    // not enough: another owner can set a newer window while this one completes, and an open
+    // that read the catalog between them would start from the pair they are replacing.
+    while (entry.settling !== undefined) {
+      const window = entry.settling;
+      await window.catch(() => undefined);
       if (this.#entries.get(botId) !== entry) {
         throw this.#unresolved(botId, trace);
       }
@@ -878,15 +977,22 @@ export class BotRegistry {
     entry.state = "opening";
     this.#options.log.emit("info", "core", Events.openStart, { trace, botId: entry.config.id });
     try {
+      const opened = {
+        model: entry.config.model,
+        thinkingLevel: this.#storedLevel(entry),
+      };
       const handle = await this.#options.openRuntime({
         id: entry.config.id,
         dir: this.#options.directory.botDir(entry.config.id),
-        model: entry.config.model,
-        thinkingLevel: entry.config.thinkingLevel ?? this.#defaultThinkingLevel,
+        model: opened.model,
+        thinkingLevel: opened.thinkingLevel,
         toolGroups: resolveToolGroups(entry.config.toolGroups ?? this.#defaultToolGroups),
         trace,
       });
       entry.handle = handle;
+      // What this open actually asked for: the spec above, never a re-read of the catalog
+      // that a concurrent change may have moved.
+      entry.applied = { model: opened.model, thinkingLevel: opened.thinkingLevel };
       if (this.#stopping) {
         entry.closing = true;
         const remaining = Math.max(1, (this.#shutdownDeadline ?? Date.now()) - Date.now());
@@ -940,6 +1046,27 @@ export class BotRegistry {
     } finally {
       entry.opening = undefined;
     }
+  }
+
+  /**
+   * The level a bot runs at, from the catalog. The startup migration gives every bot one,
+   * so a missing level here means the catalog changed under the daemon: the bot cannot run
+   * and says why. It is never replaced with the daemon's default, which belongs to new
+   * bots only.
+   */
+  #storedLevel(entry: Entry): string {
+    const stored = entry.config.thinkingLevel;
+    if (stored !== undefined) return stored;
+    entry.state = "unavailable";
+    entry.unavailable = {
+      reason: "internal",
+      message: "the catalog has no thinking level for this bot",
+    };
+    throw new ClassifiedFailure(
+      newFailure("internal", "core"),
+      "not_admitted",
+      "the catalog has no thinking level for this bot",
+    );
   }
 
   #touch(entry: Entry): void {

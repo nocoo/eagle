@@ -32,6 +32,12 @@ const delta = (id: string, text: string): string =>
     delta: text,
   });
 
+/**
+ * The reflection conversation asks the provider too, and it is not the run this test is
+ * about: a request that carries this sentence is answered and not counted.
+ */
+const REFLECTION_MARKER = "consider whether the sidebar status should change";
+
 const finish = (id: string, text: string): string => {
   const response = {
     id,
@@ -65,38 +71,46 @@ export const startProvider = async (
   });
   const hanging: (() => void)[] = [];
   const server: Server = createServer((request, response) => {
-    requests += 1;
-    const current = requests;
-    if (request.method !== "POST") {
-      response.writeHead(404).end();
-      return;
-    }
-    if (current > 1) {
-      // A resumed task is answered completely so the run can finish.
-      const text = "重启之后完成的回答";
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const body = Buffer.concat(chunks).toString("utf8");
+      if (request.method !== "POST") {
+        response.writeHead(404).end();
+        return;
+      }
+      // The reflection conversation asks the provider too: it is answered and not counted,
+      // so the count is the interruptions of the conversation under test.
+      const reflection = body.includes(REFLECTION_MARKER);
+      if (!reflection) requests += 1;
+      const current = requests;
+      if (reflection || current > 1) {
+        // A resumed task — and the reflection after any answer — is answered completely.
+        const text = "重启之后完成的回答";
+        response.writeHead(200, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+        });
+        response.write(opening(`resp_${current}_${reflection ? "r" : "a"}`));
+        response.write(delta(`resp_${current}_${reflection ? "r" : "a"}`, text));
+        response.end(finish(`resp_${current}_${reflection ? "r" : "a"}`, text));
+        return;
+      }
       response.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
         connection: "keep-alive",
       });
       response.write(opening(`resp_${current}`));
-      response.write(delta(`resp_${current}`, text));
-      response.end(finish(`resp_${current}`, text));
-      return;
-    }
-    response.writeHead(200, {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache",
-      connection: "keep-alive",
+      if (options.chunk !== false) {
+        response.write(delta(`resp_${current}`, options.text ?? "会被杀死的第一段"));
+      }
+      hanging.push(() => {
+        response.destroy();
+      });
+      void writeFile(sentinel, "blocked\n").then(() => release?.());
     });
-    response.write(opening(`resp_${current}`));
-    if (options.chunk !== false) {
-      response.write(delta(`resp_${current}`, options.text ?? "会被杀死的第一段"));
-    }
-    hanging.push(() => {
-      response.destroy();
-    });
-    void writeFile(sentinel, "blocked\n").then(() => release?.());
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();

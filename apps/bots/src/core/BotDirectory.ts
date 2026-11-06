@@ -274,7 +274,7 @@ export class BotDirectory {
   /** Persists the bot config, then publishes the catalog entry. */
   async create(config: BotConfig): Promise<void> {
     // Validate before touching the filesystem: a malformed config must not leave a
-    // directory or a bot.json behind.
+    // directory behind.
     assertRecord(config, "bot config");
     await this.#serial(async () => {
       const bots = await this.load();
@@ -289,13 +289,8 @@ export class BotDirectory {
       }
       try {
         await this.#fs.mkdir(this.botDir(config.id), { recursive: true });
-        await this.#fs.writeFile(
-          `${this.botDir(config.id)}/bot.json`,
-          `${JSON.stringify(config, null, 2)}\n`,
-          0o600,
-        );
       } catch (error) {
-        throw new DirectoryError("storage_failed", `cannot write bot ${config.id}`, {
+        throw new DirectoryError("storage_failed", `cannot create bot ${config.id}`, {
           cause: error,
         });
       }
@@ -392,10 +387,16 @@ export class BotDirectory {
     return updated;
   }
 
-  /** Gateway settings changed the model of every bot; the catalog is the source of truth. */
-  async setModel(
+  /**
+   * One bot's own pair, in one write: the model it runs with and the reasoning level it
+   * runs at. A bot's pair is one value, so it is never half written.
+   */
+  async setAgent(
     id: string,
-    model: { readonly provider: string; readonly modelId: string },
+    change: {
+      readonly model?: { readonly provider: string; readonly modelId: string };
+      readonly thinkingLevel?: string;
+    },
     at: string,
   ): Promise<BotConfig> {
     return this.#serial(async () => {
@@ -403,19 +404,12 @@ export class BotDirectory {
       const index = bots.findIndex((bot) => bot.id === id);
       if (index === -1) throw new DirectoryError("unknown_bot", `bot ${id} does not exist`);
       const current = bots[index] as BotConfig;
-      const updated: BotConfig = { ...current, model, updatedAt: at };
-      await this.#writeAll(bots.map((bot, position) => (position === index ? updated : bot)));
-      return updated;
-    });
-  }
-
-  async setThinkingLevel(id: string, thinkingLevel: string, at: string): Promise<BotConfig> {
-    return this.#serial(async () => {
-      const bots = await this.load();
-      const index = bots.findIndex((bot) => bot.id === id);
-      if (index === -1) throw new DirectoryError("unknown_bot", `bot ${id} does not exist`);
-      const current = bots[index] as BotConfig;
-      const updated: BotConfig = { ...current, thinkingLevel, updatedAt: at };
+      const updated: BotConfig = {
+        ...current,
+        ...(change.model === undefined ? {} : { model: change.model }),
+        ...(change.thinkingLevel === undefined ? {} : { thinkingLevel: change.thinkingLevel }),
+        updatedAt: at,
+      };
       await this.#writeAll(bots.map((bot, position) => (position === index ? updated : bot)));
       return updated;
     });

@@ -133,9 +133,13 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
     const runtime = options.runtime;
     openRuntime = (spec) => runtime.open(spec);
   } else if (options.real === true) {
-    faux = fauxProvider(
-      options.tokensPerSecond === undefined ? {} : { tokensPerSecond: options.tokensPerSecond },
-    );
+    // The faux model reasons, so a test can ask for a thinking level the daemon accepts.
+    faux = fauxProvider({
+      models: [{ id: "faux-1", name: "Faux Model", reasoning: true }],
+      ...(options.tokensPerSecond === undefined
+        ? {}
+        : { tokensPerSecond: options.tokensPerSecond }),
+    });
     const models = createModels();
     models.setProvider(faux.provider);
     model = options.model ?? {
@@ -304,6 +308,7 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
     ...(options.settings === undefined ? {} : { settings: options.settings }),
     ...(options.machinePrompt === undefined ? {} : { machinePrompt: options.machinePrompt }),
     ...(options.toolCatalog === undefined ? {} : { toolCatalog: options.toolCatalog }),
+    gatewayProvider: () => model.provider,
     version: "0.0.0-test",
     instance: "i_test",
     capabilities: {

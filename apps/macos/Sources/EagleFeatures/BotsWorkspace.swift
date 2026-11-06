@@ -84,6 +84,9 @@ final class BotsWorkspaceViewModel: ObservableObject {
   @Published private(set) var exchanges: [PeerExchangeSummary] = []
   /// The exchange a person opened from a row; nil while no dialog is up.
   @Published private(set) var openedExchange: PeerExchange?
+  /// Which peer read is the newest. A dialog can come and go while one is in flight, so a
+  /// late answer must not reopen a transcript nobody is looking at any more.
+  private var peerRead = 0
   private var loadingExchanges = false
   /// Whether the previous publish saw a run in flight: an exchange can only start inside one.
   private var wasRunning = false
@@ -422,9 +425,14 @@ final class BotsWorkspaceViewModel: ObservableObject {
   }
 
   /// Opens one exchange: the row only carries the summary, so the round trip is read now.
+  /// Only the newest read may publish; a newer ask, a close or a dialog taking the window
+  /// invalidates the ones already in flight.
   func openExchange(_ exchangeId: String) async {
     guard let app else { return }
+    peerRead += 1
+    let request = peerRead
     guard let detail = await app.peerDetail(exchangeId) else { return }
+    guard request == peerRead else { return }
     let refs = detail.participants.map {
       presenter.peerRef(id: $0.id, title: $0.title, bots: app.bots)
     }
@@ -449,7 +457,13 @@ final class BotsWorkspaceViewModel: ObservableObject {
   }
 
   func closeExchange() {
+    peerRead += 1
     if openedExchange != nil { openedExchange = nil }
+  }
+
+  /// Another dialog took the window: a peer read still in flight is no longer wanted.
+  func cancelPeerRead() {
+    peerRead += 1
   }
 
   /// The selected bot as the catalog describes it, for the inspector's profile.
@@ -714,7 +728,14 @@ final class BotsWorkspaceViewModel: ObservableObject {
     let nextUsage = presenter.inspectorUsage(for: conversation.state.usage)
     if usage != nextUsage { usage = nextUsage }
     let nextChoices = presenter.agentChoices(
-      for: selected, agent: conversation.state.agent, models: app.models)
+      for: selected,
+      agent: conversation.state.agent,
+      models: app.models,
+      detail: app.modelDetails[selected.model.modelId],
+      edit: app.agentEdit?.botId == selected.id ? app.agentEdit : nil,
+      errors: app.agentErrors,
+      discoveryError: app.modelDiscoveryError
+    )
     if choices != nextChoices { choices = nextChoices }
     let nextTriggers = conversation.state.triggers.map { trigger in
       InspectorTriggerRow(
@@ -1357,30 +1378,44 @@ struct BotsPresenter {
   }
 
   /// The inspector's 模型 rows: the bot's own model and reasoning level, each a menu of the
-  /// values the daemon accepts.
+  /// values the daemon accepts. The levels are the ones the bot's own model takes, so the
+  /// menu never offers a level the daemon would refuse.
   func agentChoices(
-    for bot: BotSummary, agent: AgentView?, models: [String]
+    for bot: BotSummary,
+    agent: AgentView?,
+    models: [String],
+    detail: ModelDetail? = nil,
+    edit: AppViewModel.AgentEdit? = nil,
+    errors: [String: String] = [:],
+    discoveryError: String? = nil
   ) -> [InspectorChoiceRow] {
     let modelChoices =
       models.contains(bot.model.modelId) || models.isEmpty
       ? models
       : [bot.model.modelId] + models
+    let level = agent?.thinkingLevel ?? "medium"
+    let levels =
+      detail?.thinkingLevels.isEmpty == false ? (detail?.thinkingLevels ?? []) : Self.thinkingLevels
     return [
       InspectorChoiceRow(
         id: "model",
         label: "模型",
         value: bot.model.modelId,
         selected: bot.model.modelId,
-        choices: modelChoices.map { InspectorChoiceRow.Choice(id: $0, title: $0) }
+        choices: modelChoices.map { InspectorChoiceRow.Choice(id: $0, title: $0) },
+        isSaving: edit?.field == "model" && edit?.isSaving == true,
+        error: errors["\(bot.id)/model"] ?? discoveryError
       ),
       InspectorChoiceRow(
         id: "thinking",
         label: "思考等级",
-        value: Self.thinkingLabel(agent?.thinkingLevel ?? "medium"),
-        selected: agent?.thinkingLevel ?? "medium",
-        choices: Self.thinkingLevels.map {
-          InspectorChoiceRow.Choice(id: $0, title: $0)
-        }
+        value: Self.thinkingLabel(level),
+        selected: level,
+        choices: levels.map {
+          InspectorChoiceRow.Choice(id: $0, title: Self.thinkingLabel($0))
+        },
+        isSaving: edit?.field == "thinking" && edit?.isSaving == true,
+        error: errors["\(bot.id)/thinking"]
       ),
     ]
   }

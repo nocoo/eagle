@@ -44,7 +44,10 @@ or mathematical geometry into presentation tokens.
 - SelectionMenu owns the seven existing menu shells. Callers retain native menu-item
   Buttons, selection/checkmark rules, asynchronous actions and disabled options. Policy
   menus remain borderless; this is not a conversion to Picker. PillSelect requires an
-  explicit accessibility label and reuses this shell.
+  explicit accessibility label and reuses this shell. The inline shell fills the 28 pt
+  row it sits in: its title, the gap and the trailing chevron are one target, so the
+  chevron is as easy to hit as the title. The larger target stays invisible — the inline
+  shell paints no capsule and no border, and its row height does not change.
 - SettingsCard/SectionRow/Header, SettingsTextField/TextArea and SettingsActionButton
   remain the standard form primitives. SettingsSectionRow's optional leading slot carries
   the mark a row names (a bot's face in 用量); rows without one are unchanged.
@@ -69,8 +72,16 @@ or mathematical geometry into presentation tokens.
 - CardActionButton owns the existing filled/text card actions; callers retain the
   completion/password validity and submission/skip guards.
 - ActionControl forwards a native Button role/action with plain, bordered, prominent or
-  inherited-native styling. CreationTextField preserves creation-field fonts, prompts
-  and heights; caller focus/onSubmit and validation are unchanged.
+  inherited-native styling. SettingsActionButton is the standard dialog and page action: a
+  caller's `disabled` guard mutes its label and drops its accent fill, so a refused action
+  never looks armed.
+- IdentityField is the borderless name/tag field shaped like the inspector's identity: name
+  in title type, tag in subtitle type, the inspector's row heights, a canvas fill and a
+  focus ring only while typing. A dialog that asks for both therefore reads as one identity
+  card, not two stacked form boxes, and the field names itself for accessibility because a
+  bare `TextField` has no title.
+- DialogShortcut is the invisible Return/Escape carrier a surface owns when no field has
+  the keyboard (a peer or tool dialog has none at all).
 - The pure BotFacePicker belongs to EagleDesign. Bot appearance persistence and its
   conversion to BotsCore stay in EagleFeatures; dependency direction is unchanged.
 
@@ -118,6 +129,40 @@ prove rejection despite unstaged fixes/checker changes, renamed inputs, missing 
 and directory-link redirection. Other repository hooks retain their declared behavior;
 this guard is not a whole-repository quality certification.
 
+## One modal surface
+
+Every dialog the App itself draws goes through one host: the create form, the face editor,
+a peer transcript, a tool run and settings. The host owns the dim scrim, the card surface,
+the shared radius/hairline/shadow, the traffic lights and the way out (scrim, the dialog's
+own close control, Escape). The shell blurs the workspace behind it and nothing else, so
+the card itself stays sharp. System `.alert` confirmations, `NSOpenPanel`, permission sheets
+and the separate approval window are native surfaces and stay native.
+
+While a dialog is up the workspace is disabled and takes no hit: the shell's own dialogs,
+the sidebar and the composer are unreachable, the native composer field is disabled and its
+focus is released, and the menu shortcuts that move columns or open settings are ignored.
+Closing a dialog bumps the conversation's focus request so the composer takes the keyboard
+back. One typed presentation exists at a time — a peer exchange is read from whichever
+transcript raised it — so a second surface can never appear behind the person's back. A peer
+read is a request with a generation: opening one, presenting any dialog or closing a dialog
+invalidates the reads still in flight, so an answer that lands after the window moved on is
+dropped instead of reopening itself, while a deliberate new ask still opens.
+
+Tool details are named by the entry that owns the run and by the transcript's owner — a bot
+id, or the sample workspace — never by a copy of its rows: the dialog observes the transcript
+that holds it, so a call still running keeps updating while the dialog is open. The owner is
+part of the route because the transcript view model is shared: when the selection moves to
+another bot (a create that lands in the background does exactly that), the detail closes
+instead of showing another conversation's rows under the old entry id. Every other dialog is
+about the window and survives a selection change. Peer content keeps its scroll, its live
+updates and its close-only behaviour.
+
+The create and face cards are 460 pt wide and as tall as their content (about 458 pt), not
+the earlier 560 × 712 sheet. The create form is an inspector-shaped identity card (portrait,
+name, optional tag) over the shared picker, whose ten shapes sit two rows of five and whose
+eight canonical colours sit on one row. Its header is 44 pt, its footer 48 pt with two
+standard actions.
+
 ## Eight-family palette and identity
 
 The fixed selectable order is red, orange, yellow, green, teal, blue, violet, pink.
@@ -130,7 +175,11 @@ alpha is 0.9 and checked after compositing on the actual green bubble background
 Semantic status roles remain separate from identity; a red Bot is not an error.
 
 The daemon hashes `SHA256(UTF8("bot:" + id))[0] % 8` only when creating a Bot without
-an explicit tint, then stores the complete appearance in the initial catalog write.
+an explicit tint, then stores the complete appearance in the initial catalog write. The App
+does not rely on it: a create form picks one of the same eight canonical colours once, when
+it opens, previews exactly that colour, and sends shape and tint explicitly. Typing a name
+or picking a shape never re-rolls it, and a Bot created through the API or CLI keeps the
+daemon's ID-hash default.
 The client never guesses defaults from names, applies Swift hashValue, rehashes saved
 colors or stores auto/manual metadata. Creation alone may omit tint; update stays
 complete. A neutral creation preview does not pretend to know the unallocated ID.
@@ -256,6 +305,27 @@ Keep per-tick transcript bookkeeping in TranscriptScroller rather than observabl
 SwiftUI state. Preserve the existing scroll-cost checks and hover-only copy/selection
 machinery. New style organization must not change streaming, follow/unfollow, text
 selection, copy, code/table overflow or composer focus/keyboard behavior.
+
+The dialog review has its own isolated capture path — it composes the same dialog views
+through `ModalHost` over a synthetic three-column backdrop, with a unique UserDefaults
+suite, a stub HTTP session and `SnapshotDeviceControl`:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run --package-path apps/macos SnapshotRenderer .local/macos-dialogs --dialogs-only
+```
+
+It writes `dialog-{create,face,peer,tool,settings}-{light,dark}.png`. The capture reads no
+person's preferences: every run takes a fresh UUID-named suite (a shared domain would inherit
+an earlier run's values and let two captures delete each other's), `.defaultAppStorage` points
+AppStorage at that suite, the suite is removed when the run ends, and the settings surface gets
+an explicit
+`SkillsSettingsViewModel`/`SkillsSelection` rooted in a temporary home with a push that goes
+nowhere, so the 技能 page never scans the real `~/.agents/skills` or the real tick list. A
+built-in assertion proves the sentinel it writes is invisible to the standard defaults and
+that the scanned home is temporary before anything renders, and the suite's own test proves
+two runs own different domains, cannot read each other and cannot delete each other. Any
+domain record cfprefsd keeps after the run reads back empty. Escape, Return, traffic lights and
+Reduce Motion are not certified by these images; they need a foreground window.
 
 Use SnapshotRenderer's `--composition-only` path for this phase's synthetic review:
 

@@ -33,6 +33,8 @@ export type CarriedSettings = {
 export type SettingsStore = {
   /** The settings as they are stored right now. */
   readonly current: () => GatewayConfig | undefined;
+  /** Refuses a change the running daemon cannot apply, before anything is written. */
+  readonly refuse?: (next: GatewayConfig, current: GatewayConfig | undefined) => string | undefined;
   /** Stores the settings; the file is the truth. */
   readonly write: (config: GatewayConfig) => Promise<void>;
   /** Applies what the request carried to the running daemon. */
@@ -137,6 +139,8 @@ export const createSettingsSaver = (store: SettingsStore) => {
       corePrompt,
       skills: selection.skills,
     };
+    const refused = store.refuse?.(next, gateway);
+    if (refused !== undefined) return { settings: publicGateway(gateway), error: refused };
     await store.write(next);
     await store.apply(next, carried);
     return { settings: publicGateway(next) };

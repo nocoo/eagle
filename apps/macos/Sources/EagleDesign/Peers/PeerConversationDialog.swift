@@ -36,20 +36,11 @@ public struct PeerConversationDialog: View {
 
       footer
     }
-    .background(Theme.Palette.canvas)
-    .clipShape(RoundedRectangle(cornerRadius: Theme.Metric.peerDialogRadius, style: .continuous))
-    .overlay(
-      RoundedRectangle(cornerRadius: Theme.Metric.peerDialogRadius, style: .continuous)
-        .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
-    )
     .overlay(alignment: .topTrailing) {
       PeerPairChip(exchange: exchange)
         .padding(.trailing, Theme.Metric.peerDialogInset)
         .padding(.top, Theme.Layout.controlInset)
     }
-    .shadow(
-      color: Theme.Palette.modalShadow, radius: Theme.Dialog.peerShadowRadius,
-      y: Theme.Dialog.peerShadowY)
   }
 
   private var footer: some View {

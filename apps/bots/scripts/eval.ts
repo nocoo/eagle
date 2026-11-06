@@ -43,6 +43,11 @@ type CaseFile = {
     readonly script: readonly ScriptedReply[];
     readonly repeatLast?: boolean;
     readonly reflectionScript?: readonly ScriptedReply[];
+    /**
+     * The ids the gateway lists, and what a new bot records: the first is the default. One
+     * case proves that two bots on two models each run with their own.
+     */
+    readonly ids?: readonly string[];
   };
   /** What the same local server answers at `/v1/systemone`, so a decision tool runs for real. */
   readonly systemone?: {
@@ -74,6 +79,15 @@ type CaseFile = {
     readonly toolsCalled?: readonly string[];
     /** Text any model request carried: how a case proves what the model was given. */
     readonly modelSaw?: readonly string[];
+    /**
+     * One request per entry: the body carried `contains` and named exactly `model`, at
+     * `effort` when given. How a case proves which bot asked which model.
+     */
+    readonly modelRequestsSeen?: readonly {
+      readonly contains: string;
+      readonly model: string;
+      readonly effort?: string;
+    }[];
     /**
      * Text the **first** non-reflection request's system content carried: how a case pins a
      * prompt section to the request a run actually starts with, not to a later replay.
@@ -191,6 +205,7 @@ const scriptedModel = (
   repeatLast: boolean,
   systemone: CaseFile["systemone"],
   reflectionScript: readonly ScriptedReply[] | undefined,
+  ids: readonly string[],
 ) => {
   const requests: {
     readonly lastInput: string;
@@ -240,7 +255,7 @@ const scriptedModel = (
       }
       if (request.url?.endsWith("/models") === true) {
         response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({ data: [{ id: "eval-model", object: "model" }] }));
+        response.end(JSON.stringify({ data: ids.map((id) => ({ id, object: "model" })) }));
         return;
       }
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as {
@@ -716,11 +731,13 @@ const runCase = async (
   const devTokenPath = join(home, ".config", "eagle-dev", "token");
   /** Values a step captured, addressed by later steps as `{{name.path}}`. */
   const captured = new Map<string, unknown>();
+  const modelIds = study.model.ids ?? ["eval-model"];
   const model = scriptedModel(
     study.model.script,
     study.model.repeatLast === true,
     study.systemone,
     study.model.reflectionScript,
+    modelIds,
   );
   const modelPort = await listen(model.server);
   let handle: DaemonHandle | undefined;
@@ -752,7 +769,7 @@ const runCase = async (
         {
           provider: "magpie",
           baseUrl: `http://127.0.0.1:${modelPort}/v1`,
-          model: "eval-model",
+          model: modelIds[0] ?? "eval-model",
           apiKey: "eval-key",
           thinkingLevel: "low",
           // No `toolGroups` means "whatever the daemon defaults to", which is what a case
@@ -1166,6 +1183,28 @@ const runCase = async (
     }
     for (const tool of expect.toolsCalled ?? []) {
       if (!view.tools.includes(tool)) failure(`the model never called ${tool}`);
+    }
+    for (const wanted of expect.modelRequestsSeen ?? []) {
+      const match = model.requests.find(
+        (request) => !request.reflection && request.body.includes(wanted.contains),
+      );
+      if (match === undefined) {
+        failure(`no root model request carried ${wanted.contains}`);
+      }
+      const body = JSON.parse(match.body) as {
+        model?: string;
+        reasoning?: { effort?: string };
+      };
+      if (body.model !== wanted.model) {
+        failure(
+          `the request carrying ${wanted.contains} named ${String(body.model)}, expected ${wanted.model}`,
+        );
+      }
+      if (wanted.effort !== undefined && body.reasoning?.effort !== wanted.effort) {
+        failure(
+          `the request carrying ${wanted.contains} asked for ${String(body.reasoning?.effort)}, expected ${wanted.effort}`,
+        );
+      }
     }
     for (const needle of expect.modelSaw ?? []) {
       if (!model.requests.some((request) => request.body.includes(needle))) {

@@ -2,98 +2,92 @@ import BotsCore
 import EagleDesign
 import SwiftUI
 
-/// The create form: a name (required), an optional label, and the face the user picks.
-/// It is a sheet on the main window, not a second window.
-struct BotCreateSheet: View {
+/// The create form: the face, a name and an optional tag arranged like the inspector's
+/// identity card. The colour is already chosen when the card opens, so the preview and what
+/// the daemon stores are the same colour.
+public struct BotCreateSheet: View {
   let onCreate: (String, String?, BotCreationAppearance) -> Void
   let onCancel: () -> Void
 
-  @State private var name = ""
-  @State private var label = ""
-  @State private var shape: BotFace.Shape = .blob
-  @State private var tint: Theme.Palette.BotTint?
-  @FocusState private var nameFocused: Bool
+  @State private var draft: BotsCreateDraft
+  /// A field's Return and the dialog's default action can both land; the form submits once.
+  @State private var submitted = false
 
-  private var canCreate: Bool {
-    !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  public init(
+    draft: BotsCreateDraft = .presented(),
+    onCreate: @escaping (String, String?, BotCreationAppearance) -> Void,
+    onCancel: @escaping () -> Void
+  ) {
+    _draft = State(initialValue: draft)
+    self.onCreate = onCreate
+    self.onCancel = onCancel
   }
 
-  var body: some View {
+  public var body: some View {
     VStack(spacing: 0) {
       header
       Divider().overlay(Theme.Palette.line)
-      ScrollView {
-        VStack(spacing: Theme.Layout.sectionInset) {
-          BotFace(
-            style: BotFace.Style(shape: shape, tint: tint ?? .paper), size: Theme.Picker.previewFace
-          )
-          .padding(.top, Theme.Metric.contentInset)
-          fields
-          BotFacePicker(shape: $shape, tint: tint) { tint = $0 }
-          if tint == nil {
-            Text("创建时按固定 ID 分配颜色，也可以手选。")
-              .font(Theme.TypeScale.note)
-              .foregroundStyle(Theme.Palette.textSecondary)
-          }
-        }
-        .padding(.horizontal, Theme.Metric.settingsCardInset)
-        .padding(.bottom, Theme.Layout.groupGap)
+      VStack(spacing: Theme.Layout.sectionGap) {
+        identity
+        BotFacePicker(shape: $draft.shape, tint: draft.tint) { draft.tint = $0 }
       }
+      .padding(.horizontal, Theme.Metric.settingsCardInset)
+      .padding(.vertical, Theme.Layout.sectionGap)
       Divider().overlay(Theme.Palette.line)
       footer
     }
-    // Proportions measured from the reference dialog: 879 × 1 116 at 560 wide keeps its
-    // header, preview, two field rows, the shape grid, the swatches and the footer in the
-    // same rhythm.
-    .frame(width: Theme.Dialog.botWidth, height: Theme.Dialog.createHeight)
-    .background(Theme.Palette.surface)
-    .onAppear { nameFocused = true }
+    .frame(width: Theme.Dialog.botWidth)
+    .background(DialogShortcut(.defaultAction, action: create))
   }
 
   private var header: some View {
     HStack {
       Text("创建新 Bot")
-        .font(Theme.TypeScale.inspectorTitle)
+        .font(Theme.TypeScale.sectionTitle)
+        .foregroundStyle(Theme.Palette.textPrimary)
       Spacer()
       IconButton(systemName: "xmark", label: "关闭", size: Theme.Metric.hitTarget, action: onCancel)
     }
     .padding(.horizontal, Theme.Metric.settingsCardInset)
-    .frame(height: Theme.Dialog.botHeaderHeight)
+    .frame(height: Theme.Dialog.compactHeaderHeight)
   }
 
-  private var fields: some View {
-    VStack(spacing: Theme.Layout.rowGap) {
-      CreationTextField("给你的 Bot 起个名字", text: $name, kind: .name)
-        .focused($nameFocused)
-        .onSubmit { create() }
-      CreationTextField("标签（可选）", text: $label, kind: .label)
+  private var identity: some View {
+    HStack(spacing: Theme.Layout.sectionGap) {
+      BotFacePreview(style: draft.preview)
+      VStack(alignment: .leading, spacing: Theme.Inspector.nameGap) {
+        IdentityField(
+          "给你的 Bot 起个名字", text: $draft.name, kind: .name, autoFocus: true
+        ) { create() }
+        IdentityField("标签（可选）", text: $draft.label, kind: .tag) { create() }
+      }
+      Spacer(minLength: 0)
     }
+    .padding(Theme.Layout.sectionInset)
+    .background(
+      RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
+        .fill(Theme.Palette.card)
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: Theme.Metric.controlRadius, style: .continuous)
+        .strokeBorder(Theme.Palette.line, lineWidth: Theme.Metric.hairline)
+    )
   }
 
   private var footer: some View {
-    HStack {
+    HStack(spacing: Theme.Layout.controlGap) {
       Spacer()
-      ActionControl("取消", style: .bordered, action: onCancel)
-        .keyboardShortcut(.cancelAction)
-      ActionControl("创建", style: .prominent) { create() }
-        .tint(Theme.Palette.accentFill)
-        .disabled(!canCreate)
-        .keyboardShortcut(.defaultAction)
+      SettingsActionButton("取消", action: onCancel)
+      SettingsActionButton("创建", prominent: true) { create() }
+        .disabled(!draft.canCreate)
     }
     .padding(.horizontal, Theme.Metric.settingsCardInset)
-    .frame(height: Theme.Dialog.createFooterHeight)
+    .frame(height: Theme.Dialog.footerHeight)
   }
 
   private func create() {
-    guard canCreate else { return }
-    let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
-    onCreate(
-      name.trimmingCharacters(in: .whitespacesAndNewlines),
-      trimmedLabel.isEmpty ? nil : trimmedLabel,
-      BotCreationAppearance(
-        shape: BotAppearance.Shape(rawValue: shape.rawValue) ?? .blob,
-        tint: tint.flatMap { BotAppearance.Tint(rawValue: $0.rawValue) }
-      )
-    )
+    guard draft.canCreate, !submitted else { return }
+    submitted = true
+    onCreate(draft.trimmedName, draft.trimmedLabel, draft.appearance())
   }
 }

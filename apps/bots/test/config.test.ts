@@ -9,7 +9,7 @@ import {
   DEFAULT_QUARANTINE_RETRY_MS,
   readConfig,
 } from "../src/config.ts";
-import { createDaemonModels } from "../src/runtime/pi/models.ts";
+import { ModelRegistry } from "../src/runtime/pi/models.ts";
 
 test("defaults, arguments and environment agree", () => {
   const defaults = readConfig({ argv: [], env: {}, home: "/home/tester" });
@@ -73,27 +73,32 @@ test("the development agent token path comes from the environment", () => {
 });
 
 test("the configured model endpoint becomes the daemon's one provider", async () => {
-  const models = createDaemonModels({
+  const registry = new ModelRegistry({
     baseUrl: "http://127.0.0.1:9/v1",
     apiKey: "test-key",
     provider: "stub",
-    modelId: "auto/stub",
+    contextWindow: 200_000,
+    maxTokens: 8_192,
   });
+  registry.ensure(["auto/stub"]);
+  const models = registry.models;
   const model = models.getModel("stub", "auto/stub");
   assert.ok(model !== undefined, "the configured model exists");
   assert.equal(model.provider, "stub");
   assert.equal(model.id, "auto/stub");
   assert.equal(model.api, "openai-responses");
   assert.equal(model.baseUrl, "http://127.0.0.1:9/v1");
-  assert.equal(models.getModel("stub", "missing"), undefined, "only the configured model exists");
+  assert.equal(models.getModel("stub", "missing"), undefined, "only the known models exist");
   assert.equal((await models.getAuth(model))?.auth.apiKey, "test-key");
-  const unconfigured = createDaemonModels({
+  const unconfigured = new ModelRegistry({
     baseUrl: "http://127.0.0.1:9/v1",
     apiKey: "",
     provider: "stub",
-    modelId: "auto/stub",
+    contextWindow: 200_000,
+    maxTokens: 8_192,
   });
-  assert.equal(await unconfigured.getAuth("stub"), undefined, "an empty key fails closed");
+  unconfigured.ensure(["auto/stub"]);
+  assert.equal(await unconfigured.models.getAuth("stub"), undefined, "an empty key fails closed");
 });
 
 test("the secrets paths follow the documented places", () => {

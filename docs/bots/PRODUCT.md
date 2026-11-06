@@ -50,10 +50,15 @@ tools and bot-to-bot conversation can be added later without reworking any layer
 
 1. **Create.** The user picks "New Bot", types a name, confirms. The bot appears
    in the sidebar immediately and is ready to receive a message.
-   New bots without an explicit tint receive a stable eight-hue default from their
-   immutable ID. The native picker offers red, orange, yellow, green, teal, blue,
-   violet and pink; a manual choice overrides the creation default. The daemon
-   stores the resolved complete appearance once, not an auto/manual mode. Renaming,
+   The App's create form opens on one of the eight canonical colours, chosen once
+   per presentation, and previews exactly that face; the name, the optional tag and
+   that explicit shape and tint are what the App asks the daemon to store, so a
+   preview never disagrees with the result. Typing a name or picking a shape keeps
+   the colour. Bots created without the App — through the API or the CLI — keep the
+   daemon's stable eight-hue default from their immutable ID. The native picker
+   offers red, orange, yellow, green, teal, blue, violet and pink; a manual choice
+   overrides the App's opening colour. The daemon stores the resolved complete
+   appearance once, not an auto/manual mode. Renaming,
    reordering and restarting never recompute saved colors. Existing choices are
    not rewritten. Shape-only creation is additive; a later appearance update still
    supplies both shape and tint. The App and daemon must be upgraded/restarted
@@ -175,6 +180,23 @@ hovering the face dims it and offers a pencil (the face editor reuses the create
 and clicking the name or the label edits it in place. A change is written over
 `PATCH /v1/bots/:id` and the catalog push repaints the sidebar and inspector.
 
+## The model and the reasoning level
+
+The gateway (address, key) is shared by every bot: one endpoint, one key, one place to
+change them. The model and the reasoning level are the bot's own.
+
+- The settings name the **defaults**: the model and the level a bot created from now on
+  records. Changing them never moves a bot that already exists — a bot created before the
+  level existed is given the current default once, so it stops following it.
+- The inspector stays usable while the bot is answering: only the row being saved is
+  disabled, and the rest of the panel keeps its state.
+- Every bot stores its own pair, and the inspector shows it and changes it. The change
+  reaches the next request the bot prepares: an answer that is running keeps the model
+  and the level it started with, and nothing is aborted, reset or restarted.
+- A level the model does not accept is refused with a plain sentence. The daemon never
+  lowers a level behind the person's back, so the picker offers only the levels the
+  model takes.
+
 ## Setup and guidance
 
 The app starts the local Bots daemon on launch when it can find `apps/bots`
@@ -234,7 +256,7 @@ what is enabled, so later phases flip flags instead of rebuilding screens.
 | `tasks` | `false` | An `error` kind for parked tasks and a `recover` command | Task panel, per-task retry, compaction control |
 | `entries` | `false` | Nothing beyond the transcript itself | Raw entry inspector |
 | `usage` | `false` | A `usage` field in snapshots, populated from `pi.usage` (the data is live; only the panel is missing) | Token and cost panel |
-| `agent` | `false` | Per-bot model stored in `bot.json` and used for every request | Model, thinking level and instructions editing |
+| `agent` | `false` | Per-bot model and reasoning level, stored in the catalog and used for every request; the inspector changes the pair of one bot | Instructions editing |
 | `peers` | `false` | A capability flag | Bot-to-bot messages and delegation |
 
 Reserved means exactly two things: the wire can represent the concept, and a

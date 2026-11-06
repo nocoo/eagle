@@ -63,11 +63,9 @@ test("an admission without a connection keeps the bot open and lets it idle-clos
   try {
     const botId = await stack.createBot("cold");
     // The warm-up open takes no lease, so at 0 ms it closes again: the admission starts
-    // from a cold bot, which is the case a schedule and a webhook actually meet.
-    await waitFor(
-      () => stack.registry.handleOf(botId) === undefined,
-      "the warm-up open to idle-close",
-    );
+    // from a cold bot, which is the case a schedule and a webhook actually meet. The close
+    // is the barrier: a handle that was never created reads as closed too.
+    await waitFor(() => scripted.closes.length === 1, "the warm-up open to idle-close");
     const openedBefore = stack.opens();
     const closesBefore = scripted.closes.length;
 

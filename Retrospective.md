@@ -1,5 +1,34 @@
 # Retrospective
 
+## 2026-11-07 — Treat delegated prompts as shell data
+
+During the compact-dialog work, a coordinator prompt placed Swift snippets in
+backticks inside a double-quoted shell argument. Bash attempted command
+substitution and reported syntax errors, removing those API names from the
+instructions. No product file or live state was changed by the failed
+substitutions. A follow-up prompt restored the names with literal quoting.
+
+Quote delegated instructions as data, not executable shell text. In particular,
+do not place Markdown backticks inside a double-quoted command argument; use
+literal quoting or a correctly escaped input mechanism instead.
+
+## 2026-11-07 — Verify bundle identity before attributing an Eagle process
+
+The per-Bot model implementation report called `/Applications/Eagle.app` the
+project's packaged App based on its process name alone. It is the unrelated
+`tw.ogdesign.eagle` 4.0.0 application; this project's installed bundle is
+`/Applications/Eagle for Mac.app` (`ai.hexly.eagle.macos`, 0.20.0). The running
+source build is `Eagle Dev`, whose executable and working directory resolve to
+this checkout. No unrelated application was stopped or modified.
+
+For process investigations, verify bundle ID, executable path and parent-child
+ownership before attributing resource use. Distinguish physical footprint from
+RSS, shared mappings, virtual reservations and on-disk build caches. In this
+read-only sample, Dev had an 86.8 MiB physical footprint (106.3 MiB lifetime peak)
+and its Bots daemon 72.3 MiB (128.6 MiB peak), about six hours after launch; the
+sample did not reproduce high memory use or establish behavior under other
+workloads.
+
 ## 2026-11-06 — Matching font size did not match line spacing
 
 After the font fix, the owner still saw compressed text on hover. The selectable

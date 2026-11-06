@@ -6,11 +6,24 @@ struct BotsConversationContent: View {
   @ObservedObject var layout: ShellLayoutViewModel
   @ObservedObject private var transcript: BotsTranscriptViewModel
   @ObservedObject private var composer: BotsComposerViewModel
+  /// Bumped by the shell when a dialog closes, so the composer takes the keyboard back.
+  let focusRestore: Int
+  let onOpenPeerExchange: (String) -> Void
+  let onOpenToolRun: (String) -> Void
   @AppStorage("eagle.hideToolCalls") private var hideToolCalls = false
 
-  init(bots: BotsWorkspaceViewModel, layout: ShellLayoutViewModel) {
+  init(
+    bots: BotsWorkspaceViewModel,
+    layout: ShellLayoutViewModel,
+    focusRestore: Int,
+    onOpenPeerExchange: @escaping (String) -> Void,
+    onOpenToolRun: @escaping (String) -> Void
+  ) {
     self.bots = bots
     self.layout = layout
+    self.focusRestore = focusRestore
+    self.onOpenPeerExchange = onOpenPeerExchange
+    self.onOpenToolRun = onOpenToolRun
     self.transcript = bots.transcript
     self.composer = bots.composer
   }
@@ -34,7 +47,9 @@ struct BotsConversationContent: View {
       onDismissError: { bots.dismissError() },
       onShowSidebar: { layout.toggleSidebar() },
       onToggleInspector: { layout.toggleInspector() },
-      onOpenPeerExchange: { id in Task { await bots.openExchange(id) } },
+      focusRestore: focusRestore,
+      onOpenPeerExchange: onOpenPeerExchange,
+      onOpenToolRun: onOpenToolRun,
       onAnswerCard: { id, answers, skipped in
         await bots.answerQuestions(entryId: id, answers: answers, skipped: skipped)
       },

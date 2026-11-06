@@ -50,7 +50,7 @@ chmod 600 .env
 | --- | --- |
 | `BOTS_BASE_URL` | Model endpoint, OpenAI Responses shape (`POST /responses`) |
 | `BOTS_API_KEY` | Bearer key for that endpoint |
-| `BOTS_PROVIDER` | Provider id stored in `bot.json` and the protocol |
+| `BOTS_PROVIDER` | Provider id stored in the catalog and carried by the protocol |
 | `BOTS_MODEL` | Pinned development model |
 
 ## Commands

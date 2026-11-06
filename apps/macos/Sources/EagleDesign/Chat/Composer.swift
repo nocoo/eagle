@@ -17,6 +17,7 @@ public struct Composer: View {
   private let focusRequest: Int
   @FocusState private var focused: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.isEnabled) private var isEnabled
 
   public init(
     placeholder: String,
@@ -117,6 +118,11 @@ public struct Composer: View {
       focused = true
     }
     .onChange(of: focusRequest) { focused = true }
+    // A dialog takes the window: the field gives up the keyboard instead of keeping it behind
+    // the card, and gets it back when the shell restores focus.
+    .onChange(of: isEnabled) { _, enabled in
+      if !enabled { focused = false }
+    }
   }
 
   /// The two lines cross with a shallow 3D flip: the placeholder turns away as the steering

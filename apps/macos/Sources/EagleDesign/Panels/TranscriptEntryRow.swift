@@ -6,6 +6,7 @@ struct TranscriptEntryRow: View {
   private let entry: TranscriptEntry
   private let preparedMarkdown: [String: [RenderedMarkdownBlock]]
   private let onOpenPeerExchange: ((String) -> Void)?
+  private let onOpenToolRun: ((String) -> Void)?
   private let onAnswerCard: ((String, [[String]], Bool) async -> Result<Void, AskCardFailure>)?
   private let onAnswerSecret: ((SecretCardAnswer) async -> Result<Void, SecretCardFailure>)?
 
@@ -13,12 +14,14 @@ struct TranscriptEntryRow: View {
     entry: TranscriptEntry,
     preparedMarkdown: [String: [RenderedMarkdownBlock]],
     onOpenPeerExchange: ((String) -> Void)?,
+    onOpenToolRun: ((String) -> Void)? = nil,
     onAnswerCard: ((String, [[String]], Bool) async -> Result<Void, AskCardFailure>)?,
     onAnswerSecret: ((SecretCardAnswer) async -> Result<Void, SecretCardFailure>)?
   ) {
     self.entry = entry
     self.preparedMarkdown = preparedMarkdown
     self.onOpenPeerExchange = onOpenPeerExchange
+    self.onOpenToolRun = onOpenToolRun
     self.onAnswerCard = onAnswerCard
     self.onAnswerSecret = onAnswerSecret
   }
@@ -86,8 +89,8 @@ struct TranscriptEntryRow: View {
     case .tool(_, let row):
       ToolCallRow(row)
         .transition(.opacity.combined(with: .move(edge: .bottom)))
-    case .toolRun(_, let rows):
-      ToolRunRow(rows)
+    case .toolRun(let id, let rows):
+      ToolRunRow(rows) { onOpenToolRun?(id) }
         .transition(.opacity)
     }
   }

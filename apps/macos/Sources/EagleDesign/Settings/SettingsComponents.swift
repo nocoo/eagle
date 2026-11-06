@@ -258,12 +258,14 @@ public struct SettingsTextField: View {
   }
 }
 
-/// A compact settings button: a soft surface by default, the accent when primary.
+/// A compact settings button: a soft surface by default, the accent when primary, and a
+/// muted label while the caller's guard is off.
 public struct SettingsActionButton: View {
   private let title: String
   private let action: () -> Void
   private let prominent: Bool
   @State private var hovering = false
+  @Environment(\.isEnabled) private var isEnabled
 
   public init(_ title: String, prominent: Bool = false, action: @escaping () -> Void) {
     self.title = title
@@ -272,9 +274,14 @@ public struct SettingsActionButton: View {
   }
 
   var fillColor: Color {
-    prominent ? Theme.Palette.accentFill : (hovering ? Theme.Palette.line : Theme.Palette.canvas)
+    prominent && isEnabled
+      ? Theme.Palette.accentFill
+      : (hovering ? Theme.Palette.line : Theme.Palette.canvas)
   }
-  var textColor: Color { prominent ? Theme.Palette.onColor : Theme.Palette.textPrimary }
+  var textColor: Color {
+    guard isEnabled else { return Theme.Palette.textMuted }
+    return prominent ? Theme.Palette.onColor : Theme.Palette.textPrimary
+  }
 
   public var body: some View {
     Button(action: action) {
@@ -289,7 +296,9 @@ public struct SettingsActionButton: View {
         )
         .overlay(
           RoundedRectangle(cornerRadius: Theme.Form.actionRadius, style: .continuous)
-            .strokeBorder(prominent ? .clear : Theme.Palette.line, lineWidth: Theme.Metric.hairline)
+            .strokeBorder(
+              prominent && isEnabled ? .clear : Theme.Palette.line,
+              lineWidth: Theme.Metric.hairline)
         )
     }
     .buttonStyle(.plain)

@@ -177,14 +177,15 @@ public struct ToolCallRow: View {
 
 /// A run of several tool calls in one assistant turn. While one is executing the line says
 /// what is running; once they all settle it collapses to a single summary line, and a click
-/// opens the calls (arguments, output, timing, failures) in a sheet.
+/// opens the calls (arguments, output, timing, failures) in the shell's dialog.
 public struct ToolRunRow: View {
   private let rows: [ToolRow]
-  @State private var showingDetails = false
+  private let onShowDetails: () -> Void
   @State private var hovering = false
 
-  public init(_ rows: [ToolRow]) {
+  public init(_ rows: [ToolRow], onShowDetails: @escaping () -> Void) {
     self.rows = rows
+    self.onShowDetails = onShowDetails
   }
 
   private var contentWidth: CGFloat { Theme.Chat.bubbleMaxWidth }
@@ -195,9 +196,7 @@ public struct ToolRunRow: View {
 
   public var body: some View {
     HStack(spacing: 0) {
-      Button {
-        showingDetails = true
-      } label: {
+      Button(action: onShowDetails) {
         HStack(spacing: Theme.Layout.rowGap) {
           Image(systemName: "wrench.and.screwdriver")
             .font(Theme.TypeScale.toolCaption)
@@ -252,9 +251,6 @@ public struct ToolRunRow: View {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityLabel("工具调用 \(rows.count) 个")
-    .sheet(isPresented: $showingDetails) {
-      ToolRunDetailView(rows: rows)
-    }
   }
 
   private var totalLabel: String {
@@ -266,10 +262,11 @@ public struct ToolRunRow: View {
 /// The detail dialog for one tool run: every call with its arguments, output and status.
 public struct ToolRunDetailView: View {
   private let rows: [ToolRow]
-  @Environment(\.dismiss) private var dismiss
+  private let onClose: () -> Void
 
-  public init(rows: [ToolRow]) {
+  public init(rows: [ToolRow], onClose: @escaping () -> Void) {
     self.rows = rows
+    self.onClose = onClose
   }
 
   public var body: some View {
@@ -282,10 +279,7 @@ public struct ToolRunDetailView: View {
           .font(Theme.TypeScale.note)
           .foregroundStyle(Theme.Palette.textMuted)
         Spacer()
-        Button("完成") { dismiss() }
-          .buttonStyle(.plain)
-          .font(Theme.TypeScale.note)
-          .foregroundStyle(Theme.Palette.accent)
+        SettingsActionButton("完成", action: onClose)
       }
       .padding(.horizontal, Theme.Layout.groupGap)
       .padding(.vertical, Theme.Tool.headerVerticalInset)
@@ -302,9 +296,9 @@ public struct ToolRunDetailView: View {
     }
     .frame(
       minWidth: Theme.Tool.dialogMinWidth, idealWidth: Theme.Tool.dialogWidth,
-      minHeight: Theme.Tool.dialogMinHeight, idealHeight: Theme.Tool.dialogHeight
+      maxWidth: Theme.Tool.dialogWidth, minHeight: Theme.Tool.dialogMinHeight,
+      idealHeight: Theme.Tool.dialogHeight, maxHeight: Theme.Tool.dialogHeight
     )
-    .background(Theme.Palette.surface)
   }
 
   @ViewBuilder

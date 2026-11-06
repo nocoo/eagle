@@ -366,7 +366,6 @@ botd (single process, launchd-supervised)
 ├─ <root>/logs/daemon-YYYYMMDD.jsonl
 ├─ <root>/trash/<botId>/            deleted bots, deterministic name, never auto-removed
 └─ <root>/bots/<botId>/
-     ├─ bot.json                    { id, title, createdAt, model, thinkingLevel, instructions }
      ├─ session.sqlite              pi-durable storage, 0700
      └─ …
 ```
@@ -428,9 +427,10 @@ catalogued ──open──▶ opening ──ok──▶ idle ⇄ running ──
 
 Rules:
 
-1. `create` never opens a Harness: write `bot.json` + the catalog entry, reply,
-   then warm asynchronously. Creation stays under 50 ms
-   ([PRODUCT.md](PRODUCT.md#speed-targets)).
+1. `create` never opens a Harness: write the catalog entry and the bot's own
+   directory, reply, then warm asynchronously. Creation stays under 50 ms
+   ([PRODUCT.md](PRODUCT.md#speed-targets)). The catalog is the only copy of a bot's
+   own fields; a second copy would be a second truth.
 2. Opening is serialized per bot; two subscribers never create two Harnesses for
    one sqlite file.
 3. Idle close requires `busy() === {run:false, tasks:false}` and no subscribers.

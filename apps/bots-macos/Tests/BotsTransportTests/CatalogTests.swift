@@ -286,7 +286,15 @@ final class CatalogHTTPClientTests: XCTestCase {
       requests.append((method, path))
       switch (method, path) {
       case ("GET", "/v1/models"):
-        return (200, Data(#"{"models":["m1","m2"]}"#.utf8))
+        return (
+          200,
+          Data(
+            #"""
+            {"models":["m1","m2"],"modelDetails":[{"id":"m1","contextWindow":272000,
+            "maxTokens":128000,"reasoning":true,"thinkingLevels":["off","low","medium","high"]}],
+            "discoveryError":"the gateway could not be asked for its models"}
+            """#.utf8)
+        )
       case ("PATCH", "/v1/bots/b_1"):
         let data = try XCTUnwrap(bodyData(request))
         updates.append(try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any]))
@@ -301,7 +309,10 @@ final class CatalogHTTPClientTests: XCTestCase {
       }
     }
     let models = try await client.loadModels()
-    XCTAssertEqual(models, ["m1", "m2"])
+    XCTAssertEqual(models.ids, ["m1", "m2"])
+    XCTAssertEqual(models.details.first?.id, "m1")
+    XCTAssertEqual(models.details.first?.thinkingLevels, ["off", "low", "medium", "high"])
+    XCTAssertEqual(models.discoveryError, "the gateway could not be asked for its models")
     let configured = try await client.setAgent(id: "b_1", model: "m2", thinkingLevel: "high")
     XCTAssertEqual(configured.title, "configured")
     _ = try await client.setAgent(id: "b_1", model: nil, thinkingLevel: nil)

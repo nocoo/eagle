@@ -62,7 +62,11 @@ export type BenchOptions = {
 };
 
 export const createBench = async (options: BenchOptions = {}): Promise<Bench> => {
-  const faux = fauxProvider(options.provider ?? {});
+  // The faux model reasons, so a test can ask for a thinking level the daemon accepts.
+  const faux = fauxProvider({
+    models: [{ id: "faux-1", name: "Faux Model", reasoning: true }],
+    ...(options.provider ?? {}),
+  });
   const models = createModels();
   models.setProvider(faux.provider);
   const dir = await mkdtemp(join(tmpdir(), "bots-runtime-"));

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { BotDirectory, nodeDirectoryFs } from "../../src/core/BotDirectory.ts";
 import { BotRegistry } from "../../src/core/BotRegistry.ts";
-import { ClassifiedFailure } from "../../src/core/domain.ts";
+import { ClassifiedFailure, DEFAULT_THINKING_LEVEL } from "../../src/core/domain.ts";
 import type { RuntimeBotSpec } from "../../src/core/RuntimePort.ts";
 import { captureLog } from "../../src/log/log.ts";
 import { FakeRuntime } from "../../src/testing/FakeRuntime.ts";
@@ -55,10 +55,20 @@ const bench = async (
     waitDeadline?: boolean;
     /** Held open inside `busy()`, to land a lease across the idle-close decision. */
     busyGate?: Promise<void>;
+    /** The levels the models accept, when the daemon knows the models. */
+    agentLevels?: (modelId: string) => readonly string[];
+    /** The first N pair applications fail, so a save can be observed not reaching it. */
+    failAgentApply?: number;
+    /** Held open, so a catalog write can be observed in flight. */
+    writeGate?: Promise<void>;
   } = {},
 ) => {
   const root = await mkdtemp(join(tmpdir(), "bots-registry-"));
   const fs = await nodeDirectoryFs();
+  let failWrites = false;
+  let writeGate = options.writeGate;
+  let agentFailures = 0;
+  let refuseFor: string | undefined;
   const directory = new BotDirectory(root, {
     ...fs,
     rename: async (from, to) => {
@@ -66,6 +76,13 @@ const bench = async (
         await options.renameGate;
       }
       return fs.rename(from, to);
+    },
+    writeFile: async (path, body, mode) => {
+      if (writeGate !== undefined && path.includes("catalog.json")) await writeGate;
+      if (failWrites && path.includes("catalog.json")) {
+        throw Object.assign(new Error("ENOSPC"), { code: "ENOSPC" });
+      }
+      return fs.writeFile(path, body, mode);
     },
   });
   for (const [index, title] of (options.bots ?? []).entries()) {
@@ -84,13 +101,15 @@ const bench = async (
   let busyGate = options.busyGate;
   let opens = 0;
   let closes = 0;
+  let closing = false;
   const closeDeadlines: number[] = [];
   const specs: RuntimeBotSpec[] = [];
-  const levels: string[] = [];
+  const agents: { model: { provider: string; modelId: string }; thinkingLevel: string }[] = [];
   const groupCalls: (readonly string[])[] = [];
   const registry = new BotRegistry({
     directory,
     openRuntime: async (spec) => {
+      const owner = spec.id;
       opens += 1;
       specs.push(spec);
       if (openGate !== undefined) await openGate;
@@ -98,8 +117,18 @@ const bench = async (
       const busy = (options.busy ?? []).includes(spec.id);
       return {
         ...handle,
-        configureThinkingLevel: async (level: string) => {
-          levels.push(level);
+        configureAgent: async (change: {
+          model: { provider: string; modelId: string };
+          thinkingLevel: string;
+        }) => {
+          // A conversation on its way out cannot take a new pair.
+          if (closing) throw new Error("the conversation is closing");
+          if (refuseFor === owner) throw new Error("this conversation refuses the provider");
+          if (options.failAgentApply !== undefined && agentFailures < options.failAgentApply) {
+            agentFailures += 1;
+            throw new Error("the conversation did not take the pair");
+          }
+          agents.push(change);
         },
         configureToolGroups: async (groups: readonly string[]) => {
           groupCalls.push(groups);
@@ -110,12 +139,14 @@ const bench = async (
         },
         close: async (_trace: string, deadlineMs: number) => {
           closes += 1;
+          closing = true;
           closeDeadlines.push(deadlineMs);
           if (options.waitDeadline === true) {
             await new Promise((resolve) => setTimeout(resolve, deadlineMs));
             return "timeout" as const;
           }
           if (options.closeGate !== undefined) await options.closeGate;
+          closing = false;
           if (options.closeOutcome === "rejected") throw new Error("close failed");
           if (options.closeOutcome === "timeout") return "timeout" as const;
           await handle.close("tr_close_probe", 100);
@@ -124,6 +155,13 @@ const bench = async (
       };
     },
     model: { provider: "faux", modelId: "faux-1" },
+    ...(options.agentLevels === undefined
+      ? {}
+      : {
+          agentSupport: (model: { readonly modelId: string }) => ({
+            levels: options.agentLevels?.(model.modelId) ?? [],
+          }),
+        }),
     log,
     idleCloseMs: 1_000,
     quarantineRetryMs: 5_000,
@@ -139,8 +177,10 @@ const bench = async (
     timers,
     directory,
     specs,
-    levels,
+    agents,
     groupCalls,
+    /** The level the bench's daemon runs as its default, so a migration can be read. */
+    defaultLevel: DEFAULT_THINKING_LEVEL,
     opens: () => opens,
     closes: () => closes,
     closeDeadlines,
@@ -152,6 +192,15 @@ const bench = async (
     },
     setBusyGate: (gate: Promise<void> | undefined) => {
       busyGate = gate;
+    },
+    failWrites: (on: boolean) => {
+      failWrites = on;
+    },
+    setWriteGate: (gate: Promise<void> | undefined) => {
+      writeGate = gate;
+    },
+    refuseAgentFor: (botId: string | undefined) => {
+      refuseFor = botId;
     },
     cleanup: () => rm(root, { recursive: true, force: true }),
   };
@@ -254,6 +303,7 @@ test("a per-bot model and level reach the catalog and the live conversation", as
   const setup = await bench({ bots: ["a"] });
   try {
     await setup.registry.start();
+    const started = setup.records.length;
     await setup.registry.open("b_bot0", "tr_agent_0001");
     const summary = await setup.registry.setAgent(
       "b_bot0",
@@ -264,7 +314,15 @@ test("a per-bot model and level reach the catalog and the live conversation", as
     const stored = (await setup.directory.load())[0];
     assert.equal(stored?.model.modelId, "faux-9", "the catalog is the source of truth");
     assert.equal(stored?.thinkingLevel, "high");
-    assert.deepEqual(setup.levels, ["high"], "the live conversation follows the level");
+    assert.deepEqual(
+      setup.agents,
+      [{ model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" }],
+      "the live conversation follows the pair",
+    );
+    const writes = setup.records
+      .slice(started)
+      .filter((record) => record.evt === "core.catalog.write.ok");
+    assert.equal(writes.length, 1, "the pair is one catalog write");
   } finally {
     await setup.registry.shutdown();
     await setup.cleanup();
@@ -381,35 +439,513 @@ test("a failed live tool refresh is reported and an identical save retries it", 
   }
 });
 
-test("a gateway thinking-level change reaches existing bots and new ones", async () => {
+test("a bot created before the level existed is migrated once and keeps it", async () => {
+  const setup = await bench({ bots: ["a"] });
+  try {
+    // The fixture has no stored level, exactly like a catalog written before the field
+    // existed. The daemon it upgrades to runs `low`.
+    await setup.registry.start();
+    const migrated = (await setup.directory.load())[0];
+    assert.equal(migrated?.thinkingLevel, setup.defaultLevel, "the upgrade writes the level");
+    assert.equal(migrated?.model.modelId, "faux-1", "and nothing else");
+    // The write happens before the recovery scan touches the bot: a bot nobody opens is
+    // migrated too.
+    const wrote = setup.records.findIndex(
+      (record) => record.evt === "core.catalog.write.ok" && record.botId === "b_bot0",
+    );
+    const opened = setup.records.findIndex((record) => record.evt === "core.bot.open.start");
+    assert.ok(wrote !== -1, "the migration wrote the catalog");
+    assert.ok(
+      opened === -1 || wrote < opened,
+      "the migration lands before the recovery scan opens the bot",
+    );
+
+    // A later change of the daemon's default cannot move the bot any more.
+    setup.registry.setDefaultThinkingLevel("high");
+    await setup.registry.open("b_bot0", "tr_migrate_0001");
+    const spec = setup.specs.at(-1);
+    assert.equal(spec?.thinkingLevel, setup.defaultLevel, "the bot runs with what it stores");
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.thinkingLevel, setup.defaultLevel, "the catalog did not move");
+
+    // An idle close and a reopen still run the level the catalog holds, and a level-only
+    // change is written against the bot's own model.
+    await setup.timers.advance(1_000);
+    await setup.registry.open("b_bot0", "tr_migrate_0003");
+    assert.equal(
+      setup.specs.at(-1)?.thinkingLevel,
+      setup.defaultLevel,
+      "the reopen keeps the migrated level",
+    );
+    const patched = await setup.registry.setAgent(
+      "b_bot0",
+      { thinkingLevel: "off" },
+      "tr_migrate_0004",
+    );
+    assert.equal(patched.model.modelId, "faux-1", "the level-only change keeps the model");
+    assert.equal((await setup.directory.load())[0]?.thinkingLevel, "off");
+
+    // A new daemon with another default leaves it alone, and a new bot takes that default.
+    await setup.registry.shutdown();
+    const restarted = new BotRegistry({
+      directory: setup.directory,
+      openRuntime: (spec) => new FakeRuntime().open(spec),
+      model: { provider: "faux", modelId: "faux-1" },
+      thinkingLevel: "max",
+      log: captureLog().log,
+      idleCloseMs: 1_000,
+      quarantineRetryMs: 5_000,
+      closeDeadlineMs: 40,
+      bootTrace: () => "tr_boot_probe",
+    });
+    await restarted.start();
+    const afterRestart = (await setup.directory.load()).find((bot) => bot.id === "b_bot0");
+    assert.equal(afterRestart?.thinkingLevel, "off", "a second daemon does not migrate it again");
+    await restarted.create("new", "tr_migrate_0002");
+    const created = (await setup.directory.load()).find((bot) => bot.title === "new");
+    assert.equal(created?.thinkingLevel, "max", "a new bot records the later default");
+    await restarted.shutdown();
+  } finally {
+    await setup.registry.shutdown().catch(() => false);
+    await setup.cleanup();
+  }
+});
+
+test("a bare catalog is given the level before its first open", async () => {
+  const setup = await bench({ bots: ["a"], agentLevels: () => ["off", "low", "high"] });
+  try {
+    await setup.registry.start();
+    // A hand-edited catalog after the start: the daemon must not invent a level for it.
+    await setup.directory.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-1" } },
+      "x",
+    );
+    const edited = (await setup.directory.load())[0];
+    assert.equal(edited?.thinkingLevel, setup.defaultLevel, "the write kept the level");
+    await setup.registry.shutdown();
+
+    const root = await mkdtemp(join(tmpdir(), "bots-registry-"));
+    try {
+      const real = await nodeDirectoryFs();
+      const directory = new BotDirectory(root, real);
+      await directory.create({
+        id: "b_bare",
+        title: "no level",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        model: { provider: "faux", modelId: "faux-1" },
+      });
+      const { log } = captureLog();
+      const levels: string[] = [];
+      const registry = new BotRegistry({
+        directory,
+        openRuntime: async (spec) => {
+          levels.push(spec.thinkingLevel ?? "none");
+          return new FakeRuntime().open(spec);
+        },
+        model: { provider: "faux", modelId: "faux-1" },
+        thinkingLevel: "high",
+        log,
+        idleCloseMs: 1_000,
+        quarantineRetryMs: 5_000,
+        closeDeadlineMs: 40,
+        bootTrace: () => "tr_boot_probe",
+      });
+      // The startup migration writes the default once, so an open afterwards is fine.
+      await registry.start();
+      await registry.open("b_bare", "tr_bare_0001");
+      assert.deepEqual(levels, ["high"], "the migrated level is what the bot runs");
+      await registry.shutdown();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  } finally {
+    await setup.cleanup();
+  }
+});
+
+test("a migration that cannot be written fails the start instead of falling back", async () => {
+  const setup = await bench({ bots: ["a"] });
+  try {
+    setup.failWrites(true);
+    await assert.rejects(
+      () => setup.registry.start(),
+      /catalog could not be written/,
+      "a bot the upgrade cannot record stops the daemon",
+    );
+  } finally {
+    await setup.cleanup();
+  }
+});
+
+test("a gateway thinking-level change is the default for new bots only", async () => {
   const setup = await bench({ bots: ["a"] });
   try {
     await setup.registry.start();
     await setup.registry.open("b_bot0", "tr_level_0001");
-    await setup.registry.applyThinkingLevel("high", "tr_level_0002");
-    assert.deepEqual(setup.levels, ["high"], "the live conversation follows in place");
+    setup.registry.setDefaultThinkingLevel("high");
+    assert.deepEqual(setup.agents, [], "an existing conversation is not moved");
     const stored = await setup.directory.load();
-    assert.equal(stored[0]?.thinkingLevel, "high", "the catalog is the source of truth");
+    assert.notEqual(stored[0]?.thinkingLevel, "high", "the bot keeps the level it stores");
     await setup.registry.create("new", "tr_level_0003");
     const created = (await setup.directory.load()).find((bot) => bot.title === "new");
-    assert.equal(created?.thinkingLevel, "high", "a new bot records the settings level");
+    assert.equal(created?.thinkingLevel, "high", "a new bot records the default level");
   } finally {
     await setup.registry.shutdown();
     await setup.cleanup();
   }
 });
 
-test("a gateway model change reaches existing bots and new ones", async () => {
+test("a gateway model change is the default for new bots only", async () => {
   const setup = await bench({ bots: ["a"] });
   try {
     await setup.registry.start();
     await setup.registry.open("b_bot0", "tr_model_0001");
-    await setup.registry.applyModel({ provider: "faux", modelId: "faux-2" }, "tr_model_0002");
-    assert.equal(setup.registry.summaries()[0]?.model.modelId, "faux-2");
+    setup.registry.setDefaultModel({ provider: "faux", modelId: "faux-2" });
+    assert.deepEqual(setup.agents, [], "an existing conversation is not moved");
     const stored = await setup.directory.load();
-    assert.equal(stored[0]?.model.modelId, "faux-2", "the catalog is the source of truth");
-    const created = await setup.registry.create("new", "tr_model_0003");
-    assert.equal(created.model.modelId, "faux-2", "a new bot records the new model");
+    assert.equal(stored[0]?.model.modelId, "faux-1", "the bot keeps the model it stores");
+    await setup.registry.create("new", "tr_model_0003");
+    const created = (await setup.directory.load()).find((bot) => bot.title === "new");
+    assert.equal(created?.model.modelId, "faux-2", "a new bot records the default model");
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("the gateway's provider follows every stored reference, the model id does not", async () => {
+  const setup = await bench({ bots: ["a"] });
+  try {
+    await setup.registry.start();
+    await setup.registry.applyGatewayProvider("other", "tr_provider_0001");
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.model.provider, "other", "the provider belongs to the gateway");
+    assert.equal(stored?.model.modelId, "faux-1", "the model id stays the bot's own");
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("a level the model cannot take is refused and nothing is written", async () => {
+  const setup = await bench({
+    bots: ["a"],
+    agentLevels: (modelId) => (modelId === "faux-9" ? ["off", "low"] : ["off", "low", "high"]),
+  });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_level_refuse_0001");
+    await assert.rejects(
+      () =>
+        setup.registry.setAgent(
+          "b_bot0",
+          { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+          "tr_level_refuse_0002",
+        ),
+      /does not support the high thinking level/,
+    );
+    assert.deepEqual(setup.agents, [], "the conversation did not move");
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.model.modelId, "faux-1", "the catalog did not move either");
+    assert.equal(
+      stored?.thinkingLevel,
+      "medium",
+      "the refused change left the migrated level alone",
+    );
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("a failed catalog write never reaches the conversation", async () => {
+  const setup = await bench({ bots: ["a"] });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_apply_fail_0001");
+    setup.failWrites(true);
+    await assert.rejects(
+      () =>
+        setup.registry.setAgent(
+          "b_bot0",
+          { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+          "tr_apply_fail_0002",
+        ),
+      /catalog could not be written/,
+    );
+    assert.deepEqual(setup.agents, [], "the conversation was not configured at all");
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.model.modelId, "faux-1", "the catalog kept the old pair");
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("a pair that is saved but not applied is reported, and the next change applies it", async () => {
+  const setup = await bench({ bots: ["a"], failAgentApply: 1 });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_saved_0001");
+    await assert.rejects(
+      () =>
+        setup.registry.setAgent(
+          "b_bot0",
+          { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+          "tr_saved_0002",
+        ),
+      /the bot now records faux-9 at high, but the running conversation did not take it/,
+      "a save that did not reach the conversation is not reported as applied",
+    );
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.model.modelId, "faux-9", "the catalog holds the saved pair");
+    assert.equal(setup.registry.summaries()[0]?.model.modelId, "faux-9");
+
+    // The same pair again: the catalog already holds it, and the conversation still does
+    // not — so the change is applied rather than answered from catalog equality.
+    await setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+      "tr_saved_0003",
+    );
+    assert.deepEqual(
+      setup.agents.map((agent) => agent.model.modelId),
+      ["faux-9"],
+      "the retry configured the conversation, even though the catalog already held the pair",
+    );
+    await setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+      "tr_saved_0004",
+    );
+    assert.equal(setup.agents.length, 1, "and a third identical change is a no-op");
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("a request prepared while the catalog write is in flight keeps the pair it had", async () => {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const setup = await bench({ bots: ["a"] });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_held_0001");
+    setup.setWriteGate(undefined);
+    const edit = setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+      "tr_held_0002",
+    );
+    setup.setWriteGate(held);
+    await settle();
+    assert.equal(setup.agents.length, 0, "nothing claims the pair before the catalog holds it");
+    release();
+    await edit;
+    assert.deepEqual(
+      setup.agents.map((agent) => agent.model.modelId),
+      ["faux-9"],
+      "the conversation follows the catalog once it is written",
+    );
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("a close, a reopen and a change settle in one order and the bot runs the saved pair", async () => {
+  let release: () => void = () => undefined;
+  const closed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const setup = await bench({ bots: ["a"], closeGate: closed });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_race_0001");
+    // The idle close starts and is held; the change waits for it; a reopen arrives while
+    // the change owns the settling window and waits for that.
+    await setup.timers.advance(1_000);
+    const edit = setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+      "tr_race_0002",
+    );
+    await settle();
+    const reopen = setup.registry.open("b_bot0", "tr_race_0003");
+    await settle();
+    release();
+    await edit;
+    await reopen;
+    // Whichever of the two won the wake order — the reopen installing its handle or the
+    // change configuring it — the conversation the bot keeps runs the pair the catalog
+    // holds, and it was configured exactly once.
+    const configured = setup.agents.at(-1);
+    const spec = setup.specs.at(-1);
+    const effective = configured?.model.modelId ?? spec?.model.modelId;
+    assert.equal(effective, "faux-9", "the conversation runs the saved pair");
+    assert.ok(setup.agents.length <= 1, "at most one configuration was needed");
+    // The same pair again is a no-op: `applied` names what the conversation really runs.
+    await setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+      "tr_race_0004",
+    );
+    assert.equal(
+      setup.agents.length,
+      configured === undefined ? 0 : 1,
+      "nothing was configured again",
+    );
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.model.modelId, "faux-9", "the catalog holds the saved pair");
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("a reopen that wakes with a change waits for it instead of starting from the old spec", async () => {
+  let releaseClose: () => void = () => undefined;
+  const closed = new Promise<void>((resolve) => {
+    releaseClose = resolve;
+  });
+  let releaseOpen: () => void = () => undefined;
+  const opened = new Promise<void>((resolve) => {
+    releaseOpen = resolve;
+  });
+  const setup = await bench({ bots: ["a"], closeGate: closed });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_wake_0001");
+    await setup.timers.advance(1_000);
+    // The change queues first; the reopen queues second; both wait for the close.
+    const edit = setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+      "tr_wake_0002",
+    );
+    await settle();
+    setup.setOpenGate(opened);
+    const reopen = setup.registry.open("b_bot0", "tr_wake_0003");
+    await settle();
+    // The change wakes first and owns a window; the reopen must wait for it.
+    releaseClose();
+    await edit;
+    await settle();
+    const beforeOpen = setup.specs.length;
+    releaseOpen();
+    await reopen;
+    // The reopen started after the catalog held the saved pair, so the spec it used is the
+    // saved one — a reopen that woke on the close alone would have read the old pair.
+    const last = setup.specs.at(-1);
+    assert.ok(setup.specs.length > beforeOpen || last?.model.modelId === "faux-9");
+    assert.equal(last?.model.modelId, "faux-9", "the reopened conversation runs the saved pair");
+    assert.equal(last?.thinkingLevel, "high");
+    assert.deepEqual(setup.agents, [], "and no live handle had to be corrected");
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.model.modelId, "faux-9", "the catalog holds the saved pair");
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("a change that arrives while the bot is opening reaches the handle it installs", async () => {
+  let release: () => void = () => undefined;
+  const opened = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const setup = await bench({ openGate: opened });
+  try {
+    await setup.registry.start();
+    // The warm-up open is held inside the runtime: the handle is not installed yet.
+    const created = await setup.registry.create("a", "tr_open_0001");
+    const edit = setup.registry.setAgent(
+      created.id,
+      { model: { provider: "faux", modelId: "faux-9" }, thinkingLevel: "high" },
+      "tr_open_0002",
+    );
+    await settle();
+    release();
+    await edit;
+    // Without the open being awaited, the change answers success while the handle the
+    // warm-up installs still runs the old pair.
+    assert.deepEqual(
+      setup.agents.map((agent) => agent.model.modelId),
+      ["faux-9"],
+      "the installed conversation takes the pair the catalog now holds",
+    );
+    assert.equal(setup.registry.handleOf(created.id) !== undefined, true);
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("a change that arrives while the bot is closing is stored and the next open uses it", async () => {
+  let release: () => void = () => undefined;
+  const closed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const setup = await bench({ bots: ["a"], closeGate: closed });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_closing_0001");
+    // An idle close starts and is held open by the gate: the handle is on its way out.
+    await setup.timers.advance(1_000);
+    const edit = setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-7" }, thinkingLevel: "low" },
+      "tr_closing_0002",
+    );
+    await settle();
+    release();
+    await edit;
+    const stored = (await setup.directory.load())[0];
+    assert.equal(
+      stored?.model.modelId,
+      "faux-7",
+      "the pair is the catalog's, even without a handle",
+    );
+    assert.equal(stored?.thinkingLevel, "low");
+    await setup.registry.open("b_bot0", "tr_closing_0003");
+    const spec = setup.specs.at(-1);
+    assert.equal(spec?.model.modelId, "faux-7", "the reopened bot runs with the stored pair");
+    assert.equal(spec?.thinkingLevel, "low");
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("two rapid agent changes are applied one after the other", async () => {
+  const setup = await bench({ bots: ["a"] });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_rapid_0001");
+    const first = setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-2" }, thinkingLevel: "low" },
+      "tr_rapid_0002",
+    );
+    const second = setup.registry.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-3" }, thinkingLevel: "high" },
+      "tr_rapid_0003",
+    );
+    await Promise.all([first, second]);
+    assert.deepEqual(
+      setup.agents.map((agent) => agent.model.modelId),
+      ["faux-2", "faux-3"],
+      "the second change waits for the first",
+    );
+    const stored = (await setup.directory.load())[0];
+    assert.equal(stored?.model.modelId, "faux-3", "the last change is the one that is stored");
+    assert.equal(stored?.thinkingLevel, "high");
   } finally {
     await setup.registry.shutdown();
     await setup.cleanup();

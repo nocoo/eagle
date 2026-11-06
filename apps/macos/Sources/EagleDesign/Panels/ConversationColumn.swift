@@ -39,6 +39,13 @@ public enum TranscriptEntry: Identifiable, Hashable, Sendable {
 }
 
 extension [TranscriptEntry] {
+  /// The rows of one tool run, by the entry that owns them: a detail dialog reads its run
+  /// from the transcript on every update instead of holding the rows it opened with.
+  public func toolRunRows(id: String) -> [ToolRow]? {
+    for case .toolRun(let entryId, let rows) in self where entryId == id { return rows }
+    return nil
+  }
+
   /// Settings → 通用 hides tool traffic without touching the stored conversation.
   public func hidingToolCalls(_ hidden: Bool) -> [TranscriptEntry] {
     guard hidden else { return self }
@@ -59,8 +66,12 @@ public struct ConversationColumn: View {
   private let onSend: () -> Void
   private let onShowSidebar: () -> Void
   private let onToggleInspector: () -> Void
+  /// Bumped when a dialog closes, so the composer takes the keyboard back.
+  private let focusRestore: Int
   /// Opens a peer exchange by id; nil leaves the rows inert for surfaces that never show one.
   private let onOpenPeerExchange: ((String) -> Void)?
+  /// Opens a tool run's details by the entry that owns it; nil leaves the row inert.
+  private let onOpenToolRun: ((String) -> Void)?
   private let onAnswerCard: ((String, [[String]], Bool) async -> Result<Void, AskCardFailure>)?
   /// Answers a secret card: the answer, and what the daemon said about it.
   private let onAnswerSecret: ((SecretCardAnswer) async -> Result<Void, SecretCardFailure>)?
@@ -96,7 +107,9 @@ public struct ConversationColumn: View {
     onDismissError: @escaping () -> Void = {},
     onShowSidebar: @escaping () -> Void = {},
     onToggleInspector: @escaping () -> Void = {},
+    focusRestore: Int = 0,
     onOpenPeerExchange: ((String) -> Void)? = nil,
+    onOpenToolRun: ((String) -> Void)? = nil,
     onAnswerCard: ((String, [[String]], Bool) async -> Result<Void, AskCardFailure>)? = nil,
     onAnswerSecret: ((SecretCardAnswer) async -> Result<Void, SecretCardFailure>)? = nil
   ) {
@@ -120,6 +133,8 @@ public struct ConversationColumn: View {
     self.onShowSidebar = onShowSidebar
     self.onToggleInspector = onToggleInspector
     self.onOpenPeerExchange = onOpenPeerExchange
+    self.onOpenToolRun = onOpenToolRun
+    self.focusRestore = focusRestore
     self.onAnswerCard = onAnswerCard
     self.onAnswerSecret = onAnswerSecret
   }
@@ -154,7 +169,7 @@ public struct ConversationColumn: View {
         onSend: onSend,
         onInsert: onInsert,
         autofocus: true,
-        focusRequest: composerFocusRequest
+        focusRequest: composerFocusRequest + focusRestore
       )
       .fixedSize(horizontal: false, vertical: true)
       .padding(.horizontal, Theme.Metric.conversationInset)
@@ -213,6 +228,7 @@ public struct ConversationColumn: View {
           entry: entry,
           preparedMarkdown: preparedMarkdown,
           onOpenPeerExchange: onOpenPeerExchange,
+          onOpenToolRun: onOpenToolRun,
           onAnswerCard: onAnswerCard,
           onAnswerSecret: onAnswerSecret
         )

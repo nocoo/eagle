@@ -130,19 +130,27 @@ public struct InspectorChoiceRow: Identifiable, Hashable, Sendable {
   /// The chosen id, or nil when the bot follows the daemon-wide setting.
   public let selected: String?
   public let choices: [Choice]
+  /// The change is in flight: the menu waits and says so.
+  public let isSaving: Bool
+  /// The daemon's refusal, when the change did not land.
+  public let error: String?
 
   public init(
     id: String,
     label: String,
     value: String,
     selected: String?,
-    choices: [Choice]
+    choices: [Choice],
+    isSaving: Bool = false,
+    error: String? = nil
   ) {
     self.id = id
     self.label = label
     self.value = value
     self.selected = selected
     self.choices = choices
+    self.isSaving = isSaving
+    self.error = error
   }
 }
 

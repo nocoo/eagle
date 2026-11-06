@@ -596,6 +596,48 @@ stays readable until a send is attempted without a gateway, then the conversatio
 short "去设置" banner; the gate is tested (`BotsWindowTests`), the fresh-install window is
 not.
 
+## The bot's own model and level (2026-11-06)
+
+The gateway stayed global and became a registry of models instead of one: one provider (the
+address, the key and the provider id, all shared) and every model the daemon knows — the
+ids the gateway lists, the ids bots store and the id the settings name as the default. A
+model a bot stores stays registered when the gateway stops listing it, and a model the
+daemon cannot describe is registered with the declared window and passes every level
+through, so a custom model is not silently lowered.
+
+The settings' model and thinking level are now the **defaults a new bot records**; saving
+them no longer rewrites an existing bot, and a bot created before the level existed is
+given the current default once at startup. Every bot stores its own pair, the inspector
+changes it, and the change reaches the next prepared request: the running answer keeps the
+model and the level it started with, and nothing is aborted, reset or restarted. The pair
+is prevalidated, written once to the catalog, and then applied; a conversation that refuses
+it answers `409` "saved but not applied" after the catalog event goes out, and the next
+change or a reopen applies it. The gateway's provider id cannot change under a running
+daemon (a save that names another is a `400`), because the models and the open
+conversations were built against it.
+
+The gateway publishes ids and nothing else, so the daemon infers no capability from a name:
+every model is registered with the daemon's declared caps (`BOTS_CONTEXT_WINDOW`,
+`BOTS_MAX_TOKENS`) and with all seven levels mapped to themselves, `off` to the gateway's
+no-effort value. pi-ai lowers `xhigh` and `max` unless the model declares them, so that
+explicit map is what makes the request carry the chosen level; a gateway refusal is the
+run's error, never a fallback. `test/runtime/model-request.test.ts` proves it on a real
+Responses HTTP request, not on a faux snapshot: `xhigh` and `max` arrive as themselves and
+`off` arrives as `none`. `GET /v1/models` keeps `models` as string ids and adds
+`modelDetails`, which reports what the daemon will request; a discovery that failed is
+reported apart from a gateway that offers no model.
+
+Evidence: `apps/bots` `npm run check` passed 1 087 tests with 96.00% lines / 88.89%
+branches / 91.01% functions over 90/85/90, and `npm run test:crash` passed 5 cases. The
+crash provider now counts only the conversation under test: the reflection conversation's
+request raced `provider.requests() === 2` and made that pre-existing assertion flaky.
+`swift test` passed 156 cases in `apps/bots-macos` and 395 + 81 + 52 + 37 in `apps/macos`;
+`swift format lint --strict`, `npm run check:design` and `npm run test:design` passed. The
+whole eval suite passed 26 cases, including `cli-agent-models`, which moves a second bot to
+a second model and asserts each request names its own. Not verified: a real gateway's two
+models (the eval model is scripted), upstream support for `xhigh`/`max` (no metadata
+exists to check it), an installed App, and a rendered inspector by hand.
+
 ## Settings for effort, compaction and tool groups (2026-10-27)
 
 The model page now carries three daemon-wide choices, each stored in the gateway settings

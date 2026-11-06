@@ -1,5 +1,93 @@
 # 用户视角检查点
 
+## 2026-11-07 07:01 +08 — Compact Bot dialogs, final local verification
+
+- Code candidate `02b46e84`: creation is approximately 460 × 458 instead of
+  560 × 712, with inspector-like identity fields, standard settings actions,
+  one explicit canonical random tint per presentation, and the shared breathing
+  portrait. Creation, face editing, peer history, tool details and settings use
+  one blurred/dimmed modal surface; native alerts and system panels stay native.
+- Three review rounds closed the reported peer-read, tool-owner and capture-suite
+  isolation findings. Final native evidence: 427 + 52 + 81 + 37 tests, 94.8%
+  configured logic coverage, strict formatting and both design gates (91 tests).
+- Coordinator re-ran `npm run check`, `npm run test:browser` and
+  `npm run test:devices` with official Node 26.13.0 on the final code; all exited
+  0. Logs are `/tmp/eagle-*-dialogs-final3.log`. Earlier Homebrew-Node package
+  refusals are not a failure of this verified run.
+- The ten isolated review images under `.local/macos-dialogs` were regenerated;
+  light/dark create, face, peer, tool and settings compositions were inspected.
+  Static captures do not certify live keyboard behavior or animation.
+- The coordinator gracefully quit only its owned Dev process and reopened
+  `swift run "Eagle Dev"` from this checkout in right-side Herdr pane `w1J:p6`.
+  UI PID: 51719; its Bots daemon PID: 51862, listening on loopback 43117.
+  The build completed; existing WindowConfigurator concurrency warnings remain.
+- Owner acceptance is pending for actual clicks, Return/Escape, focus restoration,
+  traffic lights and Reduce Motion. No real model generation, Herdr collection,
+  viewer authentication, D1 or physical multi-Mac acceptance was run. No push.
+
+## 2026-11-06 23:05 +08 — 每个 Bot 自己的模型与等级：评审第一轮修完
+
+- 模型发现不再借用 pi-ai 的 ModelsStore：同一个 provider 换地址/换 Key 后失败重试时，旧缓存的
+  `baseUrl` 不会复活；改 provider id 时旧 provider 从集合里删除，活着的 Harness 取不到旧端点与旧 Key。
+  网关只发布 id，能力不按名字猜：窗口/上限是守护进程声明的 200000/8192，七个等级原样映射（`off` →
+  `none`），真实 Responses 抓包证明 `xhigh`/`max`/`none` 原样进请求体，上游拒绝就是本次运行报错。
+- 旧 Bot 缺 `thinkingLevel` 时在启动迁移里一次写死当前默认（在 prepare 与 recovery 之前），之后
+  `#storedLevel` 只读目录，不再回落到可变默认；只有新建 Bot 用默认。空动作/重开/只改等级/第二个 daemon
+  都保留第一次写入的等级。
+- provider 变更在 recovery 之前应用（`start(prepare)`），活着的会话收到一次 `configureAgent`；某个 Bot
+  跟不上时只把它标成 unavailable 并留一条 propagated warn，其余 Bot 继续，不回退旧端点。真实 HTTP 测试
+  证明两个 Bot 的请求分别打到 A、B 两个端点与 Key。
+- 换模型改为“目录先是真相”：先校验、写目录、再配置会话；会话拒绝时是“已保存但未应用”的显式错误，
+  `applied` 记录（而不是目录相等）决定同样的改动是否要再配置；重试会真的再配置，第三次才是空操作。
+  进行中的 warm-up open 先等待，整个改动持有 settling 窗口，安装后的 handle 收到新的一对。
+  前端：每行自己的拒绝保留（换 Bot、别的字段成功都不会擦掉），模型发现失败会重试并在检查器 模型 行显示。
+- 验收用例加强：`cli-agent-models` 用两个不同问题 + `modelRequestsSeen` 断言“带这个问题的那次请求”模型名
+  与思考等级；把期望改成同一个模型会失败，证明它不是靠两个 Bot 同名或反思请求蒙过。
+- 门禁（第三轮修复后）：`apps/bots` `npm run check` 1101 tests / 96.01% 行 / 89.12% 分支 / 91.24% 函数，
+  `test:crash` 5/5；`apps/bots-macos` 156（coverage 90.9%）、`apps/macos` 399 + 81 + 52 + 37（coverage 94.8%）；
+  `swift format lint --strict` 两包干净；`check:design` 与 `test:design`（91）通过；
+  `npm --prefix apps/bots run eval` 26/26。
+- 第二轮评审后收紧了三条：provider id 属于守护进程（运行中改 provider 的保存是 400、不写文件，文档写明需重启；
+  同 provider 换地址/Key 仍即时生效；启动时把旧 provider 改写到目录失败就直接起不来，而不是标记后让 recovery
+  再用旧 provider 打开）；模型发现的迟到回答按 generation 丢弃，不会覆盖更新的列表或错误；close→reopen→PATCH
+  的唤醒顺序用一个受控测试钉住，`applied` 只记“这次 open 实际用的那一对”。保存但未应用时异常带 `saved` 标记，
+  HTTP 先广播目录真相再回 409；App 在保存失败时重读目录，行里显示已保存的模型加“未应用”错误；选中 Bot 会重试
+  失败的模型发现。
+- 第三轮（最后两条）收口：provider 是**启动时**固定的（`bootProvider`），所以“本来没配网关、第一次保存却换了
+  provider”也会被 400 拒绝、不写 gateway.json——之前比较的是当前网关，那条路径能绕过启动规则；`open()` 现在
+  在一个循环里等待 settling 窗口，某个 close 唤醒后若又有新的窗口（例如 PATCH 刚接管），它会继续等，
+  不会读到旧配置就开 Harness。两条都用确定性测试先钉红：无网关时首次 PUT `next` → 400 且无 gateway.json；
+  持有 close、PATCH 与 reopen 排队、PATCH 先唤醒且 reopen 的 openRuntime 被闸住 → reopen 用的是保存后的那一对。
+- 未验证：真实网关上的两个模型与 `xhigh`/`max` 的上游接受度（网关不发布能力，只有抓包证据）；没有
+  `swift run` 的开发 App 肉眼验收（协调者执行）；没有 Herdr 采集、查看器鉴权、D1、已安装 App 或真机双 Mac。
+
+## 2026-11-06 20:51 +08 — 每个 Bot 自己的模型与思考等级
+
+- 设置里的模型/思考等级现在只是“新建 Bot 的默认值”，已有 Bot 不再被整体改写；每个 Bot 在目录里存
+  自己的 `{model, thinkingLevel}`，检查器可以改，改动只影响下一个新准备的模型请求（运行中的回答不中
+  断、不 reset、不重启）。端点、Key 与 provider 仍是全体的。
+- 守护进程：模型注册表从“一个模型”变成“一个网关 provider + 多个模型”（网关列出的、Bot 存的、默认
+  指的）。网关只发布模型 id，不发布能力：不发按名字猜（同一个 id 在不同网关可能是 272k 或 1M），所以
+  每个模型都按守护进程声明的窗口/上限注册，七个思考等级原样映射（`off` → 网关的无努力值 `none`），
+  `xhigh`/`max` 不会被 pi-ai 静默降为 `high`；上游是否支持未经验证，拒绝就是本次运行报错而不是回退。
+  `/v1/models` 追加 `modelDetails`（声明我们要请求什么，不是声称已发现的能力），`models` 仍是字符串
+  id。发现失败与“网关没有任何模型”分开报告，失败时保留已知模型。真实 Responses HTTP 抓包测试证明
+  `xhigh`/`max`/`none` 原样出现在请求体里。
+- 红证据：`setAgent` 原来把模型和等级拆成两次目录写、两次运行时配置；`root({agent})` 对已存在的会话
+  忽略这对值，导致重开后的 Bot 用上一会话留下的模型；设置一保存就改写每个 Bot。新测试先在旧实现上
+  红（一次目录写、每次打开都配置存的那对、改动只到下一个请求、目录写失败回滚、两次快速改动串行、关闭
+  进行中到达的改动也落到目录并让下次打开使用、设置只改默认值、发现失败不等于空列表）。适配器仍然用
+  `getSupportedThinkingLevels` 拒绝“元数据明确不支持”的等级（测试里用一个显式受限的模型证明）；网关今天
+  不发布这种元数据，所以七个等级都只是请求。
+- 门禁：`apps/bots` `npm run check` 1 088 tests，96.00% 行 / 89.00% 分支 / 90.90% 函数（下限 90/85/90），
+  `npm run test:crash` 5 项，`npm --prefix apps/bots run eval` 连续三轮各 26/26；
+  `apps/bots-macos` `swift test` 156 个；`apps/macos` `swift test` 395 + 81 + 52 + 37 个；
+  `swift format lint --strict` 两个 Swift 包干净；`npm run check:design` 与 `npm run test:design`（91）通过。
+- 未验证：没有真实网关上的两个模型调用（脚本化 eval 的模型是 fixture；脚本网关列两个 id，两个 Bot 各自
+  的请求各带自己的模型名），`xhigh`/`max` 是否被真实上游接受没有证据可查（网关不发布能力，测试只证明
+  请求体原样带 `xhigh`/`max`/`none`），没有 `swift run` 的开发 App 肉眼验收（交由协调者在最终评审后
+  执行），没有 Herdr 采集、查看器鉴权、D1、已安装 App 或真机双 Mac 验证。
+
 ## 2026-11-06 12:10 +08 — 技能 settings page, review round 3 (macOS)
 
 - 第三轮评审剩下的三个读取器边界都修掉了，每条先有失败测试：注释边界接受任意多个空格或一个制表符
@@ -4168,3 +4256,57 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   verification of the push happened here. The App's
   push uses the same token and port every other settings page uses, but its end-to-end path
   against a running daemon on this machine is still the owner's manual check.
+
+## 2026-11-07 06:29 +08 — one modal surface, compact bot dialogs
+
+- User-view state: the App's own dialogs (create, edit face, peer transcript, tool run,
+  settings) are now one card over a blurred, dimmed workspace. The create form is
+  460 × 458 instead of 560 × 712, with the inspector's identity card (portrait, name,
+  tag) instead of two tall inputs, and the colour the preview shows is the colour the
+  daemon is asked to store. Nothing was started or restarted: no Dev App, no daemon, no
+  Herdr collection, no authentication and no D1 hop is involved in this work, so those
+  hops are neither verified nor broken by it.
+- Evidence actually produced: `.local/macos-dialogs/dialog-{create,face,peer,tool,settings}-{light,dark}.png`
+  from `swift run --package-path apps/macos SnapshotRenderer .local/macos-dialogs
+  --dialogs-only`, which builds its own three-column backdrop, its own UserDefaults
+  suite, a stub HTTP session and `SnapshotDeviceControl`. Inspected by eye: create and
+  face are 460 pt wide and 458 pt tall, footer buttons are the 32 pt settings action,
+  the shape grid is two rows of five and the colours are eight on one row.
+- Automated: `swift test` in `apps/macos` passed 420 / 52 / 81 / 37 tests in four bundles,
+  `Scripts/coverage.sh` reported 94.8% of the logic layer (minimum 90), `swift format lint
+  --strict --recursive Sources Scripts Tests` was clean, and at the root `npm run
+  check:design` and `npm run test:design` (91 cases) passed.
+- Demonstrated failures before the fix: the two new behaviour suites were written first and
+  failed against the old code — the shell slot tests could not find `WorkspaceDialogState`,
+  and the modal background test failed three ways with `.disabled`/`.allowsHitTesting`
+  removed (native field still enabled, background send fired, workspace button fired).
+- Not verified here: a real keyboard Escape/Return in a key window (an offscreen test window
+  never becomes key, so focus and the menu path stay the owner's manual check), traffic-light
+  hiding and restore in a live window, Reduce Motion on a machine with the preference on
+  (the test reads the actual preference and only asserts the freeze when it is on), and
+  system alerts, which remain native and are not part of the shared host.
+
+## 2026-11-07 06:49 +08 — round-1 fixes on the modal surface
+
+- Three review findings fixed, each with a failing test first. (1) A peer read is now a
+  generation in `BotsWorkspaceViewModel`: `openExchange` tags its request, `cancelPeerRead()`
+  (called when any dialog takes the window) and `closeExchange()` invalidate what is in
+  flight. Red before the fix: with the generation removed, "a read that lands after a dialog
+  came and went" and "a deliberate read after all of that still opens" both failed on
+  `openedExchange == nil`. (2) A tool run's route carries its owner — `.bot(id:)` or `.sample`
+  — and `WorkspaceDialog.belongs(to:)` closes it when the conversation moves on, so a create
+  that lands while a detail is open no longer leaves another bot's rows under the old entry
+  id. Red before the fix: `belongs` always true failed the ownership assertions. (3) The
+  isolated dialog capture now points `.defaultAppStorage` at its own suite and gives settings
+  an explicit `SkillsSettingsViewModel`/`SkillsSelection` on a temporary home with a stub push,
+  with a built-in assertion that its sentinel is invisible to the standard defaults.
+- Validation of record: the coordinator ran the root `check` (tests, typecheck, lint, build),
+  `test:browser` and `test:devices` with official Node 26.13 on `5cbd1137`, all EXIT 0. This
+  machine's own root `npm test` is 309/311 because its Homebrew Node links a non-system
+  library, which the device-runtime test refuses by design; that is an environment fact, not
+  a red gate. The Swift, format, coverage and design gates are re-run on this change.
+- `apps/macos` after the fixes: `swift test` (four bundles), `swift format lint --strict`,
+  `Scripts/coverage.sh`, root `check:design` and `test:design`, and
+  `SnapshotRenderer .local/macos-dialogs --dialogs-only` regenerated the ten captures. The
+  capture leaves no key behind: its domain reads back empty. Escape/Return in a key window,
+  live traffic lights, focus hand-off and Reduce Motion on an enabled machine remain manual.

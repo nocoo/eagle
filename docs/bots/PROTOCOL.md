@@ -114,7 +114,7 @@ version, the instance id, the pid and a bot count, never bot content.
 | `PUT` | `/v1/providers/:id` | `{ "apiKey"?, "enabled"?, "baseUrl"?, "model"? }` | `{ "provider": Provider }` |
 | `POST` | `/v1/providers/:id/test` | — | `{ "result": { "ok", "message", "latencyMs", "results"?, "model"?, "resolvedModel"? } }` |
 | `GET` | `/v1/usage?days=` | — | `{ "usage": UsageReport }` — statistics over the daemon's retained days |
-| `GET` | `/v1/models` | — | `{ "models": [string] }` — the gateway's ids, empty when it cannot be asked |
+| `GET` | `/v1/models` | — | `{ "models": [string], "modelDetails"?: [ModelDetail], "discoveryError"?: string }` — the gateway's ids and what the daemon knows about each one |
 | `POST` | `/v1/bots/:botId/answers` | `{ "entryId", "answers"?: [[label]], "skipped"?: true }` | `{ "submission": Submission }` |
 | `POST` | `/v1/bots/:botId/secrets` | `{ "entryId", "callIndex"?, "key", "value", "scope"?, "ttlMinutes"?: number \| null, "skipped"?: true }` | `{ "submission": Submission }` |
 | `GET` | `/v1/secrets` | — | `{ "secrets": [Secret] }` — metadata only, never a value |
@@ -164,15 +164,23 @@ Gateway rules:
   file is absent. `configured` means all three of `baseUrl`, `model` and `apiKey` are set.
 - **The key is write-only.** `PUT` with an omitted or empty `apiKey` keeps the stored one,
   so the form does not have to re-enter a secret it cannot read.
-- **Saving applies it.** New bots record the model, a live conversation is moved to it in
-  place (its session keeps its history), and the catalog is rebroadcast because every
-  summary's `model` changes. A malformed URL, an empty model or an empty key is a `400`
-  and nothing is written.
-- **The thinking level is one setting for every bot.** `thinkingLevel` is one of `off`,
-  `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; `medium` is the default when the
-  field or the whole file is absent. Saving it writes each bot's stored configuration and moves a
-  live conversation to the new level in place; an unknown value is a `400` and nothing is
-  written.
+- **Saving sets the defaults for new bots.** The stored `model` is the model a bot created
+  from now on records, and the stored `thinkingLevel` is the reasoning level it records.
+  Saving neither rewrites an existing bot: every bot keeps the pair it stores, and the
+  person changes one bot's pair in that bot's inspector. The endpoint and the key stay
+  global — every bot talks to the same gateway — so a new endpoint or a new key reaches
+  every bot at once, while the model id stays per bot. A malformed URL, an empty model
+  or an empty key is a `400` and nothing is written.
+- **The reasoning level is one of seven names, and it is a request.** `thinkingLevel` is one
+  of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; `medium` is the default when
+  the field or the whole file is absent. The daemon sends exactly the level it stored and
+  never lowers one behind the person's back; whether the gateway honours it is the
+  gateway's business, and a refusal is the run's error (`unanswered{model_error}`), not a
+  silent fallback and not a different level. `GET /v1/models` reports the levels the daemon
+  will request.
+- **Every bot stores its own pair.** The catalog records `{ model, thinkingLevel }` for
+  every bot, and a bot created before the field existed is given the current default once,
+  so a later change of the default cannot move it.
 - **Tool groups are chosen per daemon.** `toolGroups` lists the groups every bot is given:
   `persona` and `machine` (the two core prompts, see below), `core` (the `list` tool),
   `coding` (pi-durable's `read`, `write`, `edit`, `bash`), `herdr` (the terminal
@@ -217,16 +225,19 @@ Gateway rules:
 - **Testing is separate.** `POST /v1/settings/test` probes `GET {baseUrl}/models` with the
   key; a `401` is reported as a refused key, a timeout as an unreachable gateway. It does
   not save and does not spend a generation.
-- **The model is still the daemon's single registered model.** A bot whose config names a
-  different id settles `no_model`; saving the gateway is what aligns it.
+- **The gateway's own model is a default, not a registry.** The daemon registers every model
+  the gateway lists, plus the models bots store and the default the settings name, so a
+  bot keeps working when the gateway stops listing its model. Every model is registered
+  with the daemon's declared caps and all seven levels; it is never silently replaced by
+  the default.
 
 `instance` is a random id chosen at daemon start; a client that sees it change
 knows the daemon restarted and reconnects. Errors use
 `{ "error": { "kind": ErrorKind, "message": string } }` with `400`, `401`, `404`,
 `409` (bot quarantined or being deleted), `503` (shutting down).
 
-The model is the daemon's configured gateway model; saving settings aligns every bot with
-it. A per-bot model picker still needs the `agent` capability.
+The model a bot runs with is its own: the settings name the default for a new bot, and
+every bot stores the pair it runs with.
 
 ## CLI clients and scopes
 
@@ -413,19 +424,69 @@ report.
 
 ## Per-bot agent
 
-`PATCH /v1/bots/:id` accepts `model` (an id the gateway lists) and `thinkingLevel` (one of
-the seven levels), which are that bot's own choice: the catalog records them and a live
-conversation moves in place. `GET /v1/models` is a read-only proxy of the gateway's model
-list (cached for a minute), so a picker never has to know the gateway itself. The `agent`
-capability is `true`.
+`PATCH /v1/bots/:id` accepts `model` (any id the daemon will request: the gateway's list
+is a suggestion, and the gateway is the authority on whether the model exists) and
+`thinkingLevel` (one of the seven levels), which are that bot's own choice: the catalog
+records them and a live conversation follows in place. `GET /v1/models` is a read-only view
+of the gateway's model list and of what the daemon will request from each model, so a
+picker never has to know the gateway itself. The `agent` capability is `true`.
+
+- **The pair is one change.** A request that names a model, a level, or both is answered
+  with the pair the bot ends up running with. The catalog is written once and the
+  conversation is configured once, so a bot never records a model it does not run with.
+- **The level must be one of the seven.** Anything else, and a request that names no field
+  at all, is a `400 invalid_command` and nothing is written. The check is against the
+  model the bot ends up with — a level-only request is judged against the model the bot
+  already stores — and it narrows only when the daemon has explicit metadata for that
+  model, which the ids-only gateway does not publish today.
+- **Any model id is accepted; the gateway is the authority.** A name the gateway does not
+  list is registered and kept across a discovery outage, so a bot that stores it keeps
+  working; the daemon never replaces it with the default. Whether the model exists is
+  answered by the next request, as the run's error.
+- **The change reaches the next request, not the running one.** A conversation that is
+  answering keeps its answer: the model and the level of a request are fixed when it is
+  prepared, so the change applies from the next prepared request. Nothing is aborted,
+  reset or restarted, and a tool call in flight finishes under the model it started with.
+- **A closed bot takes the pair when it opens.** A conversation that was closed is
+  configured with the stored pair before it resumes, so a reopened bot runs with what the
+  catalog says and not with what an earlier session left behind.
+- **Two stores, no cross-store transaction.** The catalog is the truth and the live
+  conversation is a copy of it. The pair is prevalidated, written to the catalog, and only
+  then applied; a request prepared while the write is in flight still runs the pair it
+  had. If the conversation refuses the saved pair, the answer is a `409` that says it was
+  saved but not applied, the catalog event with the saved pair goes out first, and the
+  conversation keeps the old pair until the next change or a reopen applies it — a retry
+  re-applies rather than trusting catalog equality. Nothing falls back to the old pair
+  silently, and nothing claims an application that did not happen.
+- **The provider is the daemon's, not a setting.** A save that names another `provider`
+  while the daemon runs is a `400` and writes nothing: the provider id is what the
+  models and every open conversation were built against, so changing it is a restart.
+  The address and the key are the same provider with new coordinates and apply live to
+  every bot at once.
 
 An applied agent change is broadcast as a bot-scoped `agent` event, carrying the complete
 `AgentView` with `rev` and `trace`. It replaces only the current agent configuration; the
 transcript, loaded history, optimistic sends, pending inputs, tasks, triggers and recovery
-state stay intact. The initial subscription snapshot still carries `agent`. A gateway-wide change
-(`PUT /v1/settings`, which rewrites every bot's level or model) reaches each open conversation the
-same way, one `agent` event per bot. This is a v1 additive event: older clients consume its
-revision and ignore it under I8.
+state stay intact. The initial subscription snapshot still carries `agent`. This is a v1
+additive event: older clients consume its revision and ignore it under I8.
+
+`GET /v1/models` answers the ids the daemon knows and, for each of them, what it knows:
+
+```json
+{ "models": ["auto/gpt-6-luna"],
+  "modelDetails": [{ "id": "auto/gpt-6-luna", "contextWindow": 200000,
+    "maxTokens": 8192, "reasoning": true,
+    "thinkingLevels": ["off", "minimal", "low", "medium", "high", "xhigh", "max"] }] }
+```
+
+`models` stays a list of ids, so a client that reads only it loses nothing.
+`modelDetails` is additive and describes the same ids. It reports what the daemon **will
+request**, not what it verified: the gateway publishes ids and nothing else, so
+`contextWindow` and `maxTokens` are the daemon's declared caps (`BOTS_CONTEXT_WINDOW`,
+`BOTS_MAX_TOKENS`) and `thinkingLevels` is the seven levels the daemon sends. No entry
+claims upstream support. `discoveryError` is present only when the gateway could not be
+asked for its list: an empty `models` with that field is a failed discovery, and an empty
+`models` without it is a gateway that offers no model.
 
 ## Providers
 
@@ -615,7 +676,10 @@ with no ID normalization. Fixed vectors are `b_color0→violet`, `b_color1→blu
 `b_color2→pink`, `b_color4→red`, `b_color5→orange`, `b_color6→teal`,
 `b_color14→yellow`, `b_color32→green`. Names/group order never enter this hash.
 Explicit tints retain the full v1 closed set below. Null/unknown tints and tint-only
-creation are invalid. PATCH still requires both fields when appearance is supplied.
+creation are invalid. The App sends both fields explicitly, because its create form
+previews one canonical colour before the Bot exists; the hash above is the daemon's own
+default for creations that omit a tint (API/CLI), not a rule the App predicts.
+PATCH still requires both fields when appearance is supplied.
 Responses/events/storage remain complete, and existing records are never rehashed.
 There is no persisted auto/manual mode or create-then-PATCH sequence. Shape-only
 creation requires the updated daemon; clients must not retry a refusal with green.

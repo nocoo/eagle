@@ -702,6 +702,49 @@ public struct AgentView: Codable, Hashable, Sendable {
   }
 }
 
+/// What the daemon will request from one model of the gateway: the levels it may ask for,
+/// the declared window and the token cap. The gateway publishes ids only, so nothing here
+/// claims what the model actually supports upstream.
+public struct ModelDetail: Codable, Hashable, Sendable {
+  public var id: String
+  public var contextWindow: Int
+  public var maxTokens: Int
+  public var reasoning: Bool
+  /// The reasoning levels the daemon may request; `xhigh` and `max` are requested as they are.
+  public var thinkingLevels: [String]
+
+  public init(
+    id: String, contextWindow: Int, maxTokens: Int, reasoning: Bool, thinkingLevels: [String]
+  ) {
+    self.id = id
+    self.contextWindow = contextWindow
+    self.maxTokens = maxTokens
+    self.reasoning = reasoning
+    self.thinkingLevels = thinkingLevels
+  }
+}
+
+/// The gateway's models: the ids it offers, what the daemon knows about each of them, and
+/// the failure that kept the daemon from asking.
+public struct GatewayModels: Equatable, Sendable {
+  public var ids: [String]
+  public var details: [ModelDetail]
+  /// Present only when the gateway could not be asked: an empty list without it is a
+  /// gateway that offers no model.
+  public var discoveryError: String?
+
+  public init(ids: [String], details: [ModelDetail], discoveryError: String? = nil) {
+    self.ids = ids
+    self.details = details
+    self.discoveryError = discoveryError
+  }
+
+  /// What the daemon knows about one model, by its id.
+  public func detail(_ id: String) -> ModelDetail? {
+    details.first { $0.id == id }
+  }
+}
+
 /// One pull request a bot reported: the link opens it, the status decides its colour. The
 /// daemon stores reports and never queries a forge, so this is exactly what the model said.
 public struct PullSummary: Codable, Sendable, Equatable, Hashable, Identifiable {

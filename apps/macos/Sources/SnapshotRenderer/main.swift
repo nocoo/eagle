@@ -31,6 +31,11 @@ struct SnapshotRenderer {
       print("wrote isolated composition snapshots to \(directory.path)")
       return
     }
+    if CommandLine.arguments.contains("--dialogs-only") {
+      captureDialogs(in: directory)
+      print("wrote isolated dialog snapshots to \(directory.path)")
+      return
+    }
     if CommandLine.arguments.contains("--herdr-only") {
       do { try await captureHerdr(in: directory) } catch {
         print("Herdr snapshot failed: \(error)")
@@ -646,11 +651,152 @@ struct SnapshotRenderer {
             SettingsView(model: model, devices: devices, expandsProviderDetails: ["typesafe"])
               .defaultAppStorage(defaults)
               .frame(width: modal.width, height: modal.height)
-              .clipShape(RoundedRectangle(cornerRadius: Theme.Dialog.settingsRadius))
+              .clipShape(RoundedRectangle(cornerRadius: Theme.Dialog.radius))
           }
           .preferredColorScheme(scheme), size: size, named: "composition-settings-\(suffix)",
           in: directory, appearance: scheme == .dark ? .darkAqua : .aqua)
       }
+    }
+  }
+
+  /// The shell's dialogs over a synthetic workspace: every one of them behind the same
+  /// blurred, dimmed backdrop, with no daemon, device service or production fixture.
+  @MainActor
+  private static func captureDialogs(in directory: URL) {
+    let fixture = snapshotBotsSettings()
+    // Every run owns its own suite: a shared domain would inherit an earlier run's values
+    // and let two captures delete each other's.
+    let preferences = IsolatedPreferences(prefix: "EagleDialogSnapshots")
+    let defaults = preferences.defaults
+    let home = FileManager.default.temporaryDirectory
+      .appendingPathComponent("eagle-dialog-home-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    assertCaptureIsolation(defaults: defaults, home: home)
+    let devices = DeviceSettingsViewModel(
+      control: SnapshotDeviceControl(), defaults: defaults, requiresServiceAddress: false)
+    // The 技能 page reads a person's own folders and ticks by default; a capture gets its own
+    // suite, its own home and a push that goes nowhere.
+    let selection = SkillsSelection(defaults: defaults, push: { _ in })
+    let skills = SkillsSettingsViewModel(defaults: defaults, home: home, selection: selection)
+    defer {
+      preferences.remove()
+      fixture.session.invalidateAndCancel()
+      try? FileManager.default.removeItem(at: fixture.settings.rootURL)
+      try? FileManager.default.removeItem(at: home)
+    }
+    let size = CGSize(width: 1280, height: 760)
+    let face = BotFace.Style(shape: .pebble, tint: Theme.Palette.BotTint.teal)
+    let toolRows = [
+      ToolRow(
+        id: "c_1", name: "read_file", subtitle: "path=notes.txt · limit=50",
+        input: "{\n  \"path\": \"notes.txt\"\n}", output: "工作区里的内容", durationMs: 21),
+      ToolRow(
+        id: "c_2", name: "run_command", subtitle: "command=make check",
+        input: "{ \"command\": \"make check\" }", output: "$ make check\n2 packages formatted",
+        isRunning: true),
+    ]
+    var draft = BotsCreateDraft(tint: .violet)
+    draft.name = "研究员"
+    draft.label = "研究"
+    draft.shape = .star
+    let settings = SettingsViewModel(botsSettings: fixture.settings, urlSession: fixture.session)
+    settings.selection = .general
+
+    for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
+      let appearance: NSAppearance.Name = scheme == .dark ? .darkAqua : .aqua
+      let surfaces: [(String, EdgeInsets, AnyView)] = [
+        (
+          "create", EdgeInsets(),
+          AnyView(BotCreateSheet(draft: draft, onCreate: { _, _, _ in }, onCancel: {}))
+        ),
+        (
+          "face", EdgeInsets(),
+          AnyView(
+            BotFaceEditorSheet(
+              initial: BotFace.Style(shape: .star, tint: Theme.Palette.BotTint.teal),
+              onSave: { _ in }, onCancel: {}))
+        ),
+        (
+          "peer",
+          EdgeInsets(
+            top: Theme.Dialog.peerOverlayVertical,
+            leading: Theme.Metric.sidebarWidth + Theme.Metric.contentInset,
+            bottom: Theme.Dialog.peerOverlayVertical,
+            trailing: Theme.Dialog.peerOverlayTrailing),
+          AnyView(PeerConversationDialog(exchange: MockWorkspace.vesExchange, onClose: {}))
+        ),
+        ("tool", EdgeInsets(), AnyView(ToolRunDetailView(rows: toolRows, onClose: {}))),
+        (
+          "settings", EdgeInsets(),
+          AnyView(
+            SettingsView(model: settings, skills: skills, devices: devices)
+              .frame(
+                width: Theme.Metric.settingsSize(in: size).width,
+                height: Theme.Metric.settingsSize(in: size).height))
+        ),
+      ]
+      for (surface, insets, dialog) in surfaces {
+        capture(
+          ModalWorkspace(
+            showsDialog: true,
+            workspace: { dialogBackdrop(face: face) },
+            dialog: { ModalHost(insets: insets, onDismiss: {}) { dialog } }
+          )
+          .defaultAppStorage(defaults)
+          .preferredColorScheme(scheme), size: size,
+          named: "dialog-\(surface)-\(name)", in: directory, appearance: appearance)
+      }
+    }
+  }
+
+  /// A capture must not read the person's own preferences. A sentinel written to the isolated
+  /// suite is invisible to the standard one, and the skills home is a temporary folder; nothing
+  /// here writes a real preference or needs a credential.
+  @MainActor
+  private static func assertCaptureIsolation(defaults: UserDefaults, home: URL) {
+    let key = "eagle.snapshot.isolationProbe"
+    let sentinel = UUID().uuidString
+    defaults.set(sentinel, forKey: key)
+    precondition(
+      UserDefaults.standard.string(forKey: key) != sentinel,
+      "the dialog capture shares the standard preferences")
+    defaults.removeObject(forKey: key)
+    precondition(
+      home.path.hasPrefix(FileManager.default.temporaryDirectory.path),
+      "the dialog capture would scan a real home folder")
+  }
+
+  /// A synthetic three-column workspace: it exists only to sit behind a review capture.
+  @MainActor
+  private static func dialogBackdrop(face: BotFace.Style) -> some View {
+    let sections = [
+      SidebarSection(
+        id: "layout", title: "对话框验收",
+        items: [
+          SidebarItem(
+            id: "b_layout", title: "研究员", subtitle: "Synthetic backdrop", tag: "Synthetic",
+            face: face)
+        ])
+    ]
+    return ThreeColumnShell(
+      availableWidth: Theme.Metric.windowMinWidth, showsSidebar: true, showsInspector: true,
+      sidebarWidth: Theme.Metric.sidebarWidth, inspectorWidth: Theme.Metric.inspectorWidth
+    ) {
+      SidebarPanel(
+        sections: sections, selection: "b_layout", onSelect: { _ in }, unreadCount: 0,
+        productVersion: "0.0.0-dev-dialog-review")
+    } conversation: {
+      ConversationColumn(
+        title: "研究员", face: face,
+        entries: [
+          .user(id: "u_1", text: "把对话框的落位和背景压一下。", origin: nil),
+          .assistant(
+            id: "a_1", blocks: [.paragraph("背景模糊、前景清晰，整块卡片共用一套圆角和投影。")]),
+        ],
+        draft: .constant(""), onSend: {})
+    } inspector: {
+      InspectorColumn(
+        name: "研究员", subtitle: "Synthetic", tintIndex: 0, tab: .constant(.detail), face: face)
     }
   }
 

@@ -102,13 +102,14 @@ export interface RuntimeHandle {
   /** Stops one live task, by its wire id; the conversation keeps everything it committed. */
   abortTask?(taskId: string, trace: string): Promise<void>;
   busy(): Promise<{ run: boolean; tasks: boolean }>;
-  /** Gateway settings changed: move a live conversation to the new model in place. */
-  configureModel?(
-    model: { readonly provider: string; readonly modelId: string },
+  /** The bot's own pair changed: the conversation follows from the next prepared request. */
+  configureAgent?(
+    change: {
+      readonly model: { readonly provider: string; readonly modelId: string };
+      readonly thinkingLevel: string;
+    },
     trace: string,
   ): Promise<void>;
-  /** Gateway settings changed: move a live conversation to the new reasoning level. */
-  configureThinkingLevel?(thinkingLevel: string, trace: string): Promise<void>;
   /** Gateway settings changed: keep only the chosen tool groups' extensions. */
   configureToolGroups?(toolGroups: readonly string[], trace: string): Promise<void>;
   close(trace: string, deadlineMs: number): Promise<"closed" | "timeout">;

@@ -279,10 +279,19 @@ public final class CatalogHTTPClient: CatalogPort, SecretPort, QuestionPort, Sen
     ).usage
   }
 
-  /// The model ids the configured gateway offers, for a per-bot picker.
-  public func loadModels() async throws -> [String] {
-    struct Payload: Decodable { let models: [String] }
-    return try await request(path: "/v1/models", method: "GET", body: nil, as: Payload.self).models
+  /// The model ids the configured gateway offers, and what the daemon knows about each.
+  public func loadModels() async throws -> GatewayModels {
+    struct Payload: Decodable {
+      let models: [String]
+      let modelDetails: [ModelDetail]?
+      let discoveryError: String?
+    }
+    let payload = try await request(path: "/v1/models", method: "GET", body: nil, as: Payload.self)
+    return GatewayModels(
+      ids: payload.models,
+      details: payload.modelDetails ?? [],
+      discoveryError: payload.discoveryError
+    )
   }
 
   /// The bot's own model and reasoning level; nil fields are left alone.

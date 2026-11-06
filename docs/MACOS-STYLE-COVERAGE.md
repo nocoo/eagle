@@ -17,13 +17,14 @@ work is `322ed24` and `bdca848`. Current composition is specified in
 | Peer UI and dialogs | Central soft-tint/border recipes, chip geometry, shadow geometry and dialog insets; existing peer identity and history grouping remain unchanged. |
 | Sidebar / inspector / shell | Existing Theme.Sidebar/Inspector/Metric and motion; remaining section/device/empty-state details also use tokens. No changed freshness, task or device-policy semantics. |
 | Settings and page composition | Theme.Form/Page/Layout/Dialog; page spacing, row composition, field widths, usage chart dimensions, badge geometry and overlays. Main feature views no longer recreate plain/native action or text-entry primitives. SettingsStatusNote owns the persistent result lines; ToastCenter/SettingsToast own the transient ones (neutral, ✅ success, ⚠️ failure, retired on `Theme.Motion.toastDwell`); SettingsSectionRow's leading slot draws a bot's face in 用量. The 技能 page's table is the shared SettingsTableHeader/SettingsTableRow pair: the column widths live in `Theme.Page` and the description column takes the room that is left, so the header and its rows put the four columns at the same horizontal places, measured at the 960 pt settings width. The page's statement line and its refused-push note are both the shared SettingsStatusNote: the statement is neutral, the refusal is `.failure`, and no new spacing value was introduced. |
-| Creation and profile editing | CreationTextField and native ActionControl variants own prompt/font/height while retaining focus/submit and keyboard shortcuts. The pure BotFacePicker is now in EagleDesign; BotsCore persistence conversion stays in EagleFeatures. |
+| Creation and profile editing | IdentityField (EagleDesign) owns the borderless name/tag rows, their aria label, focus and submit; SettingsActionButton owns both dialog actions and their disabled look; DialogShortcut carries Return/Escape where no field has the keyboard. The pure BotFacePicker is in EagleDesign; BotsCore persistence conversion and the creation draft (one canonical colour per presentation) stay in EagleFeatures. |
+| Modal host | ModalHost (EagleDesign) owns the scrim, card surface, radius/hairline/shadow, traffic lights and Escape for every dialog the App draws; the shell owns the background blur, the workspace disable and the single typed presentation. Peer content, tool details and settings keep their own bodies and live updates. |
 | Native window bridges | App minimum window size, gallery window and approval window dimensions use tokens. Platform cursor/traffic-light coordination remains native. |
 | Gallery / snapshot UI | Gallery framing, cards, swatches, selection paint and layout use tokens. SnapshotRenderer's View padding uses the same tokens; capture viewport matrices remain fixture inputs. |
 
 ## Global discovery and rules
 
-The checked source tree currently contains **115 Swift files**. The scanner discovers
+The checked source tree currently contains **124 Swift files**. The scanner discovers
 all `apps/macos/Sources/**/*.swift` files, including future files, mixed feature/model
 files, Gallery and rendering/interaction fixtures. Only the exact Theme.swift definition
 owner may construct palette/type recipes; aliases cannot export those constructors.
@@ -55,6 +56,8 @@ they are not a production theme generator or a new dependency.
 
 These are not postponed UI styles:
 
+- The dialog card radius, shadow and 44/48 pt header/footer heights are tokens in
+  Theme.Dialog, not style literals; the hidden Return/Escape control paints nothing.
 - Normalized BotFace artwork and task-tree path/index arithmetic. Direct styling inside
   those helpers is still checked; the numeric allowance is not a color/font exemption.
 - Secret minimum length and preset TTLs, pairing lifetimes, timestamp unit conversion,

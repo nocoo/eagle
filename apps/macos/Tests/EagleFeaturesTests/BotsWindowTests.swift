@@ -440,8 +440,36 @@ final class StubCatalog: CatalogPort {
   var moved: [(String, String?)] = []
   var refuseDelete: Error?
   var models: [String] = ["auto/gpt-6-luna"]
+  /// The discovery failure the daemon reports beside the ids it kept.
+  var modelDiscoveryError: String?
   var agentChanges: [(String, String?, String?)] = []
+  /// Held open, so a save can be observed in flight.
+  var agentGate: Gate?
+  /// The daemon's refusal for the next change.
+  var agentError: Error?
+  /// The catalog takes the pair even when the conversation refuses it (saved, not applied).
+  var applyOnAgentError = false
   var retriedTasks: [(String, String)] = []
+  /// Held open, so a create can be observed in flight.
+  var createGate: Gate?
+
+  /// A latch a test opens when it wants a held call to finish.
+  final class Gate: @unchecked Sendable {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var opened = false
+
+    func wait() async {
+      if opened { return }
+      await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() async {
+      opened = true
+      continuation?.resume()
+      continuation = nil
+      await Task.yield()
+    }
+  }
 
   var providers: [ProviderSettings] = []
   var savedProviders: [(String, String?, Bool?)] = []
@@ -470,13 +498,29 @@ final class StubCatalog: CatalogPort {
     )
   }
 
-  func loadModels() async throws -> [String] { models }
+  func loadModels() async throws -> GatewayModels {
+    GatewayModels(
+      ids: models,
+      details: models.map {
+        ModelDetail(
+          id: $0, contextWindow: 200_000, maxTokens: 8_192, reasoning: true,
+          thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"])
+      },
+      discoveryError: modelDiscoveryError
+    )
+  }
 
   func setAgent(id: String, model: String?, thinkingLevel: String?) async throws -> BotSummary {
     agentChanges.append((id, model, thinkingLevel))
+    if let gate = agentGate {
+      agentGate = nil
+      await gate.wait()
+    }
     guard let index = bots.firstIndex(where: { $0.id == id }) else {
       throw ClientError("no bot \(id)")
     }
+    if applyOnAgentError, let model { bots[index].model.modelId = model }
+    if let agentError { throw agentError }
     if let model { bots[index].model.modelId = model }
     return bots[index]
   }
@@ -531,6 +575,7 @@ final class StubCatalog: CatalogPort {
   func create(
     title: String, label: String?, appearance: BotCreationAppearance
   ) async throws -> BotSummary {
+    if let createGate { await createGate.wait() }
     let bot = BotSummary(
       id: "b_new",
       title: title,
