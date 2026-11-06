@@ -50,7 +50,15 @@ struct CLISettingsLayoutTests {
 
     let button = try #require(
       entries(host).first { identifier($0) == "cli.copy.skill" })
-    #expect(axTitle(button)?.contains("复制") == true)
+    guard let (labelSlot, initialLabel) = labelSlotAndText(button) else {
+      print("CLI_COPY_DIAG no_label_slot \(describeCopySkill(node: button))")
+      Issue.record("cli.copy.skill: no AXTitle/AXDescription/AXValue")
+      return
+    }
+    print(
+      "CLI_COPY_DIAG label_slot=\(labelSlot.rawValue) initial=\(initialLabel) "
+        + "all=\(describeCopySkill(node: button))")
+    #expect(initialLabel == "复制命令", "button starts with 复制命令 on primary AX field")
 
     let press = NSSelectorFromString("accessibilityPerformPress")
     try #require(button.responds(to: press))
@@ -60,15 +68,15 @@ struct CLISettingsLayoutTests {
     #expect(
       NSPasteboard.general.string(forType: .string) == "eagle-dev --skill",
       "the click copied the command")
+    let afterPress = try #require(
+      entries(host).first { identifier($0) == "cli.copy.skill" })
     #expect(
-      entries(host).compactMap(title).filter { $0 == "已复制" }.count == 1,
-      "the pressed button says the copy happened")
-    // Visible label comes back on `accessibilityTitle` (AXTitle). Description/value are logged on
-    // timeout only for diagnosis.
-    try await waitForCopyCommandTitle(host: host)
+      labelText(afterPress, slot: labelSlot) == "已复制",
+      "same AX field as initial shows 已复制 after press; \(describeCopySkill(node: afterPress))")
+    try await waitForLabelReset(host: host, slot: labelSlot)
   }
 
-  private func waitForCopyCommandTitle(host: NSView) async throws {
+  private func waitForLabelReset(host: NSView, slot: LabelAttribute) async throws {
     let deadline = ContinuousClock.now.advanced(by: .seconds(6))
     var iteration = 0
     while true {
@@ -76,14 +84,19 @@ struct CLISettingsLayoutTests {
       host.layoutSubtreeIfNeeded()
       host.displayIfNeeded()
       if let node = entries(host).first(where: { identifier($0) == "cli.copy.skill" }),
-        axTitle(node) == "复制命令"
+        labelText(node, slot: slot) == "复制命令"
       {
+        print(
+          "CLI_COPY_DIAG reset_ok iteration=\(iteration) slot=\(slot.rawValue) "
+            + "all=\(describeCopySkill(node: node))")
         return
       }
       guard ContinuousClock.now < deadline else {
+        let tail = entries(host).first(where: { identifier($0) == "cli.copy.skill" }).map {
+          describeCopySkill(node: $0)
+        } ?? "missing cli.copy.skill"
         print(
-          "CLI_COPY_DIAG timeout iteration=\(iteration) "
-            + "copy_skill=\(describeCopySkill(host: host))"
+          "CLI_COPY_DIAG timeout iteration=\(iteration) slot=\(slot.rawValue) copy_skill=\(tail)"
         )
         throw NSError(domain: "CLISettingsLayoutTests", code: 1)
       }
@@ -93,33 +106,35 @@ struct CLISettingsLayoutTests {
     }
   }
 
-  private func describeCopySkill(host: NSView) -> String {
-    guard let node = entries(host).first(where: { identifier($0) == "cli.copy.skill" }) else {
-      return "missing cli.copy.skill"
+  private enum LabelAttribute: String {
+    case axTitle = "AXTitle"
+    case axDescription = "AXDescription"
+    case axValue = "AXValue"
+  }
+
+  /// First non-empty among Title → Description → Value (AppKit maps `Text` label inconsistently).
+  private func labelSlotAndText(_ node: NSObject) -> (LabelAttribute, String)? {
+    for slot in [LabelAttribute.axTitle, .axDescription, .axValue] {
+      if let s = labelText(node, slot: slot), !s.isEmpty { return (slot, s) }
     }
-    let t = axTitle(node).map { "AXTitle=\($0)" } ?? "AXTitle=nil"
-    let dPart = (attribute(node, "AXDescription") as? String).map { "AXDescription=\($0)" }
+    return nil
+  }
+
+  private func labelText(_ node: NSObject, slot: LabelAttribute) -> String? {
+    attribute(node, slot.rawValue) as? String
+  }
+
+  private func describeCopySkill(node: NSObject) -> String {
+    let t = labelText(node, slot: .axTitle).map { "AXTitle=\($0)" } ?? "AXTitle=nil"
+    let dPart = labelText(node, slot: .axDescription).map { "AXDescription=\($0)" }
     let d = dPart ?? "AXDescription=nil"
-    let vPart = (attribute(node, "AXValue") as? String).map { "AXValue=\($0)" }
+    let vPart = labelText(node, slot: .axValue).map { "AXValue=\($0)" }
     let v = vPart ?? "AXValue=nil"
     return "\(t) \(d) \(v)"
   }
 
-  /// `accessibilityTitle` only — matches the on-screen `Text` in `SettingsActionButton`.
-  private func axTitle(_ node: NSObject) -> String? {
-    attribute(node, "AXTitle") as? String
-  }
-
   private func identifier(_ node: NSObject) -> String? {
     attribute(node, "AXIdentifier") as? String
-  }
-
-  /// First non-empty AX string among title, description, value (tree walks / broad scans).
-  private func title(_ node: NSObject) -> String? {
-    for name in ["AXTitle", "AXDescription", "AXValue"] {
-      if let value = attribute(node, name) as? String, !value.isEmpty { return value }
-    }
-    return nil
   }
 
   private func attribute(_ node: NSObject, _ name: String) -> Any? {

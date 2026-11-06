@@ -134,6 +134,35 @@ struct TranscriptRowCostTests {
         + "ms_text=\(Self.fmt(uText)) rat=\(Self.fmt(uRich / max(uText, 0.000_001)))")
   }
 
+  /// [`MarkdownRenderer`]-prepared assistant markdown (real `.code`, etc.) in the same row shell;
+  /// paragraph path only swaps `MarkdownInline` for `Text(AttributedString)` with the same
+  /// font/lineSpacing/fixedSize. **Diagnostic only** — not a hotspot proof. Gate unchanged.
+  @Test("ROWCOST experiment: production-prepared blocks vs plain paragraph Text (diagnostic)")
+  func productionPreparedVsPlainAttributedParagraph() throws {
+    Self.logRunContext()
+    let entries = Self.entries(turns: 40)
+    let preparedProduction = try Self.productionPreparedMarkdown(entries)
+    let preparedFlattened = Self.prepared(entries)
+    Self.logPreparedFixture(entries: entries, prepared: preparedFlattened)
+    let prodView = Self.transcriptRows(
+      entries, preparedMarkdown: preparedProduction, paragraphMode: .productionMarkdownInline)
+    let plainView = Self.transcriptRows(
+      entries, preparedMarkdown: preparedProduction,
+      paragraphMode: .plainTextWithParagraphStyling)
+    let warm = {
+      _ = Self.pageCost(prodView)
+      _ = Self.pageCost(plainView)
+    }
+    for _ in 0..<2 { warm() }
+    let msProd = Self.pageCost(prodView)
+    let msPlain = Self.pageCost(plainView)
+    print(
+      "ROWCOST_EXPT prod_prepared vs plain_attributed_paragraph ms_prod=\(Self.fmt(msProd)) "
+        + "ms_plain=\(Self.fmt(msPlain)) rat=\(Self.fmt(msProd / max(msPlain, 0.000_001))) "
+        + "(MarkdownRenderer blocks + bubble shell; paragraph only differs)"
+    )
+  }
+
   private enum Kind {
     case rich
     case text
@@ -226,6 +255,19 @@ struct TranscriptRowCostTests {
     }
   }
 
+  /// Same string pipeline as [`MarkdownViewModel`] / [`AssistantBubble`] when `preparedBlocks` are
+  /// absent: fenced code, block quotes, tables — not flattened to one paragraph.
+  private static func productionPreparedMarkdown(_ entries: [TranscriptEntry]) throws
+    -> [String: [RenderedMarkdownBlock]]
+  {
+    var out: [String: [RenderedMarkdownBlock]] = [:]
+    for entry in entries {
+      guard case .assistant(let id, let blocks, _) = entry else { continue }
+      out[id] = try MarkdownRenderer.blocks(from: blocks.markdown)
+    }
+    return out
+  }
+
   /// Documents which assistant blocks exist in the transcript vs what `prepared()` supplies
   /// (`AttributedString` in a single `.paragraph` each). ROWCOST Text baseline uses
   /// `blocks.markdown` strings; rich rows use `AssistantBubble` + prepared blocks on this path
@@ -251,7 +293,8 @@ struct TranscriptRowCostTests {
   }
 
   private static func transcriptRows(
-    _ entries: [TranscriptEntry], preparedMarkdown: [String: [RenderedMarkdownBlock]]
+    _ entries: [TranscriptEntry], preparedMarkdown: [String: [RenderedMarkdownBlock]],
+    paragraphMode: AssistantBubbleParagraphExperiment = .productionMarkdownInline
   ) -> some View {
     TranscriptScrollColumn(focusRequestCounter: .constant(0)) {
       ForEach(entries) { entry in
@@ -263,6 +306,7 @@ struct TranscriptRowCostTests {
           onAnswerSecret: nil
         )
         .id(entry.id)
+        .environment(\.assistantBubbleParagraphExperiment, paragraphMode)
       }
     }
   }

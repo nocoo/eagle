@@ -13,10 +13,10 @@ public enum RenderedMarkdownBlock: Equatable, Sendable {
 public actor MarkdownRenderer {
   public init() {}
 
-  public func render(_ text: String) throws -> [RenderedMarkdownBlock] {
-    try Task.checkCancellation()
-    return try MarkdownBlock.parse(text).map { block in
-      try Task.checkCancellation()
+  /// Synchronous parse + inline attribution (same mapping as `render`, minus cancellation).
+  /// Benchmarks use this for real multi-block output (e.g. `.code`, quotes).
+  public nonisolated static func blocks(from text: String) throws -> [RenderedMarkdownBlock] {
+    try MarkdownBlock.parse(text).map { block in
       switch block {
       case .paragraph(let value): return .paragraph(MarkdownDocument.inline(value))
       case .heading(let level, let value):
@@ -32,6 +32,11 @@ public actor MarkdownRenderer {
         )
       }
     }
+  }
+
+  public func render(_ text: String) throws -> [RenderedMarkdownBlock] {
+    try Task.checkCancellation()
+    return try Self.blocks(from: text)
   }
 }
 
