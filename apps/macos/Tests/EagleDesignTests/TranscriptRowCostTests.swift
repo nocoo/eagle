@@ -27,7 +27,7 @@ struct TranscriptRowCostTests {
 
     // Balance measure order across the six permutations so no single variant sits in the middle
     // every round (diagnostics + fairer paired ratios).
-    let orderings: [Ordering] = [.RTB, .RBT, .TRB, .TBR, .BRT, .BTR]
+    let orderings: [Ordering] = [.rtb, .rbt, .trb, .tbr, .brt, .btr]
 
     var ratiosVsText: [Double] = []
     var ratiosVsBubble: [Double] = []
@@ -111,27 +111,27 @@ struct TranscriptRowCostTests {
   }
 
   private enum Ordering {
-    case RTB, RBT, TRB, TBR, BRT, BTR
+    case rtb, rbt, trb, tbr, brt, btr
 
     var label: String {
       switch self {
-      case .RTB: return "RTB"
-      case .RBT: return "RBT"
-      case .TRB: return "TRB"
-      case .TBR: return "TBR"
-      case .BRT: return "BRT"
-      case .BTR: return "BTR"
+      case .rtb: return "RTB"
+      case .rbt: return "RBT"
+      case .trb: return "TRB"
+      case .tbr: return "TBR"
+      case .brt: return "BRT"
+      case .btr: return "BTR"
       }
     }
 
     var steps: [Kind] {
       switch self {
-      case .RTB: return [.rich, .text, .bubble]
-      case .RBT: return [.rich, .bubble, .text]
-      case .TRB: return [.text, .rich, .bubble]
-      case .TBR: return [.text, .bubble, .rich]
-      case .BRT: return [.bubble, .rich, .text]
-      case .BTR: return [.bubble, .text, .rich]
+      case .rtb: return [.rich, .text, .bubble]
+      case .rbt: return [.rich, .bubble, .text]
+      case .trb: return [.text, .rich, .bubble]
+      case .tbr: return [.text, .bubble, .rich]
+      case .brt: return [.bubble, .rich, .text]
+      case .btr: return [.bubble, .text, .rich]
       }
     }
   }
