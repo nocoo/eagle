@@ -410,7 +410,7 @@ export class BotRegistry {
     const entry = this.#entry(botId, trace);
     return this.#serializeAgent(botId, async () => {
       const current = entry.config;
-      const currentLevel = await this.#storedLevel(entry, trace);
+      const currentLevel = this.#storedLevel(entry);
       const model = change.model ?? current.model;
       const level = change.thinkingLevel ?? currentLevel;
       const sameModel =
@@ -933,7 +933,7 @@ export class BotRegistry {
         id: entry.config.id,
         dir: this.#options.directory.botDir(entry.config.id),
         model: entry.config.model,
-        thinkingLevel: await this.#storedLevel(entry, trace),
+        thinkingLevel: this.#storedLevel(entry),
         toolGroups: resolveToolGroups(entry.config.toolGroups ?? this.#defaultToolGroups),
         trace,
       });
@@ -994,30 +994,24 @@ export class BotRegistry {
   }
 
   /**
-   * The level a bot runs at. A bot created before the field existed gets the daemon's
-   * current default once, written into the catalog, and keeps it from then on: the
-   * default is a default for new bots, never a value an existing bot follows.
+   * The level a bot runs at, from the catalog. The startup migration gives every bot one,
+   * so a missing level here means the catalog changed under the daemon: the bot cannot run
+   * and says why. It is never replaced with the daemon's default, which belongs to new
+   * bots only.
    */
-  async #storedLevel(entry: Entry, trace: string): Promise<string> {
+  #storedLevel(entry: Entry): string {
     const stored = entry.config.thinkingLevel;
     if (stored !== undefined) return stored;
-    const config = await this.#write(trace, entry.config.id, () =>
-      this.#options.directory.setAgent(
-        entry.config.id,
-        { thinkingLevel: this.#defaultThinkingLevel },
-        (this.#options.now?.() ?? new Date()).toISOString(),
-      ),
+    entry.state = "unavailable";
+    entry.unavailable = {
+      reason: "internal",
+      message: "the catalog has no thinking level for this bot",
+    };
+    throw new ClassifiedFailure(
+      newFailure("internal", "core"),
+      "not_admitted",
+      "the catalog has no thinking level for this bot",
     );
-    entry.config = config;
-    const written = config.thinkingLevel;
-    if (written === undefined) {
-      throw new ClassifiedFailure(
-        newFailure("internal", "core"),
-        "not_admitted",
-        "the catalog did not keep the bot's thinking level",
-      );
-    }
-    return written;
   }
 
   #touch(entry: Entry): void {

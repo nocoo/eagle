@@ -453,6 +453,23 @@ test("a bot created before the level existed is migrated once and keeps it", asy
     const stored = (await setup.directory.load())[0];
     assert.equal(stored?.thinkingLevel, setup.defaultLevel, "the catalog did not move");
 
+    // An idle close and a reopen still run the level the catalog holds, and a level-only
+    // change is written against the bot's own model.
+    await setup.timers.advance(1_000);
+    await setup.registry.open("b_bot0", "tr_migrate_0003");
+    assert.equal(
+      setup.specs.at(-1)?.thinkingLevel,
+      setup.defaultLevel,
+      "the reopen keeps the migrated level",
+    );
+    const patched = await setup.registry.setAgent(
+      "b_bot0",
+      { thinkingLevel: "off" },
+      "tr_migrate_0004",
+    );
+    assert.equal(patched.model.modelId, "faux-1", "the level-only change keeps the model");
+    assert.equal((await setup.directory.load())[0]?.thinkingLevel, "off");
+
     // A new daemon with another default leaves it alone, and a new bot takes that default.
     await setup.registry.shutdown();
     const restarted = new BotRegistry({
@@ -468,17 +485,67 @@ test("a bot created before the level existed is migrated once and keeps it", asy
     });
     await restarted.start();
     const afterRestart = (await setup.directory.load()).find((bot) => bot.id === "b_bot0");
-    assert.equal(
-      afterRestart?.thinkingLevel,
-      setup.defaultLevel,
-      "a second daemon does not migrate it again",
-    );
+    assert.equal(afterRestart?.thinkingLevel, "off", "a second daemon does not migrate it again");
     await restarted.create("new", "tr_migrate_0002");
     const created = (await setup.directory.load()).find((bot) => bot.title === "new");
     assert.equal(created?.thinkingLevel, "max", "a new bot records the later default");
     await restarted.shutdown();
   } finally {
     await setup.registry.shutdown().catch(() => false);
+    await setup.cleanup();
+  }
+});
+
+test("a bare catalog is given the level before its first open", async () => {
+  const setup = await bench({ bots: ["a"], agentLevels: () => ["off", "low", "high"] });
+  try {
+    await setup.registry.start();
+    // A hand-edited catalog after the start: the daemon must not invent a level for it.
+    await setup.directory.setAgent(
+      "b_bot0",
+      { model: { provider: "faux", modelId: "faux-1" } },
+      "x",
+    );
+    const edited = (await setup.directory.load())[0];
+    assert.equal(edited?.thinkingLevel, setup.defaultLevel, "the write kept the level");
+    await setup.registry.shutdown();
+
+    const root = await mkdtemp(join(tmpdir(), "bots-registry-"));
+    try {
+      const real = await nodeDirectoryFs();
+      const directory = new BotDirectory(root, real);
+      await directory.create({
+        id: "b_bare",
+        title: "no level",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        model: { provider: "faux", modelId: "faux-1" },
+      });
+      const { log } = captureLog();
+      const levels: string[] = [];
+      const registry = new BotRegistry({
+        directory,
+        openRuntime: async (spec) => {
+          levels.push(spec.thinkingLevel ?? "none");
+          return new FakeRuntime().open(spec);
+        },
+        model: { provider: "faux", modelId: "faux-1" },
+        thinkingLevel: "high",
+        log,
+        idleCloseMs: 1_000,
+        quarantineRetryMs: 5_000,
+        closeDeadlineMs: 40,
+        bootTrace: () => "tr_boot_probe",
+      });
+      // The startup migration writes the default once, so an open afterwards is fine.
+      await registry.start();
+      await registry.open("b_bare", "tr_bare_0001");
+      assert.deepEqual(levels, ["high"], "the migrated level is what the bot runs");
+      await registry.shutdown();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  } finally {
     await setup.cleanup();
   }
 });
