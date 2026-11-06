@@ -286,9 +286,9 @@ public struct SettingsView: View {
     }
   }
 
-  /// The 技能 page: the folders the App looks in, and the skills it found there. Nothing on
-  /// this page is connected to a Bot yet: a tick is a note this machine keeps until a Bot
-  /// can use it.
+  /// The 技能 page: the folders the App looks in, the skills it found there, and the ticks
+  /// this machine's Bot service reads. A tick is sent when it is made, so a Bot already has it
+  /// before the person asks.
   private var skillsPage: some View {
     VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
       skillRootsCard
@@ -321,7 +321,7 @@ public struct SettingsView: View {
 
   /// The skills themselves: a keyword, a filter, and one row per skill.
   private var skillListCard: some View {
-    sectionCard("技能", detail: "扫描到的技能；勾选只是先记下来，还没有连接到任何 Bot") {
+    sectionCard("技能", detail: "扫描到的技能；勾选即对这台机器的 Bot 服务生效") {
       HStack(spacing: Theme.Layout.controlGap) {
         SettingsTextField("搜索名称、描述或目录", text: $skills.keyword)
           .frame(width: Self.fieldWidth)
@@ -336,7 +336,11 @@ public struct SettingsView: View {
         )
       }
     } body: {
-      SettingsStatusNote("技能还没有连接到任何 Bot；这里的选择只保存在这台机器上。")
+      SettingsStatusNote(
+        "勾选即生效：这台机器的 Bot 服务会看到勾选的技能，Bot 会先用 skill_read 读到 SKILL.md 再照着做。")
+      if let pushNote = skills.pushNote {
+        SettingsStatusNote(pushNote, kind: .failure)
+      }
       Divider().overlay(Theme.Palette.line)
       SettingsStatusNote(
         "共 \(skills.totalCount) 个技能 · 已勾选 \(skills.selectedCount) · 显示 \(skills.visibleCount)"

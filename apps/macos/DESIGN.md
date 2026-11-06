@@ -168,10 +168,11 @@ outlines retain their semantic widths, distinct from physical-pixel separators.
 
 ## The 技能 page
 
-The 技能 page (settings → 技能) says where skills come from and what was found there. It is
-deliberately **not connected to a Bot**: the page scans folders, remembers what a person
-ticked on this machine, and says plainly that nothing uses the selection yet. No daemon
-call, no protocol change and no tool group carries it.
+The 技能 page (settings → 技能) says where skills come from and what was found there, and
+its ticks are live: the App pushes the selection to this machine's Bot service, which is what
+every Bot reads. The page says so in one line — 勾选即生效, and a Bot reads the file with
+`skill_read` before following it — and it never mentions a tool group, because the ticks are
+the switch.
 
 - The scan roots are `~/.agents/skills` (always scanned, never removable, shown with a `~`)
   and the folders the person added with a native folder picker, in the order they were
@@ -198,6 +199,13 @@ call, no protocol change and no tool group carries it.
 - The list has a keyword field (name, description and directory) and a 全部/已勾选/未勾选
   filter, and it states the honest counts. Nothing is ticked until a person ticks it, and
   the ticks and the custom roots live in this App's own defaults.
+- A tick, an added or removed root and a finished scan each push the whole selection (name,
+  version, description and the `~`-shaped directory) to the daemon through the same token
+  client the other settings pages use, one push at a time so two quick ticks cannot land out
+  of order. A refused push changes nothing locally: the tick stays, the card shows the
+  daemon's own message as a ⚠️ note under the statement, and the next change or page visit
+  sends the selection again; a successful push clears the note. A skill the scan no longer
+  finds is not pushed as if it still existed.
 - The scan reads the filesystem off the main actor and publishes on it; 重新扫描 rescans
   without losing the ticks. Every reload is a request of its own and only the newest one
   answers the page: a request that a newer one has superseded leaves the page alone and

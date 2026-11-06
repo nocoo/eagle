@@ -1,3 +1,5 @@
+import BotsCore
+import BotsTransport
 import Foundation
 import Testing
 
@@ -306,9 +308,10 @@ private struct SkillsFixture {
   }
 
   func model(
-    scan: @escaping @Sendable ([URL]) async -> SkillScanResult = { SkillScanner.scan(roots: $0) }
+    scan: @escaping @Sendable ([URL]) async -> SkillScanResult = { SkillScanner.scan(roots: $0) },
+    push: @escaping SkillPush = { _ in }
   ) -> SkillsSettingsViewModel {
-    SkillsSettingsViewModel(defaults: defaults, home: home, scan: scan)
+    SkillsSettingsViewModel(defaults: defaults, home: home, scan: scan, push: push)
   }
 
   func writeSkill(_ folder: String, name: String, description: String, version: String) throws {
@@ -371,4 +374,123 @@ private actor ScanCalls {
   }
 
   var count: Int { calls }
+}
+
+/// What a page's push actually sent, and what it should answer: a recorder the tests own, so
+/// the page's own wording is the only thing under test.
+private actor SkillPushRecorder {
+  private(set) var pushes: [[SelectedSkill]] = []
+  var failure: String?
+
+  func push(_ skills: [SelectedSkill]) async throws {
+    if let failure { throw ClientError(failure) }
+    pushes.append(skills)
+  }
+
+  func fail(_ message: String?) { failure = message }
+
+  var last: [SelectedSkill]? { pushes.last }
+}
+
+@Suite("Skills settings pushes its ticks", .serialized)
+@MainActor
+struct SkillsSettingsPushTests {
+  @Test("ticking and unticking push the whole selection, in the order the page lists it")
+  func ticksArePushed() async throws {
+    let fixture = try SkillsFixture()
+    defer { fixture.cleanUp() }
+    try fixture.writeSkill(
+      "alpha", name: "alpha-skill", description: "Runs alpha.", version: "1.0.0")
+    try fixture.writeSkill("beta", name: "beta-skill", description: "Runs beta.", version: "2.0.0")
+    let recorder = SkillPushRecorder()
+    let model = fixture.model(push: { try await recorder.push($0) })
+    await model.reload()
+    await model.awaitSkillPush()
+    #expect(await recorder.last == [], "an untouched page clears what the daemon had")
+
+    let beta = try #require(model.skills.first { $0.name == "beta-skill" })
+    let alpha = try #require(model.skills.first { $0.name == "alpha-skill" })
+    model.setSelected(true, for: beta)
+    await model.awaitSkillPush()
+    #expect(
+      await recorder.last == [
+        SelectedSkill(
+          name: "beta-skill", version: "2.0.0", description: "Runs beta.",
+          path: "~/.agents/skills/beta")
+      ])
+
+    model.setSelected(true, for: alpha)
+    await model.awaitSkillPush()
+    #expect(
+      await recorder.last?.map(\.name) == ["alpha-skill", "beta-skill"],
+      "the daemon receives the page's own order")
+
+    model.setSelected(false, for: alpha)
+    await model.awaitSkillPush()
+    #expect(await recorder.last?.map(\.name) == ["beta-skill"])
+    model.setSelected(false, for: beta)
+    await model.awaitSkillPush()
+    #expect(await recorder.last == [], "unticking everything is a value, not silence")
+  }
+
+  @Test("adding a root pushes what the new scan found, including a skill outside the home")
+  func rootChangesArePushed() async throws {
+    let fixture = try SkillsFixture()
+    defer { fixture.cleanUp() }
+    let extra = FileManager.default.temporaryDirectory
+      .appendingPathComponent("eagle-skills-push-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: extra) }
+    try FileManager.default.createDirectory(at: extra, withIntermediateDirectories: true)
+    try fixture.writeSkill(
+      in: extra, "gamma", name: "gamma-skill", description: "Runs gamma.", version: "3.0.0")
+    let recorder = SkillPushRecorder()
+    let model = fixture.model(push: { try await recorder.push($0) })
+
+    await model.addRoots([extra])
+    await model.awaitSkillPush()
+    let gamma = try #require(model.skills.first { $0.name == "gamma-skill" })
+    #expect(gamma.directory.standardizedFileURL == extra.appendingPathComponent("gamma"))
+
+    model.setSelected(true, for: gamma)
+    await model.awaitSkillPush()
+    #expect(
+      await recorder.last == [
+        SelectedSkill(
+          name: "gamma-skill", version: "3.0.0", description: "Runs gamma.",
+          path: extra.appendingPathComponent("gamma").standardizedFileURL.path)
+      ],
+      "a path outside the home stays absolute, because the daemon has to reach it")
+
+    await model.removeRoot(extra)
+    await model.awaitSkillPush()
+    #expect(
+      await recorder.last == [],
+      "a skill the scan no longer finds is not pushed as if it still existed")
+  }
+
+  @Test("a failed push keeps the tick, says so on the page, and the next visit tries again")
+  func failureIsReportedAndRetried() async throws {
+    let fixture = try SkillsFixture()
+    defer { fixture.cleanUp() }
+    try fixture.writeSkill(
+      "alpha", name: "alpha-skill", description: "Runs alpha.", version: "1.0.0")
+    let recorder = SkillPushRecorder()
+    await recorder.fail("the daemon is not reachable")
+    let model = fixture.model(push: { try await recorder.push($0) })
+    await model.reload()
+    let alpha = try #require(model.skills.first)
+    model.setSelected(true, for: alpha)
+    await model.awaitSkillPush()
+    #expect(model.isSelected(alpha), "the local tick survives a failed push")
+    #expect(model.selectedPaths == [alpha.id])
+    let note = try #require(model.pushNote)
+    #expect(note.contains("the daemon is not reachable"), "the page carries the daemon's words")
+    #expect(fixture.model(push: { _ in }).selectedPaths == [alpha.id], "and it is stored locally")
+
+    await recorder.fail(nil)
+    await model.reload()
+    await model.awaitSkillPush()
+    #expect(model.pushNote == nil, "a successful push clears the note")
+    #expect(await recorder.last?.map(\.name) == ["alpha-skill"])
+  }
 }

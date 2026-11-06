@@ -206,6 +206,53 @@ final class CatalogHTTPClientTests: XCTestCase {
     XCTAssertEqual(savedProviderBody["apiKey"] as? String, "k")
   }
 
+  func testSkillsDecodeFromSettingsAndSaveOnTheirOwn() async throws {
+    var savedBody: [String: Any] = [:]
+    StubProtocol.handler = { request in
+      switch (request.httpMethod, request.url?.path) {
+      case ("GET", "/v1/settings"):
+        return (
+          200,
+          Data(
+            #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://x/v1","model":"m","hasApiKey":true,"skills":[{"name":"alpha","version":"1.0.0","description":"Runs alpha.","path":"~/.agents/skills/alpha"}]}}"#
+              .utf8)
+        )
+      case ("PUT", "/v1/settings"):
+        if let body = bodyData(request),
+          let parsed = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
+        {
+          savedBody = parsed
+        }
+        return (
+          200,
+          Data(
+            #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://x/v1","model":"m","hasApiKey":true,"skills":[]}}"#
+              .utf8)
+        )
+      default:
+        return (404, Data())
+      }
+    }
+    let loaded = try await client.loadGateway()
+    XCTAssertEqual(
+      loaded.settings.skills,
+      [
+        SelectedSkill(
+          name: "alpha", version: "1.0.0", description: "Runs alpha.",
+          path: "~/.agents/skills/alpha")
+      ])
+    try await client.saveSkills([])
+    XCTAssertEqual(savedBody["skills"] as? [[String: String]], [])
+    XCTAssertNil(savedBody["model"], "a skills push leaves every other setting alone")
+    try await client.saveSkills([
+      SelectedSkill(
+        name: "beta", version: "", description: "Runs beta.", path: "/skills/beta")
+    ])
+    let sent = try XCTUnwrap(savedBody["skills"] as? [[String: String]])
+    XCTAssertEqual(
+      sent, [["name": "beta", "version": "", "description": "Runs beta.", "path": "/skills/beta"]])
+  }
+
   func testUsageRequestsTheChosenRetentionWindow() async throws {
     StubProtocol.handler = { request in
       XCTAssertEqual(request.url?.path, "/v1/usage")

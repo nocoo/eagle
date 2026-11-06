@@ -4147,3 +4147,24 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 - No production deployment or live Cloudflare/billing test was performed. Real
   model selection, installed-App first run, Herdr collection, viewer auth, D1 and
   physical two-Mac acceptance remain unverified. Only the steering pane remains.
+
+## 2026-11-06 13:57 +08 — The 技能 page's ticks reach a Bot
+
+- The reported gap is closed on every hop that exists here: the App pushes its ticks to
+  `PUT /v1/settings` (`skills`), the daemon stores them in `gateway.json`, `bots-skills`
+  lists them as the prompt index on every ask, and `skill_read({name})` returns one selected
+  `SKILL.md`. Passing evidence: `tests/eval/cases/skills-enabled.json` on a real daemon with a
+  scripted model (tool ran, the file's own sentence reached the model, an unselected name was
+  refused and the first result stayed), all 25 eval cases green, and `apps/bots` `npm run
+  check` green at 1 047 tests with 95.83% lines / 88.97% branches / 91.11% functions.
+- App side: ticks, root add/remove and a finished scan each push the selection through the
+  token client; a refused push keeps the tick, shows the daemon's message as a `.failure`
+  note and is retried on the next change or page visit. `swift test` in `apps/macos` passed
+  385 tests in 62 suites, `Scripts/coverage.sh` reported 94.8% of the logic layer,
+  `swift format lint --strict` was clean for both Swift packages and `npm run check:design`
+  passed.
+- Not verified: no real test-group Bot was asked through `eagle-dev`, no dev App was started
+  (`swift run` was out of scope for this task), and no installed-App or live-daemon
+  verification of the push happened here. The App's
+  push uses the same token and port every other settings page uses, but its end-to-end path
+  against a running daemon on this machine is still the owner's manual check.

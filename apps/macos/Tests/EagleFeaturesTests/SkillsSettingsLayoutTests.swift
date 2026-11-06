@@ -1,4 +1,5 @@
 import AppKit
+import BotsCore
 import Foundation
 import ObjectiveC
 import SwiftUI
@@ -7,11 +8,11 @@ import Testing
 @testable import EagleFeatures
 
 /// The 技能 page as a person meets it: the rendered tree carries the scan roots, the skill
-/// rows, the search field and the plain statement that nothing is connected to a Bot yet.
+/// rows, the search field and the statement that a tick is live for this machine's Bot service.
 @Suite("Skills settings layout", .serialized)
 @MainActor
 struct SkillsSettingsLayoutTests {
-  @Test("the page shows the scan roots, a skill row and the statement about Bots")
+  @Test("the page shows the scan roots, a skill row and what the ticks are for")
   func skillsPage() async throws {
     let fixture = try SkillsLayoutFixture()
     defer { fixture.cleanUp() }
@@ -30,8 +31,14 @@ struct SkillsSettingsLayoutTests {
       nodes.compactMap(title).contains { $0.contains("搜索") },
       "the keyword field is on the page")
     #expect(
-      nodes.compactMap(title).contains { $0.contains("还没有连接到任何 Bot") },
-      "the page says plainly that no Bot uses these skills yet")
+      nodes.compactMap(title).contains { $0.contains("这台机器的 Bot 服务") },
+      "the page says the ticks are live for this machine's Bot service")
+    #expect(
+      nodes.compactMap(title).contains { $0.contains("skill_read") },
+      "and that a Bot reads the file with skill_read before following it")
+    #expect(
+      nodes.compactMap(title).contains { $0.contains("还没有连接到任何 Bot") } == false,
+      "the old not-connected sentence is gone")
     #expect(model.skills.count == 1)
   }
 
@@ -77,6 +84,30 @@ struct SkillsSettingsLayoutTests {
     #expect(
       path == rowPath,
       "the path column of the header is where the path column of a row is")
+  }
+
+  @Test("a refused push is a ⚠️ note on the page, and the tick stays")
+  func pushFailureIsOnThePage() async throws {
+    let fixture = try SkillsLayoutFixture()
+    defer { fixture.cleanUp() }
+    try fixture.writeSkill(
+      "alpha-dir", name: "alpha-skill", description: "Runs alpha.", version: "2.0.0")
+    let (skills, window) = try await fixture.host(push: { _ in
+      throw ClientError("the daemon is not reachable")
+    })
+    defer { window.orderOut(nil) }
+    let skill = try #require(skills.skills.first)
+    skills.setSelected(true, for: skill)
+    await skills.awaitSkillPush()
+    window.contentView?.layoutSubtreeIfNeeded()
+    let nodes = entries(try #require(window.contentView))
+    #expect(
+      nodes.compactMap(title).contains { $0.contains("the daemon is not reachable") },
+      "the daemon's own answer is on the page")
+    #expect(
+      nodes.compactMap(title).contains { $0 == "⚠️" },
+      "the note carries the failure marker")
+    #expect(skills.isSelected(skill), "a refused push never unticks what the person ticked")
   }
 
   private func title(_ node: NSObject) -> String? {
@@ -147,8 +178,12 @@ private struct SkillsLayoutFixture {
       to: directory.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
   }
 
-  func host() async throws -> (SkillsSettingsViewModel, NSWindow) {
-    let skills = SkillsSettingsViewModel(defaults: defaults, home: home)
+  func host(
+    push: @escaping SkillPush = { _ in }
+  ) async throws -> (
+    SkillsSettingsViewModel, NSWindow
+  ) {
+    let skills = SkillsSettingsViewModel(defaults: defaults, home: home, push: push)
     let model = SettingsViewModel()
     model.selection = .skills
     NSApplication.shared.setActivationPolicy(.prohibited)
