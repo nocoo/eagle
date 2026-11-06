@@ -171,12 +171,13 @@ Gateway rules:
   global — every bot talks to the same gateway — so a new endpoint or a new key reaches
   every bot at once, while the model id stays per bot. A malformed URL, an empty model
   or an empty key is a `400` and nothing is written.
-- **The reasoning level is one of seven names, and the model decides which it takes.**
-  `thinkingLevel` is one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
-  `medium` is the default when the field or the whole file is absent. A level a model does
-  not support is a `400 invalid_command` and nothing is written: the daemon never lowers
-  a level behind the person's back. `GET /v1/models` reports the levels each model
-  accepts, so a client never offers a level the model would refuse.
+- **The reasoning level is one of seven names, and it is a request.** `thinkingLevel` is one
+  of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; `medium` is the default when
+  the field or the whole file is absent. The daemon sends exactly the level it stored and
+  never lowers one behind the person's back; whether the gateway honours it is the
+  gateway's business, and a refusal is the run's error (`unanswered{model_error}`), not a
+  silent fallback and not a different level. `GET /v1/models` reports the levels the daemon
+  will request.
 - **Every bot stores its own pair.** The catalog records `{ model, thinkingLevel }` for
   every bot, and a bot created before the field existed is given the current default once,
   so a later change of the default cannot move it.
@@ -226,9 +227,9 @@ Gateway rules:
   not save and does not spend a generation.
 - **The gateway's own model is a default, not a registry.** The daemon registers every model
   the gateway lists, plus the models bots store and the default the settings name, so a
-  bot keeps working when the gateway stops listing its model. A model the daemon cannot
-  describe is registered with the daemon's declared window and the standard levels; it is
-  never silently replaced by the default.
+  bot keeps working when the gateway stops listing its model. Every model is registered
+  with the daemon's declared caps and all seven levels; it is never silently replaced by
+  the default.
 
 `instance` is a random id chosen at daemon start; a client that sees it change
 knows the daemon restarted and reconnects. Errors use
@@ -432,10 +433,10 @@ gateway itself. The `agent` capability is `true`.
 - **The pair is one change.** A request that names a model, a level, or both is answered
   with the pair the bot ends up running with. The catalog is written once and the
   conversation is configured once, so a bot never records a model it does not run with.
-- **The result must be a pair the model accepts.** The level must be one the named model
-  supports; a model that cannot take the bot's current level cannot be chosen without
-  naming a level it can take. An unknown model, an unknown level and an impossible pair
-  are a `400 invalid_command` and nothing is written.
+- **The level must be one of the seven.** Anything else, and a request that names no field
+  at all, is a `400 invalid_command` and nothing is written. A model the daemon can
+  describe more precisely — none today, because the gateway publishes ids only — narrows
+  the set it accepts.
 - **The change reaches the next request, not the running one.** A conversation that is
   answering keeps its answer: the model and the level of a request are fixed when it is
   prepared, so the change applies from the next prepared request. Nothing is aborted,
@@ -460,9 +461,13 @@ additive event: older clients consume its revision and ignore it under I8.
 ```
 
 `models` stays a list of ids, so a client that reads only it loses nothing.
-`modelDetails` is additive and describes the same ids. `discoveryError` is present only
-when the gateway could not be asked for its list: an empty `models` with that field is a
-failed discovery, and an empty `models` without it is a gateway that offers no model.
+`modelDetails` is additive and describes the same ids. It reports what the daemon **will
+request**, not what it verified: the gateway publishes ids and nothing else, so
+`contextWindow` and `maxTokens` are the daemon's declared caps (`BOTS_CONTEXT_WINDOW`,
+`BOTS_MAX_TOKENS`) and `thinkingLevels` is the seven levels the daemon sends. No entry
+claims upstream support. `discoveryError` is present only when the gateway could not be
+asked for its list: an empty `models` with that field is a failed discovery, and an empty
+`models` without it is a gateway that offers no model.
 
 ## Providers
 

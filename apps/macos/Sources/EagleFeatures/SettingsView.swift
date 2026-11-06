@@ -198,7 +198,7 @@ public struct SettingsView: View {
         Divider().overlay(Theme.Palette.line)
         SettingsSectionRow(
           "默认思考等级",
-          detail: "新建 Bot 的推理努力程度；已有 Bot 在自己的检查器里单独调整"
+          detail: "新建 Bot 的推理努力程度；已有 Bot 在检查器里单独调整，网关是否支持由网关决定"
         ) {
           thinkingLevelMenu
         }

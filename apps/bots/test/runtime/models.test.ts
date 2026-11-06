@@ -1,5 +1,5 @@
 // The model registry (docs/bots/RUNTIME.md, "The model registry"): what the gateway
-// offers, what the daemon knows about each model, and what happens when the gateway
+// offers, what the daemon will request from each model, and what happens when the gateway
 // cannot be asked.
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -22,6 +22,8 @@ const registry = (options: { fetch?: typeof fetch } = {}) =>
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
   });
 
+const ALL_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
 test("the gateway's models are registered and described", async () => {
   const models = registry({
     fetch: gateway({ data: [{ id: "auto/gpt-6-luna" }, { id: "auto/gpt-6-sol" }] }),
@@ -33,24 +35,16 @@ test("the gateway's models are registered and described", async () => {
   const luna = details.find((entry) => entry.id === "auto/gpt-6-luna");
   assert.ok(luna !== undefined);
   assert.equal(luna.reasoning, true);
-  assert.equal(luna.contextWindow, 272_000, "the catalogue knows the real window");
+  assert.equal(
+    luna.contextWindow,
+    200_000,
+    "the window is the daemon's declared cap, not a claim about the model",
+  );
+  assert.equal(luna.maxTokens, 8_192);
   assert.deepEqual(
     [...luna.thinkingLevels],
-    ["off", "low", "medium", "high", "xhigh", "max"],
-    "the levels are the ones the model accepts",
-  );
-});
-
-test("a model the catalogue does not know takes every level and the daemon's window", async () => {
-  const models = registry({ fetch: gateway({ data: [{ id: "house/custom" }] }) });
-  await models.discover();
-  const detail = models.metadata().find((entry) => entry.id === "house/custom");
-  assert.ok(detail !== undefined);
-  assert.equal(detail.contextWindow, 200_000, "the declared window is used");
-  assert.equal(detail.reasoning, true);
-  assert.deepEqual(
-    [...detail.thinkingLevels],
-    ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+    ALL_LEVELS,
+    "every level is requested, `xhigh` and `max` included",
   );
 });
 
@@ -86,10 +80,7 @@ test("a model a bot stores stays usable when the gateway does not list it", asyn
   assert.ok(models.models.getModel("magpie", "house/kept") !== undefined);
   const support = models.support({ provider: "magpie", modelId: "house/kept" });
   assert.equal(support.known, true);
-  assert.deepEqual(
-    [...support.levels],
-    ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-  );
+  assert.deepEqual([...support.levels], ALL_LEVELS);
 });
 
 test("without an endpoint or a key the registry holds no model at all", async () => {

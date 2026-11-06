@@ -613,12 +613,16 @@ is one catalog write and one runtime commit, so a bot never records a pair it do
 with; a level the model does not take is a `400` rather than a silent clamp, and a failed
 catalog write puts the conversation back on the pair it had.
 
-The model facts come from pi-ai's own catalogue: an id is matched by its whole name and by
-the name after its last `/`, because a routing gateway publishes `auto/gpt-6-luna` for the
-model the catalogue calls `gpt-6-luna`. The adapter asks `getSupportedThinkingLevels`
-before it configures a pair, so the levels a picker offers are the levels the model takes.
-`GET /v1/models` keeps `models` as string ids and adds `modelDetails` beside it; a discovery
-that failed is reported apart from a gateway that offers no model.
+The gateway publishes ids and nothing else, so the daemon infers no capability from a name:
+every model is registered with the daemon's declared caps (`BOTS_CONTEXT_WINDOW`,
+`BOTS_MAX_TOKENS`) and with all seven levels mapped to themselves, `off` to the gateway's
+no-effort value. pi-ai lowers `xhigh` and `max` unless the model declares them, so that
+explicit map is what makes the request carry the chosen level; a gateway refusal is the
+run's error, never a fallback. `test/runtime/model-request.test.ts` proves it on a real
+Responses HTTP request, not on a faux snapshot: `xhigh` and `max` arrive as themselves and
+`off` arrives as `none`. `GET /v1/models` keeps `models` as string ids and adds
+`modelDetails`, which reports what the daemon will request; a discovery that failed is
+reported apart from a gateway that offers no model.
 
 Evidence: `apps/bots` `npm run check` passed 1 087 tests with 96.00% lines / 88.89%
 branches / 91.01% functions over 90/85/90, and `npm run test:crash` passed 5 cases. The
@@ -628,7 +632,8 @@ request raced `provider.requests() === 2` and made that pre-existing assertion f
 `swift format lint --strict`, `npm run check:design` and `npm run test:design` passed. The
 whole eval suite passed 26 cases, including `cli-agent-models`, which moves a second bot to
 a second model and asserts each request names its own. Not verified: a real gateway's two
-models (the eval model is scripted), an installed App, and a rendered inspector by hand.
+models (the eval model is scripted), upstream support for `xhigh`/`max` (no metadata
+exists to check it), an installed App, and a rendered inspector by hand.
 
 ## Settings for effort, compaction and tool groups (2026-10-27)
 

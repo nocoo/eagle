@@ -16,7 +16,7 @@ const gateway = {
 
 const daemonRoot = async (prefix: string): Promise<string> => mkdtemp(join(tmpdir(), prefix));
 
-test("a level the model cannot take is refused and nothing is written", async () => {
+test("the pair a bot records is the pair it was asked for", async () => {
   const root = await daemonRoot("bots-agent-refuse-");
   try {
     const config = readConfig({ argv: ["--root", root, "--port", "0"], env: {} });
@@ -48,9 +48,9 @@ test("a level the model cannot take is refused and nothing is written", async ()
 
       const refused = await authorized(`/v1/bots/${botId}`, {
         method: "PATCH",
-        body: JSON.stringify({ thinkingLevel: "minimal" }),
+        body: JSON.stringify({ thinkingLevel: "loud" }),
       });
-      assert.equal(refused.status, 400, "the model does not take this level");
+      assert.equal(refused.status, 400, "a level outside the seven is refused");
       const catalog = JSON.parse(await readFile(join(root, "catalog.json"), "utf8")) as {
         bots: { id: string; thinkingLevel?: string }[];
       };
@@ -172,8 +172,8 @@ test("the model list names the ids and what the daemon knows about them", async 
       assert.ok(detail !== undefined, "the daemon describes the model it knows");
       assert.deepEqual(
         [...detail.thinkingLevels],
-        ["off", "low", "medium", "high", "xhigh", "max"],
-        "the levels are the ones the model accepts",
+        ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+        "every level is requested; the gateway decides what it takes",
       );
       assert.equal(
         body.discoveryError,

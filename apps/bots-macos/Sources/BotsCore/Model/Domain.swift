@@ -702,14 +702,15 @@ public struct AgentView: Codable, Hashable, Sendable {
   }
 }
 
-/// What the daemon knows about one model of the gateway: the levels it accepts, the window
-/// it has and whether it reasons.
+/// What the daemon will request from one model of the gateway: the levels it may ask for,
+/// the declared window and the token cap. The gateway publishes ids only, so nothing here
+/// claims what the model actually supports upstream.
 public struct ModelDetail: Codable, Hashable, Sendable {
   public var id: String
   public var contextWindow: Int
   public var maxTokens: Int
   public var reasoning: Bool
-  /// The reasoning levels the model accepts; `xhigh` and `max` are opt-in per model.
+  /// The reasoning levels the daemon may request; `xhigh` and `max` are requested as they are.
   public var thinkingLevels: [String]
 
   public init(

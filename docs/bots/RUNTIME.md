@@ -90,16 +90,17 @@ The daemon holds one provider and many models (PROTOCOL.md, "Per-bot agent"):
   its key. The models are the ids the gateway lists, the ids bots store and the id the
   settings name as the default. A model the gateway stops listing stays registered while
   a bot stores it, so a stored bot keeps running with it.
-- **The metadata comes from pi-ai's catalogue.** A model id is matched against the
-  catalogue by its full id and by the name after its last `/`, because a routing gateway
-  publishes `auto/gpt-6-luna` for the model the catalogue calls `gpt-6-luna`. The
-  catalogue supplies the real context window, the real reasoning flag and the real
-  thinking-level map, so the daemon never claims a window or a level the model does not
-  have.
-- **A model nothing describes takes every level.** Its window is the daemon's declared
-  one (`BOTS_CONTEXT_WINDOW`) and every level is sent as it is: the daemon does not know
-  the model's limits, so it does not lower a level behind the person's back. The gateway
-  decides what it takes.
+- **The gateway publishes ids, and nothing else.** An alias says nothing about the model
+  behind it — the same name can be a 272k model at one endpoint and a 1M one at another —
+  so the daemon does not infer capabilities from a name. Every model is registered with
+  the daemon's declared caps (`BOTS_CONTEXT_WINDOW`, `BOTS_MAX_TOKENS`) and with all seven
+  reasoning levels mapped to themselves (`off` to the gateway's no-effort value `none`).
+  pi-ai would otherwise lower `xhigh` and `max`; the explicit map is what makes the
+  request carry the level the person chose. A gateway that refuses it is the run's error,
+  never a silent fallback.
+- **A partial model list is the gateway's, not the daemon's.** `GET /v1/models` asks the
+  gateway what it lists; the daemon's own declaration is what `/v1/models` answers about
+  each of those ids.
 - **Discovery is apart from emptiness.** `GET /v1/models` asks the gateway for its list.
   A gateway that answers with no model is an empty list; a gateway that cannot be asked
   is a failure, and the daemon keeps the models it already knew.

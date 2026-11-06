@@ -1,7 +1,7 @@
 // The daemon's model registry (docs/bots/RUNTIME.md, "The model registry"): one gateway
-// provider, every model the gateway offers, and the facts the daemon needs about each of
-// them. The endpoint and the key are global; the model and the reasoning level belong to
-// one bot, so the registry holds many models and never swaps one for another.
+// provider, every model the gateway offers, and what the daemon will ask of each of them.
+// The endpoint and the key are global; the model and the reasoning level belong to one
+// bot, so the registry holds many models and never swaps one for another.
 import {
   type Api,
   createModels,
@@ -13,33 +13,30 @@ import {
   type MutableModels,
 } from "@earendil-works/pi-ai";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
-import { getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
 
-/** What the daemon knows about one model of the gateway. */
+/**
+ * What the daemon will request from one model of the gateway. The gateway publishes ids
+ * and nothing else, so the window and the token cap are the daemon's own and the level is
+ * a request, not a claim about the model.
+ */
 export type ModelMetadata = {
   readonly id: string;
   readonly contextWindow: number;
   readonly maxTokens: number;
   readonly reasoning: boolean;
-  /** The reasoning levels the model accepts; `xhigh` and `max` are opt-in per model. */
+  /** The levels the daemon may request; `xhigh` and `max` are mapped to themselves. */
   readonly thinkingLevels: readonly ModelThinkingLevel[];
 };
 
-/** The facts the catalogue knows about one model. */
-type CatalogEntry = {
-  readonly contextWindow: number;
-  readonly maxTokens: number;
-  readonly reasoning: boolean;
-  readonly thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
-};
-
 /**
- * The levels a model the daemon cannot describe accepts: every level, sent as it is.
- * The daemon does not know the model's limits, so it does not lower a level behind the
- * person's back; the gateway decides what it takes.
+ * Every level, mapped to itself — except `off`, which means no reasoning at all and is the
+ * one value pi-ai reads as the model's "no effort" name. A gateway alias says nothing about
+ * the model behind it, and pi-ai lowers `xhigh` and `max` unless the model declares them,
+ * so the map is explicit: the daemon sends the level the person chose and the gateway
+ * decides what it takes. A refusal is the run's error, never a silent fallback.
  */
-const PASS_THROUGH_LEVELS: NonNullable<Model<Api>["thinkingLevelMap"]> = {
-  off: "off",
+const REQUESTED_LEVELS: NonNullable<Model<Api>["thinkingLevelMap"]> = {
+  off: "none",
   minimal: "minimal",
   low: "low",
   medium: "medium",
@@ -48,39 +45,7 @@ const PASS_THROUGH_LEVELS: NonNullable<Model<Api>["thinkingLevelMap"]> = {
   max: "max",
 };
 
-let catalogIndex: Map<string, CatalogEntry> | undefined;
-
-/**
- * pi-ai's own catalogue: the real facts about the models it knows. A gateway id is
- * matched by its full id and by the name after its last `/`, because a routing gateway
- * publishes `auto/gpt-6-luna` for the model the catalogue calls `gpt-6-luna`.
- */
-const catalog = (): Map<string, CatalogEntry> => {
-  if (catalogIndex !== undefined) return catalogIndex;
-  const index = new Map<string, CatalogEntry>();
-  for (const provider of getBuiltinProviders()) {
-    for (const model of getBuiltinModels(provider) as readonly Model<Api>[]) {
-      if (index.has(model.id)) continue;
-      index.set(model.id, {
-        contextWindow: model.contextWindow,
-        maxTokens: model.maxTokens,
-        reasoning: model.reasoning,
-        ...(model.thinkingLevelMap === undefined
-          ? {}
-          : { thinkingLevelMap: model.thinkingLevelMap }),
-      });
-    }
-  }
-  catalogIndex = index;
-  return index;
-};
-
-const entryFor = (id: string): CatalogEntry | undefined => {
-  const index = catalog();
-  return index.get(id) ?? index.get(id.slice(id.lastIndexOf("/") + 1));
-};
-
-/** The gateway's own model: its id, its endpoint and what the catalogue knows about it. */
+/** The gateway's own model: its id, its endpoint and what the daemon will ask of it. */
 const gatewayModel = (
   id: string,
   options: {
@@ -89,30 +54,25 @@ const gatewayModel = (
     readonly contextWindow: number;
     readonly maxTokens: number;
   },
-): Model<"openai-responses"> => {
-  const known = entryFor(id);
-  return {
-    id,
-    name: id,
-    provider: options.provider,
-    baseUrl: options.baseUrl,
-    api: "openai-responses",
-    reasoning: known?.reasoning ?? true,
-    input: ["text"],
-    contextWindow: known?.contextWindow ?? options.contextWindow,
-    maxTokens: known?.maxTokens ?? options.maxTokens,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    ...(known?.thinkingLevelMap === undefined
-      ? { thinkingLevelMap: PASS_THROUGH_LEVELS }
-      : { thinkingLevelMap: known.thinkingLevelMap }),
-  };
-};
+): Model<"openai-responses"> => ({
+  id,
+  name: id,
+  provider: options.provider,
+  baseUrl: options.baseUrl,
+  api: "openai-responses",
+  reasoning: true,
+  input: ["text"],
+  contextWindow: options.contextWindow,
+  maxTokens: options.maxTokens,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  thinkingLevelMap: REQUESTED_LEVELS,
+});
 
 export type ModelRegistryOptions = {
   readonly provider: string;
   readonly baseUrl: string;
   readonly apiKey: string;
-  /** The window the daemon declares for a model nothing describes. */
+  /** The window the daemon declares; compaction thresholds count from it. */
   readonly contextWindow: number;
   readonly maxTokens: number;
   readonly fetch?: typeof fetch;
@@ -151,16 +111,15 @@ export class ModelRegistry {
     return [...this.#ids];
   }
 
-  /** What the daemon knows about each model it knows. */
+  /** What the daemon will request from each model it knows. */
   metadata(): readonly ModelMetadata[] {
-    return this.ids().map((id) => {
+    return this.#ids.map((id) => {
       const model = this.#models.getModel(this.#options.provider, id);
-      const known = entryFor(id);
       return {
         id,
-        contextWindow: model?.contextWindow ?? known?.contextWindow ?? this.#options.contextWindow,
-        maxTokens: model?.maxTokens ?? known?.maxTokens ?? this.#options.maxTokens,
-        reasoning: model?.reasoning ?? known?.reasoning ?? true,
+        contextWindow: model?.contextWindow ?? this.#options.contextWindow,
+        maxTokens: model?.maxTokens ?? this.#options.maxTokens,
+        reasoning: model?.reasoning ?? true,
         thinkingLevels: model === undefined ? [] : [...getSupportedThinkingLevels(model)],
       };
     });
@@ -213,7 +172,7 @@ export class ModelRegistry {
     return { ok: true };
   }
 
-  /** What the daemon knows about one model: the levels it accepts. */
+  /** The levels a model takes, as the registry will run it. */
   support(model: { readonly provider: string; readonly modelId: string }): {
     readonly known: boolean;
     readonly levels: readonly string[];
@@ -228,37 +187,6 @@ export class ModelRegistry {
         maxTokens: this.#options.maxTokens,
       });
     return { known: true, levels: [...getSupportedThinkingLevels(described)] };
-  }
-
-  /** The ids the gateway lists, or undefined when it could not be asked. */
-  async #fetchIds(signal: AbortSignal): Promise<readonly string[] | undefined> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), DISCOVERY_TIMEOUT_MS);
-    timer.unref?.();
-    const stop = (): void => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-    signal.addEventListener("abort", stop, { once: true });
-    try {
-      const request = this.#options.fetch ?? fetch;
-      const response = await request(`${this.#options.baseUrl.replace(/\/$/, "")}/models`, {
-        headers: { authorization: `Bearer ${this.#options.apiKey}` },
-        signal: controller.signal,
-      });
-      if (!response.ok) return undefined;
-      const body = (await response.json().catch(() => undefined)) as { data?: unknown } | undefined;
-      if (!Array.isArray(body?.data)) return undefined;
-      return body.data.flatMap((item) => {
-        const id = (item as { id?: unknown }).id;
-        return typeof id === "string" && id.length > 0 ? [id] : [];
-      });
-    } catch {
-      return undefined;
-    } finally {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", stop);
-    }
   }
 
   /** One provider, rebuilt in place: the models it holds are the ones the daemon knows. */
@@ -293,5 +221,36 @@ export class ModelRegistry {
         api: openAIResponsesApi(),
       }),
     );
+  }
+
+  /** The ids the gateway lists, or undefined when it could not be asked. */
+  async #fetchIds(signal: AbortSignal): Promise<readonly string[] | undefined> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DISCOVERY_TIMEOUT_MS);
+    timer.unref?.();
+    const stop = (): void => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+    signal.addEventListener("abort", stop, { once: true });
+    try {
+      const request = this.#options.fetch ?? fetch;
+      const response = await request(`${this.#options.baseUrl.replace(/\/$/, "")}/models`, {
+        headers: { authorization: `Bearer ${this.#options.apiKey}` },
+        signal: controller.signal,
+      });
+      if (!response.ok) return undefined;
+      const body = (await response.json().catch(() => undefined)) as { data?: unknown } | undefined;
+      if (!Array.isArray(body?.data)) return undefined;
+      return body.data.flatMap((item) => {
+        const id = (item as { id?: unknown }).id;
+        return typeof id === "string" && id.length > 0 ? [id] : [];
+      });
+    } catch {
+      return undefined;
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", stop);
+    }
   }
 }
