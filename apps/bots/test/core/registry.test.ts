@@ -68,6 +68,7 @@ const bench = async (
   let failWrites = false;
   let writeGate = options.writeGate;
   let agentFailures = 0;
+  let refuseFor: string | undefined;
   const directory = new BotDirectory(root, {
     ...fs,
     rename: async (from, to) => {
@@ -108,6 +109,7 @@ const bench = async (
   const registry = new BotRegistry({
     directory,
     openRuntime: async (spec) => {
+      const owner = spec.id;
       opens += 1;
       specs.push(spec);
       if (openGate !== undefined) await openGate;
@@ -121,6 +123,7 @@ const bench = async (
         }) => {
           // A conversation on its way out cannot take a new pair.
           if (closing) throw new Error("the conversation is closing");
+          if (refuseFor === owner) throw new Error("this conversation refuses the provider");
           if (options.failAgentApply !== undefined && agentFailures < options.failAgentApply) {
             agentFailures += 1;
             throw new Error("the conversation did not take the pair");
@@ -195,6 +198,9 @@ const bench = async (
     },
     setWriteGate: (gate: Promise<void> | undefined) => {
       writeGate = gate;
+    },
+    refuseAgentFor: (botId: string | undefined) => {
+      refuseFor = botId;
     },
     cleanup: () => rm(root, { recursive: true, force: true }),
   };
@@ -569,6 +575,52 @@ test("a migration that cannot be written fails the start instead of falling back
       "a bot the upgrade cannot record stops the daemon",
     );
   } finally {
+    await setup.cleanup();
+  }
+});
+
+test("a live bot follows the gateway's provider in one configuration", async () => {
+  const setup = await bench({ bots: ["a"] });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_provider_live_0001");
+    await setup.registry.applyGatewayProvider("next", "tr_provider_live_0002");
+    assert.deepEqual(
+      setup.agents.map((agent) => agent.model.provider),
+      ["next"],
+      "one configuration moves the open conversation",
+    );
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
+test("a bot that cannot follow the gateway is marked, and the others still do", async () => {
+  const setup = await bench({ bots: ["a", "b"] });
+  try {
+    await setup.registry.start();
+    await setup.registry.open("b_bot0", "tr_partial_0001");
+    await setup.registry.open("b_bot1", "tr_partial_0002");
+    // The second bot's conversation refuses the new provider.
+    setup.refuseAgentFor("b_bot1");
+    const failed = await setup.registry.applyGatewayProvider("next", "tr_partial_0003");
+    assert.equal(failed, 1, "one bot failed");
+    assert.equal(setup.registry.state("b_bot1"), "unavailable", "and it says so");
+    assert.equal(setup.registry.state("b_bot0"), "idle", "the other one is untouched");
+    assert.deepEqual(
+      setup.agents.map((agent) => agent.model.provider),
+      ["next"],
+      "only the bot that could take it was configured",
+    );
+    const stored = await setup.directory.load();
+    assert.deepEqual(
+      stored.map((bot) => bot.model.provider),
+      ["next", "next"],
+      "both catalogs hold the gateway's provider: nothing falls back to the old endpoint",
+    );
+  } finally {
+    await setup.registry.shutdown();
     await setup.cleanup();
   }
 });

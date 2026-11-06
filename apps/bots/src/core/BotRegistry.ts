@@ -182,7 +182,7 @@ export class BotRegistry {
    * Loads the catalog, finishes an interrupted delete, gives a bot created before the
    * level existed the level it runs with today, then scans for active work.
    */
-  async start(): Promise<void> {
+  async start(prepare?: () => Promise<void>): Promise<void> {
     const trace = this.#boot();
     this.#groups = await this.#options.directory.loadGroups().catch(() => []);
     let bots: readonly BotConfig[];
@@ -238,6 +238,10 @@ export class BotRegistry {
         settling: undefined,
       });
     }
+    // The gateway's stored settings describe every bot, so they are applied before the
+    // scan resumes anything: a recovered run must resolve the provider and the model the
+    // catalog now holds.
+    await prepare?.();
     await this.#recover(trace);
   }
 
@@ -384,22 +388,48 @@ export class BotRegistry {
    * The provider belongs to the gateway, not to a bot: every stored reference follows it,
    * while the model id each bot chose stays that bot's own.
    */
-  async applyGatewayProvider(provider: string, trace: string): Promise<void> {
+  async applyGatewayProvider(provider: string, trace: string): Promise<number> {
+    let failed = 0;
     for (const entry of this.#entries.values()) {
-      if (entry.config.model.provider === provider) continue;
       const at = (this.#options.now?.() ?? new Date()).toISOString();
+      const model = { provider, modelId: entry.config.model.modelId };
       try {
-        entry.config = await this.#write(trace, entry.config.id, () =>
-          this.#options.directory.setAgent(
-            entry.config.id,
-            { model: { provider, modelId: entry.config.model.modelId } },
-            at,
-          ),
-        );
-      } catch {
-        // One bot that cannot be written must not stop the others.
+        if (entry.config.model.provider !== provider) {
+          entry.config = await this.#write(trace, entry.config.id, () =>
+            this.#options.directory.setAgent(entry.config.id, { model }, at),
+          );
+        }
+        // A conversation that is open has the previous provider in its agent document: one
+        // configuration moves it, so the next request resolves the gateway the daemon now
+        // has instead of failing `no_model`.
+        const level = this.#storedLevel(entry);
+        if (entry.handle?.configureAgent !== undefined && !entry.closing) {
+          await entry.handle.configureAgent({ model, thinkingLevel: level }, trace);
+          entry.applied = { model, thinkingLevel: level };
+        }
+      } catch (error) {
+        // One bot that cannot follow the gateway must not stop the daemon, and it must not
+        // keep answering through the old endpoint: it is marked unavailable and says why.
+        // Nothing here falls back to the previous provider.
+        failed += 1;
+        const failure = error instanceof ClassifiedFailure ? error.failure : newFailure("internal");
+        entry.state = "unavailable";
+        entry.unavailable = {
+          reason: failure.kind,
+          message: "the gateway's provider could not be applied to this bot",
+        };
+        // A forwarded failure, so it is a warning here: the runtime is the originating
+        // layer, and the bot's own state carries the reason to a client.
+        this.#options.log.emit("warn", "core", Events.openFail, {
+          trace,
+          botId: entry.config.id,
+          failure,
+          propagated: true,
+          detail: { reason: "upstream" },
+        });
       }
     }
+    return failed;
   }
 
   /**

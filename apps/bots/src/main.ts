@@ -509,14 +509,24 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
   // interrupted run: a recovered generation resolves its model by id.
   const stored = await directory.load().catch(() => []);
   modelRegistry.ensure([defaultModel.modelId, ...stored.map((bot) => bot.model.modelId)]);
-  await registry.start();
-  // The daemon's stored selection governs every bot, including one created before a group
-  // existed: a restart applies it once, exactly like saving the settings does.
-  if (gateway !== undefined) {
-    await registry.applyToolGroups(gateway.toolGroups, "tr_boot_groups");
-    // The provider belongs to the gateway, so every stored reference follows it.
-    await registry.applyGatewayProvider(gateway.provider, "tr_boot_provider");
-  }
+  // The catalog is loaded and migrated first, then the gateway's stored settings reach
+  // every bot, and only then does the scan resume anything: a recovered run must resolve
+  // the provider and the model the catalog now holds.
+  await registry.start(async () => {
+    if (gateway !== undefined) {
+      // The daemon's stored selection governs every bot, including one created before a
+      // group existed: a restart applies it once, like saving the settings does.
+      await registry.applyToolGroups(gateway.toolGroups, "tr_boot_groups");
+      // The provider belongs to the gateway, so every stored reference follows it.
+      await registry.applyGatewayProvider(gateway.provider, "tr_boot_provider");
+    }
+    // Every model a bot stores stays usable, and so does the default a new bot records: a
+    // recovered generation resolves its model by id.
+    modelRegistry.ensure([
+      defaultModel.modelId,
+      ...registry.summaries().map((summary) => summary.model.modelId),
+    ]);
+  });
   // The daemon exists after the service that has to broadcast through it.
   let broadcast: (() => void) | undefined;
   const service = new ConversationService({
