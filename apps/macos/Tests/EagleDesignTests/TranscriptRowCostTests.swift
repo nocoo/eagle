@@ -16,7 +16,10 @@ struct TranscriptRowCostTests {
     Self.logRunContext()
     let entries = Self.entries(turns: 40)
     let markdown = Self.prepared(entries)
-    Self.logPreparedFixture(entries: entries, prepared: markdown)
+    Self.logPreparedFixture(
+      label: "gate", entries: entries, prepared: markdown,
+      note: "flattened single .paragraph(AttributedString) per assistant"
+    )
     let rich = Self.transcriptRows(entries, preparedMarkdown: markdown)
     let plain = Self.plainTextShell(entries)
     let bubbleDirect = Self.baselineBubbleRows(entries, preparedMarkdown: markdown)
@@ -102,7 +105,10 @@ struct TranscriptRowCostTests {
     Self.logRunContext()
     let entries = Self.entries(turns: 40)
     let markdown = Self.prepared(entries)
-    Self.logPreparedFixture(entries: entries, prepared: markdown)
+    Self.logPreparedFixture(
+      label: "gate", entries: entries, prepared: markdown,
+      note: "flattened single .paragraph(AttributedString) per assistant"
+    )
     let assistants = entries.filter { entry in
       if case .assistant = entry { return true }
       return false
@@ -138,12 +144,14 @@ struct TranscriptRowCostTests {
   /// paragraph path only swaps `MarkdownInline` for `Text(AttributedString)` with the same
   /// font/lineSpacing/fixedSize. **Diagnostic only** — not a hotspot proof. Gate unchanged.
   @Test("ROWCOST experiment: production-prepared blocks vs plain paragraph Text (diagnostic)")
-  func productionPreparedVsPlainAttributedParagraph() throws {
+  func productionPreparedVsPlainAttributedParagraph() {
     Self.logRunContext()
     let entries = Self.entries(turns: 40)
-    let preparedProduction = try Self.productionPreparedMarkdown(entries)
-    let preparedFlattened = Self.prepared(entries)
-    Self.logPreparedFixture(entries: entries, prepared: preparedFlattened)
+    let preparedProduction = Self.productionPreparedMarkdown(entries)
+    Self.logPreparedFixture(
+      label: "expt_prod_prepared", entries: entries, prepared: preparedProduction,
+      note: "MarkdownRenderer.blocks(from:) multi-block prepared map"
+    )
     let prodView = Self.transcriptRows(
       entries, preparedMarkdown: preparedProduction, paragraphMode: .productionMarkdownInline)
     let plainView = Self.transcriptRows(
@@ -257,23 +265,23 @@ struct TranscriptRowCostTests {
 
   /// Same string pipeline as [`MarkdownViewModel`] / [`AssistantBubble`] when `preparedBlocks` are
   /// absent: fenced code, block quotes, tables — not flattened to one paragraph.
-  private static func productionPreparedMarkdown(_ entries: [TranscriptEntry]) throws
+  private static func productionPreparedMarkdown(_ entries: [TranscriptEntry])
     -> [String: [RenderedMarkdownBlock]]
   {
     var out: [String: [RenderedMarkdownBlock]] = [:]
     for entry in entries {
       guard case .assistant(let id, let blocks, _) = entry else { continue }
-      out[id] = try MarkdownRenderer.blocks(from: blocks.markdown)
+      out[id] = MarkdownRenderer.blocks(from: blocks.markdown)
     }
     return out
   }
 
-  /// Documents which assistant blocks exist in the transcript vs what `prepared()` supplies
-  /// (`AttributedString` in a single `.paragraph` each). ROWCOST Text baseline uses
-  /// `blocks.markdown` strings; rich rows use `AssistantBubble` + prepared blocks on this path
-  /// (not `MarkdownViewModel` parsing into `.code` / tables).
+  /// Documents transcript assistant rows vs the **actual** `prepared` map passed into the test.
   private static func logPreparedFixture(
-    entries: [TranscriptEntry], prepared: [String: [RenderedMarkdownBlock]]
+    label: String,
+    entries: [TranscriptEntry],
+    prepared: [String: [RenderedMarkdownBlock]],
+    note: String
   ) {
     var assistantFromBlocks = 0
     var noteBlocksInTranscript = 0
@@ -284,11 +292,29 @@ struct TranscriptRowCostTests {
         if case .note = block { noteBlocksInTranscript += 1 }
       }
     }
-    let preparedCount = prepared.count
+    var renderedKinds: [String: Int] = [:]
+    for blocks in prepared.values {
+      for block in blocks {
+        let kind: String
+        switch block {
+        case .paragraph: kind = "paragraph"
+        case .heading: kind = "heading"
+        case .bullets: kind = "bullets"
+        case .code: kind = "code"
+        case .quote: kind = "quote"
+        case .table: kind = "table"
+        }
+        renderedKinds[kind, default: 0] += 1
+      }
+    }
+    let kinds =
+      renderedKinds.sorted { $0.key < $1.key }
+      .map { "\($0.key)=\($0.value)" }
+      .joined(separator: ",")
     print(
-      "ROWCOST_FIXTURE assistant_entries=\(assistantFromBlocks) prepared_map=\(preparedCount) "
-        + "note_blocks_in_source=\(noteBlocksInTranscript) "
-        + "(prepared single .paragraph AttributedString each; not MarkdownView .code)"
+      "ROWCOST_FIXTURE label=\(label) assistant_entries=\(assistantFromBlocks) "
+        + "prepared_map=\(prepared.count) note_blocks_in_source=\(noteBlocksInTranscript) "
+        + "rendered_block_kinds=\(kinds) (\(note))"
     )
   }
 

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Benchmark-only toggle: same `Text` font/lineSpacing/`fixedSize` as production paragraphs, but
 /// skip [`MarkdownInline`] (streaming caret + default `Text` branch). Not used in shipped UI.
-public enum AssistantBubbleParagraphExperiment: Sendable {
+enum AssistantBubbleParagraphExperiment: Sendable {
   case productionMarkdownInline
   case plainTextWithParagraphStyling
 }
@@ -12,7 +12,7 @@ private struct AssistantBubbleParagraphExperimentKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-  public var assistantBubbleParagraphExperiment: AssistantBubbleParagraphExperiment {
+  var assistantBubbleParagraphExperiment: AssistantBubbleParagraphExperiment {
     get { self[AssistantBubbleParagraphExperimentKey.self] }
     set { self[AssistantBubbleParagraphExperimentKey.self] = newValue }
   }
