@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Left column on the reference grid: traffic lights and the toolbar in the window's top corner,
@@ -10,7 +11,7 @@ public struct SidebarPanel: View {
   private let onRenameSection: (String, String) -> Void
   private let onDeleteSection: (String) -> Void
   private let onCreateSection: () -> Void
-  private let onCreateGroup: () -> Void
+  private let onCreateGroup: (@escaping (String, String) -> Void) -> Void
   private let onCreateBot: () -> Void
   private let canCreateBot: Bool
   private let onRenameItem: (String, String) -> Void
@@ -34,6 +35,7 @@ public struct SidebarPanel: View {
 
   @State private var editingSection: String?
   @State private var editingItem: String?
+  @FocusState private var focusedSection: String?
   @State private var draftTitle = ""
   @State private var hoveringSection: String?
 
@@ -45,7 +47,7 @@ public struct SidebarPanel: View {
     onRenameSection: @escaping (String, String) -> Void = { _, _ in },
     onDeleteSection: @escaping (String) -> Void = { _ in },
     onCreateSection: @escaping () -> Void = {},
-    onCreateGroup: @escaping () -> Void = {},
+    onCreateGroup: @escaping (@escaping (String, String) -> Void) -> Void = { _ in },
     onCreateBot: @escaping () -> Void = {},
     canCreateBot: Bool = true,
     onRenameItem: @escaping (String, String) -> Void = { _, _ in },
@@ -140,7 +142,11 @@ public struct SidebarPanel: View {
           Label("新建 Bot", systemImage: "person.badge.plus")
         }
         .disabled(!canCreateBot)
-        Button(action: onCreateGroup) {
+        Button {
+          onCreateGroup { id, title in
+            beginSectionRename(id: id, title: title)
+          }
+        } label: {
           Label("新建分组", systemImage: "folder.badge.plus")
         }
         .disabled(!canCreateBot)
@@ -230,6 +236,14 @@ public struct SidebarPanel: View {
               .textFieldStyle(.plain)
               .font(Theme.TypeScale.sectionLabel)
               .foregroundStyle(Theme.Palette.textPrimary)
+              .tint(Theme.Palette.accent)
+              .focused($focusedSection, equals: section.id)
+              .onAppear {
+                focusedSection = section.id
+                DispatchQueue.main.async {
+                  NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+                }
+              }
               .onSubmit { commitSectionRename(section.id) }
           } else {
             SectionLabel(section.title, unreadCount: section.unreadCount)
@@ -260,7 +274,11 @@ public struct SidebarPanel: View {
     if section.role == .group {
       let groups = sections.filter { $0.role == .group }
       let index = groups.firstIndex { $0.id == section.id } ?? 0
-      Button(action: onCreateGroup) {
+      Button {
+        onCreateGroup { id, title in
+          beginSectionRename(id: id, title: title)
+        }
+      } label: {
         Label("新建分组", systemImage: "folder.badge.plus")
       }
       Divider()
@@ -466,8 +484,13 @@ public struct SidebarPanel: View {
   }
 
   private func beginSectionRename(_ section: SidebarSection) {
-    draftTitle = section.title
-    editingSection = section.id
+    beginSectionRename(id: section.id, title: section.title)
+  }
+
+  private func beginSectionRename(id: String, title: String) {
+    draftTitle = title
+    editingSection = id
+    focusedSection = id
   }
 
   private func commitSectionRename(_ id: String) {

@@ -175,6 +175,9 @@ let controlOwners: [String: Set<String>] = [
   "EagleDesign/Chat/AskCardRow.swift#AskCardRow.header": ["Button"],
   "EagleDesign/Chat/AskCardRow.swift#AskCardRow.optionRow": ["Button"],
   "EagleDesign/Chat/CardActionButton.swift#CardActionButton.body": ["Button"],
+  "EagleDesign/Chat/SelectableTranscriptText.swift#TranscriptSelectionObserver.makeNSView": [
+    "NSTextView"
+  ],
   "EagleDesign/Chat/Composer.swift#Composer.body": ["Button", "TextField"],
   "EagleDesign/Chat/SecretCardRow.swift#SecretCardRow.valueField": ["TextField", "SecureField"],
   "EagleDesign/Chat/ToolCallRow.swift#ToolRunRow.body": ["Button"],

@@ -232,10 +232,14 @@ final class BotsWorkspaceViewModel: ObservableObject {
   // MARK: - Groups
 
   /// A new group is empty and named so it is told apart from the existing ones.
-  func createGroup() async {
-    guard let app else { return }
-    await app.createGroup(title: SidebarComposition.newGroupTitle(existing: groups.map(\.title)))
+  func createGroup() async -> (id: String, title: String)? {
+    guard let app else { return nil }
+    let title = SidebarComposition.newGroupTitle(existing: groups.map(\.title))
+    let existingIDs = Set(groups.map(\.id))
+    await app.createGroup(title: title)
     publish()
+    guard let created = groups.first(where: { !existingIDs.contains($0.id) }) else { return nil }
+    return (created.id, created.title)
   }
 
   func renameGroup(_ id: String, to title: String) async {
