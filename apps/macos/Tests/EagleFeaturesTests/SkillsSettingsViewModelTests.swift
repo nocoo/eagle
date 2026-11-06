@@ -311,7 +311,14 @@ private struct SkillsFixture {
     scan: @escaping @Sendable ([URL]) async -> SkillScanResult = { SkillScanner.scan(roots: $0) },
     push: @escaping SkillPush = { _ in }
   ) -> SkillsSettingsViewModel {
-    SkillsSettingsViewModel(defaults: defaults, home: home, scan: scan, push: push)
+    SkillsSettingsViewModel(
+      defaults: defaults, home: home, scan: scan, selection: selection(push: push))
+  }
+
+  /// The App-scoped selection this fixture's pages share; a test that wants one queue for two
+  /// pages hands the same value to both.
+  func selection(push: @escaping SkillPush = { _ in }) -> SkillsSelection {
+    SkillsSelection(defaults: defaults, push: push)
   }
 
   func writeSkill(_ folder: String, name: String, description: String, version: String) throws {

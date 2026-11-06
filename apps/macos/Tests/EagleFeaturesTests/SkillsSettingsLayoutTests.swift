@@ -183,7 +183,8 @@ private struct SkillsLayoutFixture {
   ) async throws -> (
     SkillsSettingsViewModel, NSWindow
   ) {
-    let skills = SkillsSettingsViewModel(defaults: defaults, home: home, push: push)
+    let skills = SkillsSettingsViewModel(
+      defaults: defaults, home: home, selection: SkillsSelection(defaults: defaults, push: push))
     let model = SettingsViewModel()
     model.selection = .skills
     NSApplication.shared.setActivationPolicy(.prohibited)
