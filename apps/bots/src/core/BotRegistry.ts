@@ -51,6 +51,13 @@ type Entry = {
   config: BotConfig;
   /** The wire state; `closing` is internal and never leaves the registry. */
   state: BotState;
+  /** The pair the live conversation was configured with, once it has one. */
+  applied:
+    | {
+        readonly model: { readonly provider: string; readonly modelId: string };
+        readonly thinkingLevel: string;
+      }
+    | undefined;
   closing: boolean;
   handle: RuntimeHandle | undefined;
   opening: Promise<RuntimeHandle> | undefined;
@@ -224,6 +231,7 @@ export class BotRegistry {
         activity: 0,
         deleting: false,
         leaseWaiters: [],
+        applied: undefined,
         unavailable: undefined,
         cancelIdle: undefined,
         cancelRetry: undefined,
@@ -418,7 +426,18 @@ export class BotRegistry {
         (change.model.provider === current.model.provider &&
           change.model.modelId === current.model.modelId);
       const sameLevel = level === currentLevel;
-      if (sameModel && sameLevel) return this.#summary(entry);
+      // What the live conversation runs, when it is open. A catalog that already holds the
+      // pair is not a reason to skip a configuration: a previous attempt may have saved it
+      // and failed to apply it.
+      const applied = entry.handle === undefined ? undefined : entry.applied;
+      const upToDate =
+        applied !== undefined &&
+        applied.model.provider === model.provider &&
+        applied.model.modelId === model.modelId &&
+        applied.thinkingLevel === level;
+      if (sameModel && sameLevel && (applied === undefined || upToDate)) {
+        return this.#summary(entry);
+      }
       // The pair has to be one the model accepts, and that is checked before anything is
       // written: a bot never records a pair it cannot run with.
       if (change.model !== undefined) this.#options.ensureModel?.(change.model.modelId);
@@ -437,33 +456,49 @@ export class BotRegistry {
       // the next open configures.
       const leased = this.touch(botId);
       try {
+        // A warm-up or a reopen built its spec from the pair the catalog had. It is awaited
+        // first, and the whole change then owns the settling window so no new open starts
+        // in the middle: an open that slipped in would otherwise install a handle with the
+        // old pair while the catalog already holds the new one.
+        if (entry.opening !== undefined) await entry.opening.catch(() => undefined);
         if (entry.settling !== undefined) await entry.settling.catch(() => undefined);
-        const handle = entry.handle;
-        // The live conversation follows first: a conversation that refuses the pair must
-        // not be recorded as having it.
-        if (handle?.configureAgent !== undefined) {
-          await handle.configureAgent({ model, thinkingLevel: level }, trace);
-        }
+        let finish: () => void = () => undefined;
+        const window = new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        entry.settling = window;
         try {
-          const config = await this.#write(trace, botId, () =>
-            this.#options.directory.setAgent(botId, { model, thinkingLevel: level }, at),
-          );
-          entry.config = config;
-        } catch (error) {
-          // The catalog is the truth: a conversation that took the pair and a catalog that
-          // did not would run two different pairs. The old pair goes back.
-          if (handle?.configureAgent !== undefined) {
-            await handle
-              .configureAgent(
-                {
-                  model: current.model,
-                  thinkingLevel: currentLevel,
-                },
-                trace,
-              )
-              .catch(() => undefined);
+          // The catalog is the truth, so it is written first and the conversation follows.
+          // A request prepared while the write is in flight still runs the pair it had, and
+          // nothing claims the change until the catalog holds it.
+          if (!(sameModel && sameLevel)) {
+            const config = await this.#write(trace, botId, () =>
+              this.#options.directory.setAgent(botId, { model, thinkingLevel: level }, at),
+            );
+            entry.config = config;
           }
-          throw error;
+          const handle = entry.handle;
+          if (handle?.configureAgent === undefined) {
+            entry.applied = undefined;
+            return this.#summary(entry);
+          }
+          try {
+            await handle.configureAgent({ model, thinkingLevel: level }, trace);
+            entry.applied = { model, thinkingLevel: level };
+          } catch (error) {
+            // Saved but not applied. The catalog is broadcast with the pair it holds, and
+            // the refusal says what is true: this conversation still runs the old pair, and
+            // the next change or a reopen applies the saved one.
+            throw new ClassifiedFailure(
+              newFailure("internal", "runtime"),
+              "runtime",
+              `the bot now records ${model.modelId} at ${level}, but the running conversation did not take it; the next change or a reopen applies it`,
+              { cause: error },
+            );
+          }
+        } finally {
+          if (entry.settling === window) entry.settling = undefined;
+          finish();
         }
       } finally {
         if (leased) this.release(botId);
@@ -611,6 +646,7 @@ export class BotRegistry {
     const entry: Entry = {
       config,
       state: "catalogued",
+      applied: undefined,
       closing: false,
       handle: undefined,
       opening: undefined,
@@ -929,15 +965,17 @@ export class BotRegistry {
     entry.state = "opening";
     this.#options.log.emit("info", "core", Events.openStart, { trace, botId: entry.config.id });
     try {
+      const level = this.#storedLevel(entry);
       const handle = await this.#options.openRuntime({
         id: entry.config.id,
         dir: this.#options.directory.botDir(entry.config.id),
         model: entry.config.model,
-        thinkingLevel: this.#storedLevel(entry),
+        thinkingLevel: level,
         toolGroups: resolveToolGroups(entry.config.toolGroups ?? this.#defaultToolGroups),
         trace,
       });
       entry.handle = handle;
+      entry.applied = { model: entry.config.model, thinkingLevel: level };
       if (this.#stopping) {
         entry.closing = true;
         const remaining = Math.max(1, (this.#shutdownDeadline ?? Date.now()) - Date.now());
