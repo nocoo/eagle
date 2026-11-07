@@ -1130,8 +1130,8 @@ recovery guarantees depend on them.
    0600, since the text is user content). The frame is written after the record
    exists.
 2. **Reconciliation.** On connect, after the first snapshot, the client re-sends
-   every outbox entry with its original `requestId`; pi returns the stored record.
-   Only a **terminal** record (`done` or `unanswered`) removes the entry. Seeing a
+   every outbox entry with its original `requestId` and `whenBusy`; pi returns the stored
+   record. Only a **terminal** record (`done` or `unanswered`) removes the entry. Seeing a
    user message carrying that `requestId` proves placement only — `placed` can still
    become `unanswered` later, so the entry survives until a terminal record arrives.
    Entries are never re-sent with a new id, and no entry is removed before its

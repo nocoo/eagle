@@ -134,14 +134,18 @@ public final class ConversationViewModel: ObservableObject {
     if errorBanner == Self.oversizedDraftError { errorBanner = nil }
     let requestId = Identifiers.request()
     draft = ""
-    send(text: text, requestId: requestId, botId: botId, optimistic: true, inserting: inserting)
+    send(
+      text: text, requestId: requestId, botId: botId, optimistic: true,
+      whenBusy: inserting ? .steer : .followUp)
   }
 
   /// Retrying keeps the original requestId, which is how it is recovered, including after a
   /// restart of the app (`OutboxStore`).
   public func retry(_ entry: OutboxEntry) {
     refused.remove(entry.requestId)
-    send(text: entry.text, requestId: entry.requestId, botId: entry.botId, optimistic: true)
+    send(
+      text: entry.text, requestId: entry.requestId, botId: entry.botId, optimistic: true,
+      whenBusy: entry.whenBusy)
   }
 
   /// Answers an ask_user card. The daemon composes the hidden message, so this sends labels
@@ -240,11 +244,11 @@ public final class ConversationViewModel: ObservableObject {
     requestId: String,
     botId: String,
     optimistic: Bool,
-    inserting: Bool = false
+    whenBusy: BusyMode = .followUp
   ) {
     // The entry is stored before the frame is written; if it cannot be stored, nothing is
     // sent and the draft comes back (PROTOCOL.md, client duties 1).
-    let entry = OutboxEntry(botId: botId, requestId: requestId, text: text)
+    let entry = OutboxEntry(botId: botId, requestId: requestId, text: text, whenBusy: whenBusy)
     do {
       try outbox.add(entry)
     } catch {
@@ -266,7 +270,7 @@ public final class ConversationViewModel: ObservableObject {
       do {
         try await self.conversation.send(
           text,
-          whenBusy: inserting ? .steer : .followUp,
+          whenBusy: whenBusy,
           context: context,
           botId: botId
         )
@@ -309,7 +313,8 @@ public final class ConversationViewModel: ObservableObject {
         text: entry.text,
         requestId: entry.requestId,
         botId: entry.botId,
-        optimistic: !state.messages.contains { $0.requestId == entry.requestId }
+        optimistic: !state.messages.contains { $0.requestId == entry.requestId },
+        whenBusy: entry.whenBusy
       )
     }
   }

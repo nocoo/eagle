@@ -80,6 +80,28 @@ final class ConversationTests: XCTestCase {
       fake.busyModes.sorted { "\($0)" < "\($1)" }, [.followUp, .steer].sorted { "\($0)" < "\($1)" })
   }
 
+  func testSteeredSendKeepsItsModeAcrossReconnect() async throws {
+    let (model, fake, outbox) = makeModel()
+    ready(model)
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.hasSnapshot }
+
+    model.draft = "Change direction"
+    model.send(inserting: true)
+    try await waitUntil { fake.sent.count == 1 }
+    let stored = try XCTUnwrap(try outbox.entries(for: "b_1").first)
+    XCTAssertEqual(stored.whenBusy, .steer)
+
+    model.disconnect()
+    model.select(botId: "b_1")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { fake.sent.count == 2 }
+    XCTAssertEqual(fake.sent[1].requestId, stored.requestId)
+    XCTAssertEqual(fake.busyModes, [.steer, .steer])
+  }
+
   func testAnsweringACardSendsTheChosenLabelsAndNeverTheText() async throws {
     let (model, fake, _) = makeModel()
     ready(model)
