@@ -172,11 +172,19 @@ const close = async (handle: FileHandle | undefined): Promise<void> => {
 export class ManagedFileStore {
   readonly #botDir: (botId: string) => string;
   readonly #now: () => Date;
+  readonly #syncDirectory: (path: string) => Promise<void>;
   readonly #queues = new Map<string, Promise<unknown>>();
+  readonly #directoryQueues = new Map<string, Promise<unknown>>();
+  readonly #syncedDirectories = new Set<string>();
 
-  constructor(options: { readonly botDir: (botId: string) => string; readonly now?: () => Date }) {
+  constructor(options: {
+    readonly botDir: (botId: string) => string;
+    readonly now?: () => Date;
+    readonly syncDirectory?: (path: string) => Promise<void>;
+  }) {
     this.#botDir = options.botDir;
     this.#now = options.now ?? (() => new Date());
+    this.#syncDirectory = options.syncDirectory ?? ((path) => this.#syncDirectoryReal(path));
   }
 
   async declare(input: ManagedFileDeclaration): Promise<ManagedFile> {
@@ -377,24 +385,43 @@ export class ManagedFileStore {
   }
 
   async #filesDirectory(botId: string): Promise<string> {
-    const bot = this.#botDir(botId);
-    try {
-      const botStats = await lstat(bot);
-      if (!botStats.isDirectory() || botStats.isSymbolicLink()) throw storage();
-      const files = join(bot, "files");
-      try {
-        await mkdir(files, { mode: 0o700 });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      }
-      const stats = await lstat(files);
-      if (!stats.isDirectory() || stats.isSymbolicLink()) throw storage();
-      await chmod(files, 0o700);
-      return files;
-    } catch (error) {
-      if (error instanceof ManagedFileError) throw error;
-      throw storage(error);
-    }
+    const previous = this.#directoryQueues.get(botId) ?? Promise.resolve();
+    const work = previous.then(
+      async () => {
+        const bot = this.#botDir(botId);
+        try {
+          const botStats = await lstat(bot);
+          if (!botStats.isDirectory() || botStats.isSymbolicLink()) throw storage();
+          const files = join(bot, "files");
+          try {
+            await mkdir(files, { mode: 0o700 });
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+          }
+          const stats = await lstat(files);
+          if (!stats.isDirectory() || stats.isSymbolicLink()) throw storage();
+          await chmod(files, 0o700);
+          if (!this.#syncedDirectories.has(bot)) {
+            await this.#syncDirectory(bot);
+            this.#syncedDirectories.add(bot);
+          }
+          return files;
+        } catch (error) {
+          if (error instanceof ManagedFileError) throw error;
+          throw storage(error);
+        }
+      },
+      () => Promise.resolve(),
+    );
+    const settled = work.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.#directoryQueues.set(botId, settled);
+    void settled.then(() => {
+      if (this.#directoryQueues.get(botId) === settled) this.#directoryQueues.delete(botId);
+    });
+    return work;
   }
 
   async #readMetadata(path: string): Promise<ManagedFile | undefined> {
@@ -472,7 +499,7 @@ export class ManagedFileStore {
     return handle;
   }
 
-  async #syncDirectory(path: string): Promise<void> {
+  async #syncDirectoryReal(path: string): Promise<void> {
     let handle: FileHandle | undefined;
     try {
       handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);

@@ -20,11 +20,14 @@ const uploadId = "u_0123456789abcdef";
 
 const digest = (body: Uint8Array): string => createHash("sha256").update(body).digest("hex");
 
-const open = async () => {
+const open = async (syncDirectory?: (path: string) => Promise<void>) => {
   const root = await mkdtemp(join(tmpdir(), "bots-files-store-"));
   const botDir = join(root, "bots", botId);
   await mkdir(botDir, { recursive: true, mode: 0o700 });
-  const store = new ManagedFileStore({ botDir: () => botDir });
+  const store = new ManagedFileStore({
+    botDir: () => botDir,
+    ...(syncDirectory === undefined ? {} : { syncDirectory }),
+  });
   return { root, botDir, store };
 };
 
@@ -100,6 +103,60 @@ test("managed files accept ordinary and zero-byte uploads without trusting the d
     const emptyDownload = await store.download({ botId, fileId: finished.id });
     assert.equal(emptyDownload.file.size, 0);
     assert.deepEqual(await all(emptyDownload.stream), Buffer.alloc(0));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("first files directory creation fsyncs the Bot parent before ACK and serializes concurrent winners", async () => {
+  const syncCalls: string[] = [];
+  const { root, botDir } = await open();
+  try {
+    const store = new ManagedFileStore({
+      botDir: () => botDir,
+      syncDirectory: async (path) => {
+        syncCalls.push(path);
+        if (path === botDir) throw new Error("ENOSPC");
+      },
+    });
+    await assert.rejects(
+      store.declare({
+        botId,
+        uploadId,
+        name: "unsynced.bin",
+        size: 0,
+        sha256: digest(new Uint8Array()),
+      }),
+      (error) => error instanceof ManagedFileError && error.reason === "storage_failed",
+    );
+    assert.equal(syncCalls.includes(botDir), true, "the Bot parent was the fsync boundary");
+    assert.deepEqual(await completedNames(botDir), [], "a failed parent fsync admits no manifest");
+
+    let fsyncs = 0;
+    const concurrent = new ManagedFileStore({
+      botDir: () => botDir,
+      syncDirectory: async (path) => {
+        if (path === botDir) fsyncs += 1;
+      },
+    });
+    await rm(join(botDir, "files"), { recursive: true, force: true });
+    const left = await concurrent.declare({
+      botId,
+      uploadId,
+      name: "left.bin",
+      size: 0,
+      sha256: digest(new Uint8Array()),
+    });
+    const right = await concurrent.declare({
+      botId,
+      uploadId: "u_concurrent_012345678",
+      name: "right.bin",
+      size: 0,
+      sha256: digest(new Uint8Array()),
+    });
+    assert.equal(left.status, "uploading");
+    assert.equal(right.status, "uploading");
+    assert.ok(fsyncs >= 1, "every fresh files directory is acknowledged only after parent sync");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
