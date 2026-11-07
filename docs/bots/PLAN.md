@@ -26,7 +26,7 @@ own read infrastructure instead of being re-implemented (2026-11-08).
 | Spec / milestone | Scope | State |
 | --- | --- | --- |
 | [SG-001: native chat](specs/SUPERAGENT-001-CHAT.md) | A: executable/root/readiness -> B: own durable chat/protocol -> C: App launcher/native conversation -> D: acceptance | **Delivered and owner-accepted 2026-11-07** for the source dev App: A/B/C implemented, two review rounds plus targeted replay PASS, real-gateway CLI turns/restart, native conversation. Residual: packaged App, forced-quit/crash matrix, two-window manual run |
-| SG-002: passive worker evidence | Exact snapshot/history/changes contract, inert cold reads and complete retained worker history | **Next; spec not yet written.** Requires the passive cold-read spike before code; the provider is built in the daemon's existing read infrastructure, not a parallel one |
+| SG-002: passive worker evidence | Exact snapshot/history/changes contract, inert cold reads and complete retained worker history | **In progress.** Cold-read spike measured 2026-11-08: [evidence](specs/OBSERVATION-SPIKE.md) — read-only SQLite plus provider-owned schema constants, scope enumeration required, complete-history defects in today's runtime read found. Spec next; provider is built in the daemon's existing read infrastructure |
 | SG-003: analysis and native decisions | Bounded evidence-backed suggestions and the native decision dashboard | Planned; reuses SG-002 evidence |
 | SG-004: proactive observation | Change-driven rechecks, notifications, recovery and richer observability | Planned |
 | Future management | Separately authorized worker command contract | Outside these read-only milestones |
@@ -35,8 +35,9 @@ Spec-driven progress: SG-001 moved through one active spec plus its protocol
 contract, two independent review rounds and a targeted replay, four runnable
 slices (A process, B durable chat, C native/CLI, D acceptance) and an owner
 acceptance on the source dev App. It is now closed except the residual environment
-gaps above. No SG-002 contract exists yet; writing and reviewing that spec is the
-next spec-driven step, not implementing observation first.
+gaps above. The SG-002 cold-read spike is measured ([evidence](specs/OBSERVATION-SPIKE.md));
+writing and reviewing the observation contract is the next spec-driven step, not
+implementing the provider first.
 
 Owner decision 2026-11-08: independence applies to **SG-001**, which is delivered.
 SG-002 and later reuse the daemon's existing read infrastructure (storage access,
