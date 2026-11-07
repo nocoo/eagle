@@ -1,5 +1,21 @@
 # 用户视角检查点
 
+## 2026-11-07 — SG001-B own durable chat reaches a real socket
+
+- The independent service now runs real pi-durable/SQLite conversations through an
+  authenticated, endpoint-bound WebSocket. A scripted model streams actual partials,
+  answers, survives reopen with stable request dedupe, and obeys Stop/queue limits.
+- 35 tests/types/lint pass. All source is measured by a four-metric 95% coverage
+  gate: statements 98.64%, branches 95.42%, functions 98.03%, lines 98.64%.
+  A storage-failure regression first demonstrated duplicate failure identities;
+  the SDK report and close channels now converge on one safe failure.
+- Foundation review closed its four findings at 8ec860c0 with an independent check.
+  Chat specification review added fresh per-socket nonces, explicit failure/Stop/
+  history coverage semantics and nonconflicting ports 43127/43128.
+- The next broken hop is Swift client/CLI/native App integration. No live model or
+  eagle-dev Super Bot journey has run yet. Worker collection, authentication and
+  D1 remain outside this slice and unmodified; no installed App was replaced.
+
 ## 2026-11-07 — SG001-A independent process foundation
 
 - Superagent implementation has started, separately from workers. An isolated real

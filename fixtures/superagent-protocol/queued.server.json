@@ -1,0 +1,9 @@
+{
+  "type": "result",
+  "id": "cmd_fixture_01",
+  "value": {
+    "id": "s_8",
+    "requestId": "req_fixture_01",
+    "status": "queued"
+  }
+}

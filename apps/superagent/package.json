@@ -11,17 +11,21 @@
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check --error-on-warnings .",
-    "check": "npm test && npm run typecheck && npm run lint"
+    "coverage": "c8 node --test test/*.test.ts",
+    "check": "npm run coverage && npm run typecheck && npm run lint"
   },
   "dependencies": {
     "@earendil-works/chord": "1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
     "@earendil-works/pi-durable": "1.4.0",
+    "ws": "8.22.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
     "@types/node": "26.6.6",
+    "@types/ws": "8.18.1",
+    "c8": "12.0.0",
     "typescript": "7.0.2"
   }
 }

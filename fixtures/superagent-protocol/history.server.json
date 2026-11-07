@@ -1,0 +1,18 @@
+{
+  "type": "result",
+  "id": "cmd_fixture_03",
+  "value": {
+    "messages": [
+      {
+        "id": "e_10",
+        "role": "user",
+        "text": "Hello Super Bot",
+        "state": "complete",
+        "createdAt": 1794000000000,
+        "requestId": "req_fixture_01"
+      }
+    ],
+    "hasMore": false,
+    "coverage": "complete"
+  }
+}

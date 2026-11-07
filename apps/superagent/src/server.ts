@@ -1,8 +1,21 @@
 import { createServer } from "node:http";
 import { closeServer, listen, ownRoot, serverProof } from "./identity.ts";
+import { ChatRuntime } from "./runtime.ts";
+import { allowedRequest, attachSockets } from "./socket.ts";
 
-export async function startService(options: { root: string; port: number }) {
+export async function startService(options: {
+  root: string;
+  port: number;
+  openRuntime?: (root: string) => Promise<ChatRuntime>;
+}) {
   const owner = await ownRoot(options.root);
+  let runtime: ChatRuntime;
+  try {
+    runtime = await (options.openRuntime ?? ChatRuntime.open)(owner.root);
+  } catch (error) {
+    await owner.release();
+    throw error;
+  }
   let port = 0;
   const server = createServer((request, response) => {
     response.setHeader("content-type", "application/json");
@@ -19,10 +32,7 @@ export async function startService(options: { root: string; port: number }) {
       reply(413, { error: "body_refused" });
       return;
     }
-    if (
-      request.headers.origin !== undefined ||
-      !/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(request.headers.host ?? "")
-    ) {
+    if (!allowedRequest(request)) {
       reply(403, { error: "origin_refused" });
       return;
     }
@@ -37,7 +47,8 @@ export async function startService(options: { root: string; port: number }) {
     }
     reply(200, {
       ...owner.identity,
-      modelReady: false,
+      modelReady: runtime.snapshot().modelReady,
+      ...(runtime.snapshot().failure === undefined ? {} : { failure: runtime.snapshot().failure }),
       ...(nonce === undefined
         ? {}
         : { proof: serverProof(owner.token, nonce, port, owner.identity) }),
@@ -48,17 +59,27 @@ export async function startService(options: { root: string; port: number }) {
   try {
     port = await listen(server, options.port);
   } catch (error) {
+    await runtime.close();
     await owner.release();
     throw error;
   }
+  const closeSockets = attachSockets(server, {
+    token: owner.token,
+    identity: owner.identity,
+    port,
+    runtime,
+  });
   let closing: Promise<void> | undefined;
   return {
     port,
     identity: owner.identity,
     close() {
       closing ??= (async () => {
+        const httpClosed = closeServer(server);
         server.closeAllConnections();
-        await closeServer(server);
+        await closeSockets();
+        await httpClosed;
+        await runtime.close();
         await owner.release();
       })();
       return closing;

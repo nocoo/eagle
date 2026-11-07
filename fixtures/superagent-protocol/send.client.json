@@ -1,0 +1,6 @@
+{
+  "type": "send",
+  "id": "cmd_fixture_01",
+  "requestId": "req_fixture_01",
+  "text": "Hello Super Bot"
+}

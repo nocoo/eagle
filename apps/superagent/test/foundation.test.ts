@@ -6,11 +6,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type TestContext, test } from "node:test";
 import type { Identity } from "../src/identity.ts";
-import { startService } from "../src/server.ts";
+import { startService as startServer } from "../src/server.ts";
 
+const owned = new Map<string, Awaited<ReturnType<typeof startServer>>[]>();
+async function startService(options: Parameters<typeof startServer>[0]) {
+  const service = await startServer(options);
+  const services = owned.get(options.root) ?? [];
+  services.push(service);
+  owned.set(options.root, services);
+  return service;
+}
 async function temporary(t: TestContext) {
   const root = await mkdtemp(join(tmpdir(), "eagle-superagent-test-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(async () => {
+    for (const service of owned.get(root) ?? []) await service.close();
+    owned.delete(root);
+    await rm(root, { recursive: true, force: true });
+  });
   return root;
 }
 

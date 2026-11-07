@@ -13,5 +13,8 @@ Node 24+. Bind is loopback-only. A canonical-root kernel lock prevents two owner
 `GET /v1/health` reports service identity and readiness without exposing credentials.
 All tests allocate private temporary roots; they do not start an installed worker.
 
-Current slice: process foundation. Conversation and App integration follow under
-the spec; readiness alone is not evidence that chat works.
+The service now owns a chat-only pi-durable conversation, private configuration and
+an authenticated WebSocket at `/v1/chat`. See the exact
+[protocol](../../docs/bots/specs/SUPERAGENT-001-PROTOCOL.md). It installs no tools or
+worker connection. `check` enforces four 95% coverage floors, strict types and lint.
+Native App/CLI integration follows; scripted-model tests do not prove a live gateway.

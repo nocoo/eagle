@@ -1,6 +1,6 @@
 # SG-001 — independent process and native Super Bot chat
 
-Status: **implementation in progress; SG001-A foundation under verification**.
+Status: **implementation in progress; A verified, B runtime/transport implemented, C next**.
 Owner-selected first milestone: start an independent Superagent process, then make
 its permanent Super Bot conversational in the Eagle App. Worker observation is
 not a prerequisite. [Architecture](../SUPERAGENT-ARCHITECTURE.md) owns invariant
@@ -321,9 +321,17 @@ necessary acceptance omission reported in that scope. The review confirmed the
 chat-first order, zero worker dependency, R01-R12 acceptance mapping and honest
 freeze-before-code items. It does not freeze unresolved wire/configuration details.
 
-SG001-A: the minimal server first failed seven behavior cases (missing readiness
-fields, duplicate root accepted and invalid origins accepted). The implemented
-foundation passes eight tests, including a real process start, duplicate-root
-refusal, SIGKILL/reopen and graceful stop. Type/lint and independent code review
-are recorded with the slice's commit. No model conversation or native App acceptance
-is claimed yet. Evidence: `.local/superagent-evidence/foundation-red.log`.
+SG001-A: seven initial behavior reds, followed by real process start/stop and
+SIGKILL/reopen. Independent review found four additional negative-boundary gaps;
+regressions failed first and passed at `8ec860c0`. The reviewer independently ran
+12 tests/types/lint at that revision and closed all four findings.
+
+SG001-B: five initial runtime reds and real socket reds preceded implementation.
+The current independent gate passes 35 tests, strict types and check-only lint.
+C8 enforces 95% statements/branches/functions/lines across all `src/**/*.ts`; the
+measured result is 98.64/95.42/98.03/98.64. Tests use real Harness/SQLite/transport
+and scripted models, including partial streaming, Stop, queue limits, durable
+deduplication/reopen, error redaction, storage failure, authentication replay and
+private configuration. A model really runs in that fixture runtime; no live-provider,
+eagle-dev CLI or native App conversation has been verified yet. B code review and
+C integration are next. Evidence is under `.local/superagent-evidence/`.

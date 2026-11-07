@@ -1,6 +1,6 @@
 # SG-001 local protocol and implementation decisions
 
-Status: **implementation contract, frozen for SG001-A; chat section frozen before B**.
+Status: **implementation contract, frozen for SG001-A and SG001-B**.
 This document completes the engineering choices in [SG-001](SUPERAGENT-001-CHAT.md).
 No worker protocol, credential or storage is used.
 
@@ -64,7 +64,111 @@ connection. Reuse the installed `ws` library, not a custom socket implementation
 Snapshots carry actual committed partial model content from pi-durable. Every frame
 is a complete bounded current window, so replacing state tolerates skipped
 coalesced revisions without losing text; no second delta engine is needed. Precise
-message, submission, configuration and error fixtures land before B code.
+message, submission, configuration and error fixtures accompany B.
+
+### Wire v1
+
+WebSocket path `/v1/chat`. No query string, redirect or browser Origin. Maximum
+frame 256 KiB; unauthenticated lifetime five seconds; at most 16 clients. On each
+new connection:
+
+1. Client sends `{type:"hello",nonce:<32 hex>}`.
+2. Server sends `{type:"challenge",identity:<health identity>,serverNonce:<fresh 32 hex>,proof}`.
+   Server proof is HMAC over clientNonce, serverNonce, actual endpoint, rootBinding,
+   instance, separated by LF. The server nonce is fresh per socket and consumed once.
+   Client checks service, protocol, configured root binding and proof on this socket.
+3. Client sends `{type:"authenticate",proof:HMAC(token,"client"+LF+clientNonce+LF+serverNonce+LF+instance)}`.
+4. Server sends `{type:"ready"}`, then a whole snapshot. No bearer is transmitted.
+   An invalid proof closes 4001; protocol violations close 1008. Replaying a prior
+   authentication frame on a new socket is refused even if the client nonce repeats.
+   HMAC keys are UTF-8 bytes of the stored lowercase hex token, not hex-decoded bytes.
+   LF means byte 0x0a, never literal backslash-n; nonces/proofs are lowercase hex.
+   Golden vectors and JSON samples live in `fixtures/superagent-protocol/`.
+
+Authenticated commands have a caller-owned `id` (8..64 `[A-Za-z0-9_-]`):
+
+| Command | Fields | Result value |
+| --- | --- | --- |
+| `state` | `type,id` | Versioned snapshot envelope (`instance`, `rev`, `value`), not an unversioned reducer update |
+| `configure` | `type,id,configuration:{baseUrl,model,thinkingLevel,apiKey?}` | Public configuration; absent key keeps existing, empty key clears it |
+| `send` | `type,id,requestId,text` | Durable submission; dedupe is by requestId, not transport id |
+| `submission` | `type,id,requestId` | That durable submission, with answer text when done, or null |
+| `history` | `type,id,before?:positive entry number,limit?:1..100` | `{messages,nextBefore?:number,hasMore,coverage:"complete"|"partial"}`; oldest-first within the requested earlier page; unavailable data is an error, never an empty success |
+| `abort` | `type,id` | `{stopped:true}` after previously accepted active/queued inputs are terminal; normal completion winning the race remains done, never relabelled aborted |
+
+Replies are `{type:"result",id,value}` or `{type:"error",id,code}`. Codes are fixed:
+`invalid_command`, `unauthorized`, `unconfigured`, `busy`, `limit_exceeded`,
+`storage_failed`, `internal`, `shutting_down`, `cancellation_unconfirmed`. Failures never reflect upstream text.
+Unknown fields or commands are refused. No delete, worker or generic execute command.
+
+Broadcast: `{type:"snapshot",instance,rev,value}`. Revision is per process and
+monotonic; instances reset the client's baseline. Every snapshot wholly replaces
+its newest window, not previously fetched historical pages. Coalescing/skipped revs
+are valid because no delta is required. Historical pages are discarded on reconnect
+or a changed live-window oldest boundary; clients show that older history must be
+loaded again, not a silently merged gap. A slow socket retains only the newest
+snapshot; sustained overflow closes it, and reconnect starts from a fresh snapshot.
+
+Snapshot value: `{botId:"superagent",messages,pending,running,modelReady,
+configuration,window,failure?}`. `window` is `{oldestEntryId:number|null,
+newestEntryId:number|null,coverage:"window"}`; it certifies only the supplied window.
+`failure` is `{code,id}`, with fixed codes `storage_failed`, `task_parked`,
+`model_timeout`, `model_authentication`, `model_error`. Runtime failure also appears
+in public health; modelReady only means configuration is present, not runtime health.
+Provider text never crosses this boundary. Known SDK timeout/HTTP 401/403 error
+patterns map to the corresponding safe code; unclassified provider failure is
+model_error, never guessed into success. Configuration is null or `{baseUrl,model,thinkingLevel,
+hasApiKey}`; never the key. `pending` holds bounded previews of queued inputs.
+Message: `{id,role:"user"|"assistant",text,state:"complete"|"streaming"|"error"|"aborted",
+createdAt,requestId?}`. createdAt is epoch milliseconds. Entry IDs are `e_<number>`,
+partial IDs `p_<attempt>`. Queued previews are `{id:"s_<number>",requestId,text}`.
+Error text is a fixed notice; hidden reasoning and arbitrary tool content are not
+part of this chat-only display contract. Every truncated text ends in `\n[truncated]`.
+
+Submission: `{id,requestId,status:"queued"|"placed"|"done"|"unanswered",entryId?,
+answerEntryId?,answer?,reason?}`. Re-sending an existing requestId returns its record
+even when the model is now unconfigured or the queue is full. Only a genuinely new
+submission consumes budget. A lost acknowledgement is unknown, not permission to
+use a new ID. Clients persist pending sends in their own store until admission is
+confirmed; disconnect does not abort accepted work. `queued` has no entry IDs;
+`placed` has entryId; `done` has entryId/answerEntryId and answer when retained;
+`unanswered` has optional entryId and a required reason. Reason is one of aborted,
+withdrawn, stale, model_timeout, model_authentication, model_error, run_failed.
+
+Abort closes the admission gate synchronously when the runtime accepts the command;
+previously accepted admissions drain before cancellation starts. New sends/configures
+are refused busy while it is outstanding. Confirmation waits at most five seconds;
+timeout returns cancellation_unconfirmed while the original cancellation continues.
+No automatic resubmission/abort replay occurs. A disconnect is unconfirmed. Already
+completed submissions keep their original result. No new input is included in the
+original cancellation target.
+
+### Configuration, bounds and persistence
+
+`configuration.json` is a private atomic file in the Superagent root, never the
+worker gateway file. Only a verified socket can update it. App Settings and scoped
+CLI configure the service; they share no worker bootstrap. An update while a run
+or queued input exists is refused `busy`, without writing. Provider id is the
+internal constant `superagent`; one configured OpenAI Responses endpoint/model is
+registered with the SDK. No discovery, environment credential lookup or fallback.
+URL is http/https without credentials, query or fragment; localhost is valid.
+Thinking levels are off/minimal/low/medium/high/xhigh/max, passed explicitly.
+
+Input: nonempty, at most 8000 code points. At most 16 outstanding inputs per
+conversation. Model window 200000 tokens, response cap 8192, stream timeout 120 s,
+transient retries 2, native crash restart limit 5, afterFailedRun `continue`.
+No tools, extensions, execution environment or autonomous submissions are installed.
+Native compaction is enabled; older entries remain accessible through history.
+Whole snapshots/history pages keep at most 100 messages and 192 KiB; one displayed
+text is capped at 32000 code points with a marker. Queued previews are capped at
+160 code points. The runtime keeps only bounded presentation state; pi storage
+remains the complete durable authority.
+
+Own chat history uses numeric immutable entry boundaries (`before` is exclusive),
+so newly appended entries cannot shift older pages. A corrupt storage/configuration
+fails closed. Runtime failure is visible in snapshots/health; there is no silent
+new-session creation. SDK native recovery may retain an aborted partial plus the
+completed attempt; this is not duplicate admission.
 
 The service owns only one permanent conversation and no executable tools. Its
 store, runtime and transport are independent from Bots. Snapshot/history admission
