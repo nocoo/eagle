@@ -123,6 +123,44 @@ final class FileStagingTests: XCTestCase {
     }
   }
 
+  func testSourceReplacementAtOpenAndBeforeFinalLstatIsRejected() async throws {
+    let source = root.appendingPathComponent("barrier.bin")
+    try Data([1, 2, 3, 4]).write(to: source)
+
+    let replaceBeforeOpen = DiskFilePort(
+      directory: root,
+      uploader: RefusingUploader(),
+      beforeOpen: {
+        try? FileManager.default.removeItem(at: source)
+        try? Data([9, 9, 9, 9]).write(to: source)
+      }
+    )
+    do {
+      _ = try await replaceBeforeOpen.stage(
+        text: "read", selectedFiles: [source], botId: "b_1", requestId: "r_barrier_open")
+      XCTFail("source replacement before open must not publish")
+    } catch let error as ClientError {
+      XCTAssertFalse(error.message.isEmpty)
+    }
+
+    try Data([1, 2, 3, 4]).write(to: source)
+    let replaceBeforeFinalLstat = DiskFilePort(
+      directory: root,
+      uploader: RefusingUploader(),
+      beforeFinalLstat: {
+        try? FileManager.default.removeItem(at: source)
+        try? Data([8, 8, 8, 8]).write(to: source)
+      }
+    )
+    do {
+      _ = try await replaceBeforeFinalLstat.stage(
+        text: "read", selectedFiles: [source], botId: "b_1", requestId: "r_barrier_final")
+      XCTFail("source replacement after copy must not publish")
+    } catch let error as ClientError {
+      XCTAssertFalse(error.message.isEmpty)
+    }
+  }
+
   func testRepeatedRequestIdDoesNotOverwriteADifferentSnapshot() async throws {
     let source = root.appendingPathComponent("repeat.bin")
     try Data([1, 2, 3]).write(to: source)

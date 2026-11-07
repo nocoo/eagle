@@ -10,10 +10,22 @@ public final class DiskFilePort: FilePort {
 
   private let directory: URL
   private weak var uploader: ManagedFileUploadPort?
+  private let beforeOpen: @Sendable () -> Void
+  private let afterOpen: @Sendable () -> Void
+  private let beforeFinalLstat: @Sendable () -> Void
 
-  public init(directory: URL, uploader: ManagedFileUploadPort) {
+  public init(
+    directory: URL,
+    uploader: ManagedFileUploadPort,
+    beforeOpen: @escaping @Sendable () -> Void = {},
+    afterOpen: @escaping @Sendable () -> Void = {},
+    beforeFinalLstat: @escaping @Sendable () -> Void = {}
+  ) {
     self.directory = directory
     self.uploader = uploader
+    self.beforeOpen = beforeOpen
+    self.afterOpen = afterOpen
+    self.beforeFinalLstat = beforeFinalLstat
   }
 
   public func stage(
@@ -25,7 +37,9 @@ public final class DiskFilePort: FilePort {
     try await Task.detached {
       try Self.stageSync(
         text: text, selectedFiles: selectedFiles, botId: botId,
-        requestId: requestId, directory: self.directory
+        requestId: requestId, directory: self.directory,
+        beforeOpen: self.beforeOpen, afterOpen: self.afterOpen,
+        beforeFinalLstat: self.beforeFinalLstat
       )
     }.value
   }
@@ -107,7 +121,10 @@ public final class DiskFilePort: FilePort {
     selectedFiles: [URL],
     botId: String,
     requestId: String,
-    directory: URL
+    directory: URL,
+    beforeOpen: @Sendable () -> Void,
+    afterOpen: @Sendable () -> Void,
+    beforeFinalLstat: @Sendable () -> Void
   ) throws -> StagedSend {
     let needsInput = text.unicodeScalars.count > Self.maxSendScalars
     let count = selectedFiles.count + (needsInput ? 1 : 0)
@@ -143,7 +160,10 @@ public final class DiskFilePort: FilePort {
           botId: botId,
           requestId: requestId,
           index: offset + (needsInput ? 1 : 0),
-          directory: directory
+          directory: directory,
+          beforeOpen: beforeOpen,
+          afterOpen: afterOpen,
+          beforeFinalLstat: beforeFinalLstat
         )
       )
     }
@@ -238,21 +258,35 @@ public final class DiskFilePort: FilePort {
     botId: String,
     requestId: String,
     index: Int,
-    directory: URL
+    directory: URL,
+    beforeOpen: @Sendable () -> Void,
+    afterOpen: @Sendable () -> Void,
+    beforeFinalLstat: @Sendable () -> Void
   ) throws -> StagedFile {
     var lstatBefore = stat()
     guard lstat(source.path, &lstatBefore) == 0,
       (lstatBefore.st_mode & mode_t(S_IFMT)) == S_IFREG
     else { throw ClientError("附件必须是普通文件") }
 
+    beforeOpen()
     let fd = open(source.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
     guard fd >= 0 else { throw ClientError("附件不可读") }
     defer { close(fd) }
 
+    afterOpen()
     var fstatBefore = stat()
     guard fstat(fd, &fstatBefore) == 0, (fstatBefore.st_mode & mode_t(S_IFMT)) == S_IFREG else {
       throw ClientError("附件必须是普通文件")
     }
+    guard
+      lstatBefore.st_dev == fstatBefore.st_dev,
+      lstatBefore.st_ino == fstatBefore.st_ino,
+      lstatBefore.st_size == fstatBefore.st_size,
+      lstatBefore.st_mtimespec.tv_sec == fstatBefore.st_mtimespec.tv_sec,
+      lstatBefore.st_mtimespec.tv_nsec == fstatBefore.st_mtimespec.tv_nsec,
+      lstatBefore.st_ctimespec.tv_sec == fstatBefore.st_ctimespec.tv_sec,
+      lstatBefore.st_ctimespec.tv_nsec == fstatBefore.st_ctimespec.tv_nsec
+    else { throw ClientError("附件在打开前发生了替换") }
     guard fstatBefore.st_size >= 0, fstatBefore.st_size <= Self.maxFileBytes else {
       throw ClientError("附件不能超过 50 MiB")
     }
@@ -316,6 +350,7 @@ public final class DiskFilePort: FilePort {
     }
     guard fsync(tempFd) == 0 else { throw ClientError("附件快照写入失败") }
 
+    beforeFinalLstat()
     var fstatAfter = stat()
     guard fstat(fd, &fstatAfter) == 0, (fstatAfter.st_mode & mode_t(S_IFMT)) == S_IFREG else {
       throw ClientError("附件快照源在拷贝时改变")
@@ -323,6 +358,13 @@ public final class DiskFilePort: FilePort {
     var lstatAfter = stat()
     guard lstat(source.path, &lstatAfter) == 0,
       (lstatAfter.st_mode & mode_t(S_IFMT)) == S_IFREG,
+      lstatAfter.st_dev == fstatAfter.st_dev,
+      lstatAfter.st_ino == fstatAfter.st_ino,
+      lstatAfter.st_size == fstatAfter.st_size,
+      lstatAfter.st_mtimespec.tv_sec == fstatAfter.st_mtimespec.tv_sec,
+      lstatAfter.st_mtimespec.tv_nsec == fstatAfter.st_mtimespec.tv_nsec,
+      lstatAfter.st_ctimespec.tv_sec == fstatAfter.st_ctimespec.tv_sec,
+      lstatAfter.st_ctimespec.tv_nsec == fstatAfter.st_ctimespec.tv_nsec,
       lstatBefore.st_dev == lstatAfter.st_dev,
       lstatBefore.st_ino == lstatAfter.st_ino,
       lstatBefore.st_size == lstatAfter.st_size,
