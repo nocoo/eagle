@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -369,6 +379,83 @@ test("IDs, paths and unsafe filesystem entries are refused without following the
       (error) => error instanceof ManagedFileError && error.reason === "storage_failed",
     );
     assert.equal((await stat(filesDir)).isDirectory(), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("metadata verifies the requested id, bot and every completed record field", async () => {
+  const { root, botDir, store } = await open();
+  try {
+    const leftBody = Buffer.from("left");
+    await declare(store, { body: leftBody, name: "left.bin", mimeType: "text/plain" });
+    const left = await upload(store, leftBody);
+
+    const rightUploadId = "u_right_01234567890";
+    const rightBody = Buffer.from("right");
+    await store.declare({
+      botId,
+      uploadId: rightUploadId,
+      name: "right.bin",
+      mimeType: "text/plain",
+      size: rightBody.length,
+      sha256: digest(rightBody),
+    });
+    const right = await store.upload({
+      botId,
+      uploadId: rightUploadId,
+      source: Readable.from([rightBody]),
+    });
+
+    const filesDir = join(botDir, "files");
+    const leftPath = join(filesDir, `${left.id}.json`);
+    const rightPath = join(filesDir, `${right.id}.json`);
+    const leftJson = await readFile(leftPath, "utf8");
+    const rightJson = await readFile(rightPath, "utf8");
+    await writeFile(leftPath, rightJson, { mode: 0o600 });
+    await writeFile(rightPath, leftJson, { mode: 0o600 });
+
+    await assert.rejects(
+      store.metadata({ botId, fileId: left.id }),
+      (error) => error instanceof ManagedFileError && error.reason === "storage_failed",
+    );
+    await assert.rejects(
+      store.metadata({ botId, fileId: right.id }),
+      (error) => error instanceof ManagedFileError && error.reason === "storage_failed",
+    );
+
+    await rm(leftPath);
+    await rm(rightPath);
+    await store.declare({
+      botId,
+      uploadId,
+      name: "left.bin",
+      mimeType: "text/plain",
+      size: leftBody.length,
+      sha256: digest(leftBody),
+    });
+    const restored = await store.upload({ botId, uploadId, source: Readable.from([leftBody]) });
+    const corrupted = { ...restored, size: leftBody.length + 1, mimeType: "bad", sha256: "bad" };
+    await writeFile(join(filesDir, `${restored.id}.json`), `${JSON.stringify(corrupted)}\n`, {
+      mode: 0o600,
+    });
+    await assert.rejects(
+      store.metadata({ botId, fileId: restored.id }),
+      (error) => error instanceof ManagedFileError && error.reason === "storage_failed",
+    );
+
+    await writeFile(
+      join(filesDir, `${restored.id}.json`),
+      `${JSON.stringify({
+        ...restored,
+        botId: "b_foreign",
+      })}\n`,
+      { mode: 0o600 },
+    );
+    await assert.rejects(
+      store.metadata({ botId, fileId: restored.id }),
+      (error) => error instanceof ManagedFileError && error.reason === "storage_failed",
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

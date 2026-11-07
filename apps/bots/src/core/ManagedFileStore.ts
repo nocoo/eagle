@@ -147,10 +147,38 @@ const parseStored = (body: string): ManagedFile => {
     throw storage();
   }
   const result = candidate as ManagedFile;
-  assertFileId(result.id);
-  assertBotId(result.botId);
-  assertUploadId(result.uploadId);
-  if (result.id !== fileIdFor(result.botId, result.uploadId)) throw storage();
+  try {
+    assertFileId(result.id);
+    assertBotId(result.botId);
+    assertUploadId(result.uploadId);
+    if (result.id !== fileIdFor(result.botId, result.uploadId)) throw storage();
+    if (
+      typeof result.name !== "string" ||
+      result.name.length === 0 ||
+      Buffer.byteLength(result.name, "utf8") > MAX_MANAGED_FILE_NAME_BYTES ||
+      result.name.includes("\0")
+    ) {
+      throw storage();
+    }
+    if (
+      typeof result.mimeType !== "string" ||
+      Buffer.byteLength(result.mimeType, "utf8") > MAX_MANAGED_FILE_MIME_BYTES ||
+      !MIME.test(result.mimeType)
+    ) {
+      throw storage();
+    }
+    if (
+      !Number.isSafeInteger(result.size) ||
+      result.size < 0 ||
+      result.size > MAX_MANAGED_FILE_BYTES
+    ) {
+      throw storage();
+    }
+    if (!SHA256.test(result.sha256)) throw storage();
+  } catch (error) {
+    if (error instanceof ManagedFileError) throw error;
+    throw storage(error);
+  }
   return result;
 };
 
@@ -341,9 +369,13 @@ export class ManagedFileStore {
     assertFileId(input.fileId);
     const files = await this.#filesDirectory(input.botId);
     const file = await this.#readMetadata(join(files, `${input.fileId}.json`));
-    if (file === undefined || file.status !== "complete" || file.botId !== input.botId) {
+    if (file === undefined) {
       throw new ManagedFileError("unknown_file", "no such managed file");
     }
+    if (file.status !== "complete" || file.id !== input.fileId || file.botId !== input.botId) {
+      throw storage();
+    }
+    await this.#verifyContent(join(files, `${file.id}.bin`), file);
     return file;
   }
 
