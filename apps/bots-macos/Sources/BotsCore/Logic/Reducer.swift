@@ -390,6 +390,7 @@ public enum Reducer {
 extension Message {
   /// A bubble the client rendered before the daemon confirmed it (PROTOCOL I4).
   public var isOptimistic: Bool { id.hasPrefix("local_") }
+  public var isLocalRecovery: Bool { role == .notice && id.hasPrefix("local_recovery_") }
 
   public static func optimistic(requestId: String, text: String) -> Message {
     Message(

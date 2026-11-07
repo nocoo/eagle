@@ -1258,6 +1258,9 @@ struct BotsPresenter {
       }
       return rows + [.assistant(id: "\(message.id)-note", blocks: notes)]
     case .notice, .system:
+      if message.isLocalRecovery {
+        return [.user(id: message.id, text: message.text, origin: "本机待确认")]
+      }
       return [.assistant(id: message.id, blocks: [.note(message.text)])]
     }
   }

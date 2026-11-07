@@ -1136,8 +1136,9 @@ recovery guarantees depend on them.
    become `unanswered` later, so the entry survives until a terminal record arrives.
    Entries are never re-sent with a new id, and no entry is removed before its
    terminal record has been stored. An older outbox entry whose text exceeds the wire
-   limit remains durable and visible for copying, but is not automatically sent again;
-   its admission outcome remains unknown until confirmed.
+   limit remains durable and visible for copying as a labelled local recovery, including
+   after later snapshots, but is not automatically sent again; its admission outcome
+   remains unknown until confirmed. The recovery does not count as a new user turn.
 
 3. **Disposition decides the outbox.** Every `error` emitted after `welcome` carries
    `disposition`. The handshake failure (`version_mismatch`), which is sent before a

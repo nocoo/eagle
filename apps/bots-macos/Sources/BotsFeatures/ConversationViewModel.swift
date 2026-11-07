@@ -292,7 +292,7 @@ public final class ConversationViewModel: ObservableObject {
 
   /// Replays every stored entry with its own requestId; pi answers with the stored record
   /// (PROTOCOL.md, client duties 2).
-  private func reconcileOutbox() {
+  private func reconcileOutbox(replay: Bool) {
     guard let botId = selectedBotId else { return }
     persistPendingRefusals()
     let durableRefusals: Set<String>
@@ -319,15 +319,15 @@ public final class ConversationViewModel: ObservableObject {
     {
       if Self.isOversized(entry.text) {
         if !state.messages.contains(where: { $0.requestId == entry.requestId }) {
-          state = Reducer.apply(
-            .append(
-              message: .optimistic(requestId: entry.requestId, text: entry.text), replaces: nil),
-            to: state
-          )
+          let recovery = Message(
+            id: "local_recovery_\(entry.requestId)", role: .notice, state: .complete,
+            createdAt: entry.createdAt, blocks: [.text(entry.text)], requestId: entry.requestId)
+          state = Reducer.apply(.append(message: recovery, replaces: nil), to: state)
         }
         errorBanner = Self.oversizedOutboxError
         continue
       }
+      guard replay else { continue }
       send(
         text: entry.text,
         requestId: entry.requestId,
@@ -402,13 +402,9 @@ public final class ConversationViewModel: ObservableObject {
       hasSnapshot = true
       parked = state.parked
       hasOlder = value.truncatedBefore != nil
-      // Every snapshot is a chance to make a refusal durable, even when no reconciliation
-      // is due.
-      persistPendingRefusals()
-      if !reconciled {
-        reconciled = true
-        reconcileOutbox()
-      }
+      let replay = !reconciled
+      reconciled = true
+      reconcileOutbox(replay: replay)
     case .append(let message, let replaces):
       state = Reducer.apply(.append(message: message, replaces: replaces), to: state)
     case .delta(let messageId, let changes):

@@ -1,5 +1,16 @@
 # Retrospective
 
+## 2026-11-07 — Pending recovery was mistaken for a user turn
+
+An oversized outbox entry was initially restored as an optimistic user message
+only on the first snapshot. Review found that a later snapshot removed the only
+copyable display and that the unsent recovery changed which tool appeared active.
+The disk record was retained, but the presentation misrepresented its outcome.
+
+Test recovery across repeated snapshots and active tool calls before committing:
+local-only records must stay labelled and copyable without changing conversation
+turn semantics or triggering network replay.
+
 ## 2026-11-07 — Do not leave an unsafe client send path active
 
 The first client-file implementation passed its local suite, but read-only review

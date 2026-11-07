@@ -335,8 +335,18 @@ final class ConversationTests: XCTestCase {
       fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
       try await waitUntil { model.hasSnapshot }
       XCTAssertEqual(model.state.messages.map(\.text), [text])
+      XCTAssertEqual(model.state.messages.first?.role, .notice)
+      XCTAssertEqual(model.state.messages.first?.id, "local_recovery_r_stored_long")
       XCTAssertTrue(model.errorBanner?.contains("8,000") == true)
       XCTAssertTrue(fake.sent.isEmpty)
+
+      fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+      fake.emit(.status(running: true, inbox: [], streaming: nil))
+      try await waitUntil { model.state.running }
+      XCTAssertEqual(model.state.messages.map(\.text), [text], "a resync retains the recovery")
+      XCTAssertEqual(model.state.messages.first?.role, .notice)
+      XCTAssertTrue(fake.sent.isEmpty)
+
       model.retry(entry)
       try await Task.sleep(for: .milliseconds(30))
       XCTAssertTrue(fake.sent.isEmpty, "manual retry must not bypass the wire limit")
@@ -363,6 +373,10 @@ final class ConversationTests: XCTestCase {
       "断网时写的",
       "reconciliation re-sends the stored entry with its original requestId"
     )
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    fake.emit(.status(running: true, inbox: [], streaming: nil))
+    try await waitUntil { model.state.running }
+    XCTAssertEqual(fake.sent.count, 1, "a later snapshot must not replay it again")
   }
 
   private func waitUntil(

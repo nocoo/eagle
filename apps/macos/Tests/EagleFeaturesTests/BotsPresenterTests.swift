@@ -336,6 +336,21 @@ struct BotsToolRowTests {
     #expect(!presenter.isWaiting(for: state))
   }
 
+  @Test("a local recovery is labelled and does not change the active tool turn")
+  func recoveryDoesNotChangeTheActiveTurn() {
+    let original = "长消息\n  keeps whitespace  "
+    let recovery = message(
+      "local_recovery_r_1", role: .notice, blocks: [.text(original)])
+    let state = ConversationState(botId: "b_1", messages: [call(), recovery], running: true)
+    let entries = presenter.transcript(for: state)
+    #expect(toolRows(entries).first?.isRunning == true)
+    #expect(!presenter.isWaiting(for: state))
+    #expect(
+      entries.contains {
+        if case .user("local_recovery_r_1", original, "本机待确认") = $0 { true } else { false }
+      })
+  }
+
   @Test("the result pairs with its call by id, live and after a snapshot")
   func pairedResult() {
     var state = ConversationState(botId: "b_1", running: false)
