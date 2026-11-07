@@ -20,6 +20,9 @@ public final class ConversationViewModel: ObservableObject {
   private var drafts: [String: String] = [:]
   private var draftRevision = 0
   private var draftRevisions: [String: Int] = [:]
+  private var compositionRevision = 0
+  private var compositionRevisions: [String: Int] = [:]
+  private var viewGeneration = 0
   private var selectedFilesByBot: [String: [URL]] = [:]
   @Published public private(set) var selectedFiles: [URL] = []
   public var draft: String {
@@ -48,6 +51,8 @@ public final class ConversationViewModel: ObservableObject {
   /// Sends the user asked for that have not been confirmed yet.
   private var inFlight: [String: OutboxEntry] = [:]
   private var uploadTasks: [String: Task<Void, Never>] = [:]
+  private var stagingTasks: [String: Task<Void, Never>] = [:]
+  private var preparations: [String: String] = [:]
   private var activeUploads: Set<String> = []
   private var sendFiles = false
   /// The absolute catalog a `bots` frame carries, for the window's sidebar.
@@ -89,6 +94,9 @@ public final class ConversationViewModel: ObservableObject {
   /// Connects to a bot and replaces the transcript with its snapshot. Selecting the same bot
   /// again is a no-op, so a list refresh does not reconnect.
   public func select(botId: String) {
+    viewGeneration += 1
+    cancelPreparationTasks()
+    cancelUploadTasks()
     if selectedBotId == botId, eventsTask != nil { return }
     cancelUploadTasks()
     eventsTask?.cancel()
@@ -96,6 +104,7 @@ public final class ConversationViewModel: ObservableObject {
     draftStorage = drafts[botId] ?? ""
     selectedFiles = selectedFilesByBot[botId] ?? []
     draftRevision = draftRevisions[botId] ?? 0
+    compositionRevision = compositionRevisions[botId] ?? 0
     reconciled = false
     hasSnapshot = false
     state = ConversationState(botId: botId)
@@ -153,6 +162,8 @@ public final class ConversationViewModel: ObservableObject {
   }
 
   public func disconnect() {
+    viewGeneration += 1
+    cancelPreparationTasks()
     cancelUploadTasks()
     eventsTask?.cancel()
     eventsTask = nil
@@ -169,12 +180,20 @@ public final class ConversationViewModel: ObservableObject {
 
   public func selectFiles(_ urls: [URL]) {
     guard let botId = selectedBotId else { return }
+    viewGeneration += 1
+    compositionRevision += 1
+    compositionRevisions[botId] = compositionRevision
+    cancelPreparationTasks()
     selectedFiles = urls
     selectedFilesByBot[botId] = urls
   }
 
   public func clearSelectedFiles() {
     guard let botId = selectedBotId else { return }
+    viewGeneration += 1
+    compositionRevision += 1
+    compositionRevisions[botId] = compositionRevision
+    cancelPreparationTasks()
     selectedFiles = []
     selectedFilesByBot[botId] = []
   }
@@ -191,6 +210,11 @@ public final class ConversationViewModel: ObservableObject {
 
     let requestId = Identifiers.request()
     let capturedRevision = draftRevision
+    let capturedComposition = compositionRevision
+    let capturedGeneration = viewGeneration
+    let compositionKey = "\(botId)#\(capturedComposition)"
+    if preparations[compositionKey] != nil { return }
+    preparations[compositionKey] = requestId
     if !selected.isEmpty || text.unicodeScalars.count > 8_000 {
       guard sendFiles else {
         errorBanner = "此 daemon 不支持附件发送"
@@ -200,8 +224,12 @@ public final class ConversationViewModel: ObservableObject {
         errorBanner = "这个客户端不能上传文件"
         return
       }
-      Task { @MainActor [weak self] in
+      stagingTasks[requestId] = Task { @MainActor [weak self] in
         guard let self else { return }
+        defer {
+          self.preparations.removeValue(forKey: compositionKey)
+          self.stagingTasks.removeValue(forKey: requestId)
+        }
         do {
           let staged = try await filePort.stage(
             text: text,
@@ -209,6 +237,11 @@ public final class ConversationViewModel: ObservableObject {
             botId: botId,
             requestId: requestId
           )
+          guard selectedBotId == botId,
+            viewGeneration == capturedGeneration,
+            draftRevision == capturedRevision,
+            compositionRevision == capturedComposition
+          else { return }
           let optimisticText = try await filePort.originalText(staged)
           self.commitSend(
             staged: staged,
@@ -223,6 +256,7 @@ public final class ConversationViewModel: ObservableObject {
         }
       }
     } else {
+      preparations.removeValue(forKey: compositionKey)
       commitSend(
         staged: StagedSend(text: text),
         optimisticText: text,
@@ -359,11 +393,15 @@ public final class ConversationViewModel: ObservableObject {
 
   private func updateDraft(_ value: String) {
     guard draftStorage != value else { return }
+    viewGeneration += 1
+    cancelPreparationTasks()
     draftRevision += 1
+    compositionRevision += 1
     draftStorage = value
     if let selectedBotId {
       drafts[selectedBotId] = value
       draftRevisions[selectedBotId] = draftRevision
+      compositionRevisions[selectedBotId] = compositionRevision
     }
   }
 
@@ -377,9 +415,16 @@ public final class ConversationViewModel: ObservableObject {
 
   // MARK: - Sending
 
+  private func cancelPreparationTasks() {
+    for task in stagingTasks.values { task.cancel() }
+    stagingTasks.removeAll()
+    preparations.removeAll()
+  }
+
   private func cancelUploadTasks() {
     for task in uploadTasks.values { task.cancel() }
     uploadTasks.removeAll()
+    activeUploads.removeAll()
   }
 
   private func startUploadAndSend(_ entry: OutboxEntry, optimistic: Bool = false) {

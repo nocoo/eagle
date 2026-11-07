@@ -66,6 +66,59 @@ final class FileSendTests: XCTestCase {
     XCTAssertEqual(fake.sent.first?.fileIds, [entry.files.first?.fileId].compactMap { $0 })
   }
 
+  func testStagingTaskIsHeldAndCanceledAcrossBotAndCompositionChanges() async throws {
+    let fake = FakeFileConversation()
+    let file = BlockingStageFilePort()
+    let outbox = OutboxStore(directory: directory)
+    let model = ConversationViewModel(
+      botId: "b_1", conversation: fake, outbox: outbox, filePort: file)
+    model.select(botId: "b_1")
+    fake.emit(.capabilities(sendFiles: true))
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.connection == .ready && model.hasSnapshot }
+
+    model.draft = String(repeating: "准备中😀", count: 1_000)
+    model.selectFiles([URL(fileURLWithPath: "/tmp/a.bin")])
+    model.send()
+    try await waitUntil { file.stageStarted == 1 }
+
+    model.writeDraft("B草稿")
+    model.selectFiles([])
+    model.select(botId: "b_2")
+    model.writeDraft("B的新草稿")
+    model.selectFiles([URL(fileURLWithPath: "/tmp/b.bin")])
+
+    file.releaseStage()
+    try await Task.sleep(for: .milliseconds(40))
+    XCTAssertEqual(try outbox.entries(for: "b_1").count, 0)
+    XCTAssertEqual(fake.sent.count, 0)
+    XCTAssertEqual(model.draft, "B的新草稿")
+    XCTAssertEqual(model.selectedFiles.map(\.lastPathComponent), ["b.bin"])
+  }
+
+  func testDoubleSendOfOneCompositionStartsOneStagingAndOneRequest() async throws {
+    let fake = FakeFileConversation()
+    let file = BlockingStageFilePort()
+    let outbox = OutboxStore(directory: directory)
+    let model = ConversationViewModel(
+      botId: "b_1", conversation: fake, outbox: outbox, filePort: file)
+    model.select(botId: "b_1")
+    fake.emit(.capabilities(sendFiles: true))
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.connection == .ready && model.hasSnapshot }
+
+    model.draft = String(repeating: "重复😀", count: 5_000)
+    model.send()
+    model.send()
+    try await waitUntil { file.stageStarted == 1 }
+    file.releaseStage()
+    try await waitUntil { (try? outbox.entries(for: "b_1").count) == 1 }
+    XCTAssertEqual(file.stageStarted, 1)
+    XCTAssertEqual(Set(try outbox.entries(for: "b_1").map(\.requestId)).count, 1)
+  }
+
   func testDraftRevisionIsCapturedAndNotComparedAsTrimmedEquivalentText() async throws {
     let fake = FakeFileConversation()
     let file = FakeFilePort()
@@ -339,6 +392,33 @@ private final class FakeFilePort: FilePort {
   func url(for file: StagedFile) async throws -> URL {
     URL(fileURLWithPath: "/tmp/\(file.name)")
   }
+}
+
+private final class BlockingStageFilePort: FilePort {
+  var stageStarted = 0
+  private var gate: CheckedContinuation<StagedSend, Error>?
+
+  func stage(
+    text: String, selectedFiles: [URL], botId: String, requestId: String
+  ) async throws -> StagedSend {
+    stageStarted += 1
+    return try await withCheckedThrowingContinuation { continuation in
+      gate = continuation
+    }
+  }
+
+  func releaseStage() {
+    gate?.resume(returning: StagedSend(text: "", files: []))
+    gate = nil
+  }
+
+  func upload(_ file: StagedFile, botId: String) async throws -> String {
+    "f_\(String(repeating: "c", count: 64))"
+  }
+
+  func originalText(_ send: StagedSend) async throws -> String { send.text }
+  func selectedURLs(_ send: StagedSend) async throws -> [URL] { [] }
+  func url(for file: StagedFile) async throws -> URL { URL(fileURLWithPath: "/tmp/file") }
 }
 
 private final class BlockingFilePort: FilePort {
