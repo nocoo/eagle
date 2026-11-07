@@ -221,3 +221,20 @@ scripted test; they cannot substitute for a deterministic row.
 | SG002-A | This spec plus the protocol: read-only connection and schema constants with a conformance guard, existence check, observation token/identity, non-rankable scope, three routes, per-store incarnation |
 | SG002-B | This spec plus the protocol: existing socket commands, consumer baseline committed with the observation, mapping provider codes onto SG-001 codes |
 | SG002-C | This spec: read-only status block and CLI paging, no analysis, no mutation control |
+
+## 8. Review record (2026-11-08)
+
+An independent read-only reviewer (`group/reviewing`, `xhigh`) reviewed this spec, its
+protocol and its fixtures over three rounds:
+
+| Round | Range | Verdict | Disposition |
+| --- | --- | --- | --- |
+| 1 | `86f17213..6372c33f` | REQUEST CHANGES, 12 findings (6 P1) | All accepted: per-Bot baselines, range changes, store incarnation, entry-id continuation, pinned schema version 2, non-rankable scope, existing socket, three-part coverage, closed limit/error semantics |
+| 2 | `6372c33f..a6397259` | REQUEST CHANGES, 2 closed, 8 partial, 5 new defects | Accepted: `changes` moved to a body-carried baseline, one end-to-end byte budget under the socket cap, delivery trim that still advances, store generation and `stale_page`, scope continuation, mapping/omission split |
+| 3 | `a6397259..316e1656` | REQUEST CHANGES, 5 closed, 7 partial, 3 new defects | Fixed: page advance limited to delivered Bots, baseline-comparison identity, 409 disambiguation, continuation pins, `omitted.blocks`, provider state/mapping table, structured store state, empty-store fixture, unknown kinds, fixture ids |
+
+The repository's review limit is three rounds, so the round-3 fixes were verified by a
+mechanical specification self-check instead of a fourth review:
+`.local/superagent-evidence/spec-selfcheck.log` (26/26 checks, including a measured
+43,113-byte worst-case 200-Bot baseline against the 64 KiB body budget). No
+implementation, conformance run or live evidence is claimed by this record.

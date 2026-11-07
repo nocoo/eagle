@@ -137,6 +137,9 @@
         "error": {
           "code": "provider_unavailable",
           "detail": "the bot store cannot be read now: session_missing"
+        },
+        "store": {
+          "state": "session_missing"
         }
       }
     },

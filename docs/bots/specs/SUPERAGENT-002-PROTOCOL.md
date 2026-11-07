@@ -38,8 +38,10 @@ accepts no other method and performs no write.
 { "cursor": "<opaque baseline>", "limit": 100 }
 ```
 
-Body: JSON only, `Content-Type: application/json`, at most 8 KiB; anything else is
-`413 body_refused` / `422 query_invalid`. `GET` routes refuse any body.
+Body: JSON only, `Content-Type: application/json`, at most 64 KiB; anything else is
+`413 body_refused` / `422 query_invalid`. `GET` routes refuse any body. 64 KiB is the
+measured size of a full 200-Bot baseline with UUID identities plus headroom, and is an
+acceptance case (SG002-A16), not an assumption.
 
 Loopback only, with checks the existing surface does not provide:
 
@@ -156,12 +158,17 @@ recreates both and invalidates every cursor.
   are reported as `catalog_changed` until a later snapshot delivers them.
 - `lag` is the provider's projection lag in milliseconds; a synchronous read-through
   provider reports `0`.
-- `cursor` is the baseline (section 7).
+- `cursor` is the baseline (section 7). A truncated snapshot's baseline covers only the
+  delivered Bots; undelivered Bots are reported as `catalog_changed` until a later
+  snapshot delivers them, so truncation can never look like "nothing else exists".
 
 ## 4. `history`
 
 Request: `botId`, optional `scope` (default `root`), optional `scopeAfter` to continue
-scope enumeration, optional `before` (exclusive entry id), optional `limit`.
+scope enumeration, optional `before` (exclusive entry id), optional `limit` — and, when
+`before` is present, `incarnation` and `newest` (the previous page's
+`boundary.newestEntryId`), which make page continuity checkable. A `before` without
+them is `422 query_invalid`, never a silently unpinned page.
 
 ```json
 {
@@ -220,7 +227,7 @@ scope enumeration, optional `before` (exclusive entry id), optional `limit`.
       "blocks": [{ "type": "notice", "text": "Context compacted; earlier entries stay readable." }]
     }
   ],
-  "omitted": { "entries": 2, "kinds": ["pi.system"] },
+  "omitted": { "entries": 2, "blocks": 1, "kinds": ["pi.system"] },
   "next": { "before": "e_70" },
   "coverage": { "scopes": "complete", "page": "complete", "content": "complete", "reasons": [] }
 }
@@ -235,7 +242,7 @@ scope enumeration, optional `before` (exclusive entry id), optional `limit`.
 | `pi.tool-result` | `tool` | `toolResult` (`callId,name,text,isError,durationMs?`) |
 | `pi.compaction` | `notice` | `notice` |
 | `bots.reflection`, `bots.reflection.tool` | by the stored role | as stored |
-| anything else | not a message | counted in `omitted.kinds` |
+| anything else | not a message | counted in `omitted.kinds`, and makes `coverage.content` `partial` with `unsupported_kind` |
 
 ### Rules
 
@@ -250,18 +257,24 @@ scope enumeration, optional `before` (exclusive entry id), optional `limit`.
   being the retained entry the compacted window starts at.
 - Continuation is `next.before`: the oldest entry id of this page, exclusive. There is
   no opaque history cursor, so a page can neither be re-served nor skipped.
-- Page stability: the response carries `incarnation`. If the store is replaced, or its
-  generation regresses, between two pages, the follow-up page answers
+- Page stability: the response carries `incarnation` and `boundary.newestEntryId`, and a
+  continuation echoes both. If the store's incarnation differs from the echoed one, or its
+  current newest entry id is older than the echoed `newest`, the page answers
   `409 stale_page` and the caller restarts from the newest page. New commits never
-  invalidate a page: the boundary is pinned.
+  invalidate a page: the boundary is pinned by `newest`.
 - Delivery trim: a single message whose encoded form exceeds 64 KiB is returned
   trimmed with `"trimmed": true` and still advances the page (`next.before` is its own
   entry id). Tool rows are already bounded at write time by the daemon, which keeps
   its `[tool output truncated]` marker; the delivery trim only protects the page
   budget.
-- `omitted` counts entries the contract deliberately does not map (system prompts,
-  internal reasoning) and lists their kinds. That is by design, not an incompleteness:
-  `coverage.content` reports whether every **mapped** message was delivered untrimmed.
+- `omitted` has two counters and one closed set. `omitted.entries` counts entries the
+  contract deliberately does not map — only the known-hidden kinds are allowed there:
+  `pi.system` (prompts) and internal reasoning entries. `omitted.blocks` counts blocks
+  dropped inside mapped messages, which is how filtered reasoning inside an assistant
+  message is reported. Both are by design and never make coverage incomplete. Any other
+  kind is **not** a known-hidden kind: it is counted in `omitted.kinds` and forces
+  `coverage.content: "partial"` with `unsupported_kind`. `coverage.content` reports
+  whether every mapped message was delivered untrimmed and every entry was mappable.
 - `coverage.scopes`: `complete` iff every scope was enumerated. `coverage.page`:
   `complete` iff the page was not cut by the response budget. `coverage.content`:
   `complete` iff no delivered message was trimmed. `reasons` is drawn from
@@ -299,12 +312,17 @@ scope enumeration, optional `before` (exclusive entry id), optional `limit`.
 - There are no per-message events and no event identity derived from `commit_seq`: one
   commit can write several entries, and tasks/submissions are updated in place. A range
   plus incarnation is stable and replayable.
-- Dedupe keys are fixed: `history_appended` → `(botId, scopeId, to)`;
-  `storage_replaced` → `(botId, newIncarnation)`; `store_state_changed` →
-  `(botId, state)`; `activity_changed` → `(botId, activity)`; `catalog_changed` →
-  `catalog.revision`.
+- Identity is a comparison against the baseline, not an event log. Within one response
+  a change is unique by `(kind, botId, scopeId, to)`; across responses, the same
+  baseline produces the same response, and a consumer that has committed a new baseline
+  cannot see the transition again. A state or activity that returns to a previous value
+  is reported against the baseline it actually had, so
+  `available → session_missing → available` is observed as two changes by a consumer
+  that advances between them.
 - Comparing state needs the baseline to carry the previous state and activity, which it
   does (section 7).
+- When `coverage.complete` is false with `page_limit`, `next` advances **only** the Bots
+  whose changes were fully delivered in this page; the rest are re-reported next time.
 - `next` is always present. `coverage.complete: false` with `page_limit` means the page
   was cut; the consumer reads again before treating `next` as current.
 - No worker progress waits on this read and no acknowledgement endpoint exists.
@@ -317,14 +335,17 @@ Provider error bodies:
 { "protocolVersion": 1, "error": { "code": "cursor_reset", "detail": "the source epoch changed" } }
 ```
 
+`provider_unavailable` adds a structured sibling, so the store state is never only
+prose: `{ "error": {…}, "store": { "state": "session_missing" } }`.
+
 | HTTP | `code` | Meaning |
 | --- | --- | --- |
 | 401 | `unauthenticated` | observation credential absent or wrong |
 | 403 | `credential_kind` | a valid credential used on the wrong surface |
 | 403 | `host_refused` / `origin_refused` | not the loopback endpoint that owns this root |
 | 404 | `unknown_bot` / `unknown_scope` | requested identity does not exist |
-| 409 | `cursor_invalid` | baseline malformed or bound to another source/epoch/operation |
-| 409 | `cursor_reset` | epoch changed, a store was replaced, or its generation regressed |
+| 409 | `cursor_invalid` | baseline malformed, or bound to another **source** or operation |
+| 409 | `cursor_reset` | same source, but the epoch changed, a store was replaced or its generation regressed |
 | 409 | `stale_page` | the store changed between history pages; restart from the newest page |
 | 413 | `body_refused` | a body on a `GET` route, or a `changes` body over 8 KiB |
 | 422 | `limit_invalid` / `query_invalid` | limit out of range, unknown parameter |
@@ -334,7 +355,8 @@ Provider error bodies:
 the default; `limit_invalid` means a value outside that operation's range, and its
 `detail` names the range. `provider_unavailable` carries the Bot's store state.
 `detail` is a fixed, secret-free explanation; no stack, path, Bot content, token or
-provider text ever appears.
+provider text ever appears. The only structured facts carried beside an error are the
+`store` state above and, on the consumer side, `provider.detail` as a code.
 
 ## 7. Baseline (the only cursor)
 
@@ -352,11 +374,12 @@ Per-Bot position: `i` incarnation, `g` generation `{min,max,count}`, `s` store s
 `a` activity. A Bot whose store is not readable at capture is absent from `p` and is
 reported by `store_state_changed` until it is readable.
 
-Decoding is strict: a malformed baseline, a wrong source/epoch/kind or an unknown field
-set is `cursor_invalid`; an epoch mismatch, a changed incarnation or a regressed
-generation is `cursor_reset`. There is no best-effort continuation. The baseline is
-sent in the `changes` body, so its size is bounded by the 8 KiB body budget, and a
-full 200-Bot fleet must fit inside it — an acceptance case, not an assumption.
+Decoding is strict. A malformed baseline, an unknown field set, a wrong operation or a
+wrong **source** is `cursor_invalid`. With the right source, a changed epoch, a changed
+incarnation or a regressed generation is `cursor_reset` — the baseline was correct but
+its world is gone. There is no best-effort continuation. The baseline is
+sent in the `changes` body, bounded by the 64 KiB body budget; a full 200-Bot fleet with
+UUID identities must fit inside it — an acceptance case, not an assumption.
 
 ## 8. Limits
 
@@ -369,7 +392,7 @@ full 200-Bot fleet must fit inside it — an acceptance case, not an assumption.
 | Change entries per page | default 100, max 500 |
 | Provider response body | **192 KiB** per response; a cut page reports `page_limit` |
 | Consumer frame | the SG-001 socket cap of **256 KiB** covers the whole `result` frame (value + envelope + provider block), so the provider budget above is chosen to fit |
-| `changes` request body | 8 KiB |
+| `changes` request body | 64 KiB (a 200-Bot baseline must fit) |
 | Read budget | one short transaction per request, 3 s ceiling, handles released before responding |
 
 ## 9. Non-interference
@@ -405,20 +428,26 @@ Three commands on the existing authenticated socket `/v1/chat`:
 }
 ```
 
-- `state` ∈ `ready`, `refused`, `unreachable`, `reset`, `unconfigured`; `unavailable`
-  counts Bots the last snapshot could not read.
+- `state` ∈ `ready`, `refused`, `unreachable`, `reset`, `unconfigured`, `internal`;
+  `unavailable` counts Bots the last snapshot could not read; `detail` carries a provider
+  error **code** when `internal` is used, never provider text; `subject` carries the
+  Bot/scope a failure refers to.
 - **Provider failures are values, not socket errors.** Every `observe-*` command
   answers `{type:"result",id,value:{provider}}` with `snapshot`/`history`/`changes`
   omitted or `null`; the socket error frame is reserved for protocol violations
   (`invalid_command`, `shutting_down`). This keeps one failure channel and never
   forwards provider text.
-- Provider code mapping: `unauthenticated`/`credential_kind` → `refused`;
-  `cursor_invalid`/`cursor_reset`/`stale_page` → `reset`; `unknown_bot`/`unknown_scope`
-  → `internal` with the Bot/scope named in `provider.detail`; `host_refused`/
-  `origin_refused`/`unreachable` → `unreachable`; `shutting_down` →
-  `shutting_down` (socket error); `provider_unavailable` → `ready` with
-  `provider.unavailable` incrementing and the Bot's store state in the snapshot it
-  already served.
+- Provider code mapping, one row per provider code, no provider text ever forwarded:
+
+  | Provider code | `provider.state` | Extra |
+  | --- | --- | --- |
+  | `unauthenticated`, `credential_kind` | `refused` | — |
+  | `cursor_invalid`, `cursor_reset`, `stale_page` | `reset` | stale baseline dropped |
+  | `unknown_bot`, `unknown_scope` | `internal` | `provider.detail` is the code, `provider.subject` names the Bot/scope |
+  | `host_refused`, `origin_refused`, connection failure | `unreachable` | — |
+  | `body_refused`, `limit_invalid`, `query_invalid` | `internal` | `provider.detail` is the code |
+  | `shutting_down` | `unreachable` | a value, never a socket error |
+  | `provider_unavailable` | `ready` | `provider.unavailable` increments; the Bot's store state comes from the snapshot it already served |
 - `observe-changes` takes no baseline from the client: the consumer sends its stored
   baseline and commits the new one with the consumed observation in its own store.
 - A provider `cursor_reset` surfaces as `state: "reset"`; the consumer drops the stale

@@ -4,7 +4,7 @@
       "name": "snapshot-ready",
       "frame": {
         "type": "result",
-        "id": "c_obs_1",
+        "id": "obs_1_fixture",
         "value": {
           "provider": {
             "reachable": true,
@@ -84,7 +84,7 @@
       "name": "changes-reset",
       "frame": {
         "type": "result",
-        "id": "c_obs_2",
+        "id": "obs_2_fixture",
         "value": {
           "provider": {
             "reachable": true,
@@ -105,7 +105,7 @@
       "name": "snapshot-refused",
       "frame": {
         "type": "result",
-        "id": "c_obs_3",
+        "id": "obs_3_fixture",
         "value": {
           "provider": {
             "reachable": false,
@@ -120,7 +120,7 @@
       "name": "snapshot-unconfigured",
       "frame": {
         "type": "result",
-        "id": "c_obs_4",
+        "id": "obs_4_fixture",
         "value": {
           "provider": {
             "reachable": false,

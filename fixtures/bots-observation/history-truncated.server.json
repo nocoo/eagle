@@ -110,6 +110,7 @@
   ],
   "omitted": {
     "entries": 2,
+    "blocks": 0,
     "kinds": ["pi.system"]
   },
   "coverage": {
