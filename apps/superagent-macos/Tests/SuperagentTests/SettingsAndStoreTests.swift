@@ -9,6 +9,7 @@ final class SettingsAndStoreTests: XCTestCase {
   private final class Service: SuperagentServicePort {
     var configuration: ModelConfiguration?
     var configured: ConfigurationChange?
+    var closed = false
     func health() async throws -> ServiceHealth { throw SuperagentError.unavailable }
     func events() async throws -> AsyncThrowingStream<SnapshotFrame, Error> {
       throw SuperagentError.unavailable
@@ -34,7 +35,7 @@ final class SettingsAndStoreTests: XCTestCase {
       HistoryPage(messages: [], hasMore: false, coverage: "complete")
     }
     func abort() async throws {}
-    func close() async {}
+    func close() async { closed = true }
   }
 
   func testSettingsLoadHidesTheKeyAndBlankSaveKeepsIt() async throws {
@@ -50,6 +51,13 @@ final class SettingsAndStoreTests: XCTestCase {
     XCTAssertNil(service.configured?.apiKey)
     XCTAssertTrue(model.hasApiKey)
     XCTAssertEqual(model.notice, "已保存")
+  }
+
+  func testClosingTheSettingsPageClosesItsAuthenticatedClient() async throws {
+    let service = Service()
+    let model = SuperagentSettingsViewModel(port: service)
+    await model.close()
+    XCTAssertTrue(service.closed)
   }
 
   func testExplicitClearRemovesTheKeyAndFailureIsVisible() async throws {
