@@ -753,3 +753,22 @@ Verified:
 Next broken hop: no HTTP route, observation credential or `changes` comparison exists
 yet, so nothing is reachable from the Superagent or the App; S2's route slice, S3
 consumer, S4 native surface and S5 acceptance are unstarted.
+
+## 2026-11-08 06:55 — observation routes reachable on a real daemon
+
+Verified:
+
+- `apps/bots/src/observation/{credential,changes,routes}.ts`: a dedicated 0600
+  observation bearer minted once with its own store identity, a `changes` comparator
+  that pages by delivered ranges only, and the three frozen routes with loopback
+  Host/Origin checks, typed errors and per-Bot baselines.
+- The observation token is refused on `/v1/bots` (403 `credential_kind`), the worker
+  token on `/v1/observe/*`, a missing bearer is 401, a wrong one 403, a relay Host 403
+  and a browser Origin 403.
+- A bot whose store was never opened reports `session_missing`, reads create no file,
+  and `changes` refuses a foreign baseline with `cursor_invalid`.
+- `apps/bots`: `npm run check` green, **1126** tests, coverage 95.32 / 88.17 / 90.91.
+
+Next broken hop: nothing on the Superagent side consumes this yet — no `observe-*`
+socket command, no consumer baseline store, no native status block, no CLI paging, and
+the SG-002 acceptance matrix (A01–A17) has not been run.
