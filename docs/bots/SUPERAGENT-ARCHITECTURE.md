@@ -2,31 +2,35 @@
 
 Status: **accepted product principles; proposed technical contract; not implemented**.
 The owner added the independence, read-only-first, native dashboard, MVVM and TDD
-requirements on 2026-11-07. They supersede the integrated-coordinator rollout in
-[the research](MAIN-BOT-RESEARCH.md). The earlier product choices still apply,
-but autonomous worker management is a later capability, not the first release.
+requirements on 2026-11-07, then selected **process foundation and native chat first**.
+[SG-001](specs/SUPERAGENT-001-CHAT.md) is the active draft implementation spec:
+start the independent process, then converse with its Super Bot in the App, with
+no worker connection. Observation, analysis and the full dashboard come later.
+These decisions supersede both the integrated-coordinator rollout and the proposed
+observation-before-chat order. Development is spec-driven and behavior uses TDD.
 
 ## 1. Product and independence invariants
 
 The Superagent is the default, nondeletable main Bot in the Eagle UI. It is not a
 privileged worker and does not become an owner of worker runtime internals.
 
-| Requirement | First-release contract |
+| Requirement | Invariant and delivery scope |
 | --- | --- |
-| Independent execution | Own Harness, model turns, queue, storage, observation cursor, budget and lifecycle; no worker session owns it |
+| Independent execution | Own process, Harness, model turns, queue, storage and lifecycle from SG-001; observation cursors/analysis budgets arrive with their capabilities |
 | Workers run alone | Starting, chatting, tools, recovery and shutdown require no Superagent, its storage or acknowledgement |
-| Superagent runs alone | It starts, chats and shows its dashboard without workers; live observations are unavailable and retained facts are marked stale |
+| Superagent runs alone | SG-001 starts and chats without workers; later dashboards mark unavailable sources and stale retained facts honestly |
 | Worker unawareness | No Superagent persona, tools, report hooks, task wrappers, new prompts, required acknowledgements or model-visible messages in workers |
 | Read-only toward workers | No send, steer, promote, abort, recover, retry, configure, trigger mutation or delegation, including indirect calls |
-| Full-history visibility | Main Bot can query all Bots' complete retained conversation history, not only managed-task evidence or current UI windows |
-| Conversational role | Answer the owner, analyze evidence and make suggestions; no general shell/coding execution role |
+| Full-history visibility | SG-002 will expose all Bots' complete retained conversation history; SG-001 has no worker history access or observation credential |
+| Conversational role | SG-001 answers the owner; evidence-backed analysis follows in SG-003; no general shell/coding execution role |
 | App-scoped lifetime | First version runs while the App runs; no new login/background service after App quit |
-| Human decisions | Native decision dashboard, not only chat or raw logs |
+| Human decisions | Native decision dashboard remains required in SG-003; SG-001 needs chat and basic health/errors, not a complete dashboard |
 | Engineering | MVVM presentation; backend behavior developed with failing tests first |
 
-Read-only is a relationship, not inactivity: the Superagent may call its own model,
-write its own analysis and decision history, remember a dismissal, and notify the
-person under its own budget. None of those operations writes into a worker.
+Read-only is a relationship, not inactivity: SG-001 calls its own model and writes
+its own conversation. Later specs add analysis/decision history and bounded
+notifications. None of those operations writes into a worker. The App-to-Superagent
+chat protocol is separate from the later worker-to-Superagent observation contract.
 
 Independent hosts may use the same pi-durable library. That is not another bespoke
 execution engine. They must not share live Harness handles, queues, writable
@@ -55,8 +59,9 @@ Separate processes isolate process-local crashes and event-loop stalls; they do
 not provide an OS security sandbox or eliminate shared machine-resource failures.
 Local authentication, explicit process ownership and bounded reconnect behavior
 remain implementation requirements. No process or configuration is changed by this
-documentation update. Exact paths/wiring and the passive-read adapter still require
-implementation and verification, but the topology choice is settled.
+documentation update. Exact paths/wiring require SG-001 specification and verification.
+The passive-read adapter is a gate for SG-002, not for launching or chatting with
+the independent Super Bot. The topology choice is settled.
 
 ## 2. First-class identity without worker dependency
 
@@ -80,7 +85,11 @@ may supply separately scoped configuration and credentials to each host; workers
 must not serve as the credential broker or lifecycle owner of the Superagent.
 No credential value is part of an observation or model prompt.
 
-## 3. A narrow, passive observation boundary
+## 3. Later worker observation boundary — SG-002
+
+This boundary is absent from SG-001. Specify and prove it after the independent
+native chat milestone works; do not make it the prerequisite for process startup.
+
 
 ```text
 Worker runtime / stored history
@@ -90,7 +99,7 @@ Worker runtime / stored history
     -> local evidence and decision store -> bounded model analysis
     -> supervisor read model -> native MVVM dashboard / main conversation
 
-There is no Superagent -> worker command path in the first release.
+SG-001 has no worker connection. SG-002 through SG-004 add reads, never commands.
 ```
 
 The provider belongs to the worker service's generic read infrastructure, not to
@@ -125,9 +134,10 @@ call the existing peer detail API merely because its HTTP method is GET.
 
 ### Three proposed read operations
 
-These are the complete candidate interface families for phase 1. Names below are
-domain sketches, not already implemented endpoints. Freeze their exact wire
-schemas, numeric limits and error fixtures before implementation.
+These are the complete candidate worker-read interface families for SG-002, not
+the SG-001 App chat API. Names below are domain sketches, not implemented endpoints.
+Freeze exact schemas, numeric limits and error fixtures in the SG-002 spec before
+implementing this capability. They need not be frozen to deliver SG-001.
 
 | Operation | Input | Result and strict semantics |
 | --- | --- | --- |
@@ -198,9 +208,9 @@ a required read without writes/recovery, implement a worker-owned inert adapter 
 projection with a tested schema boundary. Do not silently downgrade full history to
 currently open conversations. This is a feasibility gate, not a proven capability.
 
-## 4. Read-only supervision and evidence
+## 4. Later read-only supervision and evidence — SG-003/004
 
-The first release may:
+After SG-001 chat and SG-002 observation, the relevant specs may enable:
 
 - Observe all workers through the passive contract without changing their execution.
 - Read complete retained history on demand using bounded queries.
@@ -211,8 +221,9 @@ The first release may:
 
 It may not ask a worker for status, send a reminder, modify a trigger, retry a failed
 run, change a model, assign work, or silently apply a suggestion that the person
-marked useful. In phase 1, even a direct request to delegate produces a proposal
-and a clear "not executed" result, never a hidden worker command.
+marked useful. Throughout SG-001 to SG-004, a direct request to delegate must say
+it was not executed; no hidden worker command exists. SG-001 must also be clear
+that it has not observed worker history yet.
 
 The minimal supervisor records are observations, evidence references, analyses,
 suggestions, human decisions and source health. Do not require WorkItem/Assignment
@@ -232,14 +243,18 @@ the same evidence must not form a self-triggered loop. Unknown prices remain unk
 do not infer an exact cost or worker completion from absent data. Display supervisor
 failure even if its model cannot run, through a deterministic health projection.
 
-## 5. Native decision dashboard, not a log viewer
+## 5. Later native decision dashboard — SG-003
+
+SG-001 first ships the native main-Bot conversation with basic process, connection
+and model readiness/errors. The complete decision dashboard below is additive,
+not a dependency of that chat milestone. MVVM applies from the first UI change.
 
 The DSH panel asks, in order: what needs me, is the system healthy, and what is the
 history of this work (`docs/005-panel.md`). Preserve those questions, not its web
 tabs, PR vocabulary or DSH controls. Use SwiftUI/AppKit and EagleDesign in the Eagle
 shell; do not embed a web dashboard or introduce another style system.
 
-| Native surface | Required content | Phase-1 actions |
+| Native surface | Required content when delivered | Read-only actions |
 | --- | --- | --- |
 | Overview / Needs attention | Prioritized suggestions, evidence freshness, what decision is requested | Read evidence, mark reviewed, dismiss or defer a suggestion in supervisor state |
 | Workers | Observed state, last observation, source availability, warnings with provenance | Open a passive evidence/history viewer, filter; no worker controls |
@@ -267,7 +282,7 @@ The first dashboard should not show disabled future controls as if they were rea
 ### MVVM ownership
 
 ```text
-Native View -> SuperagentDashboardViewModel -> domain use cases / ports
+Native View -> Superagent ViewModels -> domain use cases / ports
                                                -> transport adapter -> service
 Service facts -> reducer / read model -> ViewModel -> Native View
 ```
@@ -290,18 +305,26 @@ closed view or overwrite a newer selection.
 
 ## 6. Strict contracts and TDD gates
 
-Before implementation, each operation needs a normative schema and fixtures that
-fix field meaning, identity, ordering, count/byte limits, freshness, cancellation,
-authentication, error types and version policy. Publish fixtures for both producer
-and consumers; do not import provider domain classes into consumer tests.
+Before implementing an active spec's operation, define its normative schema and
+fixtures: field meaning, identity, ordering, count/byte limits, freshness,
+cancellation, authentication, error types and version policy. Freeze the SG-001
+process/chat contracts first; worker observation contracts belong to SG-002.
+Publish fixtures for both producer and consumers; do not import provider domain
+classes into consumer tests. SG-001's detailed requirements and acceptance IDs
+are in its [active spec](specs/SUPERAGENT-001-CHAT.md).
 
 Use the existing test stack, fake clocks and scripted models. Avoid a new test
 framework or a generic event-bus platform. Each behavior starts with an observable
 failing test, then the smallest implementation, then affected gates. Existing
 fixture and CI enforcement remains in effect; no skip/focus or weaker threshold.
 
+The matrix applies when each capability is introduced, not all before SG-001:
+process/chat/auth/isolation/MVVM gates apply now; worker observation and analysis
+rows become gates for their later specs. Diagnostic errors are never deferred.
+
 | Test level | Mandatory evidence |
 | --- | --- |
+| SG-001 foundation and chat | Real independent startup, ownership/readiness/shutdown, own durable streaming conversation, native chat and zero worker calls/writes |
 | Architecture guards | No cross-core/runtime/storage imports; no worker dependency on supervisor; no View networking/business rules |
 | Producer conformance | Same fixture contracts over real local transport; cold reads do not call runtime open/resume or mutate execution |
 | Consumer conformance | Supervisor handles valid/invalid/gapped/expired/out-of-order observations with honest coverage |
@@ -326,73 +349,62 @@ documentation is not evidence that these protections already work.
 
 ## 7. Delivery sequence and later automation
 
-The implementation order below refines the accepted read-only rollout. It is a
-plan, not work started or a claim that the earlier design review verified it.
-Each step builds on the previous usable slice; do not build a complete backend
-and only then discover integration problems in a complete UI.
+The owner changed the order to **foundation -> native chat -> added capabilities**.
+The previous passive-read-first sequence is superseded. Only SG-001 is the active
+draft spec; later rows describe future outcomes, not a requirement to write or
+implement the entire platform before chat works.
 
-| Order | Work | Usable result / exit evidence |
+| Milestone | Scope | Exit evidence / dependency |
 | --- | --- | --- |
-| 1: contract and acceptance baseline | Define the three read operations, exact schemas/limits, coverage, errors, authentication and fixtures; record affected existing checks and isolate test state | Both consumers and producer have one normative contract; no worker command surface or hidden private-store dependency |
-| 2: prove and implement passive reads | Start with a failing cold-worker noninterference case; implement snapshot/history first, then committed changes and their baseline/cursor boundary | Real local transport reads complete retained history without opening/resuming workers, changing business records or retaining idle leases; scoped credentials reject every mutation |
-| 3: independent process plus minimum native slice | Separate App-owned process/store/model configuration, stable nondeletable identity, authenticated read client, minimum MVVM health/fleet/history view | App displays real worker facts through the new process; either service can start without the other; passive navigation never opens chat; no model analysis needed to prove this path |
-| 4: one bounded analysis and human decision | Main-Bot conversation, on-demand evidence-backed analysis, suggestion persistence, native evidence/detail and reviewed/dismissed/deferred states | One real observation produces one auditable suggestion; the owner records a decision; all writes stay in supervisor storage; analysis failure leaves the factual dashboard usable |
-| 5: proactive observation and recovery | Subscribe/poll the bounded change interface, coalesce evidence, schedule rechecks, dedupe notifications and persist cursor/analysis intent | Useful new facts produce suggestions without another human prompt; no token-triggered model loop; restart/gap/expired cursor/slow observer preserve honest state and do not affect workers |
-| 6: integrated acceptance and handoff | Run affected package gates, complete required integration gates, real process fault cases, scripted CLI acceptance and native App inspection | Independent process start/stop/crash, no-source mode, full-history paging, human decisions and App quit all have evidence; deterministic, real-model and manual results remain separate |
+| SG-001: independent native chat | Executable/storage foundation -> own pi-durable chat -> App launcher and native MVVM conversation | Start with workers absent; converse in the App; restart retains own history; bounded stop/errors work; zero worker calls or writes |
+| SG-002: passive worker evidence | Freeze snapshot/history/changes contracts, prove inert cold reading, add authenticated bounded observation | Complete retained worker history and honest coverage without open/resume/configure, idle retention or worker mutation; SG-001 remains usable |
+| SG-003: analysis and native decisions | Bounded evidence-backed analysis, suggestions, evidence details and human decision dashboard | One auditable suggestion and decision from real observations, with budget/replay controls; worker state unchanged |
+| SG-004: proactive supervision and richer observability | Change-driven analysis, rechecks, dedupe, source/analysis diagnostics and recovery timeline | Useful unattended suggestions, no self-trigger loops, explicit gaps/staleness, proven recovery and bounded resource use |
+| Future management, separately enabled | A later command spec for authorized delegation/remediation | Strict write contract, grants, receipts, cancellation and acceptance tests; not an automatic continuation of these read-only milestones |
 
-### First executable proof
+### Spec-driven delivery
 
-Before building the new service or dashboard, create an isolated worker fixture
-with retained history and pending durable work but no open runtime. A history read
-must return the stored evidence without calling runtime open/resume/configure,
-starting a model/tool, acquiring an idle lease or changing worker domain state.
-Demonstrate the failing behavior first, not merely a missing-module compile error.
-Use real storage plus instrumentation; exempt only the documented access-audit
-bookkeeping, never all filesystem changes. Extend the case to warm and busy workers.
+[SG-001](specs/SUPERAGENT-001-CHAT.md) defines the first outcome, non-goals,
+requirement IDs, App chat boundary, slices and acceptance scenarios. Before a
+slice's code, resolve its technical choices in the spec and freeze its fixtures.
+Review -> failing behavior -> smallest implementation -> affected tests -> atomic
+commit -> acceptance evidence. If behavior changes, revise the spec/tests first.
+The architecture and previous reviews are not substitutes for that active spec.
 
-If passive cold reading or complete-history coverage cannot satisfy the contract,
-stop at that gate, report the exact unsupported operation and revise the adapter
-design. Do not substitute ordinary chat subscription, private SQL in the consumer,
-root-only history or a claim that a credential named `read` makes it safe.
+SG-001 is delivered in four runnable slices:
 
-### Build the safety boundary with each capability
+1. **SG001-A:** standalone executable, own root/identity, readiness and shutdown.
+2. **SG001-B:** own durable chat, configuration and authenticated local protocol.
+3. **SG001-C:** App-owned launch plus a permanent, conversational native Super Bot.
+4. **SG001-D:** complete milestone acceptance with isolated CLI/process tests and
+   a hand-inspectable App; report scripted, real-model and rendered evidence separately.
 
-Ordering is not permission to postpone safety until step 6. Step 2 includes auth,
-limits and noninterference. Step 3 includes process ownership, separate storage,
-standalone startup and basic crash/stop tests. Step 4 includes the minimum proven
-persistent model budget, stable analysis identity, evidence provenance and replay
-safety before enabling its first model call. Step 5 extends these controls to
-unattended rechecks; it does not introduce them for the first time.
+The first executable proof is independent start -> health -> stop -> reopen with
+workers absent. The first user milestone is a real two-turn conversation in the
+App, not only a ready process or an empty chat screen. No worker read-adapter spike,
+full-history API or complete Dashboard is a prerequisite for SG-001.
 
-Within step 3, start from domain models and fake-port ViewModel tests, then native
-Views, then the real transport. A fixture-backed screen helps implementation but
-is not the accepted vertical slice: its exit needs real observations through the
-independent process. Within step 4, test decision semantics with a scripted model
-before a separate real-model quality check. Never claim useful inference merely
-because a process or protocol test passed.
+### Capability-specific gates
 
-### Work and review cadence
+SG-001 includes auth, process/storage ownership, bounded chat, durable admission,
+basic failure visibility and MVVM tests from the start. Rich observability is later;
+a broken startup or chat must still be diagnosable now. Worker calls/writes must be
+zero, which is stronger than merely promising that an observation is harmless.
 
-- One integrating writer owns repository changes on main and preserves user work.
-- Use independent read-only review for each coherent boundary change, with explicit
-  base/head and at most three review/fix rounds; later rounds address the findings.
-- Demonstrate a behavior failing, implement the smallest fix, run affected checks,
-  and commit an atomic working slice. Review fixes receive their own regression proof.
-- Run broad gates at integration milestones rather than after every small edit;
-  never skip a required final gate or weaken a threshold. A new independent service
-  must have its own explicit gate, not silently rely on the current worker package's.
-- After any macOS code change, launch the inspectable dev App as the project requires.
-  During long implementation, record actual user-visible progress and the next
-  broken boundary at the required checkpoint cadence.
-- Parallel work is useful for independent contract/review investigation and fixture
-  validation. Do not parallelize incompatible interpretations of an unfrozen API
-  or permit multiple agents to write the same integration surface.
+SG-002 is where the passive cold-read proof becomes mandatory. If it cannot meet
+the full-history/noninterference contract, stop that capability, not the working
+chat product. Do not replace it with an active chat subscription or private SQL in
+the Superagent. SG-003 must prove analysis budgets and evidence/decision durability
+before enabling its model-driven feature. SG-004 extends these controls to unattended
+work rather than introducing safety for the first time.
 
-The first read-only release is a complete, accepted product slice. It does not claim
-to implement the eventual autonomous-management goal. No dispatch/report hooks,
-worker scheduling changes, always-on service or dormant write credentials belong
-to this execution plan. The next management stage requires its own accepted command
-contract and explicit enablement, not an automatic continuation after step 6.
+One integrating writer owns changes on main; reviewers remain read-only. Each
+boundary change receives explicit base/head review, at most three review/fix rounds,
+with incremental follow-up. Each coherent slice ends with affected checks and an
+atomic commit. Run required broad gates at integration milestones, never weaken them,
+and give the new independent service its own explicit gate. Every macOS code change
+ends with the required inspectable dev App; long implementation keeps the required
+user-view checkpoints. No implementation or running-product evidence is claimed here.
 
 Later command design must preserve independent operation. Commands cross a narrow,
 versioned, authenticated port with stable action IDs, grants, cancellation fences,
@@ -424,9 +436,11 @@ interfaces; standalone operation in both directions; read-only observation first
 with unaware workers; native human decision dashboard; MVVM UI and TDD backend.
 
 The owner subsequently confirmed separate App-owned processes and separate stores.
-No product choice remains open in this decision set. Exact schemas, passive cold
-reads, IPC/authentication and process lifecycle are implementation gates, not
-already proven capabilities.
+The owner then selected spec-driven, process-and-chat-first delivery. SG-001 must
+start independently and provide native App conversation before worker observation
+or the full Dashboard is added. Exact active-spec schemas, IPC/authentication and
+lifecycle remain implementation gates; passive cold reads are a later SG-002 gate.
+No capability is represented as already implemented or verified.
 
 ## 9. Design review record — 2026-11-07
 
@@ -444,6 +458,12 @@ exact schemas and the read-adapter spike were not represented as verified runtim
 capabilities. The owner's later topology confirmation resolves that product choice;
 it is not a new runtime verification or a second review pass.
 
-This records a design review only. No implementation, conformance suite, process
-isolation test, live model evaluation or native App acceptance has passed on its
-strength. Those gates remain required before the feature can be claimed complete.
+That historical review predates the owner's subsequent chat-first sequence and
+SG-001, so it does not approve their detailed contracts. A new independent
+`group/reviewing` / `xhigh` document review covered the SG-001 draft and synchronized
+architecture/research/PLAN changes over base `09985c0d`, returning PASS. Its scope
+and remaining freeze items are recorded in [SG-001](specs/SUPERAGENT-001-CHAT.md#8-current-evidence).
+
+Neither review is an implementation, conformance-suite, process-isolation, live-model
+or native-App acceptance result. Those gates remain required before the corresponding
+feature can be claimed complete.

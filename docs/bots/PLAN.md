@@ -12,23 +12,34 @@ in [Extensions and tools](EXTENSIONS-AND-TOOLS.md). That guide also
 specifies planned optional `memory`, `search` and `peers` groups and child-agent
 discovery. Those additions are not implemented or enabled by this plan update.
 
-## Independent Superagent (design accepted, implementation pending)
+## Independent Superagent (chat-first, spec-driven; implementation pending)
 
-[Superagent architecture](SUPERAGENT-ARCHITECTURE.md) records the owner's
-read-only-first principles, narrow observation boundary, native decision dashboard,
-MVVM and TDD requirements. [Research](MAIN-BOT-RESEARCH.md) compares DSH and the Pi
-port. Both Superagent and workers must run independently; workers initially have
-no supervision-specific prompts, tools or reports. The first release reads complete
-retained histories and advises the owner, but sends no worker commands. A passive
-read-adapter feasibility gate comes first: existing chat subscriptions can open and
-resume workers. The owner confirmed separate App-owned processes and stores;
-first-release lifetime remains App-scoped. The design committed as `f79033d3`
-received an independent read-only review with a PASS verdict; the architecture
-records its scope. The [execution order](SUPERAGENT-ARCHITECTURE.md#7-delivery-sequence-and-later-automation)
-is contract/baseline → passive reads → independent process with a minimum native
-view → one bounded analysis/decision → proactive observation/recovery → integrated
-acceptance. Safety tests accompany each capability; the final stage is not their
-first execution. No implementation or runtime acceptance is claimed here.
+[Superagent architecture](SUPERAGENT-ARCHITECTURE.md) owns independence, strict
+interfaces, read-only worker access, native MVVM and TDD. The owner changed the
+execution order to **start the independent process, then converse with the Super
+Bot in the App**, before adding worker observation or a full decision dashboard.
+Separate processes/stores and App-scoped lifetime remain fixed. Workers are unaware;
+SG-001 neither connects to them nor needs their configuration or availability.
+
+| Spec / milestone | Scope | State |
+| --- | --- | --- |
+| [SG-001: native chat](specs/SUPERAGENT-001-CHAT.md) | A: executable/root/readiness -> B: own durable chat/protocol -> C: App launcher/native conversation -> D: acceptance | Active draft; requirement/acceptance IDs written; technical freeze items explicit; no implementation |
+| SG-002: passive worker evidence | Exact snapshot/history/changes contract, inert cold reads and complete retained worker history | Planned; write its spec after SG-001 works |
+| SG-003: analysis and native decisions | Bounded evidence-backed suggestions and the native decision dashboard | Planned |
+| SG-004: proactive observation | Change-driven rechecks, notifications, recovery and richer observability | Planned |
+| Future management | Separately authorized worker command contract | Outside these read-only milestones |
+
+Spec-driven means active specification/fixtures -> independent review -> failing
+behavior -> minimum implementation -> affected gates/atomic commit -> acceptance
+record. Each row remains pending until evidence proves its exit. Startup/chat
+health, errors, authentication and recovery accompany SG-001; only richer
+observability is deferred. Passive-read feasibility remains mandatory before
+SG-002, not a prerequisite for a conversational Super Bot.
+
+[Research](MAIN-BOT-RESEARCH.md) retains the DSH/Pi comparison. The earlier design
+at `f79033d3` received a document-review PASS, not acceptance of the later SG-001
+contracts or working code. No executable, test result or App acceptance is claimed
+by this plan update.
 
 ## Shared-device idle and wake (in progress)
 

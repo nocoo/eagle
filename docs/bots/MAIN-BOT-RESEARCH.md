@@ -3,17 +3,19 @@
 Status: **owner decisions and independence principles accepted; implementation pending**.
 The owner confirmed product choices and then required independent operation,
 read-only observation first, strict interfaces, a native decision dashboard, MVVM
-and TDD. [Superagent architecture](SUPERAGENT-ARCHITECTURE.md) now owns that design;
-this document retains the comparative research and its source evidence. No runtime
-permissions, model configuration or daemon lifecycle have changed.
+and TDD, followed by process-and-native-chat-first, spec-driven delivery.
+[Superagent architecture](SUPERAGENT-ARCHITECTURE.md) owns the staged design;
+[SG-001](specs/SUPERAGENT-001-CHAT.md) is the active draft spec. This document
+retains comparative research and source evidence. No runtime behavior has changed.
 
 ## 1. Recommendation
 
 Make the main Bot an Eagle-owned, nondeletable Superagent identity, independent of
-the worker catalog and runtime. Use pi-durable in its own host. Start with passive
-observation, complete-history queries, evidence-based suggestions and a native
-human decision dashboard. Worker management is a later, separately contracted
-capability, not a prerequisite for the first useful release.
+the worker catalog and runtime. Use pi-durable in its own host. First start the
+independent executable, then deliver native App conversation with that Super Bot.
+Only after that working product should specs add passive observation, complete
+worker history, evidence-backed analysis and a native decision dashboard. Worker
+management remains a later, separately contracted capability.
 
 Do not embed the pi-superagent daemon, Engine, PiSessions or CLI inside Eagle. Do
 not implement the feature as a prompt plus a repeating `peer_send` loop.
@@ -23,10 +25,11 @@ The central distinction is:
 > A model run ending is not a task finishing. A Bot receiving information is not
 > that Bot receiving authority. Being the main Bot is not permission to do anything.
 
-The owner chose a conversational coordinator with access to all Bots' complete
-histories. It answers ordinary questions and suggests new goals. The first release
-is strictly read-only toward unaware workers; eventual delegation remains limited
-to authorized work. The first version runs with the App. Human-priority serial
+The owner chose a conversational coordinator with eventual access to all Bots'
+complete histories. SG-001 answers ordinary questions but has no worker connection,
+history reader or observation credential. Later observation remains read-only toward
+unaware workers; eventual delegation is limited to authorized work. The first
+version runs with the App. Human-priority serial
 worker execution remains required when management is introduced. Product presence
 in one UI does not imply shared execution, storage or lifecycle ownership.
 
@@ -196,16 +199,18 @@ sidebar-note reflection a quality reviewer.
 
 [Superagent architecture](SUPERAGENT-ARCHITECTURE.md) owns the revised boundaries,
 read-interface semantics, dashboard, MVVM ownership and TDD acceptance matrix.
-The owner explicitly chose independent, read-only supervision as the first slice.
-It supersedes the earlier integrated-coordinator rollout, not the research above.
+The owner now explicitly chose the independent process and native chat as the first
+slice. It supersedes the passive-read-first schedule, not the independence or
+read-only principles. The [SG-001 spec](specs/SUPERAGENT-001-CHAT.md) owns its steps.
 
 ```text
-Worker runtime / stored history
-  -> generic passive observation provider
-  -> narrow versioned read protocol
-  -> independent Superagent + its own pi-durable Harness and store
-  -> evidence, bounded analysis, suggestions and human decisions
-  -> native MVVM dashboard and main-Bot conversation
+SG-001:
+Eagle native conversation -> authenticated local chat protocol
+  -> independent Superagent process -> own pi-durable Harness and store
+
+SG-002 onward, added without replacing the working chat:
+Worker passive read provider -> observation protocol -> Superagent evidence
+  -> bounded analysis and native decision dashboard
 ```
 
 The Superagent owns its stable nondeletable identity outside the worker catalog.
@@ -217,8 +222,9 @@ tools, report hooks or task wrappers. Both sides can operate independently.
 The candidate read boundary has exactly three operation families: `snapshot`,
 `history`, and `changes`. The detailed design requires frozen pagination, provenance,
 coverage watermarks, source/epoch-bound cursors, explicit gaps, bounded load and
-producer/consumer conformance tests. These are proposed contracts, not endpoints
-already available. No generic execute RPC or phase-1 worker write capability exists.
+producer/consumer conformance tests. These are proposed SG-002 contracts, not endpoints
+already available or prerequisites for the SG-001 App chat API. No generic execute
+RPC or worker write capability exists in the chat/observation milestones.
 
 Read-only is stronger than today's read credential scope: chat subscribe opens a
 Bot and refreshes tools; runtime open enables recovery scheduling; sockets hold
@@ -233,13 +239,16 @@ local protocol. This does not require a separate process for every worker Bot or
 introduce an always-on service after App quit. Process-local failure isolation
 still needs real crash/stop tests; it is not an OS security sandbox.
 
-## 6. First-release supervision semantics
+## 6. Staged conversation and supervision semantics
 
-The main Bot may read all Bots' complete retained histories, analyze committed
-facts, answer the owner, and present suggestions. It may persist its own observations,
-cursors, analyses and human decisions. It cannot send, steer, promote, abort,
-recover, retry, configure, mutate triggers, assign work or request worker reports.
-Workers do not need to know it exists or cooperate with it.
+SG-001 only starts the independent service and supplies its native conversation.
+It persists its own configuration/chat and shows basic health/errors, but makes
+zero worker calls and does not pretend to have observed their work.
+
+SG-002 adds complete retained worker history through passive reads. SG-003/004 add
+analysis, suggestions, decisions and proactive rechecks. None may send, steer,
+promote, abort, recover, retry, configure, mutate triggers, assign work or request
+worker reports. Workers need not know Superagent exists or cooperate with it.
 
 A suggestion marked reviewed or useful is still **not executed**. Even an explicit
 request to delegate is a proposal in this phase, not permission to use a hidden
@@ -264,8 +273,9 @@ DSH's panel prioritizes three questions: does anything need me, is the system
 healthy, and what led to this outcome (`D docs/005-panel.md`). Eagle needs the same
 decision support in SwiftUI/AppKit, not a web view or only a conversation transcript.
 
-The first release includes an attention overview, observed workers, evidence and
-decision details, supervisor/source health, and a decision timeline. Each suggestion
+The SG-003 dashboard adds an attention overview, observed workers, evidence and
+decision details, supervisor/source health, and a decision timeline. SG-001 needs
+only the native conversation plus basic process/connection/model errors. Each suggestion
 links to facts and states what is uncertain. Counts match their drill-down lists.
 Healthy state takes little space. Dashboard actions affect only supervisor-owned
 state: review, dismiss, defer, or reanalyze. No worker retry/dispatch controls ship.
@@ -276,28 +286,26 @@ and authentication. Views do not run network requests, classify work or schedule
 models. Reuse EagleDesign controls/tokens and retain Bots/Eagle dependency direction.
 The detailed architecture owns this split and its tests.
 
-## 8. Example: the first useful read-only product
+## 8. Example: the first working product
 
-Bot A has produced a research answer and Bot B is working on a prototype. Neither
-was started or modified by the Superagent. The observer reads their committed
-history through the passive interface and notices a missing source in A's answer.
+The worker daemon is unavailable. The owner opens Eagle, sees the permanent
+Super Bot, sends a question and receives an actual streamed answer from its own
+independent process. A second turn uses the same conversation. After restarting
+Superagent, the same history remains. Closing/reopening a view creates no second
+process; quitting the App stops the process the App owns.
 
-It shows a suggestion with the precise evidence, freshness and uncertainty. The
-owner can inspect it, dismiss it, or act manually through the usual worker UI.
-The Superagent does not prompt A, unblock B, retry either Bot or approve a device.
-If the worker source disappears, the dashboard keeps the last observation marked
-stale while the main conversation remains available. If the Superagent fails,
-both workers keep operating normally within the chosen process-isolation limits.
-
-This is the accepted initial product, not a claim that autonomous management has
-already shipped.
+This is SG-001's user outcome. It needs no worker observation, passive history
+adapter, task report or decision dashboard. Later capabilities extend this running
+product; they must not replace its runtime or make its chat depend on workers.
 
 ## 9. Delivery and future-management boundary
 
-The delivery order is now: prove the passive contract; ship independent identity,
-complete-history observation and a native decision dashboard; harden read-only
-analysis and recovery; only later introduce an explicitly enabled command contract.
-The architecture document contains the strict TDD and producer/consumer test matrix.
+The delivery order is now SG-001 independent process/native chat, SG-002 passive
+worker evidence, SG-003 analysis/native decisions, and SG-004 proactive observation
+and richer observability. Each active spec precedes its code and maps requirement
+IDs to failing tests and acceptance evidence. The passive-read feasibility gate
+applies before SG-002, not before delivering a working SG-001. Later management
+needs a separately enabled command contract.
 
 Tests must demonstrate noninterference, not just successful reads: no model starts,
 worker writes, prompt/tool changes, runtime opens, idle retention or worker commit
@@ -324,23 +332,24 @@ or running App checks were executed for this documentation change.
 
 ## 10. Accepted decisions and additional principles — 2026-11-07
 
-| Decision | Accepted choice | First-release meaning |
+| Decision | Accepted choice | Milestone scope |
 | --- | --- | --- |
-| Autonomy | Manage delegated work eventually; suggest new goals first | Initially read-only: analyze and advise, no worker commands |
-| Visibility | All Bots' complete histories | Controlled access to complete retained transcripts, including pre-compaction |
+| Autonomy | Manage delegated work eventually; suggest new goals first | SG-001 is standalone chat; later analysis remains read-only with no worker commands |
+| Visibility | All Bots' complete histories | Added in SG-002, including retained pre-compaction history; no worker reader in SG-001 |
 | Lifetime | First version runs with the App | No new always-on service; a closed window is not a quit App |
 | Main role | Answer ordinary questions; delegate execution eventually | No general shell/coding executor role and no phase-1 delegation |
 | Worker concurrency | Serial execution, human requests first | Required when management is added; no worker scheduler change for observation |
 | Independence | Each side can run without the other | Separate runtime/storage ownership; no worker awareness or reporting dependency |
 | Process topology | Independent App-owned processes and stores | Superagent outside the worker daemon; explicit lifecycle and authenticated IPC |
-| Interfaces | Few, strictly defined and tested | Versioned passive contracts; no cross-core/runtime/schema coupling |
-| Human decisions | Native dashboard | Evidence, suggestions, source health and decision history, not only logs |
-| Engineering | MVVM UI, TDD backend | Explicit ownership and failing behavior tests before implementation |
+| Interfaces | Few, strictly defined and tested | SG-001 App chat and later worker observation are distinct contracts; no cross-core/runtime/schema coupling |
+| Human decisions | Native dashboard | SG-003 adds evidence/decisions; basic health and chat errors accompany SG-001 |
+| Engineering | Spec-driven, MVVM UI, TDD backend | Active spec/acceptance IDs precede failing tests and implementation |
 
 Default presence and nondeletion remain required. The new read-only-first principles
 refine the earlier management goal; they are not an approval to enable writes now.
-Separate App-owned processes and stores are now confirmed. Technical schemas,
-implementation and runtime acceptance are pending. The architecture document's
+The latest order starts with the independent process and conversational App surface,
+without waiting for passive worker reads. Separate App-owned processes and stores
+remain confirmed. Active-spec schemas, implementation and runtime acceptance are pending. The architecture document's
 review record distinguishes the completed design review from those unrun gates.
 
 ## 11. Verification and source map
