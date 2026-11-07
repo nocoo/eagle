@@ -115,18 +115,25 @@ struct BotDialogLayoutTests {
   }
 
   /// The preference is the machine's own: a test never writes it (see the retrospective
-  /// note on the read-only reduce-motion environment value).
+  /// note on the read-only reduce-motion environment value). The preview is captured from a
+  /// real AppKit window because `ImageRenderer` renders an isolated environment that does
+  /// not inherit the system's Reduce Motion value.
   @Test("the portrait follows the system Reduce Motion preference")
   func reduceMotion() async throws {
     let held = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     let preview = BotFacePreview(style: .init(shape: .star, tint: .violet))
       .background(Theme.Palette.surface)
-    let first = try render(preview)
+    let fixture = try DialogFixture(preview)
+    defer { fixture.close() }
+    fixture.settle()
+    let first = try fixture.png()
     try await Task.sleep(for: .milliseconds(140))
-    let second = try render(preview)
+    let second = try fixture.png()
     #expect(try hasVioletPixel(first), "the preview renders the colour it will store")
     if held {
-      #expect(first == second, "Reduce Motion holds the portrait still")
+      #expect(
+        first == second,
+        "system Reduce Motion \(held) still; \(first.count)/\(second.count) bytes")
     }
   }
 
@@ -142,14 +149,6 @@ struct BotDialogLayoutTests {
       }
     }
     return rows
-  }
-
-  private func render(_ view: some View) throws -> Data {
-    let renderer = ImageRenderer(content: view)
-    renderer.scale = 1
-    let image = try #require(renderer.cgImage)
-    let bitmap = NSBitmapImageRep(cgImage: image)
-    return try #require(bitmap.representation(using: .png, properties: [:]))
   }
 
   private func hasVioletPixel(_ png: Data) throws -> Bool {

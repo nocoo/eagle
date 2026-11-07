@@ -70,6 +70,30 @@ struct DialogFixture {
     window.contentView = nil
   }
 
+  /// Let AppKit finish attaching the window and SwiftUI resolve the platform environment
+  /// (Reduce Motion, appearance) before a test reads pixels; mirrors SnapshotRenderer's
+  /// capture settle.
+  func settle(_ interval: TimeInterval = 0.35) {
+    host.layoutSubtreeIfNeeded()
+    RunLoop.main.run(until: Date().addingTimeInterval(interval))
+    host.layoutSubtreeIfNeeded()
+  }
+
+  /// The hosted view's pixels, captured from the real AppKit window so the system's
+  /// Reduce Motion and appearance preferences reach SwiftUI's environment.
+  func png() throws -> Data {
+    host.layoutSubtreeIfNeeded()
+    host.displayIfNeeded()
+    guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+      throw DialogFixtureRenderError.noBitmap
+    }
+    host.cacheDisplay(in: host.bounds, to: rep)
+    guard let png = rep.representation(using: .png, properties: [:]) else {
+      throw DialogFixtureRenderError.noPNG
+    }
+    return png
+  }
+
   var nodes: [NSObject] {
     entries(host)
   }
@@ -128,4 +152,9 @@ struct DialogFixture {
 @MainActor
 private func hostSize(_ view: some View) -> CGSize {
   NSHostingView(rootView: AnyView(view)).fittingSize
+}
+
+enum DialogFixtureRenderError: Error {
+  case noBitmap
+  case noPNG
 }

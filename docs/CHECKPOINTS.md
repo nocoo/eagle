@@ -1,5 +1,21 @@
 # 用户视角检查点
 
+## 2026-11-07 +08 — Release 0.21.0 Reduce Motion fixture fix
+
+- CI check 42316936489 on `cadd4b38`: native focus 42/42 passed, Linux green, row cost
+  1.96 < 2.5. macOS coverage failed only `BotDialogLayoutTests.reduceMotion` — the runner's
+  Reduce Motion is true, but two `ImageRenderer` captures differed, because `ImageRenderer`
+  likely renders an isolated environment that does not inherit the system value.
+- Test-only fix: capture the same preview from the fixture's real `NSHostingView`/`NSWindow`
+  after a bounded run-loop settle (the `SnapshotRenderer` pattern), via `cacheDisplay`. The
+  `first == second` assertion (only when the system preference is true) and the picked-colour
+  assertion are preserved. No preference write, skip, threshold or production fallback.
+- Local: the reduced-motion test and full apps/macos `swift test` pass; coverage 94.8%
+  (min 90); strict `swift format`; `npm run check:design`; `npm run test:design` (91). This
+  machine's Reduce Motion is false, so the true branch is verified only by CI.
+- No push, tag, upload or deploy. The repository is at the new fixture commit for the
+  coordinator.
+
 ## 2026-11-07 +08 — Release 0.21.0 focus-fixture fix
 
 - CI check 42313777880 on `6d875b41`: Linux green, macOS `test:focus` failed 1 of 42 —

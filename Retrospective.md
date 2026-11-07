@@ -1,5 +1,22 @@
 # Retrospective
 
+## 2026-11-07 — ImageRenderer likely did not inherit Reduce Motion
+
+CI check 42316936489 on `cadd4b38` passed the native focus gate and the row-cost bound but
+failed the macOS coverage gate at `BotDialogLayoutTests.reduceMotion`: with the runner's
+`accessibilityDisplayShouldReduceMotion` true, two `ImageRenderer` captures of the same
+`BotFacePreview` differed (1859 vs 1900 bytes). `BusyFace` holds still only when its SwiftUI
+`accessibilityReduceMotion` environment is true; `ImageRenderer` renders an isolated
+environment, which is the likely reason it did not see the system value. That is a
+test-harness mismatch; it is not proven from local runs because this machine's preference
+is false.
+
+The test now hosts the preview in the fixture's real `NSHostingView`/`NSWindow`, lets the
+native run loop settle (the `SnapshotRenderer` capture pattern), and caches the display. It
+keeps the `first == second` assertion when the system preference is true and the
+picked-colour assertion. The true branch is validated only by CI on a runner that has
+Reduce Motion on.
+
 ## 2026-11-07 — A modal migration left the native focus fixture on native sheets
 
 The macOS `test:focus` CI job failed exactly one of 42 checks on release candidate
