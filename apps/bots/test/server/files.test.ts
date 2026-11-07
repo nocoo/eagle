@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { join } from "node:path";
 import test from "node:test";
@@ -488,6 +488,30 @@ test("chunked content over limit closes the connection after a bounded structure
       names.filter((name) => name.endsWith(".json") && name.includes(".upload.") === false),
       [],
     );
+  } finally {
+    await stack.close();
+  }
+});
+
+test("a valid download request returns 503 for a malformed disk metadata id", async () => {
+  const stack = await startStack();
+  try {
+    const botId = await stack.createBot("malformed-metadata");
+    const body = Buffer.from("malformed manifest");
+    const declared = await declare(stack, botId, body);
+    assert.equal(declared.response.status, 201);
+    const completed = await upload(stack, botId, declared.id, body);
+    assert.equal(completed.status, 201);
+    const snapshot = (await completed.json()) as { file: { id: string } };
+    const manifestPath = join(stack.root, "bots", botId, "files", `${snapshot.file.id}.json`);
+    const stored = JSON.parse(await readFile(manifestPath, "utf8"));
+    for (const corrupt of [{ id: "f_bad" }, { botId: "b_bad" }, { uploadId: "u_bad" }]) {
+      await writeFile(manifestPath, `${JSON.stringify({ ...stored, ...corrupt })}\n`, {
+        mode: 0o600,
+      });
+      const response = await metadata(stack, botId, snapshot.file.id);
+      assert.equal(response.status, 503);
+    }
   } finally {
     await stack.close();
   }

@@ -424,6 +424,27 @@ test("completed and pending disk statuses fail closed instead of changing phase"
   }
 });
 
+test("disk malformed file, bot or upload ids are storage failures not invalid requests", async () => {
+  const { root, botDir, store } = await open();
+  try {
+    const body = Buffer.from("malformed ids");
+    await declare(store, { body });
+    const complete = await upload(store, body);
+    const completedPath = join(botDir, "files", `${complete.id}.json`);
+    for (const corrupt of [{ id: "f_bad" }, { botId: "b_bad" }, { uploadId: "u_bad" }]) {
+      await writeFile(completedPath, `${JSON.stringify({ ...complete, ...corrupt })}\n`, {
+        mode: 0o600,
+      });
+      await assert.rejects(
+        store.metadata({ botId, fileId: complete.id }),
+        (error) => error instanceof ManagedFileError && error.reason === "storage_failed",
+      );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("metadata verifies the requested id, bot and every completed record field", async () => {
   const { root, botDir, store } = await open();
   try {

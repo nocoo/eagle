@@ -148,9 +148,13 @@ const parseStored = (body: string): ManagedFile => {
   }
   const result = candidate as ManagedFile;
   try {
-    assertFileId(result.id);
-    assertBotId(result.botId);
-    assertUploadId(result.uploadId);
+    if (
+      !FILE_ID.test(result.id) ||
+      !BOT_ID_PATTERN.test(result.botId) ||
+      !UPLOAD_ID.test(result.uploadId)
+    ) {
+      throw storage();
+    }
     if (result.id !== fileIdFor(result.botId, result.uploadId)) throw storage();
     if (
       typeof result.name !== "string" ||
