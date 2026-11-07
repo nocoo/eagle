@@ -1,0 +1,221 @@
+import Foundation
+
+public struct ServiceIdentity: Codable, Equatable, Sendable {
+  public var service: String
+  public var version: String
+  public var protocolVersion: Int
+  public var pid: Int
+  public var instance: String
+  public var storeId: String
+  public var rootBinding: String
+}
+
+public struct ServiceHealth: Codable, Equatable, Sendable {
+  public var service: String
+  public var version: String
+  public var protocolVersion: Int
+  public var pid: Int
+  public var instance: String
+  public var storeId: String
+  public var rootBinding: String
+  public var modelReady: Bool
+  public var failure: ServiceFailure?
+}
+
+public struct ServiceFailure: Codable, Equatable, Sendable {
+  public enum Code: String, Codable, Sendable {
+    case storageFailed = "storage_failed"
+    case taskParked = "task_parked"
+    case modelTimeout = "model_timeout"
+    case modelAuthentication = "model_authentication"
+    case modelError = "model_error"
+  }
+  public var code: Code
+  public var id: String
+}
+
+public struct ModelConfiguration: Codable, Equatable, Sendable {
+  public var baseUrl: String
+  public var model: String
+  public var thinkingLevel: String
+  public var hasApiKey: Bool
+  public init(baseUrl: String, model: String, thinkingLevel: String, hasApiKey: Bool) {
+    self.baseUrl = baseUrl
+    self.model = model
+    self.thinkingLevel = thinkingLevel
+    self.hasApiKey = hasApiKey
+  }
+}
+
+public struct ConfigurationChange: Codable, Sendable {
+  public var baseUrl: String
+  public var model: String
+  public var thinkingLevel: String
+  public var apiKey: String?
+  public init(
+    baseUrl: String, model: String, thinkingLevel: String = "medium", apiKey: String? = nil
+  ) {
+    self.baseUrl = baseUrl
+    self.model = model
+    self.thinkingLevel = thinkingLevel
+    self.apiKey = apiKey
+  }
+}
+
+public struct ChatMessage: Codable, Equatable, Identifiable, Sendable {
+  public enum Role: String, Codable, Sendable { case user, assistant }
+  public enum State: String, Codable, Sendable { case complete, streaming, error, aborted }
+  public var id: String
+  public var role: Role
+  public var text: String
+  public var state: State
+  public var createdAt: Double
+  public var requestId: String?
+  public init(
+    id: String, role: Role, text: String, state: State = .complete, createdAt: Double = 0,
+    requestId: String? = nil
+  ) {
+    self.id = id
+    self.role = role
+    self.text = text
+    self.state = state
+    self.createdAt = createdAt
+    self.requestId = requestId
+  }
+}
+
+public struct QueuedInput: Codable, Equatable, Sendable {
+  public var id: String
+  public var requestId: String
+  public var text: String
+}
+
+public struct ChatWindow: Codable, Equatable, Sendable {
+  public var oldestEntryId: Int?
+  public var newestEntryId: Int?
+  public var coverage: String
+  public init(oldestEntryId: Int? = nil, newestEntryId: Int? = nil, coverage: String = "window") {
+    self.oldestEntryId = oldestEntryId
+    self.newestEntryId = newestEntryId
+    self.coverage = coverage
+  }
+}
+
+public struct ChatSnapshot: Codable, Equatable, Sendable {
+  public var botId: String
+  public var messages: [ChatMessage]
+  public var pending: [QueuedInput]
+  public var running: Bool
+  public var modelReady: Bool
+  public var configuration: ModelConfiguration?
+  public var window: ChatWindow
+  public var failure: ServiceFailure?
+  public init(
+    messages: [ChatMessage] = [], running: Bool = false, modelReady: Bool = false,
+    configuration: ModelConfiguration? = nil, window: ChatWindow = ChatWindow()
+  ) {
+    botId = "superagent"
+    self.messages = messages
+    pending = []
+    self.running = running
+    self.modelReady = modelReady
+    self.configuration = configuration
+    self.window = window
+  }
+}
+
+public struct SnapshotFrame: Codable, Equatable, Sendable {
+  public var type: String
+  public var instance: String
+  public var rev: Int
+  public var value: ChatSnapshot
+  public init(instance: String, rev: Int, value: ChatSnapshot) {
+    type = "snapshot"
+    self.instance = instance
+    self.rev = rev
+    self.value = value
+  }
+}
+
+public struct ChatAdmission: Codable, Equatable, Sendable {
+  public enum Status: String, Codable, Sendable { case queued, placed, done, unanswered }
+  public var id: String
+  public var requestId: String
+  public var status: Status
+  public var entryId: String?
+  public var answerEntryId: String?
+  public var answer: String?
+  public var reason: String?
+  public var terminal: Bool { status == .done || status == .unanswered }
+  public init(id: String, requestId: String, status: Status, answer: String? = nil) {
+    self.id = id
+    self.requestId = requestId
+    self.status = status
+    self.answer = answer
+  }
+}
+
+public struct HistoryPage: Codable, Equatable, Sendable {
+  public var messages: [ChatMessage]
+  public var hasMore: Bool
+  public var nextBefore: Int?
+  public var coverage: String
+  public init(messages: [ChatMessage], hasMore: Bool, nextBefore: Int? = nil, coverage: String) {
+    self.messages = messages
+    self.hasMore = hasMore
+    self.nextBefore = nextBefore
+    self.coverage = coverage
+  }
+}
+
+public struct PendingInput: Codable, Equatable, Identifiable, Sendable {
+  public var id: String
+  public var text: String
+  public var createdAt: Double
+  public init(
+    id: String = "r_" + UUID().uuidString.lowercased(), text: String,
+    createdAt: Double = Date().timeIntervalSince1970 * 1000
+  ) {
+    self.id = id
+    self.text = text
+    self.createdAt = createdAt
+  }
+}
+
+public enum ServiceCode: String, Codable, Sendable {
+  case invalidCommand = "invalid_command"
+  case unauthorized, unconfigured, busy
+  case limitExceeded = "limit_exceeded"
+  case storageFailed = "storage_failed"
+  case `internal`
+  case shuttingDown = "shutting_down"
+  case cancellationUnconfirmed = "cancellation_unconfirmed"
+}
+
+public enum SuperagentError: Error, Equatable, Sendable, LocalizedError {
+  case credential, identity, unavailable, protocolViolation, timeout, cancelled, storage
+  case service(ServiceCode)
+  public var errorDescription: String? {
+    switch self {
+    case .credential: return "Super Bot 凭据不可用或不安全。"
+    case .identity: return "Super Bot 服务身份验证失败。"
+    case .unavailable: return "无法连接 Super Bot 服务。"
+    case .protocolViolation: return "Super Bot 协议响应无效。"
+    case .timeout: return "等待超时；已提交的工作不会自动取消。"
+    case .cancelled: return "连接已关闭。"
+    case .storage: return "Super Bot 本地数据无法安全读写。"
+    case .service(let code):
+      switch code {
+      case .unconfigured: return "请先配置 Super Bot 模型。"
+      case .busy: return "Super Bot 正忙，请稍后重试。"
+      case .limitExceeded: return "消息或排队数量超过限制。"
+      case .unauthorized: return "Super Bot 拒绝此凭据。"
+      case .invalidCommand: return "请求格式无效。"
+      case .storageFailed: return "Super Bot 存储不可用，请检查服务状态。"
+      case .shuttingDown: return "Super Bot 服务正在关闭。"
+      case .cancellationUnconfirmed: return "停止尚未确认，请核对后续状态。"
+      case .internal: return "Super Bot 服务未能完成请求。"
+      }
+    }
+  }
+}

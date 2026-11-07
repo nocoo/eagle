@@ -14,6 +14,7 @@ npm run check
 
 echo "pre-push: superagent checks"
 npm --prefix apps/superagent run check
+(cd apps/superagent-macos && ./Scripts/coverage.sh)
 
 echo "pre-push: browser automation"
 npm run test:browser

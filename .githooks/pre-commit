@@ -73,7 +73,7 @@ if [ -n "$bots" ]; then
   fi
 fi
 
-if printf '%s\n' "$staged" | grep -qE '^apps/(macos|bots-macos)/.*\.swift$'; then
+if printf '%s\n' "$staged" | grep -qE '^apps/(macos|bots-macos|superagent-macos)/.*\.swift$'; then
   echo "pre-commit: swift format"
   if [ -d /Applications/Xcode.app/Contents/Developer ]; then
     export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
@@ -84,6 +84,9 @@ if printf '%s\n' "$staged" | grep -qE '^apps/(macos|bots-macos)/.*\.swift$'; the
     fi
     if printf '%s\n' "$staged" | grep -q '^apps/bots-macos/.*\.swift$'; then
       (cd apps/bots-macos && swift format lint --strict --recursive Sources Tests)
+    fi
+    if printf '%s\n' "$staged" | grep -q '^apps/superagent-macos/.*\.swift$'; then
+      (cd apps/superagent-macos && swift format lint --strict --recursive Sources Tests)
     fi
   else
     echo "pre-commit: swift not installed, skipping Swift lint" >&2
