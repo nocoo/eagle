@@ -10,11 +10,13 @@ No worker protocol, credential or storage is used.
   `node scripts/serve.ts --root <absolute-root> --port <port>`. Node >=24; own lock
   and check gate. Runtime will pin pi-durable/pi-ai/chord to 1.4.0, matching the
   inspected SDK, without importing any worker source.
-- Development default: `~/.local/share/eagle-superagent-dev`, loopback port 43118.
-  Packaged profile uses `~/.local/share/eagle-superagent`, port 43119. The App/CLI
+- Development default: `~/.local/share/eagle-superagent-dev`, loopback port 43127.
+  Packaged profile uses `~/.local/share/eagle-superagent`, port 43128. The App/CLI
   may override through `SUPERAGENT_ROOT` and `SUPERAGENT_PORT`; tests always use
   isolated temporary roots and kernel-assigned service ports (`0`).
-- Canonical root has mode 0700 on creation. A nonempty foreign root is refused
+- Canonical root has mode 0700 on creation. Existing roots must be owned by the
+  current user with mode 0700; unsafe roots are refused, never repaired.
+  A nonempty foreign root is refused
   before credentials or identity are written. Root-owned files are private 0600.
 - `identity.json` contains `{service:"eagle-superagent",storeId:<uuid>}`. A malformed
   existing identity fails closed. Identity survives process restarts. The fixed
@@ -27,7 +29,8 @@ No worker protocol, credential or storage is used.
   It is acquired before identity/storage access, independent of service port.
   A collision refuses startup; no stale lock file or takeover. SIGKILL releases it.
 - HTTP binds only 127.0.0.1. Reject browser `Origin`, non-loopback Host and unknown
-  routes. Request bodies are bounded. No credential appears in a URL.
+  routes. Public health is bodyless: Content-Length above zero and all chunked
+  bodies are refused with 413. No credential appears in a URL.
 - `GET /v1/health` returns `{service,version,protocolVersion:1,pid,instance,storeId,
   rootBinding,modelReady}`. `instance` is a fresh UUID per process; rootBinding is
   SHA256 of the canonical root. No absolute root, credential or prompt is exposed.

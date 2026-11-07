@@ -9,7 +9,7 @@ try {
   const root = resolve(
     values.root ?? process.env.SUPERAGENT_ROOT ?? `${homedir()}/.local/share/eagle-superagent-dev`,
   );
-  const port = Number(values.port ?? process.env.SUPERAGENT_PORT ?? "43118");
+  const port = Number(values.port ?? process.env.SUPERAGENT_PORT ?? "43127");
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("invalid_port");
   const service = await startService({ root, port });
   process.stdout.write(

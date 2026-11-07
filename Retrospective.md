@@ -1677,3 +1677,13 @@ therefore saw an allowed request, not the hostile header the test intended. The
 case now uses node:http to transmit the actual header and proves the refusal.
 For protocol-security tests, verify the wire input rather than assume the high-level
 client preserves a reserved header. No production guard or test limit was weakened.
+
+## 2026-11-07 — New service guards need negative boundary tests
+
+SG001-A's initial eight green cases missed an existing writable root, malformed
+UUID structure, nonempty health bodies and a working-tree-only pre-commit gate.
+Independent review reproduced each issue. New behavior tests failed first, including
+a real Git fixture with a bad index and repaired working tree, then passed after
+private root validation, UUID validation, body refusal and index-snapshot execution.
+Do not treat passing happy-path checks or a gate's name as evidence for these
+negative guarantees. Test the actual storage, transport and staged snapshot.

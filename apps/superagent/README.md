@@ -6,7 +6,7 @@ or calls. Contract: [SG-001](../../docs/bots/specs/SUPERAGENT-001-CHAT.md).
 ```sh
 npm ci
 npm run check
-npm start -- --root /absolute/private/root --port 43118
+npm start -- --root /absolute/private/root --port 43127
 ```
 
 Node 24+. Bind is loopback-only. A canonical-root kernel lock prevents two owners.

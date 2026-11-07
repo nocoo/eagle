@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { mkdir, open, readdir, realpath, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import { isAbsolute, join } from "node:path";
 
@@ -54,6 +54,9 @@ export async function ownRoot(input: string) {
   if (!isAbsolute(input)) throw new Error("absolute_root_required");
   await mkdir(input, { recursive: true, mode: 0o700 });
   const root = await realpath(input);
+  const directory = await stat(root);
+  if (directory.uid !== process.getuid?.() || (directory.mode & 0o777) !== 0o700)
+    throw new Error("unsafe_root");
   const digest = createHash("sha256").update(root).digest();
   const lock = createServer((socket) => socket.destroy());
   try {
@@ -73,7 +76,9 @@ export async function ownRoot(input: string) {
         stored.service !== SERVICE ||
         !("storeId" in stored) ||
         typeof stored.storeId !== "string" ||
-        !/^[0-9a-f-]{36}$/.test(stored.storeId)
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+          stored.storeId,
+        )
       )
         throw new Error("invalid_identity");
       storeId = stored.storeId;

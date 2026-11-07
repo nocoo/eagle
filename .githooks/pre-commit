@@ -30,6 +30,27 @@ if ! git diff --cached --quiet -- apps/macos tests/native/design-guard.test.ts \
   )
 fi
 
+if ! git diff --cached --quiet -- apps/superagent fixtures/superagent-protocol; then
+  echo "pre-commit: superagent index snapshot"
+  (
+    snapshot=$(mktemp -d "${TMPDIR:-/tmp}/eagle-superagent-index.XXXXXX")
+    trap 'rm -rf "$snapshot"' EXIT
+    git checkout-index --all --prefix="$snapshot/"
+    for path in apps apps/superagent; do
+      if [ -L "$snapshot/$path" ] || [ ! -d "$snapshot/$path" ]; then
+        echo "superagent: snapshot path refused: $path" >&2
+        exit 1
+      fi
+    done
+    if [ ! -d apps/superagent/node_modules ] || [ -e "$snapshot/apps/superagent/node_modules" ] || [ -L "$snapshot/apps/superagent/node_modules" ]; then
+      echo "superagent: installed dependencies required; tracked dependency paths refused" >&2
+      exit 1
+    fi
+    ln -s "$PWD/apps/superagent/node_modules" "$snapshot/apps/superagent/node_modules"
+    (cd "$snapshot/apps/superagent" && npm run check)
+  )
+fi
+
 staged=$(git diff --cached --name-only --diff-filter=ACM)
 [ -n "$staged" ] || exit 0
 
@@ -50,11 +71,6 @@ if [ -n "$bots" ]; then
   else
     echo "pre-commit: apps/bots dependencies missing, skipping bots lint" >&2
   fi
-fi
-
-if printf '%s\n' "$staged" | grep -qE '^apps/superagent/'; then
-  echo "pre-commit: superagent checks"
-  (cd apps/superagent && npm run check)
 fi
 
 if printf '%s\n' "$staged" | grep -qE '^apps/(macos|bots-macos)/.*\.swift$'; then

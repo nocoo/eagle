@@ -12,6 +12,14 @@ export async function startService(options: { root: string; port: number }) {
       response.end(JSON.stringify(body));
     };
     if (
+      request.headers["transfer-encoding"] !== undefined ||
+      (request.headers["content-length"] !== undefined && request.headers["content-length"] !== "0")
+    ) {
+      response.setHeader("connection", "close");
+      reply(413, { error: "body_refused" });
+      return;
+    }
+    if (
       request.headers.origin !== undefined ||
       !/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(request.headers.host ?? "")
     ) {
