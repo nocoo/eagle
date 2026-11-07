@@ -1135,7 +1135,9 @@ recovery guarantees depend on them.
    user message carrying that `requestId` proves placement only — `placed` can still
    become `unanswered` later, so the entry survives until a terminal record arrives.
    Entries are never re-sent with a new id, and no entry is removed before its
-   terminal record has been stored.
+   terminal record has been stored. An older outbox entry whose text exceeds the wire
+   limit remains durable and visible for copying, but is not automatically sent again;
+   its admission outcome remains unknown until confirmed.
 
 3. **Disposition decides the outbox.** Every `error` emitted after `welcome` carries
    `disposition`. The handshake failure (`version_mismatch`), which is sent before a

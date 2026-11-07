@@ -9,6 +9,10 @@ import SwiftUI
 @MainActor
 public final class ConversationViewModel: ObservableObject {
   private static let oversizedDraftError = "消息超过 8,000 个 Unicode 字符，原文仍在输入框中。"
+  private static let oversizedOutboxError = "超过 8,000 字符的待确认消息保存在本机，不会自动重发；请复制消息并调整。"
+  private static func isOversized(_ text: String) -> Bool {
+    !text.unicodeScalars.dropFirst(8_000).isEmpty
+  }
   @Published public private(set) var state: ConversationState
   @Published public private(set) var connection: ConnectionState = .connecting
   @Published public private(set) var hasSnapshot = false
@@ -127,7 +131,7 @@ public final class ConversationViewModel: ObservableObject {
     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
       connection == .ready, let botId = selectedBotId
     else { return }
-    guard text.unicodeScalars.dropFirst(8_000).isEmpty else {
+    guard !Self.isOversized(text) else {
       errorBanner = Self.oversizedDraftError
       return
     }
@@ -142,6 +146,10 @@ public final class ConversationViewModel: ObservableObject {
   /// Retrying keeps the original requestId, which is how it is recovered, including after a
   /// restart of the app (`OutboxStore`).
   public func retry(_ entry: OutboxEntry) {
+    guard !Self.isOversized(entry.text) else {
+      errorBanner = Self.oversizedOutboxError
+      return
+    }
     refused.remove(entry.requestId)
     send(
       text: entry.text, requestId: entry.requestId, botId: entry.botId, optimistic: true,
@@ -309,6 +317,17 @@ public final class ConversationViewModel: ObservableObject {
     where !refused.contains(entry.requestId)
       && !durableRefusals.contains(entry.requestId)
     {
+      if Self.isOversized(entry.text) {
+        if !state.messages.contains(where: { $0.requestId == entry.requestId }) {
+          state = Reducer.apply(
+            .append(
+              message: .optimistic(requestId: entry.requestId, text: entry.text), replaces: nil),
+            to: state
+          )
+        }
+        errorBanner = Self.oversizedOutboxError
+        continue
+      }
       send(
         text: entry.text,
         requestId: entry.requestId,

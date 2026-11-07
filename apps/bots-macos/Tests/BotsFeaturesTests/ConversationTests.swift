@@ -321,6 +321,30 @@ final class ConversationTests: XCTestCase {
     try await waitUntil { fake.recovered == 1 }
   }
 
+  func testOversizedStoredOutboxIsVisibleButNeverReplayed() async throws {
+    let outbox = OutboxStore(directory: outboxDirectory)
+    let text = String(repeating: "界", count: 8_001)
+    let entry = OutboxEntry(botId: "b_1", requestId: "r_stored_long", text: text)
+    try outbox.add(entry)
+    let fake = FakeConversation()
+    let model = ConversationViewModel(conversation: fake, outbox: outbox)
+
+    for _ in 0..<2 {
+      model.select(botId: "b_1")
+      fake.emit(.connection(.ready))
+      fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+      try await waitUntil { model.hasSnapshot }
+      XCTAssertEqual(model.state.messages.map(\.text), [text])
+      XCTAssertTrue(model.errorBanner?.contains("8,000") == true)
+      XCTAssertTrue(fake.sent.isEmpty)
+      model.retry(entry)
+      try await Task.sleep(for: .milliseconds(30))
+      XCTAssertTrue(fake.sent.isEmpty, "manual retry must not bypass the wire limit")
+      XCTAssertEqual(try outbox.entries(for: "b_1"), [entry])
+      model.disconnect()
+    }
+  }
+
   func testTheStoredOutboxIsReplayedAfterTheFirstSnapshot() async throws {
     let outbox = OutboxStore(directory: outboxDirectory)
     let stored = OutboxEntry(botId: "b_1", requestId: "r_stored_1", text: "断网时写的")
