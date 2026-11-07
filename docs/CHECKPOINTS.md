@@ -68,6 +68,17 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 — Managed file store under review
+
+- The first file-store slice, `21f9fb6`, adds Bot-scoped 50 MiB streaming upload
+  and download endpoints; its Bots gate passed. No message can yet carry a file,
+  and neither the long-paste conversion nor the card and preview has shipped.
+- Review found lifecycle, protocol and storage-durability gaps. Fixes are being
+  tested before the message, UI and `eagle-dev` layers are connected; this is not
+  evidence of an end-to-end file transfer through the product.
+- This work has not exercised live Herdr collection, authentication, D1 or website
+  rendering. Tests have not used the installed production App or its daemon.
+
 ## 2026-11-07 — Conversation file work in progress
 
 - A repeated rejected send could restore the original draft in the Bots view model
