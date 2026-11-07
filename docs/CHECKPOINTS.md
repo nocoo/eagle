@@ -68,6 +68,23 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 19:15 +08 — Oversized draft and outbox safety
+
+- New oversized drafts remain in the composer with an explicit limit; text within the
+  limit preserves whitespace. Older oversized outbox entries remain on disk, are not
+  resent automatically or by retry, and are shown as labelled local recoveries. A
+  subsequent snapshot, temporary outbox read failure, or peer run no longer hides a
+  known recovery. Replayed normal sends preserve their original `whenBusy`.
+- Both Swift package suites, strict formatting and design checks passed. One concurrent
+  full run missed a send in an existing test; focused and serial full reruns passed,
+  but the intermittent cause remains unknown. Review of the latest recovery fix is
+  in progress.
+- An isolated source Dev App is running with its own local daemon on port 43129; it
+  is not proof of the file journey. Herdr collection, authentication, D1 and website
+  rendering were not exercised. Automatic Markdown conversion, attachment UI and
+  preview, Bot publication, and isolated `eagle-dev` file acceptance remain the next
+  broken hops; none is claimed complete.
+
 ## 2026-11-07 — Unsafe client file sending deferred
 
 - The first Swift file-send path passed its initial tests but review found data-loss,
