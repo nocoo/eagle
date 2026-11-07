@@ -338,18 +338,24 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
     ]
     await fixture.settle()
     fixture.focusOther()
-    ComposerFocusTrace.mark("toolDetail.open.enter")
+    ComposerFocusTrace.mark("toolDialog.open.enter")
     fixture.click(NSPoint(x: messagePoint.x, y: messagePoint.y - 10))
     await fixture.settle()
+    let openedToolRun = fixture.model.openedToolRunID
+    let dialogFrame = fixture.renderedToolDialogFrame
+    let dialogRendered =
+      dialogFrame.map {
+        $0.width >= Theme.Tool.dialogMinWidth - 1 && $0.height >= Theme.Tool.dialogMinHeight - 1
+      } ?? false
     ComposerFocusTrace.mark(
-      "toolDetail.open.return id=\(fixture.model.presentedToolRunId ?? "nil") "
-        + "composerFocus=\(fixture.hasComposerFocus)")
+      "toolDialog.open.return id=\(openedToolRun ?? "nil") frame=\(dialogFrame.map(NSStringFromRect) ?? "nil")"
+    )
     check(
       "transcript tool button opens its details without focusing the composer",
-      fixture.model.presentedToolRunId == "tool" && !fixture.hasComposerFocus
-        && fixture.model.draft == draft)
-    fixture.model.presentedToolRunId = nil
-    fixture.model.focusRestore += 1
+      openedToolRun == "tool" && dialogRendered && !fixture.hasComposerFocus
+        && fixture.model.draft == draft
+    )
+    fixture.closeToolRunDialog()
     await fixture.settle()
 
     fixture.model.entries = (0..<30).map {
@@ -393,7 +399,8 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
       "document": NSStringFromRect(scroll.documentView?.frame ?? .zero),
       "otherFocus": fixture.otherHasFocus, "composerFocus": fixture.hasComposerFocus,
       "draftBefore": draft, "draftAfter": fixture.model.draft,
-      "sheets": fixture.window.sheets.count, "keyWindow": fixture.window.isKeyWindow,
+      "toolDialog": fixture.model.openedToolRunID ?? "none",
+      "keyWindow": fixture.window.isKeyWindow,
     ])
     check(
       "scrolling history moves the viewport without focusing the composer",
@@ -409,8 +416,8 @@ private final class ComposerFocusModel: ObservableObject {
   @Published var conversationID = "first"
   @Published var running = false
   @Published var preparedMarkdown: [String: [RenderedMarkdownBlock]] = [:]
-  @Published var presentedToolRunId: String?
-  @Published var focusRestore = 0
+  /// The tool run whose shared detail dialog is open, owned by the transcript that rendered it.
+  @Published var openedToolRunID: String?
   var sends = 0
   var attachments = 0
   var inserts = 0
@@ -423,33 +430,31 @@ private struct ComposerFocusView: View {
 
   var body: some View {
     if conversation {
-      let showsToolDetail = model.presentedToolRunId != nil
       ZStack {
         ConversationColumn(
           title: "Fixture", tintIndex: 0, entries: model.entries,
           preparedMarkdown: model.preparedMarkdown,
           draft: $model.draft, onSend: { model.sends += 1 },
           onInsert: model.running ? { model.inserts += 1 } : nil,
-          focusRestore: model.focusRestore,
-          onOpenToolRun: { model.presentedToolRunId = $0 }
+          onOpenToolRun: { model.openedToolRunID = $0 }
         )
         .id(model.conversationID)
-        .disabled(showsToolDetail)
-        .allowsHitTesting(!showsToolDetail)
-        .environment(
-          \.openURL,
-          OpenURLAction { url in
-            model.openedURLs.append(url.absoluteString)
-            return .handled
-          })
-        if let id = model.presentedToolRunId,
-          let rows = model.entries.toolRunRows(id: id)
-        {
-          ModalHost(onDismiss: dismissToolRun) {
-            ToolRunDetailView(rows: rows, onClose: dismissToolRun)
+        if let opened = model.openedToolRunID {
+          ModalHost(onDismiss: { model.openedToolRunID = nil }) {
+            ToolRunDetailView(
+              rows: model.entries.toolRunRows(id: opened) ?? [],
+              onClose: { model.openedToolRunID = nil }
+            )
+            .background(FixtureToolDialogMarker())
           }
         }
       }
+      .environment(
+        \.openURL,
+        OpenURLAction { url in
+          model.openedURLs.append(url.absoluteString)
+          return .handled
+        })
     } else {
       Composer(
         placeholder: "Fixture input", text: $model.draft,
@@ -459,11 +464,15 @@ private struct ComposerFocusView: View {
       )
     }
   }
+}
 
-  private func dismissToolRun() {
-    model.presentedToolRunId = nil
-    model.focusRestore += 1
-  }
+/// A real AppKit view behind the shared tool dialog, so the fixture proves the dialog subtree
+/// reached the on-screen window instead of trusting a SwiftUI state flag.
+private final class FixtureToolDialogMarkerView: NSView {}
+
+private struct FixtureToolDialogMarker: NSViewRepresentable {
+  func makeNSView(context: Context) -> NSView { FixtureToolDialogMarkerView() }
+  func updateNSView(_ view: NSView, context: Context) {}
 }
 
 @MainActor
@@ -475,13 +484,16 @@ private final class ComposerFocusWindow {
 
   init(conversation: Bool) {
     ComposerFocusTrace.mark("window.init.enter conversation=\(conversation)")
-    let height: CGFloat = conversation ? 360 : Theme.Metric.composerHeight
+    // The conversation fixture must fit the shared 680 x 520 tool dialog it now opens; the
+    // standalone composer keeps 360 pt because its clicks use fixed coordinates.
+    let width: CGFloat = conversation ? 760 : 360
+    let height: CGFloat = conversation ? 600 : Theme.Metric.composerHeight
     window = NSWindow(
-      contentRect: NSRect(x: 100, y: 100, width: 360, height: height + 40),
+      contentRect: NSRect(x: 100, y: 100, width: width, height: height + 40),
       styleMask: [.titled], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.acceptsMouseMovedEvents = true
-    let container = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: height + 40))
+    let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height + 40))
     window.contentView = container
     other.frame = NSRect(x: 0, y: height + 5, width: 180, height: 28)
     container.addSubview(other)
@@ -489,7 +501,7 @@ private final class ComposerFocusWindow {
     window.makeKeyAndOrderFront(nil)
     window.makeFirstResponder(other)
     host = NSHostingView(rootView: ComposerFocusView(model: model, conversation: conversation))
-    host.frame = NSRect(x: 0, y: 0, width: 360, height: height)
+    host.frame = NSRect(x: 0, y: 0, width: width, height: height)
     container.addSubview(host)
     layout("window.init")
     ComposerFocusTrace.mark("window.init.return window=\(window.windowNumber)")
@@ -508,6 +520,24 @@ private final class ComposerFocusWindow {
   var otherHasFocus: Bool { other.currentEditor() === window.firstResponder }
 
   func focusOther() { window.makeFirstResponder(other) }
+
+  /// The on-screen frame of the shared tool dialog's AppKit marker, or nil when it never
+  /// rendered into this window at the dialog's real size.
+  var renderedToolDialogFrame: NSRect? {
+    guard
+      let marker = descendants.compactMap({ $0 as? FixtureToolDialogMarkerView }).first,
+      marker.window === window, !marker.isHiddenOrHasHiddenAncestor
+    else { return nil }
+    let frame = host.convert(marker.bounds, from: marker)
+    guard frame.width > 0, frame.height > 0, host.bounds.contains(frame) else { return nil }
+    return frame
+  }
+
+  func closeToolRunDialog() {
+    ComposerFocusTrace.mark("toolDialog.close.enter")
+    model.openedToolRunID = nil
+    ComposerFocusTrace.mark("toolDialog.close.return")
+  }
 
   func hitDescription(_ point: NSPoint) -> String {
     guard let hit = host.hitTest(host.convert(point, to: host.superview)) else { return "nil" }
@@ -547,20 +577,6 @@ private final class ComposerFocusWindow {
       layout("drainRunLoop[\(step)]")
       try? await Task.sleep(for: .milliseconds(10))
     }
-  }
-
-  func dismissSheets() async {
-    ComposerFocusTrace.mark("sheets.dismiss.enter count=\(window.sheets.count)")
-    defer { ComposerFocusTrace.mark("sheets.dismiss.return count=\(window.sheets.count)") }
-    for sheet in window.sheets {
-      ComposerFocusTrace.mark("sheet.end.enter")
-      window.endSheet(sheet, returnCode: .OK)
-      ComposerFocusTrace.mark("sheet.end.return")
-    }
-    await settle()
-    guard !window.sheets.isEmpty else { return }
-    key("\u{1b}", code: 53)
-    await settle()
   }
 
   @discardableResult
