@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { WebSocket, WebSocketServer } from "ws";
 import { DirectoryError } from "../core/BotDirectory.ts";
 import type { BotRegistry } from "../core/BotRegistry.ts";
@@ -22,6 +23,11 @@ import {
   SecretsStorageError,
   type ToolGroupCatalog,
 } from "../core/domain.ts";
+import {
+  MAX_MANAGED_FILE_BYTES,
+  ManagedFileError,
+  type ManagedFileStore,
+} from "../core/ManagedFileStore.ts";
 import { declareEvent } from "../log/events.ts";
 import type { Log } from "../log/log.ts";
 import type { ServerEvent } from "../protocol/frames.ts";
@@ -96,6 +102,7 @@ export type ServerOptions = {
   readonly secrets?: SecretsApi;
   /** The inbound side: one webhook delivery, authenticated by its own trigger token. */
   readonly ingress?: TriggerIngress;
+  readonly files?: ManagedFileStore;
   readonly pid?: number;
   /** 0 asks the kernel for a free port, which is what tests do. */
   readonly port: number;
@@ -661,6 +668,122 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
       return;
     }
     try {
+      const withFileLease = async <T>(botId: string, work: () => Promise<T>): Promise<T> => {
+        if (!registry.touch(botId)) {
+          if (registry.state(botId) === undefined) {
+            throw new ManagedFileError("unknown_file", "no such bot");
+          }
+          throw new ManagedFileError(
+            "lease_conflict",
+            "the bot is unavailable while it is being deleted or closed",
+          );
+        }
+        try {
+          return await work();
+        } finally {
+          registry.release(botId);
+        }
+      };
+
+      const fileManifestUpload =
+        /^\/v1\/bots\/([A-Za-z0-9_-]+)\/files\/(u_[A-Za-z0-9_-]{16,64})\/manifest$/.exec(path);
+      if (fileManifestUpload !== null && request.method === "PUT") {
+        const [, botId, uploadId] = fileManifestUpload as unknown as [string, string, string];
+        await withFileLease(botId, async () => {
+          const body = await readBody(request);
+          if (!isObject(body)) {
+            throw new ManagedFileError("invalid_request", "file manifest must be an object");
+          }
+          const allowed = new Set(["name", "mimeType", "size", "sha256"]);
+          if (Object.keys(body).some((key) => !allowed.has(key))) {
+            throw new ManagedFileError("invalid_request", "file manifest has an unknown field");
+          }
+          if (
+            typeof body.name !== "string" ||
+            (body.mimeType !== undefined && typeof body.mimeType !== "string") ||
+            typeof body.size !== "number" ||
+            !Number.isSafeInteger(body.size) ||
+            typeof body.sha256 !== "string"
+          ) {
+            throw new ManagedFileError("invalid_request", "file manifest fields are malformed");
+          }
+          const result = await options.files?.declareStatus({
+            botId,
+            uploadId,
+            name: body.name,
+            size: body.size,
+            sha256: body.sha256,
+            ...(body.mimeType === undefined ? {} : { mimeType: body.mimeType }),
+          });
+          if (result === undefined) {
+            throw new ManagedFileError("storage_failed", "managed file storage is unavailable");
+          }
+          json(response, result.created ? 201 : 200, { file: result.file });
+        });
+        return;
+      }
+
+      const fileContentUpload =
+        /^\/v1\/bots\/([A-Za-z0-9_-]+)\/files\/(u_[A-Za-z0-9_-]{16,64})\/content$/.exec(path);
+      if (fileContentUpload !== null && request.method === "PUT") {
+        const [, botId, uploadId] = fileContentUpload as unknown as [string, string, string];
+        await withFileLease(botId, async () => {
+          if (options.files === undefined) {
+            throw new ManagedFileError("storage_failed", "managed file storage is unavailable");
+          }
+          const length = request.headers["content-length"];
+          if (length !== undefined) {
+            const declared = Number(length);
+            if (!Number.isSafeInteger(declared) || declared < 0) {
+              throw new ManagedFileError("invalid_request", "content length is malformed");
+            }
+            if (declared > MAX_MANAGED_FILE_BYTES) {
+              throw new ManagedFileError("limit_exceeded", "file is larger than 50 MiB");
+            }
+          }
+          const result = await options.files.uploadStatus({
+            botId,
+            uploadId,
+            source: request as AsyncIterable<Uint8Array>,
+          });
+          json(response, result.created ? 201 : 200, { file: result.file });
+        });
+        return;
+      }
+
+      const fileManifestDownload =
+        /^\/v1\/bots\/([A-Za-z0-9_-]+)\/files\/([A-Za-z0-9_-]+)\/manifest$/.exec(path);
+      if (fileManifestDownload !== null && request.method === "GET") {
+        const [, botId, fileId] = fileManifestDownload as unknown as [string, string, string];
+        await withFileLease(botId, async () => {
+          if (options.files === undefined) {
+            throw new ManagedFileError("storage_failed", "managed file storage is unavailable");
+          }
+          json(response, 200, { file: await options.files.metadata({ botId, fileId }) });
+        });
+        return;
+      }
+
+      const fileContentDownload =
+        /^\/v1\/bots\/([A-Za-z0-9_-]+)\/files\/([A-Za-z0-9_-]+)\/content$/.exec(path);
+      if (fileContentDownload !== null && request.method === "GET") {
+        const [, botId, fileId] = fileContentDownload as unknown as [string, string, string];
+        await withFileLease(botId, async () => {
+          if (options.files === undefined) {
+            throw new ManagedFileError("storage_failed", "managed file storage is unavailable");
+          }
+          const downloaded = await options.files.download({ botId, fileId });
+          response.writeHead(200, {
+            "content-type": downloaded.file.mimeType,
+            "content-length": downloaded.file.size,
+            etag: `"${downloaded.file.sha256}"`,
+            "cache-control": "private, no-store",
+          });
+          await pipeline(downloaded.stream, response);
+        });
+        return;
+      }
+
       if (path === "/v1/clients" && request.method === "GET") {
         json(response, 200, { clients: options.clients.list() });
         return;
@@ -1240,6 +1363,52 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
       }
       json(response, 404, { error: { kind: "unknown_bot", message: "no such endpoint" } });
     } catch (error) {
+      if (error instanceof ManagedFileError) {
+        const status =
+          error.reason === "unknown_file"
+            ? 404
+            : error.reason === "lease_conflict" ||
+                error.reason === "upload_conflict" ||
+                error.reason === "content_conflict"
+              ? 409
+              : error.reason === "size_mismatch" || error.reason === "invalid_request"
+                ? 400
+                : error.reason === "limit_exceeded"
+                  ? 413
+                  : 503;
+        json(response, status, {
+          error: {
+            kind:
+              error.reason === "unknown_file"
+                ? "unknown_bot"
+                : error.reason === "upload_conflict" ||
+                    error.reason === "content_conflict" ||
+                    error.reason === "size_mismatch" ||
+                    error.reason === "limit_exceeded" ||
+                    error.reason === "lease_conflict" ||
+                    error.reason === "invalid_request"
+                  ? "invalid_command"
+                  : "storage_failed",
+            message:
+              error.reason === "storage_failed"
+                ? "managed file storage is unavailable"
+                : error.reason === "unknown_file"
+                  ? "no such managed file or bot"
+                  : error.reason === "lease_conflict"
+                    ? "the bot is unavailable while it is being deleted or closed"
+                    : error.reason === "upload_conflict"
+                      ? "upload id conflicts with another declaration"
+                      : error.reason === "content_conflict"
+                        ? "uploaded content conflicts with the declaration"
+                        : error.reason === "size_mismatch"
+                          ? "uploaded size does not match the declaration"
+                          : error.reason === "limit_exceeded"
+                            ? "file is larger than 50 MiB"
+                            : "managed file request is malformed",
+          },
+        });
+        return;
+      }
       if (error instanceof SecretsStorageError) {
         // A store that cannot be read is a refusal, not an empty list: the client must
         // never show "no passwords" when it means "cannot read them".

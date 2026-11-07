@@ -14,6 +14,7 @@ import {
   type ToolGroupCatalog,
   type TriggerSummary,
 } from "../../src/core/domain.ts";
+import { ManagedFileStore } from "../../src/core/ManagedFileStore.ts";
 import { OriginStore, originPath } from "../../src/core/OriginStore.ts";
 import { PeerExchangeStore } from "../../src/core/PeerExchangeStore.ts";
 import type { RuntimePort } from "../../src/core/RuntimePort.ts";
@@ -218,6 +219,7 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
   await peerStore.open();
   const peersHolder: { current?: (botId: string) => PeerToolHost } = {};
   const directory = new BotDirectory(root, await nodeDirectoryFs());
+  const files = new ManagedFileStore({ botDir: directory.botDir.bind(directory) });
   await options.prepare?.({ root, directory });
   let opens = 0;
   const registry = new BotRegistry({
@@ -335,11 +337,13 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
       usage: true,
       peers: false,
       triggers: true,
+      files: true,
     },
     ...(options.triggers === undefined ? {} : { triggers: options.triggers }),
     ...(options.secretsApi === undefined ? {} : { secrets: options.secretsApi }),
     peers: peersApi,
     ...(options.ingress === undefined ? {} : { ingress: options.ingress }),
+    files,
     port: 0,
   });
   boundPort = daemon.port;

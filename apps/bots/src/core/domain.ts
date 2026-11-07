@@ -466,6 +466,7 @@ export type Capabilities = {
   readonly usage: boolean;
   readonly peers: boolean;
   readonly triggers: boolean;
+  readonly files: boolean;
 };
 
 export const ALL_CAPABILITIES_OFF: Capabilities = {
@@ -476,6 +477,7 @@ export const ALL_CAPABILITIES_OFF: Capabilities = {
   usage: true,
   peers: false,
   triggers: false,
+  files: false,
 };
 
 /** Every domain failure crosses layers with one identity minted by its classifier. */

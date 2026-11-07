@@ -44,7 +44,9 @@ Runtime details live in [RUNTIME.md](RUNTIME.md), layers in
 | `group.title` (HTTP) | 1–40 characters after trimming | HTTP `400` |
 | Groups | 50 per catalog | `POST /v1/groups` answers `limit_exceeded` |
 | `bot.appearance` (HTTP) | valid shape; POST permits an omitted tint, PATCH requires a valid tint | HTTP `400` |
-| Any HTTP body | 256 KiB, measured as received (the shared frame cap) | HTTP `500` before the body is parsed |
+| Any HTTP JSON/body except managed-file content | 256 KiB, measured as received (the shared frame cap) | HTTP `500` before the body is parsed |
+| Managed file content | 50 MiB (52 428 800 bytes), inclusive | HTTP `413`; other HTTP bodies keep the 256 KiB cap |
+| Managed file display name / MIME | 1–255 UTF-8 bytes each | HTTP `400` |
 | `settings.corePrompt` (HTTP) | 4 000 characters after trimming | HTTP `400` |
 | `settings.skills` (HTTP) | ≤ 50 entries; `name` 1–80, `version` ≤ 40, `description` ≤ 500 characters after whitespace collapse; `path` ≤ 1 024 and absolute or `~/…`; one entry per name | HTTP `400` |
 | `skill_read` result | 64 KiB read from the file; 32 000 characters and 4 096 lines kept, then a truncation note naming the budget that bound the returned text | — |
@@ -115,6 +117,10 @@ version, the instance id, the pid and a bot count, never bot content.
 | `POST` | `/v1/providers/:id/test` | — | `{ "result": { "ok", "message", "latencyMs", "results"?, "model"?, "resolvedModel"? } }` |
 | `GET` | `/v1/usage?days=` | — | `{ "usage": UsageReport }` — statistics over the daemon's retained days |
 | `GET` | `/v1/models` | — | `{ "models": [string], "modelDetails"?: [ModelDetail], "discoveryError"?: string }` — the gateway's ids and what the daemon knows about each one |
+| `PUT` | `/v1/bots/:botId/files/:uploadId/manifest` | `{ "name", "mimeType"?, "size", "sha256" }` (small JSON) | `201` first declaration, `200` same declaration retry: `{ "file": ManagedFile }`, status `uploading` |
+| `PUT` | `/v1/bots/:botId/files/:uploadId/content` | Raw bytes, never JSON/Base64 | `201` first completion, `200` identical retry: `{ "file": ManagedFile }`, status `complete` |
+| `GET` | `/v1/bots/:botId/files/:fileId/manifest` | — | `{ "file": ManagedFile }`; metadata only |
+| `GET` | `/v1/bots/:botId/files/:fileId/content` | — | Raw bytes, streamed with `Content-Type`, length and SHA256 ETag |
 | `POST` | `/v1/bots/:botId/answers` | `{ "entryId", "answers"?: [[label]], "skipped"?: true }` | `{ "submission": Submission }` |
 | `POST` | `/v1/bots/:botId/secrets` | `{ "entryId", "callIndex"?, "key", "value", "scope"?, "ttlMinutes"?: number \| null, "skipped"?: true }` | `{ "submission": Submission }` |
 | `GET` | `/v1/secrets` | — | `{ "secrets": [Secret] }` — metadata only, never a value |
@@ -256,8 +262,9 @@ revoke it and delete it again (`CLI.md` owns the CLI itself).
   split on the first `.`, looked up by id, compared in constant time, and refused with the
   same `401 auth_failed` as an unknown token when the credential is missing or revoked
   (no oracle).
-- **Scopes are per route.** `read` covers every `GET`; `write` adds `send`/`answer`/`abort` on a
-  subscribed bot, `POST /v1/bots`, `PATCH /v1/bots/:id`, `POST /v1/groups`,
+- **Scopes are per route.** `read` covers every `GET`, including managed-file download;
+  `write` adds managed-file declaration/upload, `send`/`answer`/`abort` on a subscribed bot,
+  `POST /v1/bots`, `PATCH /v1/bots/:id`, `POST /v1/groups`,
   `PATCH /v1/groups/:id` and `PUT /v1/groups/order`; `admin` adds `DELETE /v1/bots/:id`,
   `DELETE /v1/groups/:id`, every `/v1/settings` write, `/v1/settings/test`,
   `/v1/providers` writes and `/v1/clients`. A missing scope is
@@ -305,6 +312,67 @@ exactly as before.
   file's mtime, so `GET /v1/clients/me` answers that client. It is not a record in
   `<root>/clients.json`: it is not listed by `GET /v1/clients`, and it cannot be
   rotated or revoked there. Replacing the file replaces the credential.
+
+## Managed files
+
+The daemon announces `files:true` when this upload/download surface is enabled. It is
+intentionally transport-only in this slice: no Swift UI, CLI, pi adapter, transcript
+entry or `file_publish` is defined yet. Future model and tool consumers must use the
+same opaque `fileId` and metadata store rather than invent a second byte transport.
+
+```json
+{
+  "id": "f_<64 lowercase hex>",
+  "botId": "b_…",
+  "uploadId": "u_<16-64 URL-safe characters>",
+  "name": "report.pdf",
+  "mimeType": "application/pdf",
+  "size": 12345,
+  "sha256": "<64 lowercase hex>",
+  "status": "complete",
+  "createdAt": "2026-11-07T05:30:00.000Z"
+}
+```
+
+- The declaration is required before content. `uploadId` is a client retry key in the
+  documented alphabet, never a path. `fileId` is an opaque server-derived value;
+  clients may send it only in an exact whole-ID route. `name` is display metadata and
+  never participates in filesystem lookup. A declaration at the same `uploadId` with
+  different `name`, `mimeType`, `size` or `sha256` is a `409 upload_conflict`; the
+  completed file is never overwritten. Missing or unrecognized MIME is stored as
+  `application/octet-stream`.
+- Content is streamed directly from the HTTP request while the server counts bytes and
+  computes SHA256. The declared size and digest must both match before publication.
+  Zero-byte files are valid. A real 50 MiB file is accepted; one byte more is `413
+  limit_exceeded`. JSON, WebSocket and every ordinary HTTP route retain their existing
+  256 KiB limit; raw file content is the sole exception.
+- Files live under the owning bot directory: `<root>/bots/<botId>/files/`, mode 0700;
+  completed content and metadata are regular files mode 0600. The path never uses a
+  display name. Completed metadata is static JSON containing only the fields above;
+  file bytes never enter JSON, logs or WebSocket frames.
+- Upload parts use a random sibling name and are never addressable. The content handle
+  and completed metadata temp file are `fsync`ed, the content is renamed atomically,
+  then the metadata is renamed atomically, and the files directory is `fsync`ed before
+  success. Readers accept only a completed metadata record plus a regular, same-size,
+  same-hash content file. A crash can leave an unreferenced part or content object, but
+  never exposes that part as a completed file. Repeating the original upload ID and
+  manifest re-streams or verifies the same bytes and returns the exact original
+  completed snapshot after an acknowledgement is lost.
+- Completion is not a filesystem/SQLite transaction. The file publish boundary is the
+  completed metadata rename; a later pi-durable entry or `file_publish` operation can
+  still fail separately and must retry by the same `uploadId`/`fileId`.
+- Bearer authentication and required scope are resolved before a request body is read.
+  Upload then requires a current Bot and takes a registry lease for the request's full
+  body/publish duration. Delete first marks the Bot unavailable to new leases and waits
+  for existing file leases, then moves the whole Bot directory to trash. Thus a delete
+  cannot race a move against an in-flight upload. File download also holds the lease
+  until the stream ends. Completed files move with their Bot and are never cleaned by
+  the file subsystem.
+- Malformed IDs, traversal forms, symlink directories, symlinks/FIFOs at content or
+  metadata paths, interrupted bodies, size/hash mismatches, and storage failures fail
+  closed. Responses expose only a stable kind/message, never a filesystem path or file
+  content. Concurrent declarations/uploads for one ID are serialized; concurrent
+  different IDs are independent.
 
 ## The bot's own note
 

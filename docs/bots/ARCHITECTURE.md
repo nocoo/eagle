@@ -132,6 +132,7 @@ src/
     EventHub.ts               per-bot rev, fanout, coalescing, snapshot rerender, paging
     view.ts                   pure fold of runtime events into a ConversationSnapshot
     ConversationService.ts    connections, command routing, submission ranking, history, resync
+    ManagedFileStore.ts       managed bot-scoped files, streaming PUT/GET, idempotency
   protocol/
     version.ts  limits.ts     PROTOCOL_VERSION, frame and page budgets
     events.ts   commands.ts   encode/decode domain ⇄ frames, validation
@@ -146,7 +147,7 @@ src/
     mapEvents.ts              pi AgentEvent / reports / watch end → RuntimeEvent
     PiDurableRuntime.ts       Harness ownership, submission ledger, close, recover
   server/
-    http.ts ws.ts auth.ts     catalog and gateway endpoints, socket, bearer
+    http.ts ws.ts auth.ts     catalog, gateway and managed-file endpoints, socket, bearer
     gateway.ts                model gateway store, public shape and connection probe
   log/                        see OBSERVABILITY.md
   testing/                    FakeRuntime, fixture server

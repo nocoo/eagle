@@ -13,7 +13,8 @@
     "entries": false,
     "usage": false,
     "peers": false,
-    "triggers": false
+    "triggers": false,
+    "files": false
   },
   "bots": [
     {
