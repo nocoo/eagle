@@ -415,6 +415,84 @@ test("chunked content one byte over 50 MiB receives 413 and publishes nothing", 
   }
 });
 
+test("chunked content over limit closes the connection after a bounded structured response", async () => {
+  const stack = await startStack();
+  try {
+    const botId = await stack.createBot("chunked-no-eof");
+    const digest = createHash("sha256").update(Buffer.alloc(MAX_MANAGED_FILE_BYTES)).digest("hex");
+    const declared = await jsonCall(
+      stack,
+      `/v1/bots/${botId}/files/u_noeof_01234567890/manifest`,
+      "PUT",
+      { name: "no-eof.bin", size: MAX_MANAGED_FILE_BYTES, sha256: digest },
+    );
+    assert.equal(declared.status, 201);
+
+    const response = await new Promise<{
+      readonly status: number;
+      readonly socketDestroyed: () => boolean;
+    }>((resolve, reject) => {
+      const request = http.request({
+        host: "127.0.0.1",
+        port: stack.port,
+        method: "PUT",
+        path: `/v1/bots/${botId}/files/u_noeof_01234567890/content`,
+        headers: {
+          authorization: `Bearer ${stack.token}`,
+          "transfer-encoding": "chunked",
+        },
+      });
+      const timer = setTimeout(() => {
+        request.destroy();
+        reject(new Error("no bounded 413 response"));
+      }, 1_000);
+      request.on("response", (incoming) => {
+        clearTimeout(timer);
+        incoming.resume();
+        resolve({
+          status: incoming.statusCode ?? 0,
+          socketDestroyed: () => request.socket?.destroyed === true,
+        });
+      });
+      request.on("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      const chunk = Buffer.alloc(64 * 1024, 0x6b);
+      let remaining = MAX_MANAGED_FILE_BYTES + 1;
+      const write = () => {
+        while (remaining > 0) {
+          const amount = Math.min(chunk.length, remaining);
+          remaining -= amount;
+          if (!request.write(chunk.subarray(0, amount))) {
+            request.once("drain", write);
+            return;
+          }
+        }
+        // Deliberately keep the chunked request open: no request.end(), so the server
+        // has to close it after a bounded 413, not wait for EOF.
+      };
+      write();
+    });
+    assert.equal(response.status, 413);
+
+    const deadline = Date.now() + 500;
+    while (!response.socketDestroyed() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(response.socketDestroyed(), true, "the oversized no-EOF stream is bounded closed");
+
+    const botDir = join(stack.root, "bots", botId);
+    const names = await readdir(join(botDir, "files")).catch(() => []);
+    assert.deepEqual(
+      names.filter((name) => name.endsWith(".json") && name.includes(".upload.") === false),
+      [],
+    );
+  } finally {
+    await stack.close();
+  }
+});
+
 test("the welcome advertises managed files without sending bytes on the socket", async () => {
   const stack = await startStack();
   const socket = stack.connect();

@@ -141,6 +141,32 @@ const json = (response: ServerResponse, status: number, body: unknown): void => 
   response.end(text);
 };
 
+const boundedManagedUploadClose = async (request: IncomingMessage): Promise<void> => {
+  const iterator = request.iterator({ destroyOnReturn: false });
+  let remaining = 64 * 1024;
+  const deadline = Date.now() + 100;
+  try {
+    while (remaining > 0 && Date.now() < deadline) {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      const next = await Promise.race([
+        iterator.next(),
+        new Promise<{ readonly done: true; readonly timeout: true }>((resolve) => {
+          timeout = setTimeout(() => resolve({ done: true, timeout: true }), 20);
+        }),
+      ]);
+      if (timeout !== undefined) clearTimeout(timeout);
+      if ("timeout" in next) break;
+      if (next.done) break;
+      const chunk = next.value;
+      remaining -= typeof chunk === "string" ? Buffer.byteLength(chunk) : Buffer.byteLength(chunk);
+    }
+  } catch {
+    // The response is already published; a transport/iterator failure only ends the request.
+  } finally {
+    request.destroy();
+  }
+};
+
 const readBody = async (request: IncomingMessage): Promise<unknown> => {
   const chunks: Buffer[] = [];
   let bytes = 0;
@@ -1368,7 +1394,7 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
           request.method === "PUT" &&
           /^\/v1\/bots\/([A-Za-z0-9_-]+)\/files\/u_[A-Za-z0-9_-]{16,64}\/content$/.test(path)
         ) {
-          request.resume();
+          void boundedManagedUploadClose(request);
         }
         const status =
           error.reason === "unknown_file"
