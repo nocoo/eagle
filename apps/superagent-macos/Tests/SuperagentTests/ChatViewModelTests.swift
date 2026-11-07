@@ -70,10 +70,17 @@ actor MemoryStore: PendingInputStore {
 final class ChatViewModelTests: XCTestCase {
   private func frame(
     rev: Int, instance: String = "11111111-1111-4111-8111-111111111111",
-    messages: [ChatMessage] = [], pending: [QueuedInput] = [], running: Bool = false
+    messages: [ChatMessage] = [], pending: [QueuedInput] = [], running: Bool = false,
+    hasOlder: Bool = false
   ) -> SnapshotFrame {
     SnapshotFrame(
-      instance: instance, rev: rev, value: ChatSnapshot(messages: messages, running: running))
+      instance: instance, rev: rev,
+      value: ChatSnapshot(
+        messages: messages, running: running,
+        window: ChatWindow(
+          oldestEntryId: messages.compactMap { Int($0.id.dropFirst(2)) }.first,
+          newestEntryId: messages.compactMap { Int($0.id.dropFirst(2)) }.last,
+          hasOlder: hasOlder)))
   }
 
   func testConnectAcceptsSnapshotAndLateFrameAfterCloseIsIgnored() async throws {
@@ -165,11 +172,12 @@ final class ChatViewModelTests: XCTestCase {
     let store = MemoryStore()
     let model = SuperagentChatViewModel(port: port, store: store)
     await model.connect()
-    let window = (10..<110).map {
-      ChatMessage(id: "e_\($0)", role: .assistant, text: $0 == 10 ? "new" : "older")
-    }
-    await port.queue(frame(rev: 2, messages: window))
-    await wait { model.state.messages.count == 100 }
+    await port.queue(
+      frame(
+        rev: 2,
+        messages: [ChatMessage(id: "e_10", role: .assistant, text: "new")],
+        hasOlder: true))
+    await wait { model.state.messages.count == 1 }
     await port.setPages([
       HistoryPage(
         messages: [ChatMessage(id: "e_5", role: .assistant, text: "old")], hasMore: false,
@@ -177,10 +185,10 @@ final class ChatViewModelTests: XCTestCase {
     ])
     await model.loadOlder()
     XCTAssertEqual(model.state.messages.first?.id, "e_5")
-    XCTAssertEqual(model.state.messages.count, 101)
+    XCTAssertEqual(model.state.messages.count, 2)
     XCTAssertFalse(model.canLoadOlder)
     await model.loadOlder()
-    XCTAssertEqual(model.state.messages.count, 101)
+    XCTAssertEqual(model.state.messages.count, 2)
   }
 
   func testStopReportsUnconfirmedWithoutPretendingItSucceeded() async throws {
@@ -215,10 +223,17 @@ extension FakePort {
 
 @MainActor
 final class ChatViewModelFailureTests: XCTestCase {
-  private func frame(rev: Int, messages: [ChatMessage] = []) -> SnapshotFrame {
+  private func frame(rev: Int, messages: [ChatMessage] = [], hasOlder: Bool = false)
+    -> SnapshotFrame
+  {
     SnapshotFrame(
       instance: "33333333-3333-4333-8333-333333333333", rev: rev,
-      value: ChatSnapshot(messages: messages))
+      value: ChatSnapshot(
+        messages: messages,
+        window: ChatWindow(
+          oldestEntryId: messages.compactMap { Int($0.id.dropFirst(2)) }.first,
+          newestEntryId: messages.compactMap { Int($0.id.dropFirst(2)) }.last,
+          hasOlder: hasOlder)))
   }
 
   func testConnectFailureIsVisibleDismissibleAndCloseIsIdempotent() async {
@@ -252,14 +267,16 @@ final class ChatViewModelFailureTests: XCTestCase {
     let store = MemoryStore()
     let model = SuperagentChatViewModel(port: port, store: store)
     await model.connect()
-    let window = (10..<110).map { ChatMessage(id: "e_\($0)", role: .assistant, text: "new") }
-    await port.queue(frame(rev: 2, messages: window))
+    await port.queue(
+      frame(
+        rev: 2, messages: [ChatMessage(id: "e_10", role: .assistant, text: "new")],
+        hasOlder: true))
     try await Task.sleep(for: .milliseconds(30))
     await port.setHistoryError(.timeout)
     await model.loadOlder()
     XCTAssertNotNil(model.error)
     XCTAssertEqual(model.state.messages.first?.id, "e_10")
-    XCTAssertEqual(model.state.messages.count, 100)
+    XCTAssertEqual(model.state.messages.count, 1)
     await model.retry()
     let sent = await port.sent
     XCTAssertEqual(sent.count, 0)

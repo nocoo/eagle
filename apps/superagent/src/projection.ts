@@ -80,6 +80,7 @@ export function project(view: ConversationView, base: Snapshot): Snapshot {
     ];
   });
   const fitted = fitMessages(messages);
+  const hasOlder = fitted.length < messages.length;
   const committed = fitted.filter((message) => message.id.startsWith("e_"));
   const last = view.entries.toReversed().find((entry) => entry.model?.[0]?.role === "assistant");
   const lastMessage = last?.model?.[0];
@@ -99,6 +100,7 @@ export function project(view: ConversationView, base: Snapshot): Snapshot {
       oldestEntryId: committed[0] ? Number(committed[0].id.slice(2)) : null,
       newestEntryId: committed.at(-1) ? Number(committed.at(-1)?.id.slice(2)) : null,
       coverage: "window",
+      hasOlder,
     },
     ...(failure === undefined ? {} : { failure }),
   };

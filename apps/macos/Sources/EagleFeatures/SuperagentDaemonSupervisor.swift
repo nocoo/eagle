@@ -23,6 +23,8 @@ public final class SuperagentDaemonSupervisor: ObservableObject {
   private let bundledNode: String?
   private var child: Process?
   private var starting: Task<Void, Never>?
+  /// Quit during a start must not leave a freshly spawned child behind.
+  private var stopping = false
   private static let stopBudget: Duration = .seconds(8)
 
   public init(
@@ -51,6 +53,7 @@ public final class SuperagentDaemonSupervisor: ObservableObject {
   }
 
   public func startIfNeeded() async {
+    if stopping { return }
     if case .running = status { return }
     if let starting { return await starting.value }
     let work = Task { await self.start() }
@@ -105,6 +108,11 @@ public final class SuperagentDaemonSupervisor: ObservableObject {
     while Date() < deadline {
       try? await Task.sleep(for: .milliseconds(150))
       guard process.isRunning else { break }
+      if stopping {
+        await terminateOwned()
+        status = .stopped
+        return
+      }
       if let health = await probe(endpoint), health.pid == Int(process.processIdentifier) {
         status = .running(instance: health.instance, pid: health.pid, external: false)
         return
@@ -116,6 +124,9 @@ public final class SuperagentDaemonSupervisor: ObservableObject {
 
   /// The App's own child only: an externally started service is never signalled.
   public func stopOwned() async {
+    stopping = true
+    if let starting { await starting.value }
+    defer { stopping = false }
     guard let child, child.isRunning else {
       if case .running(_, let pid, false) = status {
         status = .failed("Super Bot 进程已退出（pid \(pid)）。")

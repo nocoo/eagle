@@ -46,6 +46,7 @@ final class ContractTests: XCTestCase {
     let snapshot = try decoder.decode(SnapshotFrame.self, from: data("snapshot.server.json"))
     XCTAssertEqual(snapshot.value.messages.map(\.text), ["Hello Super Bot", "Hello"])
     XCTAssertEqual(snapshot.value.window.oldestEntryId, 10)
+    XCTAssertFalse(snapshot.value.window.hasOlder)
     let failure = try decoder.decode(SnapshotFrame.self, from: data("failure.server.json"))
     XCTAssertEqual(failure.value.failure?.code, .modelAuthentication)
     XCTAssertEqual(

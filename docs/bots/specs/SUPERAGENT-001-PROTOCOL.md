@@ -117,7 +117,10 @@ snapshot; sustained overflow closes it, and reconnect starts from a fresh snapsh
 
 Snapshot value: `{botId:"superagent",messages,pending,running,modelReady,
 configuration,window,failure?}`. `window` is `{oldestEntryId:number|null,
-newestEntryId:number|null,coverage:"window"}`; it certifies only the supplied window.
+newestEntryId:number|null,coverage:"window",hasOlder:boolean}`; it certifies only the
+supplied window, and `hasOlder` says displayable entries were trimmed from it (count
+or byte cap) and remain available through `history`. A window under the cap must not
+guess older history from an entry number.
 `failure` is `{code,id}`; id is a nonempty string identifying one failure episode,
 not a request ID. The same episode keeps its ID across SDK report/close channels.
 Fixed codes are `storage_failed`, `task_parked`,

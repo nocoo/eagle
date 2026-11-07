@@ -41,7 +41,12 @@ export type Snapshot = {
   running: boolean;
   modelReady: boolean;
   configuration: PublicConfiguration | null;
-  window: { oldestEntryId: number | null; newestEntryId: number | null; coverage: "window" };
+  window: {
+    oldestEntryId: number | null;
+    newestEntryId: number | null;
+    coverage: "window";
+    hasOlder: boolean;
+  };
   failure?: Failure;
 };
 export type HistoryPage = {
@@ -81,5 +86,5 @@ export const emptySnapshot = (): Snapshot => ({
   running: false,
   modelReady: false,
   configuration: null,
-  window: { oldestEntryId: null, newestEntryId: null, coverage: "window" },
+  window: { oldestEntryId: null, newestEntryId: null, coverage: "window", hasOlder: false },
 });

@@ -25,7 +25,8 @@
     "window": {
       "oldestEntryId": 10,
       "newestEntryId": 12,
-      "coverage": "window"
+      "coverage": "window",
+      "hasOlder": false
     },
     "running": false,
     "modelReady": true,

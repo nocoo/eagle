@@ -45,7 +45,7 @@ public struct ChatState: Equatable, Sendable {
     {
       older = []
       nextBefore = frame.value.window.oldestEntryId
-      hasMore = nextBefore != nil && frame.value.messages.count >= 100
+      hasMore = nextBefore != nil && frame.value.window.hasOlder
     }
     instance = frame.instance
     revision = frame.rev

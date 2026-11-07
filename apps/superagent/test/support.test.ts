@@ -139,7 +139,12 @@ test("projection preserves text boundaries, suppresses hidden reasoning, and lab
   assert.equal(aborted?.state, "aborted");
   assert.equal(aborted.text, "kept");
   const empty = project(view({ entries: [], docs: {} }), emptySnapshot());
-  assert.deepEqual(empty.window, { oldestEntryId: null, newestEntryId: null, coverage: "window" });
+  assert.deepEqual(empty.window, {
+    oldestEntryId: null,
+    newestEntryId: null,
+    coverage: "window",
+    hasOlder: false,
+  });
   const state = project(
     view({
       entries: [{ id: 5, kind: "internal" }],

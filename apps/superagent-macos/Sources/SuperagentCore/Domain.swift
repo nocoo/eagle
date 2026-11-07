@@ -129,10 +129,15 @@ public struct ChatWindow: Codable, Equatable, Sendable {
   public var oldestEntryId: Int?
   public var newestEntryId: Int?
   public var coverage: String
-  public init(oldestEntryId: Int? = nil, newestEntryId: Int? = nil, coverage: String = "window") {
+  public var hasOlder: Bool
+  public init(
+    oldestEntryId: Int? = nil, newestEntryId: Int? = nil, coverage: String = "window",
+    hasOlder: Bool = false
+  ) {
     self.oldestEntryId = oldestEntryId
     self.newestEntryId = newestEntryId
     self.coverage = coverage
+    self.hasOlder = hasOlder
   }
 }
 
