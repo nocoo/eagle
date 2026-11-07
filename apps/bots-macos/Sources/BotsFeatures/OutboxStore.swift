@@ -216,7 +216,6 @@ public final class OutboxStore {
         let next = entries
         var ids = refused.filter { $0 != requestId }
         ids.append(requestId)
-        if ids.count > Self.settledLimit { ids.removeFirst(ids.count - Self.settledLimit) }
         return (next, settled, ids)
       }
       try? removeFallbackRefusal(requestId)
@@ -225,6 +224,16 @@ public final class OutboxStore {
       // survive a restart, so it goes to a user-private temporary directory.
       try writeFallbackRefusal(requestId)
     }
+  }
+
+  /// Removes only the tombstone for an explicit retry; the entry stays in place and
+  /// is reconciled by its original requestId, botId and staged data.
+  public func unrefuse(requestId: String) throws {
+    try mutate { entries, settled, refused in
+      let ids = refused.filter { $0 != requestId }
+      return (entries, settled, ids)
+    }
+    try? removeFallbackRefusal(requestId)
   }
 
   private func fallbackRefusals() -> Set<String> {

@@ -307,7 +307,10 @@ public final class ConversationViewModel: ObservableObject {
   public func retry(_ entry: OutboxEntry) {
     guard entry.botId == selectedBotId else { return }
     refused.remove(entry.requestId)
-    do { try outbox.resumeUpload(requestId: entry.requestId) } catch {
+    do {
+      try outbox.unrefuse(requestId: entry.requestId)
+      try outbox.resumeUpload(requestId: entry.requestId)
+    } catch {
       errorBanner = "待发记录暂时无法恢复"
       return
     }

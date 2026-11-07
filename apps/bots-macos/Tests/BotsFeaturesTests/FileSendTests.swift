@@ -203,6 +203,28 @@ final class FileSendTests: XCTestCase {
     XCTAssertEqual(reopened.draft, " first")
   }
 
+  func testMoreThan200RecoverableRefusalsAndManualRetryKeepTheirIds() throws {
+    let outbox = OutboxStore(directory: directory)
+    for index in 0..<220 {
+      let requestId = "r_refused_\(String(format: "%03d", index))"
+      try outbox.add(OutboxEntry(botId: "b_1", requestId: requestId, text: "草稿\(index)"))
+      try outbox.refuse(requestId: requestId)
+    }
+
+    XCTAssertEqual(try outbox.refusedRequests().count, 220)
+    XCTAssertEqual(try outbox.entry(requestId: "r_refused_000")?.text, "草稿0")
+    XCTAssertEqual(try outbox.entry(requestId: "r_refused_219")?.text, "草稿219")
+
+    let reopened = OutboxStore(directory: directory)
+    try reopened.unrefuse(requestId: "r_refused_219")
+    XCTAssertFalse(try reopened.refusedRequests().contains("r_refused_219"))
+    XCTAssertEqual(try reopened.entry(requestId: "r_refused_219")?.text, "草稿219")
+
+    let third = OutboxStore(directory: directory)
+    XCTAssertFalse(try third.refusedRequests().contains("r_refused_219"))
+    XCTAssertEqual(try third.entry(requestId: "r_refused_219")?.text, "草稿219")
+  }
+
   func testNotAdmittedPersistsTombstoneBeforeSnapshotRecoveryAndKeepsOtherBotDraft() async throws {
     let fake = FakeFileConversation()
     let file = FakeFilePort()
