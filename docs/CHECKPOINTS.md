@@ -68,6 +68,25 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 19:30 +08 — Exact input and recovery follow-up
+
+- An exact-byte regression test exposed Swift's canonical `String` equality ignoring
+  a newly edited draft: the old shorter input could be sent instead. Draft mirroring
+  now compares UTF-8 bytes; the window test verifies the 8,000-code-point boundary and
+  the exact bytes stored and sent for a shorter input. Independent review is in progress.
+- Previously loaded oversized recovery is retained per Bot in memory while the outbox
+  cannot be read; switching Bots does not reveal another Bot's content, and a successful
+  read refreshes the cache. An unsent composer draft is still not durable across restart.
+- Official Node 26.9 root `check` passed 311 tests. Browser suite passed 191 tests with
+  11 pre-existing platform-specific skips. Both Swift package suites, strict formatting
+  and the design guard passed. One earlier concurrent Swift test failure remains
+  unexplained despite passing focused and serial reruns.
+- The isolated source Dev App and daemon have been used only as a local startup check.
+  Herdr collection, authentication, D1 and website rendering were not exercised.
+  Automatic file conversion, file sending/cards/preview, Bot publishing and the multi-type
+  `eagle-dev` acceptance are still unimplemented; the unfinished publishing stash was
+  examined but not applied. The next broken hop remains a durable client file outbox.
+
 ## 2026-11-07 19:15 +08 — Oversized draft and outbox safety
 
 - New oversized drafts remain in the composer with an explicit limit; text within the
