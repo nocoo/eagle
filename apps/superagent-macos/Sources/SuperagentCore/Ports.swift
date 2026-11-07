@@ -77,3 +77,9 @@ public struct ChatState: Equatable, Sendable {
     revision = -1
   }
 }
+
+/// SG-002 observation: a read-only port. It has no send, steer, abort or configure method
+/// on purpose — the Super Bot observes workers and never commands them.
+public protocol SuperagentObservationPort: Sendable {
+  func observation() async throws -> ObservationSummary
+}

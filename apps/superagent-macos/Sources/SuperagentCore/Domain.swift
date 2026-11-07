@@ -272,3 +272,60 @@ public enum SuperagentError: Error, Equatable, Sendable, LocalizedError {
     }
   }
 }
+
+/// SG-002 observation as the native surface reads it: what the Super Bot can see of the
+/// workers, never what it may do to them.
+public struct ObservationSummary: Equatable, Sendable {
+  public enum State: String, Equatable, Sendable {
+    case ready
+    case refused
+    case unreachable
+    case reset
+    case unconfigured
+    case failure = "internal"
+  }
+
+  public let state: State
+  public let reachable: Bool
+  /// Bots whose store the provider could read in the last snapshot.
+  public let botsVisible: Int
+  /// Bots the provider knows but could not read (missing store, unsupported schema, unreadable).
+  public let botsUnknown: Int
+  public let lastReadAt: String?
+  /// A provider error code, never provider text; nil when nothing failed.
+  public let detail: String?
+  /// True while nothing has been read yet, so the surface shows unknown rather than zero.
+  public let isEmpty: Bool
+
+  public init(
+    state: State, reachable: Bool, botsVisible: Int = 0, botsUnknown: Int = 0,
+    lastReadAt: String? = nil, detail: String? = nil, isEmpty: Bool = true
+  ) {
+    self.state = state
+    self.reachable = reachable
+    self.botsVisible = botsVisible
+    self.botsUnknown = botsUnknown
+    self.lastReadAt = lastReadAt
+    self.detail = detail
+    self.isEmpty = isEmpty
+  }
+
+  public static let unconfigured = ObservationSummary(state: .unconfigured, reachable: false)
+
+  /// A short, honest line for the surface: no reading is not "zero bots".
+  public var headline: String {
+    switch state {
+    case .unconfigured: return "未连接 worker 观测"
+    case .refused: return "观测凭据被拒绝"
+    case .unreachable: return "观测源不可达"
+    case .reset: return "观测基线已重置"
+    case .failure: return "观测失败"
+    case .ready: return isEmpty ? "尚未读取" : "已读取"
+    }
+  }
+
+  public var coverageLine: String {
+    guard state == .ready, !isEmpty else { return headline }
+    return "可见 \(botsVisible) · 未知 \(botsUnknown)"
+  }
+}

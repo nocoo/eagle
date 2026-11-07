@@ -814,3 +814,23 @@ Gates: `apps/bots` **1126** tests green (95.31 / 88.13 / 90.82), `apps/superagen
 Next broken hop: no native status block exists yet, so the App still shows nothing about
 observation; the SG-002 acceptance matrix (A01–A17) is unrun and the evidence above uses
 an empty Bot, not one with history.
+
+## 2026-11-08 07:05 — observation reaches the native layer as a read-only port
+
+Verified:
+
+- `SuperagentCore`: `ObservationSummary` (state, reachable, `botsVisible`, `botsUnknown`,
+  `lastReadAt`, `detail`, `isEmpty`) with honest headlines — no reading is never shown as
+  zero — and `SuperagentObservationPort`, which has no send/steer/abort/configure method.
+- `SuperagentTransport`: the client maps a provider reply into that summary in one pure
+  initializer (`ObservationSummary(reply:)`), so the mapping is unit-tested without a
+  socket; an unknown provider state degrades to `failure` instead of being trusted.
+- `SuperagentFeatures`: `SuperagentObservationViewModel` owns one summary and one
+  in-flight read, with a generation guard so a late result never overwrites a newer
+  refresh.
+- `apps/superagent-macos`: `swift test` **46** tests green, coverage script reports every
+  logic file at or above the 90% line floor.
+
+Next broken hop: no SwiftUI view renders the summary yet, so the App still shows nothing
+about observation; the dev App has not been inspected and the SG-002 acceptance matrix
+(A01–A17) remains unrun.

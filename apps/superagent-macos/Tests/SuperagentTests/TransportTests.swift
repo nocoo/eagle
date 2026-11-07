@@ -49,6 +49,17 @@ final class TransportTests: XCTestCase {
       let first = try await iterator.next()
       XCTAssertEqual(first?.value.botId, "superagent")
       XCTAssertFalse(first?.value.modelReady ?? true)
+      // SG-002: an unconfigured observer answers a value, and the transport maps it.
+      let observed = try await client.observation()
+      XCTAssertEqual(observed.state, .unconfigured)
+      XCTAssertTrue(observed.isEmpty)
+      let reply = try await client.observeSnapshot()
+      XCTAssertEqual(reply.provider.state, "unconfigured")
+      let historyReply = try await client.observeHistory(botId: "b_none")
+      XCTAssertEqual(historyReply.provider.state, "unconfigured")
+      // Without a baseline the consumer asks for a fresh snapshot instead of guessing.
+      let changesReply = try await client.observeChanges(limit: 5)
+      XCTAssertEqual(changesReply.provider.state, "reset")
       let page = try await client.history(before: nil, limit: 100)
       XCTAssertTrue(page.messages.isEmpty)
       do {

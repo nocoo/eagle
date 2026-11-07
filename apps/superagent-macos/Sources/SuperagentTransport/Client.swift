@@ -59,7 +59,7 @@ private struct Challenge: Decodable {
 private struct Reply<Value: Decodable>: Decodable { var value: Value }
 private struct Stopped: Decodable, Sendable { var stopped: Bool }
 
-public actor SuperagentClient: SuperagentServicePort {
+public actor SuperagentClient: SuperagentServicePort, SuperagentObservationPort {
   public let endpoint: SuperagentEndpoint
   private let session: URLSession
   private var socket: URLSessionWebSocketTask?
@@ -158,6 +158,11 @@ public actor SuperagentClient: SuperagentServicePort {
     try await request(
       Command(type: "observe-changes", limit: limit), as: ObservationReply.self)
   }
+  /// SG-002: one read, mapped by the transport's own pure decode.
+  public func observation() async throws -> ObservationSummary {
+    try ObservationSummary(reply: await observeSnapshot())
+  }
+
   public func abort() async throws {
     let result = try await request(Command(type: "abort"), as: Stopped.self)
     guard result.stopped else { throw SuperagentError.service(.cancellationUnconfirmed) }

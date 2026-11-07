@@ -1,4 +1,5 @@
 import Foundation
+import SuperagentCore
 
 /// SG-002 observation values. The provider shape is typed; the payload stays a JSON value
 /// so the CLI and the App print exactly what the service answered.
@@ -88,4 +89,20 @@ public struct ObservationReply: Decodable, Sendable {
   public let snapshot: JSONValue?
   public let history: JSONValue?
   public let changes: JSONValue?
+}
+
+extension ObservationSummary {
+  /// The provider's report plus the snapshot's own coverage facts, and nothing inferred.
+  public init(reply: ObservationReply) {
+    let bots = reply.snapshot?["bots"]?.array ?? []
+    let visible = bots.filter { $0["store"]?["state"]?.string == "available" }.count
+    self.init(
+      state: ObservationSummary.State(rawValue: reply.provider.state) ?? .failure,
+      reachable: reply.provider.reachable,
+      botsVisible: visible,
+      botsUnknown: bots.count - visible,
+      lastReadAt: reply.provider.lastReadAt,
+      detail: reply.provider.detail,
+      isEmpty: reply.snapshot == nil)
+  }
 }
