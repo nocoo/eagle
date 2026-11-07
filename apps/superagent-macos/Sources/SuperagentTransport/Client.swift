@@ -21,6 +21,29 @@ private struct Command: Encodable, Sendable {
   var text: String?
   var before: Int?
   var limit: Int?
+  var botId: String?
+  var scope: String?
+  var beforeEntry: String?
+
+  init(
+    type: String, id: String? = nil, nonce: String? = nil, proof: String? = nil,
+    configuration: ConfigurationChange? = nil, requestId: String? = nil, text: String? = nil,
+    before: Int? = nil, limit: Int? = nil, botId: String? = nil, scope: String? = nil,
+    beforeEntry: String? = nil
+  ) {
+    self.type = type
+    self.id = id
+    self.nonce = nonce
+    self.proof = proof
+    self.configuration = configuration
+    self.requestId = requestId
+    self.text = text
+    self.before = before
+    self.limit = limit
+    self.botId = botId
+    self.scope = scope
+    self.beforeEntry = beforeEntry
+  }
 }
 private struct Header: Decodable {
   var type: String
@@ -119,6 +142,21 @@ public actor SuperagentClient: SuperagentServicePort {
   }
   public func history(before: Int?, limit: Int) async throws -> HistoryPage {
     try await request(Command(type: "history", before: before, limit: limit), as: HistoryPage.self)
+  }
+  public func observeSnapshot() async throws -> ObservationReply {
+    try await request(Command(type: "observe-snapshot"), as: ObservationReply.self)
+  }
+  public func observeHistory(
+    botId: String, scope: String? = nil, before: String? = nil, limit: Int? = nil
+  ) async throws -> ObservationReply {
+    try await request(
+      Command(
+        type: "observe-history", limit: limit, botId: botId, scope: scope, beforeEntry: before),
+      as: ObservationReply.self)
+  }
+  public func observeChanges(limit: Int? = nil) async throws -> ObservationReply {
+    try await request(
+      Command(type: "observe-changes", limit: limit), as: ObservationReply.self)
   }
   public func abort() async throws {
     let result = try await request(Command(type: "abort"), as: Stopped.self)

@@ -258,7 +258,9 @@ export const createObservationRoutes = (options: ObservationOptions): Observatio
       limit,
       ...(before === null ? {} : { before }),
     });
-    if (!page.scopes.some((scope) => scope.id === scopeId)) {
+    const resolved =
+      scopeId === "root" ? page.scopes.find((scope) => scope.kind === "root")?.id : scopeId;
+    if (resolved === undefined || !page.scopes.some((scope) => scope.id === resolved)) {
       return error(404, "unknown_scope", "no such conversation scope for this bot");
     }
     if (incarnation !== null && incarnation !== state.incarnation) {
@@ -287,7 +289,10 @@ export const createObservationRoutes = (options: ObservationOptions): Observatio
         source: sourceOf(options.root, credential.storeId),
         botId: bot.id,
         incarnation: state.incarnation,
-        scope: { id: scopeId, kind: scopeId === "root" ? "root" : "child" },
+        scope: {
+          id: resolved,
+          kind: page.scopes.find((scope) => scope.id === resolved)?.kind ?? "child",
+        },
         scopes: page.scopes,
         scopesNext: null,
         boundary: page.boundary,

@@ -791,3 +791,26 @@ Verified:
 
 Next broken hop: no native surface and no CLI paging exist yet; nobody has run the
 consumer against a live daemon, and the SG-002 acceptance matrix (A01–A17) is unrun.
+
+## 2026-11-08 07:40 — the observation chain runs end to end on a real daemon
+
+Verified (evidence `.local/superagent-evidence/observe-chain.log`):
+
+- An isolated daemon on `/tmp/eagle-sg002/bots:43157` minted
+  `observation/{token,identity.json}` at first start; a real Superagent on
+  `/tmp/eagle-sg002/sa2:43161` consumed it with `BOTS_OBSERVATION_ENDPOINT` and
+  `BOTS_OBSERVATION_TOKEN_FILE`.
+- `eagle-dev superagent observe status` printed `观测 ready · 不可读 0 · 上次读取 …` and
+  the real Bot with `available · 0 条`.
+- `observe history --bot <id>` printed `scope c_1 · 条目 0 · 上界 - ·
+  scopes=complete page=complete content=complete` plus the scope list, so the `root`
+  alias now resolves to the Bot's root conversation instead of answering
+  `unknown_scope`.
+- `observe changes` answered `ready` from the stored baseline.
+
+Gates: `apps/bots` **1126** tests green (95.31 / 88.13 / 90.82), `apps/superagent`
+**59** tests green (98.98 / 95.35 / 98.50), `apps/macos` `swift build` complete.
+
+Next broken hop: no native status block exists yet, so the App still shows nothing about
+observation; the SG-002 acceptance matrix (A01–A17) is unrun and the evidence above uses
+an empty Bot, not one with history.

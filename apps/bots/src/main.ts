@@ -21,6 +21,7 @@ import { declareEvent } from "./log/events.ts";
 import { Log } from "./log/log.ts";
 import { FileLogSink } from "./log/sink.ts";
 import { fileMemoryHost } from "./memory/fileHost.ts";
+import { mintObservationCredential } from "./observation/credential.ts";
 import { catalogDigest, createObservationRoutes } from "./observation/routes.ts";
 import { peerApi } from "./peers/api.ts";
 import { peerHostFor } from "./peers/host.ts";
@@ -741,6 +742,8 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     },
   };
   const catalogDescriptions = describeToolCatalog(createCatalogRegistry());
+  // SG-002: mint the dedicated observation credential once, beside its own store identity.
+  await mintObservationCredential(root).catch(() => undefined);
   let observationPort = 0;
   const observation = createObservationRoutes({
     root,

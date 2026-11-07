@@ -45,6 +45,9 @@ public struct SuperagentCommands: Sendable {
     case "chat":
       try await chat(Array(tokens.dropFirst()))
       return
+    case "observe":
+      try await observe(Array(tokens.dropFirst()))
+      return
     default:
       throw CLIError.usage("unknown superagent command \(first)\n\n\(Self.usage)")
     }
@@ -58,10 +61,123 @@ public struct SuperagentCommands: Sendable {
     eagle-dev superagent chat history [--before N] [--limit N] [--json]
     eagle-dev superagent chat watch [--json]
     eagle-dev superagent chat stop [--json]
+    eagle-dev superagent observe status [--json]
+    eagle-dev superagent observe snapshot [--json]
+    eagle-dev superagent observe history --bot ID [--scope ID] [--before e_n] [--limit N] [--json]
+    eagle-dev superagent observe changes [--limit N] [--json]
+
+    Observation is read-only: it names what each Bot holds, never what it should do.
 
     The Super Bot service is independent of the Bots daemon. Its credential comes from
     SUPERAGENT_TOKEN or the service root's own private token; there is no worker fallback.
     """
+
+  private func observe(_ tokens: [String]) async throws {
+    guard let action = tokens.first else {
+      throw CLIError.usage("observe needs status, snapshot, history or changes")
+    }
+    let rest = Array(tokens.dropFirst())
+    switch action {
+    case "status", "snapshot":
+      let arguments = try Arguments.parse(rest, valueFlags: [], switchFlags: ["json"])
+      let reply = try await mapped { try await client.observeSnapshot() }
+      if printer.wantsJSON(arguments) {
+        printer.json([
+          "provider": Self.providerObject(reply.provider),
+          "snapshot": reply.snapshot?.any ?? NSNull(),
+        ])
+        return
+      }
+      printer.text(Self.providerLine(reply.provider))
+      guard let snapshot = reply.snapshot else { return }
+      let bots = snapshot["bots"]?.array ?? []
+      for bot in bots {
+        let store = bot["store"]?["state"]?.string ?? "unknown"
+        let entries = bot["coverage"]?["entries"]?.int
+        let newest = bot["coverage"]?["newestEntryId"]?.string ?? "-"
+        let counted = entries.map { " · \($0) 条" } ?? ""
+        printer.text(
+          "\(bot["botId"]?.string ?? "?") · \(bot["title"]?.string ?? "") · \(store)\(counted) · \(newest)"
+        )
+      }
+      if snapshot["truncated"]?.any as? Bool == true { printer.text("fleet 列表已截断") }
+    case "history":
+      let arguments = try Arguments.parse(
+        rest, valueFlags: ["bot", "scope", "before", "limit"], switchFlags: ["json"])
+      guard let botId = arguments.value("bot"), !botId.isEmpty else {
+        throw CLIError.usage("observe history needs --bot ID")
+      }
+      let limit = arguments.value("limit").flatMap(Int.init) ?? 50
+      let before = arguments.value("before")
+      guard (1...200).contains(limit), before.map({ $0.hasPrefix("e_") }) ?? true else {
+        throw CLIError.usage("--limit is 1..200 and --before is an entry id like e_91")
+      }
+      let reply = try await mapped {
+        try await client.observeHistory(
+          botId: botId, scope: arguments.value("scope"), before: before, limit: limit)
+      }
+      if printer.wantsJSON(arguments) {
+        printer.json([
+          "provider": Self.providerObject(reply.provider),
+          "history": reply.history?.any ?? NSNull(),
+        ])
+        return
+      }
+      printer.text(Self.providerLine(reply.provider))
+      guard let history = reply.history else { return }
+      let coverage = history["coverage"]
+      let parts = ["scopes", "page", "content"].compactMap { key in
+        coverage?[key]?.string.map { "\(key)=\($0)" }
+      }
+      printer.text(
+        "scope \(history["scope"]?["id"]?.string ?? "?") · 条目 \(history["messages"]?.array.count ?? 0)"
+          + " · 上界 \(history["boundary"]?["newestEntryId"]?.string ?? "-") · "
+          + parts.joined(separator: " ")
+      )
+      for scope in history["scopes"]?.array ?? [] {
+        printer.text(
+          "  \(scope["id"]?.string ?? "?") · \(scope["kind"]?.string ?? "?") · \(scope["entries"]?.int ?? 0) 条"
+        )
+      }
+      if let next = history["next"]?["before"]?.string { printer.text("--before \(next) 读取更早") }
+    case "changes":
+      let arguments = try Arguments.parse(rest, valueFlags: ["limit"], switchFlags: ["json"])
+      let limit = arguments.value("limit").flatMap(Int.init) ?? 100
+      guard (1...500).contains(limit) else { throw CLIError.usage("--limit is 1..500") }
+      let reply = try await mapped { try await client.observeChanges(limit: limit) }
+      if printer.wantsJSON(arguments) {
+        printer.json([
+          "provider": Self.providerObject(reply.provider),
+          "changes": reply.changes?.any ?? NSNull(),
+        ])
+        return
+      }
+      printer.text(Self.providerLine(reply.provider))
+      for change in reply.changes?["changes"]?.array ?? [] {
+        let kind = change["kind"]?.string ?? "?"
+        let bot = change["botId"]?.string ?? "-"
+        let to = change["to"]?.string
+        printer.text("\(kind) · \(bot)" + (to.map { " · 到 \($0)" } ?? ""))
+      }
+      if reply.changes?["coverage"]?["complete"]?.any as? Bool == false { printer.text("本页已截断") }
+    default:
+      throw CLIError.usage("unknown observe command \(action)")
+    }
+  }
+
+  private static func providerObject(_ report: ProviderReport) -> [String: Any] {
+    [
+      "reachable": report.reachable, "state": report.state,
+      "lastReadAt": report.lastReadAt ?? NSNull(), "unavailable": report.unavailable,
+      "detail": report.detail ?? NSNull(),
+    ]
+  }
+
+  private static func providerLine(_ report: ProviderReport) -> String {
+    let read = report.lastReadAt.map { " · 上次读取 \($0)" } ?? " · 尚未读取"
+    let detail = report.detail.map { " · \($0)" } ?? ""
+    return "观测 \(report.state)\(detail) · 不可读 \(report.unavailable)\(read)"
+  }
 
   private func health(_ tokens: [String]) async throws {
     let arguments = try Arguments.parse(tokens, valueFlags: [], switchFlags: ["json"])
