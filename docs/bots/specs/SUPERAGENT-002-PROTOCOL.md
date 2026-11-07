@@ -224,7 +224,7 @@ them is `422 query_invalid`, never a silently unpinned page.
       "kind": "pi.compaction",
       "state": "complete",
       "at": "2026-11-08T08:59:00.000Z",
-      "blocks": [{ "type": "notice", "text": "Context compacted; earlier entries stay readable." }]
+      "blocks": [{ "type": "text", "text": "Context compacted; earlier entries stay readable." }]
     }
   ],
   "omitted": { "entries": 2, "blocks": 1, "kinds": ["pi.system"] },
@@ -240,7 +240,7 @@ them is `422 query_invalid`, never a silently unpinned page.
 | `pi.user` | `user` | `text` |
 | `pi.assistant` | `assistant` | `text`, `toolCall`; reasoning/thinking never exposed |
 | `pi.tool-result` | `tool` | `toolResult` (`callId,name,text,isError,durationMs?`) |
-| `pi.compaction` | `notice` | `notice` |
+| `pi.compaction` | `notice` | `text` (the role carries the notice) |
 | `bots.reflection`, `bots.reflection.tool` | by the stored role | as stored |
 | anything else | not a message | counted in `omitted.kinds`, and makes `coverage.content` `partial` with `unsupported_kind` |
 

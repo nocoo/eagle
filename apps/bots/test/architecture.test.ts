@@ -40,6 +40,7 @@ const EDGES: ReadonlyArray<{
       target.startsWith("src/protocol/") ||
       target.startsWith("src/server/") ||
       target.startsWith("src/skills/") ||
+      target.startsWith("src/observation/") ||
       target === "src/tools/decision/address.ts",
   },
   {
@@ -54,6 +55,18 @@ const EDGES: ReadonlyArray<{
       target === "src/core/domain.ts" ||
       target === "src/server/http.ts" ||
       target === "src/tools/types.ts",
+  },
+  {
+    // The passive observation projection reads committed storage and converts entries with
+    // the adapter's own converters. It may not reach the service, the registry or a
+    // transport, and it never imports the SDK — the schema guard goes through
+    // `src/runtime/pi/schema.ts` (SG-002 protocol).
+    prefix: "src/observation/",
+    allows: (target) =>
+      target.startsWith("src/observation/") ||
+      target.startsWith("src/core/") ||
+      target === "src/runtime/pi/convert.ts" ||
+      target === "src/runtime/pi/schema.ts",
   },
   {
     prefix: "src/runtime/",

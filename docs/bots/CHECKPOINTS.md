@@ -727,3 +727,29 @@ Verified:
 Next broken hop: nobody has clicked the new icon in a rendered window. That Dev App
 has no gateway configured (the owner's production key was not copied); configure a
 gateway in its Settings before checking the waiting/insert path.
+
+## 2026-11-08 06:20 — SG-002 contract frozen, provider store slice green
+
+Observed: the observation contract went through three read-only review rounds (12, then
+12, then 15 findings) and the provider's read-only store slice now passes on real
+stores.
+
+Verified:
+
+- `docs/bots/specs/OBSERVATION-SPIKE.md`: real-store probe — a read-only connection
+  leaves committed data intact, `SqliteStorage.open` migrates, today's runtime history
+  reports a compacted root window as complete while 30 child-scope entries exist, and
+  `commit_seq` is per store with no fleet sequence.
+- `SUPERAGENT-002-OBSERVATION.md` + `SUPERAGENT-002-PROTOCOL.md` + ten fixtures under
+  `fixtures/bots-observation/`, with a 26-check mechanical self-audit saved at
+  `.local/superagent-evidence/spec-selfcheck.log` (includes a measured 43,113-byte
+  worst-case 200-Bot baseline against the 64 KiB body budget).
+- `apps/bots/src/observation/{schema,store,cursor}.ts` plus `src/runtime/pi/schema.ts`
+  and an architecture edge for the projection; 15 new tests; `npm run check` green with
+  **1120** tests, observation files at 93–100% statements.
+- `scripts/unit-files.sh` now includes `test/observation`, so those tests cannot go
+  unrun.
+
+Next broken hop: no HTTP route, observation credential or `changes` comparison exists
+yet, so nothing is reachable from the Superagent or the App; S2's route slice, S3
+consumer, S4 native surface and S5 acceptance are unstarted.

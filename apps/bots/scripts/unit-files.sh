@@ -7,7 +7,7 @@ set -eu
 cd "$(dirname "$0")/.."
 
 files=""
-for dir in src test test/protocol test/core test/runtime test/server test/e2e test/log test/tools test/triggers test/peers test/pulls test/secrets; do
+for dir in src test test/protocol test/core test/runtime test/server test/e2e test/log test/tools test/triggers test/peers test/pulls test/secrets test/observation; do
   if [ -d "$dir" ]; then
     found=$(find "$dir" -maxdepth 1 -name '*.test.ts' | sort)
     [ -n "$found" ] && files="$files$found
@@ -16,8 +16,8 @@ for dir in src test test/protocol test/core test/runtime test/server test/e2e te
 done
 
 # Nested suites.
-if [ -d test/protocol ] || [ -d test/core ] || [ -d test/runtime ] || [ -d test/server ] || [ -d test/e2e ] || [ -d test/log ] || [ -d test/tools ] || [ -d test/triggers ] || [ -d test/peers ] || [ -d test/pulls ] || [ -d test/secrets ]; then
-  nested=$(find test/protocol test/core test/runtime test/server test/e2e test/log test/tools test/triggers test/peers test/pulls test/secrets \
+if [ -d test/protocol ] || [ -d test/core ] || [ -d test/runtime ] || [ -d test/server ] || [ -d test/e2e ] || [ -d test/log ] || [ -d test/tools ] || [ -d test/triggers ] || [ -d test/peers ] || [ -d test/pulls ] || [ -d test/secrets ] || [ -d test/observation ]; then
+  nested=$(find test/protocol test/core test/runtime test/server test/e2e test/log test/tools test/triggers test/peers test/pulls test/secrets test/observation \
     -mindepth 2 -name '*.test.ts' 2>/dev/null | sort || true)
   [ -n "$nested" ] && files="$files$nested
 "
