@@ -68,6 +68,17 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 — File admission checks in progress
+
+- The file-admission slice now has focused tests for protocol, a real pi-durable
+  SQLite run, file ownership and history projection. The full Bots and Swift
+  gates are still running; no successful complete run or commit is claimed yet.
+- Users still cannot attach or preview files: the composer, cards, publishing tool
+  and `eagle-dev` acceptance are not implemented. Completing the admission gate and
+  review is the next hop.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  The installed production App and its daemon were not used for tests.
+
 ## 2026-11-07 — File admission integration under test
 
 - The send protocol and pi-durable file-entry projection are being implemented with
