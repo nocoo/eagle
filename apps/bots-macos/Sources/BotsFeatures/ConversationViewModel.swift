@@ -51,6 +51,7 @@ public final class ConversationViewModel: ObservableObject {
   /// Sends the user asked for that have not been confirmed yet.
   private var inFlight: [String: OutboxEntry] = [:]
   private var uploadTasks: [String: Task<Void, Never>] = [:]
+  private var uploadGenerations: [String: Int] = [:]
   private var stagingTasks: [String: Task<Void, Never>] = [:]
   private var preparations: [String: String] = [:]
   private var activeUploads: Set<String> = []
@@ -425,23 +426,33 @@ public final class ConversationViewModel: ObservableObject {
   }
 
   private func cancelUploadTasks() {
-    for task in uploadTasks.values { task.cancel() }
+    for (requestId, task) in uploadTasks {
+      task.cancel()
+      uploadGenerations[requestId] = (uploadGenerations[requestId] ?? 0) + 1
+      activeUploads.remove(requestId)
+    }
     uploadTasks.removeAll()
-    activeUploads.removeAll()
   }
 
-  private func startUploadAndSend(_ entry: OutboxEntry, optimistic: Bool = false) {
+  private func startUploadAndSend(
+    _ entry: OutboxEntry,
+    optimistic: Bool = false,
+    generation: Int? = nil
+  ) {
     guard activeUploads.insert(entry.requestId).inserted else { return }
     isSending = true
+    let uploadGeneration = (uploadGenerations[entry.requestId] ?? 0) + 1
+    uploadGenerations[entry.requestId] = uploadGeneration
     uploadTasks[entry.requestId] = Task { [weak self] in
       guard let self else { return }
       defer {
-        self.activeUploads.remove(entry.requestId)
-        if self.uploadTasks[entry.requestId] != nil {
+        if self.uploadGenerations[entry.requestId] == uploadGeneration {
+          self.activeUploads.remove(entry.requestId)
           self.uploadTasks.removeValue(forKey: entry.requestId)
         }
       }
       do {
+        if let generation, viewGeneration != generation { return }
         if optimistic && !state.messages.contains(where: { $0.requestId == entry.requestId }) {
           guard let filePort else {
             if !entry.files.isEmpty {
@@ -475,6 +486,7 @@ public final class ConversationViewModel: ObservableObject {
           fileIds[index] = id
         }
         let unique = fileIds.compactMap { $0 }
+        guard self.uploadGenerations[entry.requestId] == uploadGeneration else { return }
         try Task.checkCancellation()
         guard selectedBotId == entry.botId,
           connection == .ready,
@@ -523,6 +535,7 @@ public final class ConversationViewModel: ObservableObject {
   /// (PROTOCOL.md, client duties 2).
   private func reconcileOutbox() {
     guard let botId = selectedBotId else { return }
+    let reconciliationGeneration = viewGeneration
     persistPendingRefusals()
     let durableRefusals: Set<String>
     do {
@@ -549,7 +562,8 @@ public final class ConversationViewModel: ObservableObject {
       guard !entry.uploadPaused else { continue }
       startUploadAndSend(
         entry,
-        optimistic: !state.messages.contains { $0.requestId == entry.requestId }
+        optimistic: !state.messages.contains { $0.requestId == entry.requestId },
+        generation: reconciliationGeneration
       )
     }
   }

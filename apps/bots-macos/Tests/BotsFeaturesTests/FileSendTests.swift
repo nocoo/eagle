@@ -331,6 +331,35 @@ final class FileSendTests: XCTestCase {
     XCTAssertEqual((json["entries"] as? [[String: Any]])?.count, 2)
   }
 
+  func testSwitchBackReconcilesCanceledUploadWithoutOldTaskClearingNewActive() async throws {
+    let fake = FakeFileConversation()
+    let file = BarrierUploadFilePort()
+    let outbox = OutboxStore(directory: directory)
+    let model = ConversationViewModel(
+      botId: "b_1", conversation: fake, outbox: outbox, filePort: file)
+    model.select(botId: "b_1")
+    fake.emit(.capabilities(sendFiles: true))
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.connection == .ready && model.hasSnapshot }
+
+    model.draft = "附件"
+    model.selectFiles([URL(fileURLWithPath: "/tmp/a.bin")])
+    model.send()
+    try await waitUntil { file.started == 1 }
+
+    model.select(botId: "b_2")
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_2")))
+    model.select(botId: "b_1")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { file.started == 2 }
+
+    file.release(index: 0)
+    file.release(index: 1)
+    try await waitUntil { fake.sent.count == 1 }
+  }
+
   func testPartialUploadPreservesEntryOrderAndWhenBusyMode() async throws {
     let fake = FakeFileConversation()
     let file = PartialFilePort()
@@ -504,6 +533,45 @@ private final class BlockingStageFilePort: FilePort {
 
   func upload(_ file: StagedFile, botId: String) async throws -> String {
     "f_\(String(repeating: "c", count: 64))"
+  }
+
+  func originalText(_ send: StagedSend) async throws -> String { send.text }
+  func selectedURLs(_ send: StagedSend) async throws -> [URL] { [] }
+  func url(for file: StagedFile) async throws -> URL { URL(fileURLWithPath: "/tmp/file") }
+}
+
+private final class BarrierUploadFilePort: FilePort {
+  var started = 0
+  private var gates: [CheckedContinuation<String, Error>] = []
+
+  func stage(
+    text: String, selectedFiles: [URL], botId: String, requestId: String
+  ) async throws
+    -> StagedSend
+  {
+    .init(
+      text: text,
+      files: selectedFiles.enumerated().map { index, url in
+        StagedFile(
+          kind: .selected, uploadId: "u_\(requestId)_\(index)", name: url.lastPathComponent,
+          mimeType: "application/octet-stream", size: 1,
+          sha256: String(repeating: "b", count: 64), relativePath: "staging/\(requestId)/\(index)")
+      })
+  }
+
+  func upload(_ file: StagedFile, botId: String) async throws -> String {
+    started += 1
+    return try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        gates.append(continuation)
+      }
+    } onCancel: {
+    }
+  }
+
+  func release(index: Int) {
+    guard gates.indices.contains(index) else { return }
+    gates[index].resume(returning: "f_\(String(repeating: "c", count: 64))")
   }
 
   func originalText(_ send: StagedSend) async throws -> String { send.text }
