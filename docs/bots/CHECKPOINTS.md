@@ -834,3 +834,23 @@ Verified:
 Next broken hop: no SwiftUI view renders the summary yet, so the App still shows nothing
 about observation; the dev App has not been inspected and the SG-002 acceptance matrix
 (A01–A17) remains unrun.
+
+## 2026-11-08 08:05 — SG-002 acceptance rows measured, gaps named
+
+Verified:
+
+- `apps/bots/test/observation/acceptance.test.ts` names its matrix rows: unsafe or missing
+  observation credential (A02), complete retained history across root and forked scopes
+  with entry-id paging (A08/A09), honest tool/reasoning reporting (A11), range changes and
+  a replaced store forcing `cursor_reset` (A12/A04), reads that open no harness (A05) and
+  concurrent reads beside a committing writer (A07). All six pass on stores written by the
+  real runtime.
+- `apps/bots`: `npm run check` green, **1132** tests, 95.59 / 88.27 / 91.18.
+- The earlier CLI chain run (`observe-chain.log`) is plumbing evidence only; a Bot with
+  history through the CLI was not achieved because the seeded copy did not carry the
+  runtime's committed data. The half-working seeding helper was deleted rather than kept.
+- Spec §8 now records every A-row with its test and status, including five explicit gaps.
+
+Next broken hop: the App strip has not been looked at by eye, and the five residual gaps
+(A07 read cancellation, A10 >500 scopes and unsupported kinds, A14 crash between consume
+and commit, A15 visual inspection, A17 maximum page through the socket) are unrun.

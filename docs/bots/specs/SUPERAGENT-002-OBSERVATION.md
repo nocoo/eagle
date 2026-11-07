@@ -222,7 +222,40 @@ scripted test; they cannot substitute for a deterministic row.
 | SG002-B | This spec plus the protocol: existing socket commands, consumer baseline committed with the observation, mapping provider codes onto SG-001 codes |
 | SG002-C | This spec: read-only status block and CLI paging, no analysis, no mutation control |
 
-## 8. Review record (2026-11-08)
+## 8. Acceptance evidence (2026-11-08, source; no release artifact)
+
+Deterministic rows live beside the code and name their row, so the matrix cannot drift
+from what runs.
+
+| Row | Test | Status |
+| --- | --- | --- |
+| A01 | `test/observation/http.test.ts` "the observation credential works only on the observation routes…" | pass |
+| A02 | `test/observation/acceptance.test.ts` "SG002-A02" | pass |
+| A03 | `test/observation/cursor.test.ts` (binding refusals) + `routes` baseline checks | pass |
+| A04 | "SG002-A12/A04" (replaced store forces `cursor_reset`) | pass |
+| A05 | "SG002-A05" (reads leave open count at zero) + `store.test.ts` byte diff | pass, with the named WAL sidecars allowed |
+| A06 | `store.test.ts` (missing / older schema / corrupt) | pass |
+| A07 | "SG002-A07" (concurrent reads never fail) + spike read-beside-writer probe | pass for load; reader cancellation is not exercised (gap) |
+| A08 | "SG002-A08/A09" (child scope with owner, compaction boundary) | pass |
+| A09 | same test + `store.test.ts` paging | pass |
+| A10 | `store.test.ts` trimmed delivery; >500 scopes and unsupported-kind paths are implemented but not exercised (gap) | partial |
+| A11 | "SG002-A11" (no reasoning on the wire, tool row keeps its shape) | pass |
+| A12 | "SG002-A12/A04" (same baseline replays) + `changes.ts` ranges | pass |
+| A13 | `apps/superagent/test/observation.test.ts` (refused / unreachable / unconfigured / reset) | pass |
+| A14 | consumer state file: a reset drops the baseline; a crash between consume and commit is not simulated (gap) | partial |
+| A15 | CLI chain on a real daemon (`observe-chain.log`); App strip compiled and running, not yet inspected by eye (gap) | partial |
+| A16 | `cursor.test.ts` measured 200-Bot baseline against 64 KiB | pass |
+| A17 | provider 192 KiB page cap + socket 256 KiB frame; the largest page was not rendered through a socket end to end (gap) | partial |
+
+Real-data evidence: the acceptance tests run against stores written by the real runtime
+(five turns, a compaction, six forked reflection scopes). The CLI chain evidence uses a
+Bot whose store the daemon had just created, so it proves plumbing, not content.
+
+Gaps are listed, not hidden: reader cancellation, >500 scopes, unsupported-kind coverage
+completeness, crash between consume and commit, a hand-inspected App strip, and one
+maximum-size page through the socket.
+
+## 9. Review record (2026-11-08)
 
 An independent read-only reviewer (`group/reviewing`, `xhigh`) reviewed this spec, its
 protocol and its fixtures over three rounds:
