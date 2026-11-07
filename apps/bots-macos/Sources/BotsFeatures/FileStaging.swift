@@ -13,19 +13,24 @@ public final class DiskFilePort: FilePort {
   private let beforeOpen: @Sendable () -> Void
   private let afterOpen: @Sendable () -> Void
   private let beforeFinalLstat: @Sendable () -> Void
+  private let syncDirectory: @Sendable (URL) throws -> Void
 
   public init(
     directory: URL,
     uploader: ManagedFileUploadPort,
     beforeOpen: @escaping @Sendable () -> Void = {},
     afterOpen: @escaping @Sendable () -> Void = {},
-    beforeFinalLstat: @escaping @Sendable () -> Void = {}
+    beforeFinalLstat: @escaping @Sendable () -> Void = {},
+    syncDirectory: @escaping @Sendable (URL) throws -> Void = { url in
+      try DiskFilePort.fsyncDirectory(url)
+    }
   ) {
     self.directory = directory
     self.uploader = uploader
     self.beforeOpen = beforeOpen
     self.afterOpen = afterOpen
     self.beforeFinalLstat = beforeFinalLstat
+    self.syncDirectory = syncDirectory
   }
 
   public func stage(
@@ -39,7 +44,8 @@ public final class DiskFilePort: FilePort {
         text: text, selectedFiles: selectedFiles, botId: botId,
         requestId: requestId, directory: self.directory,
         beforeOpen: self.beforeOpen, afterOpen: self.afterOpen,
-        beforeFinalLstat: self.beforeFinalLstat
+        beforeFinalLstat: self.beforeFinalLstat,
+        syncDirectory: self.syncDirectory
       )
     }.value
   }
@@ -124,7 +130,8 @@ public final class DiskFilePort: FilePort {
     directory: URL,
     beforeOpen: @Sendable () -> Void,
     afterOpen: @Sendable () -> Void,
-    beforeFinalLstat: @Sendable () -> Void
+    beforeFinalLstat: @Sendable () -> Void,
+    syncDirectory: @Sendable (URL) throws -> Void
   ) throws -> StagedSend {
     let needsInput = text.unicodeScalars.count > Self.maxSendScalars
     let count = selectedFiles.count + (needsInput ? 1 : 0)
@@ -132,6 +139,8 @@ public final class DiskFilePort: FilePort {
 
     try ensurePrivateDirectory(directory)
     try ensurePrivateDirectory(directory.appendingPathComponent("staging"))
+    try syncDirectory(directory)
+    try syncDirectory(directory.appendingPathComponent("staging"))
 
     var staged: [StagedFile] = []
     if needsInput {
@@ -149,7 +158,8 @@ public final class DiskFilePort: FilePort {
           botId: botId,
           requestId: requestId,
           index: 0,
-          directory: directory
+          directory: directory,
+          syncDirectory: syncDirectory
         )
       )
     }
@@ -163,7 +173,8 @@ public final class DiskFilePort: FilePort {
           directory: directory,
           beforeOpen: beforeOpen,
           afterOpen: afterOpen,
-          beforeFinalLstat: beforeFinalLstat
+          beforeFinalLstat: beforeFinalLstat,
+          syncDirectory: syncDirectory
         )
       )
     }
@@ -181,7 +192,8 @@ public final class DiskFilePort: FilePort {
     botId: String,
     requestId: String,
     index: Int,
-    directory: URL
+    directory: URL,
+    syncDirectory: @Sendable (URL) throws -> Void
   ) throws -> StagedFile {
     guard Int64(data.count) <= Self.maxFileBytes else { throw ClientError("附件不能超过 50 MiB") }
     var file = try metadataFile(
@@ -248,6 +260,10 @@ public final class DiskFilePort: FilePort {
       }
       throw ClientError("附件快照写入失败")
     }
+    do { try syncDirectory(target.deletingLastPathComponent()) } catch {
+      try? FileManager.default.removeItem(at: target)
+      throw error
+    }
     tempOk = true
     try? FileManager.default.removeItem(at: temp)
     return file
@@ -261,7 +277,8 @@ public final class DiskFilePort: FilePort {
     directory: URL,
     beforeOpen: @Sendable () -> Void,
     afterOpen: @Sendable () -> Void,
-    beforeFinalLstat: @Sendable () -> Void
+    beforeFinalLstat: @Sendable () -> Void,
+    syncDirectory: @Sendable (URL) throws -> Void
   ) throws -> StagedFile {
     var lstatBefore = stat()
     guard lstat(source.path, &lstatBefore) == 0,
@@ -403,6 +420,10 @@ public final class DiskFilePort: FilePort {
       }
       throw ClientError("附件快照写入失败")
     }
+    do { try syncDirectory(target.deletingLastPathComponent()) } catch {
+      try? FileManager.default.removeItem(at: target)
+      throw error
+    }
     tempOk = true
     try? FileManager.default.removeItem(at: temp)
     return file
@@ -497,6 +518,13 @@ public final class DiskFilePort: FilePort {
       throw ClientError("附件快照不可读")
     }
     return try metadataAt(url)
+  }
+
+  public static func fsyncDirectory(_ url: URL) throws {
+    let fd = open(url.path, O_RDONLY | O_CLOEXEC | O_DIRECTORY)
+    guard fd >= 0 else { throw ClientError("附件快照目录不可同步") }
+    defer { close(fd) }
+    guard fsync(fd) == 0 else { throw ClientError("附件快照目录同步失败") }
   }
 
   private static func mimeType(for pathExtension: String) -> String {

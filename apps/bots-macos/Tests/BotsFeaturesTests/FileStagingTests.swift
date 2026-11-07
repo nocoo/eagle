@@ -123,6 +123,23 @@ final class FileStagingTests: XCTestCase {
     }
   }
 
+  func testDirectorySyncFailureDoesNotPublishTheStagingSnapshot() async throws {
+    let source = root.appendingPathComponent("sync.bin")
+    try Data([1, 2, 3]).write(to: source)
+    let port = DiskFilePort(
+      directory: root,
+      uploader: RefusingUploader(),
+      syncDirectory: { _ in throw ClientError("directory fsync failed") }
+    )
+    do {
+      _ = try await port.stage(
+        text: "read", selectedFiles: [source], botId: "b_1", requestId: "r_sync_fail_0001")
+      XCTFail("directory sync failure must reject staging")
+    } catch let error as ClientError {
+      XCTAssertEqual(error.message, "directory fsync failed")
+    }
+  }
+
   func testSourceReplacementAtOpenAndBeforeFinalLstatIsRejected() async throws {
     let source = root.appendingPathComponent("barrier.bin")
     try Data([1, 2, 3, 4]).write(to: source)
