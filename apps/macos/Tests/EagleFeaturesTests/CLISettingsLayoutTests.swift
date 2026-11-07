@@ -70,10 +70,10 @@ struct CLISettingsLayoutTests {
       "the click copied the command")
     let afterPress = try #require(
       entries(host).first { identifier($0) == "cli.copy.skill" })
+    let afterPressDiag = describeCopySkill(node: afterPress)
     #expect(
       labelText(afterPress, slot: labelSlot) == "已复制",
-      "same AX field as initial shows 已复制 after press; "
-        + "\(describeCopySkill(node: afterPress))")
+      "same AX field as initial shows 已复制 after press; \(afterPressDiag)")
     try await waitForLabelReset(host: host, slot: labelSlot)
   }
 
