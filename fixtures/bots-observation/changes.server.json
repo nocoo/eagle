@@ -11,15 +11,21 @@
       "kind": "history_appended",
       "botId": "b_3f1a",
       "scopeId": "c_1",
-      "commitSeq": 88,
-      "at": "2026-11-08T08:59:00.000Z"
+      "from": "e_71",
+      "to": "e_91",
+      "entries": 21
     },
     {
       "kind": "history_appended",
       "botId": "b_3f1a",
       "scopeId": "c_1",
-      "commitSeq": 88,
-      "at": "2026-11-08T08:59:00.000Z"
+      "from": "e_71",
+      "to": "e_91",
+      "entries": 21
+    },
+    {
+      "kind": "storage_replaced",
+      "botId": "b_55e"
     },
     {
       "kind": "store_state_changed",
@@ -27,16 +33,20 @@
       "state": "session_missing"
     },
     {
-      "kind": "bot_added",
+      "kind": "activity_changed",
       "botId": "b_71d",
-      "at": "2026-11-07T21:00:00.000Z"
+      "activity": "queued"
+    },
+    {
+      "kind": "catalog_changed",
+      "bots": 4
     }
   ],
   "next": {
-    "cursor": "eyJlIjoiNmYxYzJhOTAtMWMxYi00YTU1LTlhMTMtMGQxZTJmM2E0YjVjIiwiayI6ImNoYW5nZXMiLCJxIjo4OCwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ"
+    "cursor": "eyJjIjoiYjdjOGQ5ZTBmMWEyYjNjNCIsImUiOiI2ZjFjMmE5MC0xYzFiLTRhNTUtOWExMy0wZDFlMmYzYTRiNWMiLCJrIjoiY2hhbmdlcyIsInAiOnsiYl8zZjFhIjp7ImUiOiJlXzkxIiwiaSI6IjlmMzFjMGI0YTdkMjBlNTUifSwiYl81NWUiOnsiZSI6ImVfNCIsImkiOiIzZDJhN2MxMWJlOTBmNGEyIn19LCJzIjoiOGYyYTFjMGQ5YmU0ZjdhMSIsInYiOjF9"
   },
   "coverage": {
-    "complete": false,
-    "reason": "truncated"
+    "complete": true,
+    "reasons": []
   }
 }

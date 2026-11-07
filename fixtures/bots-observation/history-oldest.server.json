@@ -7,6 +7,10 @@
     "capturedAt": 1794000000000
   },
   "botId": "b_3f1a",
+  "scope": {
+    "id": "c_1",
+    "kind": "root"
+  },
   "scopes": [
     {
       "id": "c_1",
@@ -23,13 +27,11 @@
       "entries": 5
     }
   ],
-  "scope": {
-    "id": "c_1",
-    "kind": "root"
-  },
+  "scopesTruncated": false,
   "boundary": {
     "newestEntryId": "e_91",
-    "before": "e_11"
+    "before": "e_11",
+    "compactions": []
   },
   "messages": [
     {
@@ -39,7 +41,6 @@
       "kind": "pi.user",
       "state": "complete",
       "at": "2026-11-08T08:40:00.000Z",
-      "bounded": false,
       "blocks": [
         {
           "type": "text",
@@ -53,6 +54,9 @@
     "kinds": []
   },
   "coverage": {
-    "complete": true
+    "scopes": "complete",
+    "page": "complete",
+    "content": "complete",
+    "reasons": []
   }
 }

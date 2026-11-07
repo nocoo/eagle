@@ -1,0 +1,105 @@
+{
+  "protocolVersion": 1,
+  "kind": "history",
+  "source": {
+    "id": "8f2a1c0d9be4f7a1",
+    "epoch": "6f1c2a90-1c1b-4a55-9a13-0d1e2f3a4b5c",
+    "capturedAt": 1794000000000
+  },
+  "botId": "b_3f1a",
+  "scope": {
+    "id": "c_1",
+    "kind": "root"
+  },
+  "scopes": [
+    {
+      "id": "c_1",
+      "kind": "root",
+      "entries": 23
+    },
+    {
+      "id": "c_12",
+      "kind": "child",
+      "owner": {
+        "conversationId": "c_1",
+        "taskId": "t_9"
+      },
+      "entries": 5
+    }
+  ],
+  "scopesTruncated": false,
+  "boundary": {
+    "newestEntryId": "e_91",
+    "before": "e_91",
+    "compactions": [
+      {
+        "entryId": "e_88",
+        "head": "e_70"
+      }
+    ]
+  },
+  "messages": [
+    {
+      "entryId": "e_70",
+      "commitSeq": 70,
+      "role": "user",
+      "kind": "pi.user",
+      "state": "complete",
+      "at": "2026-11-08T08:58:00.000Z",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "Why did the nightly run stop?"
+        }
+      ]
+    },
+    {
+      "entryId": "e_71",
+      "commitSeq": 71,
+      "role": "assistant",
+      "kind": "pi.assistant",
+      "state": "complete",
+      "at": "2026-11-08T08:58:04.000Z",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "The nightly run stopped on a test failure."
+        },
+        {
+          "type": "toolResult",
+          "callId": "call_1",
+          "name": "run_tests",
+          "text": "AssertionError: expected 3 suites, saw 2",
+          "isError": true
+        }
+      ]
+    },
+    {
+      "entryId": "e_88",
+      "commitSeq": 88,
+      "role": "notice",
+      "kind": "pi.compaction",
+      "state": "complete",
+      "at": "2026-11-08T08:59:00.000Z",
+      "blocks": [
+        {
+          "type": "notice",
+          "text": "Context compacted; earlier entries stay readable."
+        }
+      ]
+    }
+  ],
+  "omitted": {
+    "entries": 2,
+    "kinds": ["pi.system"]
+  },
+  "coverage": {
+    "scopes": "complete",
+    "page": "truncated",
+    "content": "complete",
+    "reasons": ["page_limit"]
+  },
+  "next": {
+    "before": "e_70"
+  }
+}

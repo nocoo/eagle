@@ -1,199 +1,213 @@
 # SG-002 — passive worker evidence
 
-Status: **draft specification for review; no code written**. Gate evidence:
-[cold-read spike](OBSERVATION-SPIKE.md), measured 2026-11-08. Architecture and
-product boundaries are owned by
-[SUPERAGENT-ARCHITECTURE.md](../SUPERAGENT-ARCHITECTURE.md); delivery status by
-[PLAN](../PLAN.md). SG-001 is delivered and unchanged by this milestone.
+Status: **draft specification (revision 2) for review; no code written**. Gate
+evidence: [cold-read spike](OBSERVATION-SPIKE.md), measured 2026-11-08. Frozen
+interface: [observation protocol](SUPERAGENT-002-PROTOCOL.md). Architecture and
+product boundaries belong to [SUPERAGENT-ARCHITECTURE.md](../SUPERAGENT-ARCHITECTURE.md);
+delivery status to [PLAN](../PLAN.md). SG-001 is delivered and unchanged here.
 
 Owner decision 2026-11-08: independence is an SG-001 obligation. SG-002 **reuses**
-the daemon's existing infrastructure — storage access, authentication, route table,
-registry and view mapping — and adds only a clean, versioned read interface. This
-spec therefore specifies an interface and its inertness, not a second provider.
+the daemon's infrastructure — HTTP route table, client credentials, catalog and
+storage access, error helpers — and the Superagent's existing authenticated socket.
+Only the read interface is new. Revision 2 closes the first review: per-Bot baselines
+instead of a fleet sequence, range-based changes, store incarnation, entry-id
+continuation, the pinned schema version and a dedicated non-rankable scope.
 
 ## 1. Outcome and scope
 
-The owner can, from the Super Bot side, see what every Bot actually has: which Bots
-exist, how much retained history each holds across all of its conversation scopes,
-what was committed after the last look, and what is unknown because a store is
-missing, unsupported or lagging. Nothing the observation does can start, steer,
-recover, configure or mutate a worker.
+The owner can see, from the Super Bot side, what every Bot actually holds: which Bots
+exist, how much retained history each has across all of its conversation scopes, what
+was committed after the last look, and what is unknown because a store is missing,
+unsupported, replaced or unreadable. Observation cannot start, steer, recover,
+configure or mutate a worker.
 
 ### In scope
 
-- Three read operations: `snapshot`, `history`, `changes`, with frozen schemas,
-  limits, errors, cursors and normative fixtures.
-- A dedicated observation credential with its own scope and no other authority.
-- Inert cold reads of committed data from stores the daemon is not otherwise using,
-  and safe reads beside a live writer.
-- Complete retained history: root plus forked child/task scopes, pre-compaction
-  entries retained, explicit coverage and truncation.
-- Superagent-side consumption: its own cursor/evidence state, reset on epoch change,
-  honest unavailable states.
-- Worker-service status and coverage facts sufficient for a read-only native surface.
+- `snapshot`, `history`, `changes` with frozen schemas, limits, errors, baselines and
+  normative fixtures.
+- A dedicated observation credential, separate from every existing credential, with a
+  non-rankable scope.
+- Inert cold reads of committed data: no Harness, no migration, no creation.
+- Complete retained history: root plus forked child scopes, pre-compaction entries,
+  three-part coverage.
+- Superagent consumption on its existing socket with its own baseline and honest
+  unavailable states.
+- A read-only native surface: coverage, watermark, lag, gap reasons, CLI paging.
 - Deterministic tests, real-store conformance and a real CLI/App acceptance.
 
 ### Not in scope
 
 - Analysis, suggestions, decisions, notifications, scheduled rechecks (SG-003/004).
-- Any worker command, delegation, recovery, retry, configure or trigger mutation.
+- Any worker command, delegation, recovery, retry, configuration or trigger mutation.
 - Ordinary worker chat/history routes as an observation shortcut.
-- Worker model/tool/prompt/report changes of any kind.
+- Any worker model, tool, prompt, report or scheduling change.
 - A second provider process, a copied schema layer or a parallel storage owner.
-- Reading tool bytes that were never retained, or expanding bounded tool output.
+- Content the daemon never retained, or expanding bounded tool output.
 
 ## 2. Normative behavior
 
-### SG002-R01 — one clean interface, reused implementation
+### SG002-R01 — one clean interface over reused implementation
 
-`snapshot`, `history` and `changes` are the complete observation interface. No
-generic RPC, no arbitrary method selection, no caller-supplied query language. The
-implementation belongs to the daemon and reuses its existing modules; the Superagent
-consumes only the wire contract. A caller-supplied scope may narrow visibility; it
-may never manufacture a fourth capability.
+`snapshot`, `history` and `changes` are the complete interface: no generic RPC, no
+caller-supplied query language, no fourth capability manufactured from a scope filter.
+The provider lives in the daemon and reuses its modules; the consumer uses only the
+wire contract. What must be clean is the interface — schemas, credential, errors,
+coverage, baselines — not a duplicated implementation.
 
-### SG002-R02 — dedicated observation credential
+### SG002-R02 — dedicated, non-rankable credential
 
-The daemon mints an observation credential distinct from its bearer token, stored
-with mode 0600 in its own root. It authenticates `/v1/observe/*` and nothing else.
-The bearer token is refused on `/v1/observe/*`, and the observation credential is
-refused on every other route. Missing, malformed, foreign or loosened credential
-files fail closed without repair. No credential value appears in a URL, log, error
-body or observation payload.
+The daemon mints its own observation token into its root with mode 0600 and reads it
+through the same hardened reader as the dev token. Only that token authenticates
+`/v1/observe/*`. The root token, the dev-agent token and every named client are
+refused there, and the observation token is refused on every other route. The
+`observe` scope is not rankable in either direction. A missing, symlinked, non-regular,
+wrong-mode, foreign or short credential file is refused, never repaired or logged.
 
-### SG002-R03 — source identity and epoch
+### SG002-R03 — source identity, epoch and store incarnation
 
-Every response carries `source: {id, epoch, capturedAt}`. `id` is a binding hash of
-the canonical daemon root; `epoch` changes when the daemon's observation identity is
-recreated. Cursors are bound to both, plus the operation and the store/scope they
-were issued for. A cursor presented to another source, epoch, operation, Bot or
-scope is refused rather than reinterpreted.
+Every response carries a source identity (root binding) and epoch (daemon observation
+store id). Cursors bind both. Because a single Bot's database can be replaced,
+restored or recreated independently, a cursor also binds each Bot's **store
+incarnation**; a changed incarnation is a typed reset for that Bot, not a silent
+continuation. A cursor presented to another source, epoch or operation is refused
+rather than reinterpreted.
 
 ### SG002-R04 — inert cold reads
 
-A read opens the Bot's committed store only if it exists. It never creates, migrates,
-recovers, reconfigures, resumes or opens a Harness, and never takes a worker lifecycle
-lease or idle-close extension. A missing store is `session_missing`; a store written
-by a different schema version is `schema_unsupported`; a corrupt store is
-`store_unreadable`. None of those becomes an empty history.
+A read opens a Bot's committed store only when it exists. It never creates, migrates,
+recovers, reconfigures, resumes or opens a Harness, and takes no lifecycle lease or
+idle-close extension. Missing, older-schema, foreign-schema and corrupt stores are
+distinct states; none becomes an empty history, and none is repaired.
 
 Observed effects are exactly: committed worker data unchanged; WAL `-shm`/`-wal`
-sidecars may appear or be rewritten; authentication/trace bookkeeping. Nothing else
-is claimed.
+sidecars may appear or be rewritten; trace and credential-use bookkeeping.
 
-### SG002-R05 — complete retained history
+### SG002-R05 — complete retained history with three-part coverage
 
-History enumerates every retained conversation scope of one Bot: the root
-conversation and forked child conversations, each identified by scope, kind and
-owner. Compaction is not deletion: entries before a compaction boundary remain
-readable, and the boundary is reported. A page carries a fixed upper boundary so new
-commits cannot shift it, and older entries remain reachable across paging.
+History enumerates every retained scope of a Bot — the root conversation and forked
+child conversations with their owner — in stable order, and reports whether that
+enumeration was truncated. A child scope returns its own rows; it neither inherits nor
+repeats the parent's.
 
-`coverage.complete` is true only when every scope of the Bot was enumerated and
-nothing was hidden. Otherwise coverage names the reason (`truncated`,
-`unsupported_kind`, `scope_unavailable`) and the response must not read as "that is
-all there is". Hidden entries (system prompts, internal reasoning) are counted as
-omitted, never silently dropped from a claimed-complete page.
+Compaction is not deletion: entries before a compaction boundary stay readable, the
+boundary is reported as `{entryId, head}`, and the compaction entry itself appears as a
+notice. A page has a fixed upper boundary and continues by entry id, so no entry can be
+duplicated or skipped and older entries stay reachable.
+
+Completeness is reported as three independent facts — scopes, page, content — with
+reasons. No part is `complete` unless it truly is, and no response may read as "that is
+all there is" when a scope, a page or a mapping was cut.
 
 ### SG002-R06 — honest admission facts
 
-Each returned message keeps provenance: Bot, conversation scope, entry id, commit
-sequence and the stored message kind. Tool output that was stored bounded stays
-bounded and is marked; the contract never promises bytes that were not retained.
-Quoted historical instructions remain untrusted context, not authority: no returned
-content grants the Superagent a capability it did not have.
+Every message keeps provenance: Bot, scope, entry id, commit sequence and the stored
+kind. Blocks are the daemon's existing wire blocks (`text`, `toolCall`, `toolResult`,
+`notice`); internal reasoning is never exposed and is counted as omitted. Stored
+content is returned as retained — the write-time bound is the limit, and the contract
+never promises bytes that were not stored. Quoted historical instructions remain
+untrusted context, not authority.
 
-### SG002-R07 — changes without acknowledgement
+### SG002-R07 — changes are ranges, not a second log
 
-`changes` returns committed catalog/history/status changes after a cursor, or typed
-invalidation. Duplicates are allowed and identified; the worker never waits for an
-observer acknowledgement and no worker write depends on observer progress.
+`changes` compares a baseline with the current state and reports, per Bot, an appended
+entry-id range, a replaced store, a changed store state, a changed activity, or a
+changed catalog. No event identity is derived from a commit sequence, because one
+commit can write several entries and tasks/submissions are updated in place. Duplicates
+across reads are allowed and replayable; no acknowledgement exists and no worker write
+depends on observer progress.
 
-### SG002-R08 — gaps, lag and retention
+### SG002-R08 — baselines, lag and resets
 
-A snapshot publishes a change cursor paired with its own baseline and a per-Bot
-coverage watermark. If the provider's projection lags, it publishes lag rather than
-completeness. An epoch change or an unusable cursor returns a typed `reset` requiring
-a new baseline; it never continues silently. Sequence numbers and wall-clock times
-are separate fields. There is no fleet-wide sequence, so a fleet watermark is derived
-from per-Bot cursors, not invented.
+A snapshot publishes its own baseline: catalog revision plus, per Bot, store
+incarnation and newest entry id. There is no fleet-wide sequence, so none is invented.
+A projection lag is published rather than implied freshness. An epoch change, a
+replaced store or an unusable baseline is a typed reset requiring a new baseline; it
+never continues silently. Sequence numbers and wall-clock times remain separate fields.
 
 ### SG002-R09 — noninterference under load
 
-Reads are inert while a Bot is committing: no input, run, tool execution, recovery,
-compaction, catalog/peer/trigger mutation, no worker task success or failure caused by
-an observer, no unbounded observer backpressure. Reader cancellation cancels only the
-read. Reads use short transactions and release handles immediately, so SQLite
-checkpoints are not held indefinitely.
+Reads stay inert while a Bot commits: no input, run, tool execution, recovery,
+compaction, catalog/peer/trigger/secret mutation, no worker task success or failure
+caused by an observer, no unbounded backpressure. Reader cancellation cancels only the
+read. Reads use one short transaction and release handles before responding, so
+checkpoints are not held.
 
-### SG002-R10 — Superagent consumption state
+### SG002-R10 — consumer state on the existing socket
 
-The Superagent keeps its own observation state: per-source cursor, last snapshot
-watermark, per-Bot coverage and the last failure category. It commits a consumed
-observation and its cursor together. A reset, an unavailable provider or an
-unsupported store is visible as such; no silent fallback to private files, no
-promotion of a stale fact to current, and no reader that pretends workers are idle
-because data is missing.
+The Superagent serves observation on its existing authenticated socket, reusing the
+SG-001 proof handshake, command envelope and error codes. It keeps its own baseline,
+last-read time, per-Bot coverage and last failure category, and commits a consumed
+observation together with its new baseline. `reset`, `refused`, `unreachable`,
+`unconfigured` are visible states; there is no private-file fallback and no stale fact
+promoted to current. Observation never blocks or closes the chat surface.
 
 ### SG002-R11 — read-only native surface
 
-The App shows, for each source: reachability, coverage (Bots visible / Bots known),
-per-Bot state and watermark, lag, gap/reset reason and last successful read time. A
-Bot's history can be paged from the CLI with explicit scope, boundary and truncation
-markers. No control in this milestone sends, steers, recovers or configures. The App
-still displays a Bot as unknown when its store is missing or unsupported.
+The App shows per source: reachability, coverage (Bots visible / known), per-Bot state,
+watermark, lag, reset/gap reason and last successful read time, with unknown states for
+missing or unsupported stores. CLI paging renders scope, boundary, coverage and
+truncation explicitly. No control in this milestone sends, steers, recovers or
+configures.
 
 ### SG002-R12 — MVP rules of engagement
 
-No analysis, no suggestion, no model call is added by SG-002. Observation never
-reserves model budget. Failures are categorized and distinguishable between provider,
-credential, schema and consumer. The Superagent's chat (SG-001) must keep working
-with observation absent, refused or failing.
+No analysis, suggestion or model call is added by SG-002, and observation reserves no
+model budget. Failures are categorized and attributable to provider, credential,
+schema or consumer. SG-001 chat keeps working with observation absent, refused or
+failing.
 
 ## 3. Frozen interface
 
 [SUPERAGENT-002-PROTOCOL.md](SUPERAGENT-002-PROTOCOL.md) freezes routes, credential,
-headers, schemas, limits, error codes, cursor encoding and normative fixtures.
+host/origin checks, schemas, limits, error codes, cursor encoding and fixtures;
 `fixtures/bots-observation/` is normative for both sides.
 
 ## 4. Slices
 
 | Slice | Implement in order | Exit evidence |
 | --- | --- | --- |
-| SG002-A: provider | Observation credential, epoch, read-only store module with schema-conformance guard, three routes, limits and typed errors; failing noninterference tests first | Real store: snapshot/history/changes over real HTTP; read-before/after domain-state diff empty; missing/unsupported/corrupt stores typed; no Harness open |
-| SG002-B: consumer | Superagent observation port, cursor/evidence store, reset and unavailable handling | Real provider + real Superagent: baseline, incremental changes, typed reset on epoch change, honest unavailable state; SG-001 chat unaffected |
-| SG002-C: native surface | Read-only observation model, status block and CLI paging | Dev App shows coverage/watermark/lag for a real daemon and "unknown" for a missing store; CLI pages a real Bot history with truncation markers |
-| SG002-D: acceptance | Integration regressions, independent review, package gates, real CLI acceptance and a hand-inspected dev App | Acceptance matrix below passes with recorded evidence |
+| SG002-A: provider | Observation token and identity, scope and route checks, read-only store module with schema-conformance guard, three routes, limits, errors; failing noninterference tests first | Real store: all three operations over real HTTP; logical store-state diff empty before/after; missing/unsupported/corrupt/replaced stores typed; zero runtime/model/tool calls |
+| SG002-B: consumer | Observation commands on the existing socket, baseline/evidence store, reset and unavailable handling | Real provider + real Superagent: baseline, incremental ranges, typed reset on epoch and incarnation change, honest unavailable state; chat unaffected |
+| SG002-C: native surface | Read-only observation model, status block and CLI paging | Dev App shows coverage/watermark/lag for a real daemon and unknown for a missing store; CLI pages real history with coverage markers |
+| SG002-D: acceptance | Integration regressions, independent review, package gates, real CLI acceptance, hand-inspected dev App | Acceptance matrix passes with recorded evidence |
 
 ## 5. Acceptance matrix
 
+Deterministic tests use a real daemon, real SQLite stores and the scripted provider.
+Instrumentation counters (runtime open/resume, model calls, tool executions,
+`registry.touch`, idle-lease changes) are asserted to stay zero; state comparison is
+logical (tables, catalog bytes, credential files, conversation rows), not a file
+fingerprint alone.
+
 | ID | Requirements | Given / when / then |
 | --- | --- | --- |
-| SG002-A01 | R01, R02 | Given the observation credential, when any other route or a fourth operation is called, then it is refused; the worker bearer on `/v1/observe/*` is refused too |
-| SG002-A02 | R03, R08 | Given a snapshot, when its cursor is used against another source/epoch/operation/Bot, then it is refused rather than reinterpreted |
-| SG002-A03 | R04 | Given a cold Bot store, when history is read, then committed rows are returned and the pre/post fingerprint of the store matches (sidecars excluded by name) |
-| SG002-A04 | R04 | Given a missing, older-schema and corrupt store, when each is read, then `session_missing` / `schema_unsupported` / `store_unreadable` appear and no file is created or migrated |
-| SG002-A05 | R04, R09 | Given an open runtime with a committing writer, when snapshot/history/changes run repeatedly, then commits continue at baseline latency and the reader reports no worker failure |
-| SG002-A06 | R05 | Given a compacted conversation with child/task scopes, then full history returns pre-compaction entries, every scope is enumerated, and the compaction boundary is reported |
-| SG002-A07 | R05 | Given more entries than one page, when paging backwards, then the boundary is fixed, order is stable, no entry is duplicated or dropped, and completeness is not claimed for a page that hides scopes |
-| SG002-A08 | R06 | Given a bounded tool output and a hidden entry, then the result marks truncation and counts the omission instead of claiming complete content |
-| SG002-A09 | R07 | Given two identical `changes` reads with one cursor, then duplicates are allowed and identified, and the worker's progress does not depend on the read |
-| SG002-A10 | R08, R10 | Given an epoch change or unusable cursor, then a typed `reset` reaches the Superagent, which drops the stale baseline instead of continuing |
-| SG002-A11 | R10, R12 | Given observation refused, unavailable or failing, then chat still works, the reason is visible and no private file access occurs |
-| SG002-A12 | R11 | Given a real daemon and a missing store, then the App and CLI show coverage, watermark, lag and unknown states without any mutation control |
+| SG002-A01 | R01, R02 | Given each credential, when used on the wrong surface, then it is refused; `observe` is neither implied by nor implying another scope |
+| SG002-A02 | R02 | Given a missing, symlinked, wrong-mode, short or foreign observation token file, then observation is disabled and nothing is repaired or written |
+| SG002-A03 | R03, R08 | Given a baseline, when it is presented for another source/epoch/operation or after an epoch change, then `cursor_invalid` / `cursor_reset` appear and no range is fabricated |
+| SG002-A04 | R03 | Given a Bot store replaced or restored in place, when changes or history run, then the incarnation mismatch is reported and the stale baseline is not continued |
+| SG002-A05 | R04 | Given a cold Bot store, when history is read, then committed rows return and the logical state before/after is identical, including no Harness open, no migration and no new file |
+| SG002-A06 | R04 | Given missing, older-schema, foreign-schema and corrupt stores, then `session_missing` / `schema_unsupported` / `store_unreadable` appear and no file is created, migrated or repaired |
+| SG002-A07 | R04, R09 | Given a committing writer, when reads run repeatedly, then worker commits match baseline timing, no `SQLITE_BUSY` occurs, no idle lease is taken and cancelling a read cancels only the read |
+| SG002-A08 | R05 | Given a compacted conversation with child scopes, then pre-compaction entries return, every scope is enumerated with its owner, and boundaries are reported |
+| SG002-A09 | R05 | Given more entries than a page, when continuing by `next.before`, then boundaries are fixed, no entry is duplicated or skipped, and an oldest page reports no `next` |
+| SG002-A10 | R05, R06 | Given more than 500 scopes, an entry kind that cannot be mapped, or a page over the response cap, then the corresponding coverage part is not `complete` and states its reason |
+| SG002-A11 | R06 | Given a tool result and a hidden reasoning entry, then the tool result keeps `callId/name/isError`, reasoning never appears, and omitted entries are counted by kind |
+| SG002-A12 | R07 | Given two reads with one baseline, then ranges and duplicates are identical, a replaced store, a state change and a catalog change each appear once per Bot, and no worker progress depends on the read |
+| SG002-A13 | R10 | Given a provider reset, refusal, unreachability or unconfigured state, then the consumer reports that state, drops the stale baseline, keeps chat working and reads no daemon file |
+| SG002-A14 | R10 | Given a consumer crash between consuming an observation and committing its baseline, then no duplicate is presented as new evidence and the next read re-baselines honestly |
+| SG002-A15 | R11, R12 | Given a real daemon and a missing store, then App and CLI show coverage, watermark, lag and unknown states with no mutation control and no model call |
 
 ## 6. Evidence discipline
 
-Every requirement row above needs a deterministic test plus an evidence entry naming
-the test, source revision, red behavior, green result and review disposition. Cold
-reads are compared by store fingerprint before/after, excluding only the named WAL
-sidecars. Manual/live checks are reported separately and are never inferred from a
-scripted test.
+Each row needs a deterministic test plus an evidence entry naming test, revision, red
+behavior, green result and review disposition. Performance measurements, live-model
+runs and rendered-UI checks are reported separately and are never inferred from a
+scripted test; they cannot substitute for a deterministic row.
 
-## 7. Reviewed open items
+## 7. Resolved freeze items
 
 | Before | Resolved by |
 | --- | --- |
-| SG002-A | This spec plus the spike: read-only connection, provider-owned schema constants with a conformance guard, existence check, epoch file, dedicated credential, three routes |
-| SG002-B | This spec plus the protocol doc: consumer cursor/evidence commit, reset handling, unavailable categories |
-| SG002-C | This spec: read-only status block and CLI paging; no analysis and no mutation control |
+| SG002-A | This spec plus the protocol: read-only connection and schema constants with a conformance guard, existence check, observation token/identity, non-rankable scope, three routes, per-store incarnation |
+| SG002-B | This spec plus the protocol: existing socket commands, consumer baseline committed with the observation, mapping provider codes onto SG-001 codes |
+| SG002-C | This spec: read-only status block and CLI paging, no analysis, no mutation control |

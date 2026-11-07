@@ -7,6 +7,10 @@
     "capturedAt": 1794000000000
   },
   "botId": "b_3f1a",
+  "scope": {
+    "id": "c_1",
+    "kind": "root"
+  },
   "scopes": [
     {
       "id": "c_1",
@@ -23,13 +27,16 @@
       "entries": 5
     }
   ],
-  "scope": {
-    "id": "c_1",
-    "kind": "root"
-  },
+  "scopesTruncated": false,
   "boundary": {
     "newestEntryId": "e_91",
-    "before": "e_91"
+    "before": "e_91",
+    "compactions": [
+      {
+        "entryId": "e_88",
+        "head": "e_70"
+      }
+    ]
   },
   "messages": [
     {
@@ -39,7 +46,6 @@
       "kind": "pi.user",
       "state": "complete",
       "at": "2026-11-08T08:58:00.000Z",
-      "bounded": false,
       "blocks": [
         {
           "type": "text",
@@ -54,16 +60,17 @@
       "kind": "pi.assistant",
       "state": "complete",
       "at": "2026-11-08T08:58:04.000Z",
-      "bounded": true,
       "blocks": [
         {
           "type": "text",
-          "text": "The last commit exited with a test failure. The full log is long; the stored transcript kept its tail."
+          "text": "The nightly run stopped on a test failure."
         },
         {
-          "type": "tool_result",
+          "type": "toolResult",
           "callId": "call_1",
-          "text": "AssertionError: expected 3 suites, saw 2\n…"
+          "name": "run_tests",
+          "text": "AssertionError: expected 3 suites, saw 2",
+          "isError": true
         }
       ]
     },
@@ -74,10 +81,9 @@
       "kind": "pi.compaction",
       "state": "complete",
       "at": "2026-11-08T08:59:00.000Z",
-      "bounded": false,
       "blocks": [
         {
-          "type": "text",
+          "type": "notice",
           "text": "Context compacted; earlier entries stay readable."
         }
       ]
@@ -87,10 +93,13 @@
     "entries": 2,
     "kinds": ["pi.system"]
   },
-  "next": {
-    "cursor": "eyJiIjoiYl8zZjFhIiwiYyI6ImNfMSIsImUiOiI2ZjFjMmE5MC0xYzFiLTRhNTUtOWExMy0wZDFlMmYzYTRiNWMiLCJrIjoiaGlzdG9yeSIsInEiOiJlXzkxIiwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ"
-  },
   "coverage": {
-    "complete": true
+    "scopes": "complete",
+    "page": "complete",
+    "content": "complete",
+    "reasons": []
+  },
+  "next": {
+    "before": "e_70"
   }
 }

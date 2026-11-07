@@ -21,6 +21,26 @@
       }
     },
     {
+      "status": 403,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "host_refused",
+          "detail": "this endpoint does not own the daemon root"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "origin_refused",
+          "detail": "a service does not send an Origin header"
+        }
+      }
+    },
+    {
       "status": 404,
       "body": {
         "protocolVersion": 1,
@@ -46,7 +66,7 @@
         "protocolVersion": 1,
         "error": {
           "code": "cursor_invalid",
-          "detail": "cursor is bound to another source, epoch, operation or scope"
+          "detail": "cursor is bound to another source, epoch or operation"
         }
       }
     },
@@ -56,7 +76,7 @@
         "protocolVersion": 1,
         "error": {
           "code": "cursor_reset",
-          "detail": "the source epoch changed; read a new baseline"
+          "detail": "the source epoch or a bot store changed; read a new baseline"
         }
       }
     },
@@ -66,7 +86,27 @@
         "protocolVersion": 1,
         "error": {
           "code": "limit_invalid",
-          "detail": "limit must be an integer between 1 and 200"
+          "detail": "history limit must be an integer between 1 and 200"
+        }
+      }
+    },
+    {
+      "status": 422,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "limit_invalid",
+          "detail": "changes limit must be an integer between 1 and 500"
+        }
+      }
+    },
+    {
+      "status": 422,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "query_invalid",
+          "detail": "unknown query parameter"
         }
       }
     },
@@ -76,7 +116,7 @@
         "protocolVersion": 1,
         "error": {
           "code": "provider_unavailable",
-          "detail": "the store cannot be read now"
+          "detail": "the bot store cannot be read now: session_missing"
         }
       }
     },

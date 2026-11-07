@@ -5,41 +5,42 @@
   },
   "cursors": [
     {
-      "value": "eyJlIjoiNmYxYzJhOTAtMWMxYi00YTU1LTlhMTMtMGQxZTJmM2E0YjVjIiwiayI6ImNoYW5nZXMiLCJxIjo4OCwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ",
+      "value": "eyJjIjoiYTFiMmMzZDRlNWY2MDcxOCIsImUiOiI2ZjFjMmE5MC0xYzFiLTRhNTUtOWExMy0wZDFlMmYzYTRiNWMiLCJrIjoiY2hhbmdlcyIsInAiOnsiYl8zZjFhIjp7ImUiOiJlXzkxIiwiaSI6IjlmMzFjMGI0YTdkMjBlNTUifX0sInMiOiI4ZjJhMWMwZDliZTRmN2ExIiwidiI6MX0",
       "binding": {
         "operation": "changes",
         "source": "8f2a1c0d9be4f7a1",
         "epoch": "6f1c2a90-1c1b-4a55-9a13-0d1e2f3a4b5c",
-        "position": 88
-      }
-    },
-    {
-      "value": "eyJiIjoiYl8zZjFhIiwiYyI6ImNfMSIsImUiOiI2ZjFjMmE5MC0xYzFiLTRhNTUtOWExMy0wZDFlMmYzYTRiNWMiLCJrIjoiaGlzdG9yeSIsInEiOiJlXzkxIiwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ",
-      "binding": {
-        "operation": "history",
-        "source": "8f2a1c0d9be4f7a1",
-        "epoch": "6f1c2a90-1c1b-4a55-9a13-0d1e2f3a4b5c",
-        "botId": "b_3f1a",
-        "scopeId": "c_1",
-        "position": "e_91"
+        "catalog": "a1b2c3d4e5f60718",
+        "positions": {
+          "b_3f1a": {
+            "incarnation": "9f31c0b4a7d20e55",
+            "newestEntryId": "e_91"
+          }
+        },
+        "absentBots": ["b_9c2", "b_71d"]
       }
     }
   ],
   "rejections": [
     {
-      "value": "eyJlIjoiNmYxYzJhOTAtMWMxYi00YTU1LTlhMTMtMGQxZTJmM2E0YjVjIiwiayI6ImNoYW5nZXMiLCJxIjo4OCwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ",
+      "value": "eyJjIjoiYTFiMmMzZDRlNWY2MDcxOCIsImUiOiI2ZjFjMmE5MC0xYzFiLTRhNTUtOWExMy0wZDFlMmYzYTRiNWMiLCJrIjoiY2hhbmdlcyIsInAiOnsiYl8zZjFhIjp7ImUiOiJlXzkxIiwiaSI6IjlmMzFjMGI0YTdkMjBlNTUifX0sInMiOiI4ZjJhMWMwZDliZTRmN2ExIiwidiI6MX0",
       "why": "presented to history",
       "expect": "cursor_invalid"
     },
     {
-      "value": "eyJiIjoiYl8zZjFhIiwiYyI6ImNfMSIsImUiOiI2ZjFjMmE5MC0xYzFiLTRhNTUtOWExMy0wZDFlMmYzYTRiNWMiLCJrIjoiaGlzdG9yeSIsInEiOiJlXzkxIiwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ",
-      "why": "presented for another bot",
-      "expect": "cursor_invalid"
+      "value": "eyJjIjoiYTFiMmMzZDRlNWY2MDcxOCIsImUiOiI2ZjFjMmE5MC0xYzFiLTRhNTUtOWExMy0wZDFlMmYzYTRiNWMiLCJrIjoiY2hhbmdlcyIsInAiOnsiYl8zZjFhIjp7ImUiOiJlXzkxIiwiaSI6IjlmMzFjMGI0YTdkMjBlNTUifX0sInMiOiI4ZjJhMWMwZDliZTRmN2ExIiwidiI6MX0",
+      "why": "presented with another source epoch",
+      "expect": "cursor_reset"
     },
     {
-      "value": "eyJlIjoiNmYxYzJhOTAtMWMxYi00YTU1LTlhMTMtMGQxZTJmM2E0YjVjIiwiayI6ImNoYW5nZXMiLCJxIjo4OCwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ",
-      "why": "presented with another epoch",
+      "value": "eyJjIjoiYTFiMmMzZDRlNWY2MDcxOCIsImUiOiI2ZjFjMmE5MC0xYzFiLTRhNTUtOWExMy0wZDFlMmYzYTRiNWMiLCJrIjoiY2hhbmdlcyIsInAiOnsiYl8zZjFhIjp7ImUiOiJlXzkxIiwiaSI6IjlmMzFjMGI0YTdkMjBlNTUifX0sInMiOiI4ZjJhMWMwZDliZTRmN2ExIiwidiI6MX0",
+      "why": "presented after the bot store was replaced",
       "expect": "cursor_reset"
+    },
+    {
+      "value": "not-a-cursor",
+      "why": "malformed",
+      "expect": "cursor_invalid"
     }
   ]
 }
