@@ -228,10 +228,17 @@ RPC or worker write capability exists in the chat/observation milestones.
 
 Read-only is stronger than today's read credential scope: chat subscribe opens a
 Bot and refreshes tools; runtime open enables recovery scheduling; sockets hold
-idle leases; peer exchange detail can backfill persisted answers. These routes
-must not be reused as a supposedly passive observer. See the architecture's source
-map and passive-adapter feasibility gate. Do not directly parse worker SQLite from
-the Superagent as a shortcut around the boundary.
+idle leases; peer exchange detail can backfill persisted answers. Those routes must
+not be reused **as they are** and called a supposedly passive observer. See the
+architecture's source map and passive-adapter feasibility gate. Do not directly
+parse worker SQLite from the Superagent as a shortcut around the boundary.
+
+The owner scoped independence to SG-001 (2026-11-08). SG-002 onward reuse the
+daemon's existing infrastructure — storage access, authentication, route table, view
+mapping — and add only the frozen read interface. Reusing those components is not
+the same as reusing a chat route: the observation path still has to prove inertness,
+but it does not need a second provider implementation, a copied schema layer or a
+parallel service.
 
 The owner confirmed separate App-owned processes and separate stores. The
 Superagent runs outside the existing worker daemon and uses only the versioned

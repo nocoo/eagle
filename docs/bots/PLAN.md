@@ -14,18 +14,20 @@ discovery. Those additions are not implemented or enabled by this plan update.
 
 ## Independent Superagent (chat-first, spec-driven; SG-001 delivered)
 
-[Superagent architecture](SUPERAGENT-ARCHITECTURE.md) owns independence, strict
-interfaces, read-only worker access, native MVVM and TDD. The owner changed the
-execution order to **start the independent process, then converse with the Super
-Bot in the App**, before adding worker observation or a full decision dashboard.
-Separate processes/stores and App-scoped lifetime remain fixed. Workers are unaware;
-SG-001 neither connects to them nor needs their configuration or availability.
+[Superagent architecture](SUPERAGENT-ARCHITECTURE.md) owns the independence boundary
+(delivered with SG-001), strict interfaces, read-only worker access, native MVVM
+and TDD. The owner changed the execution order to **start the independent process,
+then converse with the Super Bot in the App**, before adding worker observation or a
+full decision dashboard. Separate processes/stores and App-scoped lifetime remain
+fixed. Workers are unaware; SG-001 neither connects to them nor needs their
+configuration or availability. Observation providers are reused from the daemon's
+own read infrastructure instead of being re-implemented (2026-11-08).
 
 | Spec / milestone | Scope | State |
 | --- | --- | --- |
 | [SG-001: native chat](specs/SUPERAGENT-001-CHAT.md) | A: executable/root/readiness -> B: own durable chat/protocol -> C: App launcher/native conversation -> D: acceptance | **Delivered and owner-accepted 2026-11-07** for the source dev App: A/B/C implemented, two review rounds plus targeted replay PASS, real-gateway CLI turns/restart, native conversation. Residual: packaged App, forced-quit/crash matrix, two-window manual run |
-| SG-002: passive worker evidence | Exact snapshot/history/changes contract, inert cold reads and complete retained worker history | **Next; spec not yet written.** Requires the passive cold-read spike before code |
-| SG-003: analysis and native decisions | Bounded evidence-backed suggestions and the native decision dashboard | Planned |
+| SG-002: passive worker evidence | Exact snapshot/history/changes contract, inert cold reads and complete retained worker history | **Next; spec not yet written.** Requires the passive cold-read spike before code; the provider is built in the daemon's existing read infrastructure, not a parallel one |
+| SG-003: analysis and native decisions | Bounded evidence-backed suggestions and the native decision dashboard | Planned; reuses SG-002 evidence |
 | SG-004: proactive observation | Change-driven rechecks, notifications, recovery and richer observability | Planned |
 | Future management | Separately authorized worker command contract | Outside these read-only milestones |
 
@@ -35,6 +37,11 @@ slices (A process, B durable chat, C native/CLI, D acceptance) and an owner
 acceptance on the source dev App. It is now closed except the residual environment
 gaps above. No SG-002 contract exists yet; writing and reviewing that spec is the
 next spec-driven step, not implementing observation first.
+
+Owner decision 2026-11-08: independence applies to **SG-001**, which is delivered.
+SG-002 and later reuse the daemon's existing read infrastructure (storage access,
+auth, routes, view mapping) instead of building a second provider; only the read
+interface — contract, credential, errors, watermarks, cursors — is new and frozen.
 
 Evidence for SG-001: daemon 43 tests with four 95% coverage floors; Swift client
 package 37 tests with every logic file at or above 90% lines; App 428 tests; design

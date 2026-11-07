@@ -1,6 +1,9 @@
 # SG-001 — independent process and native Super Bot chat
 
 Status: **delivered and owner-accepted 2026-11-07 for the source dev App; packaged/crash matrix remains open**.
+Independence is this milestone's obligation: its own process, root, credential,
+model configuration and gate. Later milestones reuse the daemon's infrastructure
+behind a clean read interface (architecture, 2026-11-08).
 Owner-selected first milestone: start an independent Superagent process, then make
 its permanent Super Bot conversational in the Eagle App. Worker observation is
 not a prerequisite. [Architecture](../SUPERAGENT-ARCHITECTURE.md) owns invariant

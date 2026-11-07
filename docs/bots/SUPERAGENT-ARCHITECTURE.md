@@ -16,7 +16,7 @@ privileged worker and does not become an owner of worker runtime internals.
 
 | Requirement | Invariant and delivery scope |
 | --- | --- |
-| Independent execution | Own process, Harness, model turns, queue, storage and lifecycle from SG-001; observation cursors/analysis budgets arrive with their capabilities |
+| Independent execution | Own process, Harness, model turns, queue, storage and lifecycle from SG-001, which is delivered; later milestones are not required to build parallel infrastructure |
 | Workers run alone | Starting, chatting, tools, recovery and shutdown require no Superagent, its storage or acknowledgement |
 | Superagent runs alone | SG-001 starts and chats without workers; later dashboards mark unavailable sources and stale retained facts honestly |
 | Worker unawareness | No Superagent persona, tools, report hooks, task wrappers, new prompts, required acknowledgements or model-visible messages in workers |
@@ -35,8 +35,23 @@ chat protocol is separate from the later worker-to-Superagent observation contra
 Independent hosts may use the same pi-durable library. That is not another bespoke
 execution engine. They must not share live Harness handles, queues, writable
 session databases, lifecycle leases or an in-memory service container. Pure wire
-contracts and tested stateless presentation utilities may be shared; neither core
-imports the other's core, runtime or repositories.
+contracts and tested stateless presentation utilities may be shared.
+
+### Independence is an SG-001 property — 2026-11-08
+
+The owner scoped the independence requirement to **SG-001**, which is delivered: its
+own executable, root, credential, model configuration, gate and lifetime. Later
+milestones are not asked to re-implement what the worker service already has. A
+provider, read adapter, authenticated route, storage mapper or projection that lives
+in the worker service is **reused in place**; a second parallel implementation is
+out of scope and undesirable.
+
+What "clean" means here is the **interface**, not the implementation: versioned read
+contract, observation credential, typed errors, coverage watermarks and opaque
+cursors are frozen and tested, and the consumer uses only the wire contract. These
+invariants stay hard: no shared live Harness/queue/lease between the two services, no
+Superagent import of worker runtime objects, no worker behavioral dependency on the
+supervisor.
 
 Worker and Superagent failures must remain distinguishable. A failing observer
 must never mark a healthy worker unavailable or delay a worker commit while it
@@ -103,15 +118,19 @@ SG-001 has no worker connection. SG-002 through SG-004 add reads, never commands
 ```
 
 The provider belongs to the worker service's generic read infrastructure, not to
-worker model behavior. It may add an inert observation endpoint/projection; it may
-not require workers to call a reporting tool or import Superagent domain concepts.
-"Unaware" means no behavioral dependency or supervision-specific execution code,
-not that an authenticated read never reaches the worker service's transport.
+worker model behavior, and it is built **inside** that service by reusing its
+existing storage access, authentication, route table and view mapping. It adds no
+parallel observation subsystem, no second opener and no copied schema layer. It may
+add an inert observation endpoint/projection; it may not require workers to call a
+reporting tool or import Superagent domain concepts. "Unaware" means no behavioral
+dependency or supervision-specific execution code, not that an authenticated read
+never reaches the worker service's transport.
 
-The Superagent cannot reach worker implementation objects, inspect worker SQLite
-schemas, attach a second Harness to worker storage, or parse private log/session
-formats. Any SDK/storage-specific reader stays behind the provider-owned adapter.
-A raw filesystem sidecar would merely replace call coupling with schema coupling.
+The Superagent cannot import worker implementation objects, open worker SQLite
+files, attach a second Harness to worker storage, or parse private log/session
+formats. It consumes the read contract over the wire. A raw filesystem sidecar in
+the Superagent would merely replace call coupling with schema coupling; inside the
+worker service the existing storage adapter is the right owner of that coupling.
 
 ### Why the current read routes are not sufficient
 
@@ -325,7 +344,7 @@ rows become gates for their later specs. Diagnostic errors are never deferred.
 | Test level | Mandatory evidence |
 | --- | --- |
 | SG-001 foundation and chat | Real independent startup, ownership/readiness/shutdown, own durable streaming conversation, native chat and zero worker calls/writes |
-| Architecture guards | No cross-core/runtime/storage imports; no worker dependency on supervisor; no View networking/business rules |
+| Architecture guards | Superagent imports no worker core/runtime/storage or objects; worker imports no supervisor domain concept; shared pure helpers and normative fixtures are allowed; no View networking/business rules |
 | Producer conformance | Same fixture contracts over real local transport; cold reads do not call runtime open/resume or mutate execution |
 | Consumer conformance | Supervisor handles valid/invalid/gapped/expired/out-of-order observations with honest coverage |
 | Pagination | Frozen boundary, complete retained history including pre-compaction, stable order, no missing/duplicate entries, explicit unavailable data |
@@ -357,7 +376,7 @@ implement the entire platform before chat works.
 | Milestone | Scope | Exit evidence / dependency |
 | --- | --- | --- |
 | SG-001: independent native chat — **delivered, owner-accepted** | Executable/storage foundation -> own pi-durable chat -> App launcher and native MVVM conversation | Start with workers absent; converse in the App; restart retains own history; bounded stop/errors work; zero Superagent-to-worker calls or writes. Residual: packaged App, forced-quit/crash matrix, two-window manual run |
-| SG-002: passive worker evidence | Freeze snapshot/history/changes contracts, prove inert cold reading, add authenticated bounded observation | Complete retained worker history and honest coverage without open/resume/configure, idle retention or worker mutation; SG-001 remains usable |
+| SG-002: passive worker evidence | Freeze snapshot/history/changes contracts, prove inert cold reading, add authenticated bounded observation in the worker service's existing read infrastructure | Complete retained worker history and honest coverage without open/resume/configure, idle retention or worker mutation; SG-001 remains usable |
 | SG-003: analysis and native decisions | Bounded evidence-backed analysis, suggestions, evidence details and human decision dashboard | One auditable suggestion and decision from real observations, with budget/replay controls; worker state unchanged |
 | SG-004: proactive supervision and richer observability | Change-driven analysis, rechecks, dedupe, source/analysis diagnostics and recovery timeline | Useful unattended suggestions, no self-trigger loops, explicit gaps/staleness, proven recovery and bounded resource use |
 | Future management, separately enabled | A later command spec for authorized delegation/remediation | Strict write contract, grants, receipts, cancellation and acceptance tests; not an automatic continuation of these read-only milestones |
@@ -393,8 +412,10 @@ zero, which is stronger than merely promising that an observation is harmless.
 
 SG-002 is where the passive cold-read proof becomes mandatory. If it cannot meet
 the full-history/noninterference contract, stop that capability, not the working
-chat product. Do not replace it with an active chat subscription or private SQL in
-the Superagent. SG-003 must prove analysis budgets and evidence/decision durability
+chat product. The proof is about observable behavior, not code location: reusing the
+worker service's own read path is the intended way to satisfy it. Do not replace it
+with an active chat subscription or private SQL in the Superagent. SG-003 must prove
+analysis budgets and evidence/decision durability
 before enabling its model-driven feature. SG-004 extends these controls to unattended
 work rather than introducing safety for the first time.
 
@@ -438,7 +459,10 @@ with unaware workers; native human decision dashboard; MVVM UI and TDD backend.
 The owner subsequently confirmed separate App-owned processes and separate stores.
 The owner then selected spec-driven, process-and-chat-first delivery. SG-001 must
 start independently and provide native App conversation before worker observation
-or the full Dashboard is added. Exact active-spec schemas, IPC/authentication and
+or the full Dashboard is added. On 2026-11-08 the owner scoped that independence to
+SG-001: SG-002 and later reuse the worker service's existing infrastructure behind a
+clean, versioned interface instead of duplicating a provider or read adapter. Exact
+active-spec schemas, IPC/authentication and
 lifecycle remain implementation gates; passive cold reads are a later SG-002 gate.
 No capability is represented as already implemented or verified.
 

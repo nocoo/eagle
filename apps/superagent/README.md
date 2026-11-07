@@ -1,7 +1,9 @@
 # Eagle Superagent
 
 Independent App-owned Super Bot service. No worker imports, credentials, storage
-or calls. Contract: [SG-001](../../docs/bots/specs/SUPERAGENT-001-CHAT.md).
+or calls. Independence is this milestone's obligation; the later worker observation
+provider lives in the daemon and is reused, not duplicated. Contract:
+[SG-001](../../docs/bots/specs/SUPERAGENT-001-CHAT.md).
 
 ```sh
 npm ci
