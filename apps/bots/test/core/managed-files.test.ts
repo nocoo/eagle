@@ -157,6 +157,55 @@ test("an interrupted upload publishes nothing and the original id can be retried
   }
 });
 
+test("a limit refusal does not call return or close the original byte source", async () => {
+  const { root, store } = await open();
+  try {
+    const declaredSize = MAX_MANAGED_FILE_BYTES;
+    await store.declare({
+      botId,
+      uploadId,
+      name: "limited.bin",
+      size: declaredSize,
+      sha256: digest(Buffer.alloc(declaredSize)),
+    });
+    let returned = false;
+    const source = {
+      [Symbol.asyncIterator]() {
+        let sent = 0;
+        return {
+          async next() {
+            sent += 1;
+            if (sent === 1) {
+              return {
+                done: false as const,
+                value: Buffer.alloc(declaredSize, 1),
+              };
+            }
+            if (sent === 2) {
+              return { done: false as const, value: Buffer.from([2]) };
+            }
+            return { done: true as const, value: undefined };
+          },
+          async return() {
+            returned = true;
+            return { done: true as const, value: undefined };
+          },
+        };
+      },
+    };
+    await assert.rejects(store.upload({ botId, uploadId, source }), (error) =>
+      error instanceof ManagedFileError ? error.reason === "limit_exceeded" : false,
+    );
+    assert.equal(
+      returned,
+      false,
+      "the source is drained or closed by the HTTP owner, never by iterator cleanup",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("the 50 MiB boundary is inclusive and the next byte is refused without completion", async () => {
   const { root, store } = await open();
   try {

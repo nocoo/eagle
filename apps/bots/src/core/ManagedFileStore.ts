@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { chmod, type FileHandle, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import type { Readable } from "node:stream";
+import { Readable } from "node:stream";
 import { BOT_ID_PATTERN } from "./domain.ts";
 
 export const MAX_MANAGED_FILE_BYTES = 50 * 1024 * 1024;
@@ -266,7 +266,19 @@ export class ManagedFileStore {
       const digest = createHash("sha256");
       try {
         part = await open(partPath, OPEN_PART, 0o600);
-        for await (const value of input.source) {
+        const sourceWithIterator = input.source as AsyncIterable<Uint8Array> & {
+          [Symbol.asyncIterator](options?: {
+            readonly destroyOnReturn?: boolean;
+          }): AsyncIterator<Uint8Array>;
+        };
+        const iterator =
+          input.source instanceof Readable
+            ? sourceWithIterator[Symbol.asyncIterator]({ destroyOnReturn: false })
+            : sourceWithIterator[Symbol.asyncIterator]();
+        while (true) {
+          const next = await iterator.next();
+          if (next.done) break;
+          const value = next.value;
           const chunk = typeof value === "string" ? Buffer.from(value) : Buffer.from(value);
           bytes += chunk.byteLength;
           if (bytes > MAX_MANAGED_FILE_BYTES) {

@@ -356,6 +356,65 @@ test("one byte over 50 MiB and malformed declarations are refused as files, not 
   }
 });
 
+test("chunked content one byte over 50 MiB receives 413 and publishes nothing", async () => {
+  const stack = await startStack();
+  try {
+    const botId = await stack.createBot("chunked-limit");
+    const digest = createHash("sha256").update(Buffer.alloc(MAX_MANAGED_FILE_BYTES)).digest("hex");
+    const declared = await jsonCall(
+      stack,
+      `/v1/bots/${botId}/files/u_chunked_012345678/manifest`,
+      "PUT",
+      { name: "chunked.bin", size: MAX_MANAGED_FILE_BYTES, sha256: digest },
+    );
+    assert.equal(declared.status, 201);
+
+    const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
+      const request = http.request({
+        host: "127.0.0.1",
+        port: stack.port,
+        method: "PUT",
+        path: `/v1/bots/${botId}/files/u_chunked_012345678/content`,
+        headers: {
+          authorization: `Bearer ${stack.token}`,
+          "transfer-encoding": "chunked",
+        },
+      });
+      request.on("response", resolve);
+      request.on("error", reject);
+      const chunk = Buffer.alloc(64 * 1024, 0x5a);
+      let remaining = MAX_MANAGED_FILE_BYTES + 1;
+      const write = () => {
+        while (remaining > 0) {
+          const amount = Math.min(chunk.length, remaining);
+          remaining -= amount;
+          if (!request.write(chunk.subarray(0, amount))) {
+            request.once("drain", write);
+            return;
+          }
+        }
+        request.end();
+      };
+      write();
+    });
+    assert.equal(response.statusCode, 413);
+    const body = await new Promise<Buffer>((resolve) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      response.on("end", () => resolve(Buffer.concat(chunks)));
+    });
+    assert.equal(
+      (JSON.parse(body.toString("utf8")) as { error: { kind: string } }).error.kind,
+      "invalid_command",
+    );
+
+    const pendingId = `f_${createHash("sha256").update(botId).update("\0").update("u_chunked_012345678").digest("hex")}`;
+    assert.equal((await metadata(stack, botId, pendingId)).status, 404);
+  } finally {
+    await stack.close();
+  }
+});
+
 test("the welcome advertises managed files without sending bytes on the socket", async () => {
   const stack = await startStack();
   const socket = stack.connect();

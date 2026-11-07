@@ -1364,6 +1364,12 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
       json(response, 404, { error: { kind: "unknown_bot", message: "no such endpoint" } });
     } catch (error) {
       if (error instanceof ManagedFileError) {
+        if (
+          request.method === "PUT" &&
+          /^\/v1\/bots\/([A-Za-z0-9_-]+)\/files\/u_[A-Za-z0-9_-]{16,64}\/content$/.test(path)
+        ) {
+          request.resume();
+        }
         const status =
           error.reason === "unknown_file"
             ? 404
