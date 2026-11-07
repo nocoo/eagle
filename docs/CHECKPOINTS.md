@@ -68,6 +68,18 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 — Client staging committed; user interface pending
+
+- Client file staging and upload/send plumbing were committed in `832247c`; its
+  Swift package tests and coverage passed. A read-only review is in progress.
+  This is not yet a usable App journey: the composer does not invoke file selection
+  and the transcript has no file card or preview.
+- The Bot-facing publishing tool is being built with the existing device-policy
+  boundary. `eagle-dev` file acceptance, App UI and end-to-end verification remain
+  unimplemented; their success is not claimed.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  Tests have not used the installed production App or its daemon.
+
 ## 2026-11-07 — Client staging and sending in progress
 
 - File admission review fixes landed in `c239707`; Bots check and the independent
