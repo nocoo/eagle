@@ -68,6 +68,18 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 — File messages in progress
+
+- Managed file storage and the review's lifecycle, streaming and corruption fixes
+  are committed; the Bots check passed with 1,125 tests. Draft restoration is also
+  committed. These pieces do not yet make files usable from the App.
+- The current slice connects completed file references to the existing send and
+  pi-durable message history. Model-facing paths, live/snapshot/history projection
+  and old-client capability behavior are under implementation, not verified.
+- The composer, card, preview, Bot publishing tool and `eagle-dev` acceptance remain
+  the next broken hops. Live Herdr collection, authentication, D1 and website rendering
+  were not exercised; tests have not used the installed production App or its daemon.
+
 ## 2026-11-07 — File transport hardened; conversation link pending
 
 - Managed file upload and download now exist behind Bot-scoped bearer access. Their
