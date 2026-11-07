@@ -68,6 +68,18 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 — Client recovery defects under repair
+
+- Read-only review of client staging and sending found eleven recovery and safety
+  defects. The lost-upload-ACK fix is committed in `3fcf2f6`; corrupted snapshot
+  recovery and the remaining findings are being tested. The client slice is not yet
+  certified and no user-facing file workflow is complete.
+- Work on the Bot publishing tool was paused and its uncommitted changes saved in a
+  local stash. Cards, previews, App wiring and `eagle-dev` file acceptance remain the
+  next broken hops after the recovery fixes.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  Tests have not used the installed production App or its daemon.
+
 ## 2026-11-07 — Client staging committed; user interface pending
 
 - Client file staging and upload/send plumbing were committed in `832247c`; its
