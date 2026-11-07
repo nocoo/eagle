@@ -73,7 +73,9 @@
 - An exact-byte regression test exposed Swift's canonical `String` equality ignoring
   a newly edited draft: the old shorter input could be sent instead. Draft mirroring
   now compares UTF-8 bytes; the window test verifies the 8,000-code-point boundary and
-  the exact bytes stored and sent for a shorter input. Independent review is in progress.
+  the exact bytes stored and sent for a shorter input. Independent native-control review
+  then reproduced the same loss before the binding setter: the actual SwiftUI text field
+  can suppress a canonically equivalent edit. That native-input bug is not fixed.
 - Previously loaded oversized recovery is retained per Bot in memory while the outbox
   cannot be read; switching Bots does not reveal another Bot's content, and a successful
   read refreshes the cache. An unsent composer draft is still not durable across restart.

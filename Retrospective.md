@@ -5,8 +5,10 @@
 The composer used Swift `String` equality to suppress duplicate updates. Canonically
 identical but byte-distinct Unicode edits were ignored, so replacing 4,001 composed
 characters with 8,002 decomposed code points sent the old draft instead of rejecting
-and preserving the new one. Compare exact UTF-8 for user-authored drafts and test the
-boundary through the window, outbox and transport, not only the scalar counter.
+and preserving the new one. The model now compares exact UTF-8, but independent native
+control testing found SwiftUI's TextField can suppress the same edit before the binding
+setter runs; the native bug remains unresolved. Test through the actual editor as well
+as the window, outbox and transport before claiming exact input preservation.
 
 ## 2026-11-07 — Pending recovery was mistaken for a user turn
 
