@@ -65,6 +65,7 @@ test("shared HMAC vectors bind fresh client/server nonces, actual endpoint and i
     serverProof(vector.token, `${vector.clientNonce}\n${vector.serverNonce}`, 43128, identity),
     vector.serverProof,
   );
+  assert.equal(serverProof(vector.token, vector.clientNonce, 43127, identity), vector.healthProof);
   assert.equal(
     createHmac("sha256", vector.token)
       .update(["client", vector.clientNonce, vector.serverNonce, vector.instance].join("\n"))

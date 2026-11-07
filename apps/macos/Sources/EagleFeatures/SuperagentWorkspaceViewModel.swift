@@ -15,6 +15,7 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
   public let settings: SuperagentSettingsViewModel
   private var forwarding: AnyCancellable?
   private var started = false
+  private var windowOpen = true
 
   public init(
     supervisor: SuperagentDaemonSupervisor = .shared,
@@ -39,7 +40,10 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
     .appendingPathComponent("eagle-superagent", isDirectory: true)
     chat = SuperagentChatViewModel(port: port, store: FilePendingInputStore(directory: support))
     settings = SuperagentSettingsViewModel(port: settingsPort)
-    forwarding = chat.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+    forwarding = Publishers.Merge(
+      chat.objectWillChange.map { _ in () },
+      supervisor.objectWillChange.map { _ in () }
+    ).sink { [weak self] _ in self?.objectWillChange.send() }
   }
 
   /// The settings window composes its own client: it never starts or stops the service.
@@ -76,8 +80,9 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
   }
 
   public func start() async {
+    windowOpen = true
     await supervisor.startIfNeeded()
-    guard isReady else { return }
+    guard windowOpen, isReady else { return }
     if !started {
       started = true
       await settings.load()
@@ -92,6 +97,7 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
   }
 
   public func closeWindow() async {
+    windowOpen = false
     await chat.close()
   }
 }

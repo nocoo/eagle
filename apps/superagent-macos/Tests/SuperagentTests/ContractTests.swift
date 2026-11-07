@@ -21,6 +21,7 @@ final class ContractTests: XCTestCase {
     var instance: String
     var serverProof: String
     var clientProof: String
+    var healthProof: String
   }
   private struct Result<Value: Decodable>: Decodable {
     var type: String
@@ -39,6 +40,10 @@ final class ContractTests: XCTestCase {
       IdentityProof.client(
         token: vector.token, clientNonce: vector.clientNonce,
         serverNonce: vector.serverNonce, instance: vector.instance), vector.clientProof)
+    XCTAssertEqual(
+      IdentityProof.health(
+        token: vector.token, clientNonce: vector.clientNonce, endpoint: vector.endpoint,
+        rootBinding: vector.rootBinding, instance: vector.instance), vector.healthProof)
   }
 
   func testNormativeSnapshotsAndResultsDecodeWithoutWorkerTypes() throws {
@@ -65,6 +70,15 @@ final class ContractTests: XCTestCase {
     XCTAssertFalse(partial.value.hasMore)
     let state = try decoder.decode(Result<SnapshotFrame>.self, from: data("state.server.json"))
     XCTAssertEqual(state.value, snapshot)
+  }
+
+  func testAWindowWithoutTheAdditiveHasOlderFieldStillDecodes() throws {
+    let json = """
+      {"oldestEntryId":10,"newestEntryId":12,"coverage":"window"}
+      """
+    let window = try JSONDecoder().decode(ChatWindow.self, from: Data(json.utf8))
+    XCTAssertEqual(window.oldestEntryId, 10)
+    XCTAssertFalse(window.hasOlder)
   }
 
   func testReducerReplacesCurrentWindowRejectsStaleRevisionAndInvalidatesHistoryOnReconnect() throws

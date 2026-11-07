@@ -1,5 +1,28 @@
 # 用户视角检查点
 
+## 2026-11-07 — SG-001 native Super Bot conversation works end to end
+
+- With `EAGLE_DISABLE_WORKERS=1`, the source App starts its own Superagent process,
+  shows the permanent **Super Bot** row first, and opens directly into its native
+  conversation. Selecting it makes no worker call.
+- A real local gateway answered two CLI turns and one native-attached turn. History
+  survived a service restart. The App transcript showed the CLI-sent message live.
+  Idle Stop returned `stopped`. Evidence: `.local/superagent-evidence/cli-acceptance.log`,
+  `.local/superagent-evidence/app-superbot.png`.
+- Independent B review found two P1s; both were reproduced, fixed and regression-tested:
+  compaction summaries no longer appear as player turns or invert page boundaries,
+  and truncated/missing session databases fail closed instead of becoming empty chats.
+- Gates: daemon 43 tests, coverage 98.72/95.13/98.14/98.72; Swift package 27 tests,
+  every logic file ≥90% lines; App 428 tests; design guard and strict format pass.
+- Final independent review found 5 P1/8 P2 in the C integration; all were fixed
+  with regressions (outbox cross-window serialization, send identity and draft
+  preservation, queued/aborted rows, start/stop fencing, owned-process exit,
+  authenticated health proof, settings client close, disabled-worker quit guard,
+  supervisor status publication, byte-trimmed history marker).
+- The next broken hop is owner hand acceptance (typing in the App, two windows, quit
+  behaviour) and the remaining SG001-D crash/packaged-App matrix. Worker collection,
+  website auth and D1 were not exercised or modified; no installed App was replaced.
+
 ## 2026-11-07 — SG001-B own durable chat reaches a real socket
 
 - The independent service now runs real pi-durable/SQLite conversations through an

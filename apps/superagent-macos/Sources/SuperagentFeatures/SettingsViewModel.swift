@@ -44,6 +44,8 @@ public final class SuperagentSettingsViewModel: ObservableObject {
     } catch { failure = message(error) }
   }
 
+  public func close() async { await port.close() }
+
   public func clearKey() async {
     saving = true
     defer { saving = false }

@@ -1687,3 +1687,31 @@ a real Git fixture with a bad index and repaired working tree, then passed after
 private root validation, UUID validation, body refusal and index-snapshot execution.
 Do not treat passing happy-path checks or a gate's name as evidence for these
 negative guarantees. Test the actual storage, transport and staged snapshot.
+
+## 2026-11-07 — A green build can still open the wrong screen
+
+The native Super Bot slice compiled and its new package tests passed, but the App
+opened on a placeholder: `WorkspaceListViewModel` still defaulted to the sample
+"deps" row, and with mock data off no conversation matched it. A second pass also
+showed unsupported attachment/voice controls and a worker inspector under the Super
+Bot. These were composition defaults, not protocol failures, so the unit gates and
+the design guard could not see them.
+
+For user-facing composition, launch the real surface with the target profile and
+read the rendered state before calling it done. Prefer source-qualified default
+selection, and let shared views take explicit capability flags rather than drawing
+inert controls. Keep debug diagnostics out of the final commit.
+
+## 2026-11-07 — First-class chat needs first-class uncertainty states
+
+The C review showed that durable admission alone did not make the native surface
+safe: a failed acknowledgement could be retried as a new message, a late ack could
+erase the next draft, accepted-but-queued inputs were invisible, aborted partials
+looked complete, two windows lost outbox entries, and quitting during a launch
+could leave a child behind. Each was reproduced before changing code.
+
+Treat "accepted", "queued", "aborted", "unconfirmed" and "complete" as separate
+presentation states, keep one request identity through uncertainty, serialize the
+outbox across writers, and fence start/stop and late async completions with a
+generation. An authenticated health proof, not public JSON, is what licenses
+adopting an already-running service.

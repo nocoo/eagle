@@ -139,6 +139,16 @@ public struct ChatWindow: Codable, Equatable, Sendable {
     self.coverage = coverage
     self.hasOlder = hasOlder
   }
+
+  /// A service from before the additive `hasOlder` field remains readable; absence means
+  /// "no certified older page", never a guessed boundary.
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    oldestEntryId = try container.decodeIfPresent(Int.self, forKey: .oldestEntryId)
+    newestEntryId = try container.decodeIfPresent(Int.self, forKey: .newestEntryId)
+    coverage = try container.decode(String.self, forKey: .coverage)
+    hasOlder = try container.decodeIfPresent(Bool.self, forKey: .hasOlder) ?? false
+  }
 }
 
 public struct ChatSnapshot: Codable, Equatable, Sendable {

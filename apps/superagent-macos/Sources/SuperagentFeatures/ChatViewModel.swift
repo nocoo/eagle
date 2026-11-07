@@ -17,6 +17,9 @@ public final class SuperagentChatViewModel: ObservableObject {
   @Published public private(set) var error: String?
   @Published public private(set) var stopping = false
   @Published public private(set) var loadingOlder = false
+  /// Sends whose durable admission was never confirmed. They keep their request identity
+  /// until an explicit retry settles them.
+  @Published public private(set) var unconfirmed: [PendingInput] = []
 
   private let port: SuperagentChatPort
   private let store: PendingInputStore
@@ -49,6 +52,7 @@ public final class SuperagentChatViewModel: ObservableObject {
       self.error = message(error)
       return
     }
+    guard generation == current else { return }
     connection = .ready
     let accept = { [weak self] (frame: SnapshotFrame) in
       guard let self, self.generation == current else { return }
@@ -69,9 +73,14 @@ public final class SuperagentChatViewModel: ObservableObject {
       }
     }
     await reconcile()
+    await refreshUnconfirmed()
   }
 
   public func send() async {
+    if !unconfirmed.isEmpty {
+      await retry()
+      return
+    }
     let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
     let pending = PendingInput(text: text)
@@ -81,29 +90,39 @@ public final class SuperagentChatViewModel: ObservableObject {
     }
     do {
       _ = try await port.submit(pending)
-      draft = ""
       try? await store.remove(pending.id)
+      if draft.trimmingCharacters(in: .whitespacesAndNewlines) == text { draft = "" }
     } catch {
       self.error = message(error)
     }
+    await refreshUnconfirmed()
   }
 
   public func retry() async {
-    guard let pending = try? await store.list(), !pending.isEmpty else { return }
+    guard let pending = try? await store.list(), !pending.isEmpty else {
+      await refreshUnconfirmed()
+      return
+    }
     for input in pending {
       do {
         _ = try await port.submit(input)
         try? await store.remove(input.id)
       } catch {
         self.error = message(error)
+        await refreshUnconfirmed()
         return
       }
     }
-    if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-      let first = pending.first
+    if draft.trimmingCharacters(in: .whitespacesAndNewlines) == pending.first?.text,
+      pending.count == 1
     {
-      draft = first.text
+      draft = ""
     }
+    await refreshUnconfirmed()
+  }
+
+  private func refreshUnconfirmed() async {
+    unconfirmed = (try? await store.list()) ?? []
   }
 
   public func reconcile() async {
@@ -112,6 +131,7 @@ public final class SuperagentChatViewModel: ObservableObject {
       guard (try? await port.submission(input.id)) != nil else { continue }
       try? await store.remove(input.id)
     }
+    await refreshUnconfirmed()
   }
 
   public func loadOlder() async {

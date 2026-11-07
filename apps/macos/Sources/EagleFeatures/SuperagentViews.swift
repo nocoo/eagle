@@ -29,6 +29,11 @@ public struct SuperagentConversationContent: View {
           Task { await model.reconnect() }
         }
       }
+      if let pending = model.chat.unconfirmed.first {
+        SuperagentNotice(
+          text: pending.text, action: "重试未确认发送",
+          perform: { Task { await model.chat.retry() } })
+      }
       if !model.chat.modelReady {
         SuperagentNotice(text: "尚未配置模型。请在设置 → Super Bot 填写地址与模型。", action: nil) {}
       }
@@ -47,6 +52,7 @@ public struct SuperagentConversationContent: View {
         tintIndex: 4,
         entries: entries,
         showsToolCalls: false,
+        queuedMessages: queued,
         draft: Binding(
           get: { model.chat.draft }, set: { model.chat.draft = $0 }),
         onSend: { Task { await model.chat.send() } },
@@ -56,6 +62,8 @@ public struct SuperagentConversationContent: View {
           label: model.statusLine,
           phase: model.chat.isRunning ? .working : (model.isReady ? .idle : .offline),
           canStop: model.chat.isRunning,
+          canRecover: !model.isReady,
+          canRetry: !model.isReady,
           error: model.chat.error
         ),
         isWaiting: model.chat.isRunning && !entries.contains(where: { isStreaming($0) }),
@@ -73,16 +81,27 @@ public struct SuperagentConversationContent: View {
   }
 
   private var entries: [TranscriptEntry] {
-    model.chat.state.messages.map { message in
-      switch message.role {
+    ChatPresentation.rows(model.chat.state).map { row in
+      switch row.kind {
       case .user:
-        return .user(id: message.id, text: message.text, origin: nil)
+        return .user(id: row.id, text: row.text, origin: nil)
+      case .streaming:
+        return .streamingAssistant(id: row.id, blocks: [.paragraph(row.text)])
+      case .aborted:
+        return .assistant(id: row.id, blocks: [.note("已停止，回答未完成"), .paragraph(row.text)])
+      case .failed:
+        return .assistant(id: row.id, blocks: [.note("回答失败"), .paragraph(row.text)])
+      case .queued:
+        return .user(id: row.id, text: row.text, origin: nil)
       case .assistant:
-        let blocks: [AssistantBlock] = [.paragraph(message.text)]
-        return message.state == .streaming
-          ? .streamingAssistant(id: message.id, blocks: blocks)
-          : .assistant(id: message.id, blocks: blocks)
+        return .assistant(id: row.id, blocks: [.paragraph(row.text)])
       }
+    }
+  }
+
+  private var queued: [String: QueuedMessage] {
+    ChatPresentation.queuedRequests(model.chat.state).mapValues {
+      QueuedMessage(requestId: $0)
     }
   }
 
@@ -188,5 +207,6 @@ public struct SuperagentSettingsPage: View {
       }
     }
     .task { await model.load() }
+    .onDisappear { Task { await model.close() } }
   }
 }

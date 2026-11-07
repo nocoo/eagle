@@ -67,16 +67,26 @@ public actor SuperagentClient: SuperagentServicePort {
   deinit { session.invalidateAndCancel() }
 
   public func health() async throws -> ServiceHealth {
+    let token = try SuperagentCredentials.read(endpoint)
+    let nonce = IdentityProof.nonce()
     var request = URLRequest(url: endpoint.healthURL)
     request.timeoutInterval = 2
+    request.setValue(nonce, forHTTPHeaderField: "X-Eagle-Challenge")
     do {
       let (data, response) = try await session.data(for: request)
       guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 16_384 else {
         throw SuperagentError.unavailable
       }
+      struct Proof: Decodable { var proof: String }
+      let proof = try JSONDecoder().decode(Proof.self, from: data).proof
       let health = try JSONDecoder().decode(ServiceHealth.self, from: data)
+      let binding = try IdentityProof.rootBinding(endpoint.root)
       guard health.service == "eagle-superagent", health.protocolVersion == 1,
-        health.rootBinding == (try IdentityProof.rootBinding(endpoint.root))
+        health.rootBinding == binding,
+        proof
+          == IdentityProof.health(
+            token: token, clientNonce: nonce, endpoint: endpoint.address,
+            rootBinding: binding, instance: health.instance)
       else { throw SuperagentError.identity }
       return health
     } catch let error as SuperagentError { throw error } catch { throw SuperagentError.unavailable }

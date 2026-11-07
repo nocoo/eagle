@@ -18,6 +18,11 @@ public enum IdentityProof {
   ) -> String {
     sign(token, [clientNonce, serverNonce, endpoint, rootBinding, instance])
   }
+  public static func health(
+    token: String, clientNonce: String, endpoint: String, rootBinding: String, instance: String
+  ) -> String {
+    sign(token, [clientNonce, endpoint, rootBinding, instance])
+  }
   public static func client(
     token: String, clientNonce: String, serverNonce: String, instance: String
   ) -> String {

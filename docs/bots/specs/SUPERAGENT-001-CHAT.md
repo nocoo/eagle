@@ -1,6 +1,6 @@
 # SG-001 — independent process and native Super Bot chat
 
-Status: **implementation in progress; A verified, B runtime/transport implemented, C next**.
+Status: **A/B/C implemented; final independent review and owner App acceptance pending**.
 Owner-selected first milestone: start an independent Superagent process, then make
 its permanent Super Bot conversational in the Eagle App. Worker observation is
 not a prerequisite. [Architecture](../SUPERAGENT-ARCHITECTURE.md) owns invariant
@@ -327,11 +327,34 @@ regressions failed first and passed at `8ec860c0`. The reviewer independently ra
 12 tests/types/lint at that revision and closed all four findings.
 
 SG001-B: five initial runtime reds and real socket reds preceded implementation.
-The current independent gate passes 35 tests, strict types and check-only lint.
-C8 enforces 95% statements/branches/functions/lines across all `src/**/*.ts`; the
-measured result is 98.64/95.42/98.03/98.64. Tests use real Harness/SQLite/transport
-and scripted models, including partial streaming, Stop, queue limits, durable
-deduplication/reopen, error redaction, storage failure, authentication replay and
-private configuration. A model really runs in that fixture runtime; no live-provider,
-eagle-dev CLI or native App conversation has been verified yet. B code review and
-C integration are next. Evidence is under `.local/superagent-evidence/`.
+Independent review then reproduced two P1 defects: an SDK compaction summary was
+rendered as a player turn with an inverted page boundary, and a truncated/missing
+session database reopened as a healthy empty chat. Both were demonstrated red,
+fixed and are covered by regression tests. The daemon gate now passes **43 tests**,
+strict types and check-only lint, with C8 four-metric coverage
+**98.72 / 95.13 / 98.14 / 98.72**.
+
+SG001-C: `apps/superagent-macos` (Core/Transport/Features), the App-owned process
+host, native conversation/settings and `eagle-dev superagent` are implemented.
+Its gate passes **27 tests**, and every logic file is at or above the project's
+**90% line floor** (regions/functions reported; Swift does not instrument
+branches). The App suite passes **428 tests**; design guard and strict format pass.
+
+Real-gateway acceptance through the product CLI: two model turns answered, history
+retained across a Superagent restart, idle Stop confirmed. The same conversation
+rendered in the native App, whose system row is permanent and whose composer shows
+no unsupported attachment/voice action. Evidence:
+`.local/superagent-evidence/cli-acceptance.log`, `app-superbot.png`.
+
+Final independent C review (range `4792c187..5662d494`) returned REQUEST CHANGES:
+5 P1 and 8 P2 findings. They were reproduced, fixed and regression-tested:
+outbox races across windows (C2), quit-during-launch (C3), byte-trimmed history
+reachability (C6), unconfirmed-send identity/draft handling (C1/C10), late
+connection revival (C11), queued/aborted/error rows (C8/C9), worker termination
+under `EAGLE_DISABLE_WORKERS` (C4), owned-process exit and retry (C5), settings
+client lifecycle (C7), authenticated health proof for process adoption (C12), and
+supervisor status publication (C13).
+
+Not verified: SG001-D integrated acceptance matrix from scratch, installed/packaged
+App, a real two-window session, forced-quit crash cases, and owner hand acceptance.
+No worker service call or worker storage access is part of this path.

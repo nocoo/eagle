@@ -10,6 +10,8 @@ actor FakePort: SuperagentChatPort {
   var submitError: SuperagentError?
   var eventsError: SuperagentError?
   var historyError: SuperagentError?
+  var eventsDelayMs = 0
+  var submitDelayMs = 0
   var abortError: SuperagentError?
   var pages: [HistoryPage] = []
   var closed = false
@@ -22,6 +24,7 @@ actor FakePort: SuperagentChatPort {
   func failStream() { continuation?.finish(throwing: SuperagentError.unavailable) }
 
   func events() async throws -> AsyncThrowingStream<SnapshotFrame, Error> {
+    if eventsDelayMs > 0 { try await Task.sleep(for: .milliseconds(eventsDelayMs)) }
     if let eventsError { throw eventsError }
     return AsyncThrowingStream { continuation in
       self.continuation = continuation
@@ -38,6 +41,7 @@ actor FakePort: SuperagentChatPort {
       hasApiKey: true)
   }
   func submit(_ input: PendingInput) async throws -> ChatAdmission {
+    if submitDelayMs > 0 { try await Task.sleep(for: .milliseconds(submitDelayMs)) }
     if let submitError { throw submitError }
     sent.append(input)
     let record = ChatAdmission(id: "s_1", requestId: input.id, status: .queued)
@@ -191,6 +195,53 @@ final class ChatViewModelTests: XCTestCase {
     XCTAssertEqual(model.state.messages.count, 2)
   }
 
+  func testUnconfirmedSendRetriesTheSameIdentityAndDoesNotRestoreSentText() async throws {
+    let port = FakePort()
+    let store = MemoryStore()
+    await port.setSubmitError(.timeout)
+    let model = SuperagentChatViewModel(port: port, store: store)
+    await model.connect()
+    model.draft = "uncertain"
+    await model.send()
+    XCTAssertEqual(model.draft, "uncertain")
+    XCTAssertEqual(model.unconfirmed.map(\.text), ["uncertain"])
+    let firstId = model.unconfirmed[0].id
+    await port.setSubmitError(nil)
+    await model.send()
+    let sent = await port.sent
+    XCTAssertEqual(sent.map(\.id), [firstId])
+    XCTAssertTrue(model.unconfirmed.isEmpty)
+    XCTAssertEqual(model.draft, "")
+    let remaining = await store.values
+    XCTAssertTrue(remaining.isEmpty)
+  }
+
+  func testALateAcknowledgementDoesNotEraseANewerDraft() async throws {
+    let port = FakePort()
+    let store = MemoryStore()
+    await port.setSubmitDelay(120)
+    let model = SuperagentChatViewModel(port: port, store: store)
+    await model.connect()
+    model.draft = "first"
+    let sending = Task { await model.send() }
+    try await Task.sleep(for: .milliseconds(30))
+    model.draft = "second, typed while the first was in flight"
+    await sending.value
+    XCTAssertEqual(model.draft, "second, typed while the first was in flight")
+  }
+
+  func testAClosedViewDoesNotBecomeReadyWhenTheEventStreamArrivesLate() async throws {
+    let port = FakePort()
+    let store = MemoryStore()
+    await port.setEventsDelay(120)
+    let model = SuperagentChatViewModel(port: port, store: store)
+    let connecting = Task { await model.connect() }
+    try await Task.sleep(for: .milliseconds(20))
+    await model.close()
+    await connecting.value
+    XCTAssertEqual(model.connection, .idle)
+  }
+
   func testStopReportsUnconfirmedWithoutPretendingItSucceeded() async throws {
     let port = FakePort()
     let store = MemoryStore()
@@ -213,6 +264,8 @@ final class ChatViewModelTests: XCTestCase {
 }
 
 extension FakePort {
+  func setEventsDelay(_ ms: Int) { eventsDelayMs = ms }
+  func setSubmitDelay(_ ms: Int) { submitDelayMs = ms }
   func setEventsError(_ error: SuperagentError?) { eventsError = error }
   func setHistoryError(_ error: SuperagentError?) { historyError = error }
   func setSubmitError(_ error: SuperagentError?) { submitError = error }

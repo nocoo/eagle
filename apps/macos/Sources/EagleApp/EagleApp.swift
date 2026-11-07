@@ -79,7 +79,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     terminating = true
     Task { @MainActor in
       await SuperagentDaemonSupervisor.shared.stopOwned()
-      BotsDaemonSupervisor.terminateRecordedDaemon()
+      if ProcessInfo.processInfo.environment["EAGLE_DISABLE_WORKERS"] != "1" {
+        BotsDaemonSupervisor.terminateRecordedDaemon()
+      }
       sender.reply(toApplicationShouldTerminate: true)
     }
     return .terminateLater
