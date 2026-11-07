@@ -68,6 +68,18 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 — File transport hardened; conversation link pending
+
+- Managed file upload and download now exist behind Bot-scoped bearer access. Their
+  review exposed lifecycle, streaming and metadata-corruption failures; fixes landed
+  and the Bots `check` gate passed with 1,125 tests. This is transport evidence, not
+  evidence that a person can send or preview a file in chat.
+- The next broken hop is connecting the file reference to pi-durable admission and
+  transcript history. Swift composer conversion, file cards, previews, the Bot-facing
+  publishing tool and `eagle-dev` acceptance are still unimplemented.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  The installed production App and its daemon were not used for tests.
+
 ## 2026-11-07 — Managed file store under review
 
 - The first file-store slice, `21f9fb6`, adds Bot-scoped 50 MiB streaming upload
