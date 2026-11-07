@@ -1,5 +1,15 @@
 # Retrospective
 
+## 2026-11-07 — Stop a confused coding pane before the wrong fix lands
+
+During the conversation-file work, a coding pane was redirected from client work to
+review fixes, but began writing a test for an earlier storage review instead. No
+out-of-scope change was committed. The unfinished test and client documentation were
+saved as task-private patches, the pane was stopped, and a fresh coding session was
+started with the three current findings and a clean worktree. Give a fresh session a
+bounded task when a long conversation has accumulated several review rounds; inspect
+its first changes before allowing it to commit.
+
 ## 2026-11-07 — Verify executable paths during App replacement
 
 The 0.21.0 installation stopped before moving either bundle because the replacement
