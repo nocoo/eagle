@@ -90,3 +90,32 @@ final class SettingsAndStoreTests: XCTestCase {
     } catch { XCTAssertEqual(error as? SuperagentError, .storage) }
   }
 }
+
+final class OutboxConcurrencyTests: XCTestCase {
+  func testTwoWindowStoresNeverLoseEachOthersPendingInput() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "outbox-race-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let first = FilePendingInputStore(directory: directory)
+    let second = FilePendingInputStore(directory: directory)
+    async let a: Void = first.save(PendingInput(id: "r_window_a1", text: "from A"))
+    async let b: Void = second.save(PendingInput(id: "r_window_b1", text: "from B"))
+    _ = try await (a, b)
+    let saved = try await second.list()
+    XCTAssertEqual(Set(saved.map(\.id)), ["r_window_a1", "r_window_b1"])
+  }
+
+  func testAWindowRemovalCannotEraseAnotherWindowsNewEntry() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "outbox-race2-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let first = FilePendingInputStore(directory: directory)
+    let second = FilePendingInputStore(directory: directory)
+    try await first.save(PendingInput(id: "r_remove_01", text: "old"))
+    async let removal: Void = first.remove("r_remove_01")
+    async let addition: Void = second.save(PendingInput(id: "r_keep_0001", text: "new"))
+    _ = try await (removal, addition)
+    let saved = try await second.list()
+    XCTAssertEqual(saved.map(\.id), ["r_keep_0001"])
+  }
+}
