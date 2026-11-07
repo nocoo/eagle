@@ -1,0 +1,14 @@
+{
+  "service": "eagle-superagent",
+  "version": "0.1.0",
+  "protocolVersion": 1,
+  "pid": 1,
+  "instance": "44444444-4444-4444-8444-444444444444",
+  "storeId": "55555555-5555-4555-8555-555555555555",
+  "rootBinding": "3333333333333333333333333333333333333333333333333333333333333333",
+  "modelReady": true,
+  "failure": {
+    "code": "storage_failed",
+    "id": "failure_fixture_01"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "type": "challenge",
+  "identity": {
+    "service": "eagle-superagent",
+    "version": "0.1.0",
+    "protocolVersion": 1,
+    "pid": 1,
+    "instance": "44444444-4444-4444-8444-444444444444",
+    "storeId": "55555555-5555-4555-8555-555555555555",
+    "rootBinding": "3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "serverNonce": "22222222222222222222222222222222",
+  "proof": "48d0cb3be2081c37aacbe766b4c0ef1c3fa3bb93e99450a66567d6746ee352f0"
+}

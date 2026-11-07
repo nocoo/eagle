@@ -1,0 +1,43 @@
+{
+  "type": "result",
+  "id": "cmd_fixture_05",
+  "value": {
+    "type": "snapshot",
+    "instance": "00000000-0000-4000-8000-000000000001",
+    "rev": 1,
+    "value": {
+      "botId": "superagent",
+      "messages": [
+        {
+          "id": "e_10",
+          "role": "user",
+          "text": "Hello Super Bot",
+          "state": "complete",
+          "createdAt": 1794000000000,
+          "requestId": "req_fixture_01"
+        },
+        {
+          "id": "e_12",
+          "role": "assistant",
+          "text": "Hello",
+          "state": "complete",
+          "createdAt": 1794000000100
+        }
+      ],
+      "pending": [],
+      "window": {
+        "oldestEntryId": 10,
+        "newestEntryId": 12,
+        "coverage": "window"
+      },
+      "running": false,
+      "modelReady": true,
+      "configuration": {
+        "baseUrl": "http://127.0.0.1:3425/v1",
+        "model": "group/coding",
+        "thinkingLevel": "medium",
+        "hasApiKey": true
+      }
+    }
+  }
+}

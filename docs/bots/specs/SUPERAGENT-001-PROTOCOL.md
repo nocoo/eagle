@@ -32,7 +32,8 @@ No worker protocol, credential or storage is used.
   routes. Public health is bodyless: Content-Length above zero and all chunked
   bodies are refused with 413. No credential appears in a URL.
 - `GET /v1/health` returns `{service,version,protocolVersion:1,pid,instance,storeId,
-  rootBinding,modelReady}`. `instance` is a fresh UUID per process; rootBinding is
+  rootBinding,modelReady,failure?}`. Optional failure uses the same `{code,id}` as
+  snapshots. `instance` is a fresh UUID per process; rootBinding is
   SHA256 of the canonical root. No absolute root, credential or prompt is exposed.
   No model is necessary for readiness.
 - For client identity verification, a request may include `X-Eagle-Challenge`, a
@@ -85,7 +86,12 @@ new connection:
    LF means byte 0x0a, never literal backslash-n; nonces/proofs are lowercase hex.
    Golden vectors and JSON samples live in `fixtures/superagent-protocol/`.
 
-Authenticated commands have a caller-owned `id` (8..64 `[A-Za-z0-9_-]`):
+Authenticated commands have a caller-owned `id` (8..64 `[A-Za-z0-9_-]`). Durable
+`requestId` uses exactly the same length and character grammar. Submission IDs
+are `s_<positive integer>`, the same identity used by queued previews.
+Challenge identity contains service/version/protocolVersion/pid/instance/storeId/
+rootBinding; modelReady/failure belong to health and snapshots, not that identity.
+
 
 | Command | Fields | Result value |
 | --- | --- | --- |
@@ -112,7 +118,9 @@ snapshot; sustained overflow closes it, and reconnect starts from a fresh snapsh
 Snapshot value: `{botId:"superagent",messages,pending,running,modelReady,
 configuration,window,failure?}`. `window` is `{oldestEntryId:number|null,
 newestEntryId:number|null,coverage:"window"}`; it certifies only the supplied window.
-`failure` is `{code,id}`, with fixed codes `storage_failed`, `task_parked`,
+`failure` is `{code,id}`; id is a nonempty string identifying one failure episode,
+not a request ID. The same episode keeps its ID across SDK report/close channels.
+Fixed codes are `storage_failed`, `task_parked`,
 `model_timeout`, `model_authentication`, `model_error`. Runtime failure also appears
 in public health; modelReady only means configuration is present, not runtime health.
 Provider text never crosses this boundary. Known SDK timeout/HTTP 401/403 error
@@ -138,7 +146,9 @@ withdrawn, stale, model_timeout, model_authentication, model_error, run_failed.
 Abort closes the admission gate synchronously when the runtime accepts the command;
 previously accepted admissions drain before cancellation starts. New sends/configures
 are refused busy while it is outstanding. Confirmation waits at most five seconds;
-timeout returns cancellation_unconfirmed while the original cancellation continues.
+the five seconds starts at runtime acceptance, including admission draining and
+terminal persistence. Timeout returns cancellation_unconfirmed while the original
+cancellation continues; its admission gate stays closed until that operation settles.
 No automatic resubmission/abort replay occurs. A disconnect is unconfirmed. Already
 completed submissions keep their original result. No new input is included in the
 original cancellation target.
@@ -165,7 +175,13 @@ text is capped at 32000 code points with a marker. Queued previews are capped at
 remains the complete durable authority.
 
 Own chat history uses numeric immutable entry boundaries (`before` is exclusive),
-so newly appended entries cannot shift older pages. A corrupt storage/configuration
+so newly appended entries cannot shift older pages. `hasMore` means more entries
+remain in the requested earlier range; nextBefore exists exactly when hasMore is
+true and is its next exclusive boundary. `coverage:complete` means that requested
+range is exhausted and returned text is not truncated. Any hasMore or truncated
+text makes coverage partial, including a truncated last page with hasMore false.
+Unavailable history is a command error; complete never certifies newer history
+outside the requested boundary. A corrupt storage/configuration
 fails closed. Runtime failure is visible in snapshots/health; there is no silent
 new-session creation. SDK native recovery may retain an aborted partial plus the
 completed attempt; this is not duplicate admission.
@@ -174,17 +190,49 @@ The service owns only one permanent conversation and no executable tools. Its
 store, runtime and transport are independent from Bots. Snapshot/history admission
 and cancellation semantics must implement SG001-R06/R07/R08 exactly.
 
-## Planned native and CLI ownership (SG001-C)
+## Native and CLI ownership (SG001-C, frozen)
 
-- Independent Swift logic targets/package own the Superagent domain, transport and
-  ViewModel. EagleFeatures owns native composition using EagleDesign. No worker
-  CatalogPort/ConversationPort or lifecycle ViewModel is a Superagent dependency.
-- `eagle-dev superagent ...` is an explicit service namespace, with independent
-  root/port/credential resolution. No worker CLI credential or fallback is used.
-- Independent configuration is saved by an App-owned Superagent settings path into
-  this service's own store. A source build can configure through the scoped CLI
-  using JSON on stdin; keys never enter argv or output. The App does not fetch or
-  copy worker gateway files to bootstrap this service.
+- `apps/superagent-macos` owns SuperagentCore, SuperagentTransport and
+  SuperagentFeatures. Features depends on Core ports, not worker logic or network
+  objects. EagleFeatures composes native EagleDesign views; EagleCLIKit uses the
+  same independent transport, not Bots DaemonClient.
+- Development defaults are root `~/.local/share/eagle-superagent-dev`, port 43127;
+  packaged release root is `~/.local/share/eagle-superagent`, port 43128. Explicit
+  `SUPERAGENT_ROOT`/`SUPERAGENT_PORT` override them. `SUPERAGENT_TOKEN` may provide an
+  explicit credential; otherwise the scoped client reads this root's private token.
+  There is no EAGLE_TOKEN, worker config, worker token or global Pi credential fallback.
+- Token and root permissions/owner are validated before use. The client verifies
+  service/version/root binding, fresh nonces and endpoint-bound proof on the same
+  WebSocket before authenticating or configuring; redirects are refused.
+- Commands: `eagle-dev superagent health`, `config show`, `config set --stdin`,
+  `chat send --text TEXT [--request-id ID] [--wait] [--timeout SECONDS]`,
+  `chat history [--before NUMBER] [--limit N]`, `chat watch`, `chat stop`.
+  Each supports `--json`. Configuration JSON arrives on noninteractive stdin,
+  bounded at 64 KiB; no token/API-key flag exists. Exit codes retain Eagle's
+  0 success / 1 service or wait failure / 2 usage / 3 credential/identity refusal /
+  4 unreachable meanings. Wait timeout never aborts/resubmits model work.
+- The scoped namespace is dispatched before loading any worker CLI configuration.
+  A send exits successfully only after durable admission; --wait additionally
+  requires its own submission to settle, not an unrelated stream event.
+- App Settings has an independent Super Bot page. It reads public configuration
+  through its own client; a blank key keeps the saved key, and an explicit clear
+  action removes it. No worker gateway file is imported. Native settings can be
+  reached directly without first opening the worker settings page.
+- App owns one shared process host; each window owns its chat ViewModel/client.
+  Closing the last window does not quit the App. Explicit Quit awaits the bounded
+  shutdown of owned Superagent work, then permits termination. No PID-only adoption.
+- Source-run acceptance can set `EAGLE_DISABLE_WORKERS=1` to omit the worker/device
+  startup and connection tasks entirely; normal defaults preserve existing worker
+  behavior. This switch is not a worker protocol or an automatic fallback.
+- App pending inputs persist only in its own private outbox. Reconnect queries
+  their original request IDs; an unadmitted/unconfirmed send needs an explicit
+  user retry with that same ID, never a new autonomous model turn on reconnect.
+  Confirmed inputs leave the outbox. Historical caches reset on reconnect/window
+  boundary change as above; the main transcript remains the authoritative window.
+- Native UI uses source-qualified selection `superagent:main`, distinct from worker
+  Bot IDs. The system row cannot be renamed, moved, hidden, unpinned or deleted.
+  Unimplemented attachments, microphone, task promotion and inspector controls
+  are absent, not inert actions. Status/error/model readiness are visible text.
 
 ## Gates
 

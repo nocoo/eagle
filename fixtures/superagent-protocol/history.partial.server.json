@@ -1,0 +1,17 @@
+{
+  "type": "result",
+  "id": "cmd_fixture_06",
+  "value": {
+    "messages": [
+      {
+        "id": "e_12",
+        "role": "assistant",
+        "text": "Shortened\n[truncated]",
+        "state": "complete",
+        "createdAt": 1794000000100
+      }
+    ],
+    "hasMore": false,
+    "coverage": "partial"
+  }
+}
