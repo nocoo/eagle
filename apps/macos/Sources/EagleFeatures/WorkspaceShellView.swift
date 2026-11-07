@@ -140,7 +140,10 @@ public struct WorkspaceShellView: View {
 
   /// The inspector belongs to an open conversation: with nothing selected there is nothing to
   /// inspect, so the column (and its drag handle) stay away instead of showing an empty panel.
-  private var showsInspector: Bool { layout.showsInspector && list.selection != nil }
+  private var showsInspector: Bool {
+    layout.showsInspector && list.selection != nil
+      && list.selection != SuperagentWorkspaceViewModel.selectionID
+  }
 
   /// The sample transcript carries its own exchanges, so opening one only needs the entry that
   /// holds it. A bot's exchanges will be read from the daemon by id.

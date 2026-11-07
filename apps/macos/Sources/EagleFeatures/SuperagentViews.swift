@@ -51,7 +51,7 @@ public struct SuperagentConversationContent: View {
           get: { model.chat.draft }, set: { model.chat.draft = $0 }),
         onSend: { Task { await model.chat.send() } },
         showsSidebar: layout.showsSidebar,
-        showsInspector: layout.showsInspector,
+        showsInspector: false,
         participantStatus: ParticipantStatus(
           label: model.statusLine,
           phase: model.chat.isRunning ? .working : (model.isReady ? .idle : .offline),
@@ -65,7 +65,9 @@ public struct SuperagentConversationContent: View {
         onDismissError: { model.chat.dismissError() },
         onShowSidebar: { layout.toggleSidebar() },
         onToggleInspector: { layout.toggleInspector() },
-        focusRestore: focusRestore
+        focusRestore: focusRestore,
+        allowsInspector: false,
+        showsComposerAccessories: false
       )
     }
   }

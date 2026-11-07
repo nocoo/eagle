@@ -42,7 +42,7 @@ public enum SidebarComposition {
       items: [
         SidebarItem(
           id: "superagent:main", title: title, subtitle: subtitle,
-          tintIndex: 4, pinned: true, unread: false, busy: false)
+          tintIndex: 4, pinned: false, unread: false, busy: false)
       ],
       role: .system
     )

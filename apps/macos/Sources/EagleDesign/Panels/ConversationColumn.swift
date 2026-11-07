@@ -101,6 +101,10 @@ public struct ConversationColumn: View {
   private let onRecover: () -> Void
   private let onRetryConnection: () -> Void
   private let onDismissError: () -> Void
+  /// A surface with no inspector and no attachment/voice support says so, so no control
+  /// appears that would only do nothing.
+  private let allowsInspector: Bool
+  private let showsComposerAccessories: Bool
   @State private var scroller = TranscriptScroller()
   @State private var composerFocusRequest = 0
 
@@ -130,7 +134,9 @@ public struct ConversationColumn: View {
     onOpenToolRun: ((String) -> Void)? = nil,
     onPromoteQueued: ((String) -> Void)? = nil,
     onAnswerCard: ((String, [[String]], Bool) async -> Result<Void, AskCardFailure>)? = nil,
-    onAnswerSecret: ((SecretCardAnswer) async -> Result<Void, SecretCardFailure>)? = nil
+    onAnswerSecret: ((SecretCardAnswer) async -> Result<Void, SecretCardFailure>)? = nil,
+    allowsInspector: Bool = true,
+    showsComposerAccessories: Bool = true
   ) {
     self.title = title
     self.tintIndex = tintIndex
@@ -158,6 +164,8 @@ public struct ConversationColumn: View {
     self.focusRestore = focusRestore
     self.onAnswerCard = onAnswerCard
     self.onAnswerSecret = onAnswerSecret
+    self.allowsInspector = allowsInspector
+    self.showsComposerAccessories = showsComposerAccessories
   }
 
   public var body: some View {
@@ -190,7 +198,8 @@ public struct ConversationColumn: View {
         onSend: onSend,
         onInsert: onInsert,
         autofocus: true,
-        focusRequest: composerFocusRequest + focusRestore
+        focusRequest: composerFocusRequest + focusRestore,
+        showsAccessories: showsComposerAccessories
       )
       .fixedSize(horizontal: false, vertical: true)
       .padding(.horizontal, Theme.Metric.conversationInset)
@@ -227,7 +236,7 @@ public struct ConversationColumn: View {
               systemName: "sidebar.left", label: "展开侧栏", style: .circled, action: onShowSidebar)
           }
           Spacer(minLength: 0)
-          if !showsInspector {
+          if allowsInspector && !showsInspector {
             IconButton(
               systemName: "sidebar.right", label: "展开检查器", style: .circled,
               action: onToggleInspector)

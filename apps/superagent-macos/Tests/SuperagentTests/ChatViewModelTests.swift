@@ -165,19 +165,22 @@ final class ChatViewModelTests: XCTestCase {
     let store = MemoryStore()
     let model = SuperagentChatViewModel(port: port, store: store)
     await model.connect()
-    await port.queue(
-      frame(rev: 2, messages: [ChatMessage(id: "e_10", role: .assistant, text: "new")]))
-    await wait { model.state.messages.count == 1 }
+    let window = (10..<110).map {
+      ChatMessage(id: "e_\($0)", role: .assistant, text: $0 == 10 ? "new" : "older")
+    }
+    await port.queue(frame(rev: 2, messages: window))
+    await wait { model.state.messages.count == 100 }
     await port.setPages([
       HistoryPage(
         messages: [ChatMessage(id: "e_5", role: .assistant, text: "old")], hasMore: false,
         coverage: "complete")
     ])
     await model.loadOlder()
-    XCTAssertEqual(model.state.messages.map(\.id), ["e_5", "e_10"])
+    XCTAssertEqual(model.state.messages.first?.id, "e_5")
+    XCTAssertEqual(model.state.messages.count, 101)
     XCTAssertFalse(model.canLoadOlder)
     await model.loadOlder()
-    XCTAssertEqual(model.state.messages.map(\.id), ["e_5", "e_10"])
+    XCTAssertEqual(model.state.messages.count, 101)
   }
 
   func testStopReportsUnconfirmedWithoutPretendingItSucceeded() async throws {
@@ -249,13 +252,14 @@ final class ChatViewModelFailureTests: XCTestCase {
     let store = MemoryStore()
     let model = SuperagentChatViewModel(port: port, store: store)
     await model.connect()
-    await port.queue(
-      frame(rev: 2, messages: [ChatMessage(id: "e_10", role: .assistant, text: "new")]))
+    let window = (10..<110).map { ChatMessage(id: "e_\($0)", role: .assistant, text: "new") }
+    await port.queue(frame(rev: 2, messages: window))
     try await Task.sleep(for: .milliseconds(30))
     await port.setHistoryError(.timeout)
     await model.loadOlder()
     XCTAssertNotNil(model.error)
-    XCTAssertEqual(model.state.messages.map(\.id), ["e_10"])
+    XCTAssertEqual(model.state.messages.first?.id, "e_10")
+    XCTAssertEqual(model.state.messages.count, 100)
     await model.retry()
     let sent = await port.sent
     XCTAssertEqual(sent.count, 0)

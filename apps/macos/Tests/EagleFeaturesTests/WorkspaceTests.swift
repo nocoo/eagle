@@ -83,7 +83,7 @@ struct WorkspaceListTests {
 
   @Test("deleting a group moves the selection to another conversation")
   func deleteSelectedGroup() throws {
-    let model = WorkspaceListViewModel()
+    let model = WorkspaceListViewModel(selection: "deps")
     let group = try #require(model.groups.first { $0.items.contains { $0.id == model.selection } })
     model.deleteSection(group.id)
     #expect(model.selection != nil)
@@ -93,7 +93,7 @@ struct WorkspaceListTests {
 
   @Test("conversations can be renamed and deleted")
   func itemCRUD() {
-    let model = WorkspaceListViewModel()
+    let model = WorkspaceListViewModel(selection: "deps")
     let before = model.groups.flatMap(\.items).count
 
     model.renameItem("deps", to: "  依赖修复专家 A  ")

@@ -172,7 +172,7 @@ public final class SuperagentDaemonSupervisor: ObservableObject {
         atPath: url.appendingPathComponent("scripts/serve.ts").path) ? url : nil
     }
     var ancestor = bundle.deletingLastPathComponent()
-    for _ in 0..<6 {
+    for _ in 0..<10 {
       let candidate = ancestor.appendingPathComponent("apps/superagent", isDirectory: true)
       if FileManager.default.fileExists(
         atPath: candidate.appendingPathComponent("scripts/serve.ts").path)

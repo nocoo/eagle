@@ -260,7 +260,7 @@ public final class WorkspaceListViewModel: ObservableObject {
   @Published public var expanded: Set<String>
   @Published public var selection: String?
 
-  public init(groups: [WorkspaceGroup] = MockWorkspace.groups, selection: String? = "deps") {
+  public init(groups: [WorkspaceGroup] = MockWorkspace.groups, selection: String? = nil) {
     self.groups = groups
     self.expanded = Set(groups.map(\.id))
     self.selection = selection
