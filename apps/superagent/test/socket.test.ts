@@ -280,3 +280,28 @@ test("unknown websocket path and browser origin are refused before authenticatio
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("observation commands answer a provider value, never a socket error, when unconfigured", async () => {
+  const root = await mkdtemp(join(tmpdir(), "superagent-observe-socket-"));
+  const service = await startService({ root, port: 0 });
+  let peer: Awaited<ReturnType<typeof client>> | undefined;
+  try {
+    peer = await client(service.port);
+    await peer.authenticate((await readFile(join(root, "token"), "utf8")).trim());
+    const snapshot = await peer.call("observe-snapshot", {});
+    assert.equal(snapshot.type, "result", "an unavailable provider is a value, not a socket error");
+    const value = snapshot.value as { provider: { state: string }; snapshot: unknown };
+    assert.equal(value.provider.state, "unconfigured");
+    assert.equal(value.snapshot, null);
+    const history = await peer.call("observe-history", { botId: "b_3f1a" });
+    assert.equal(history.type, "result");
+    assert.equal((history.value as { provider: { state: string } }).provider.state, "unconfigured");
+    const changes = await peer.call("observe-changes", { limit: 5 });
+    assert.equal(changes.type, "result");
+    assert.equal((changes.value as { provider: { state: string } }).provider.state, "reset");
+  } finally {
+    peer?.socket.close();
+    await service.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

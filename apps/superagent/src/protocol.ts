@@ -22,4 +22,25 @@ export const command = z.discriminatedUnion("type", [
     })
     .strict(),
   z.object({ type: z.literal("abort"), id }).strict(),
+  z.object({ type: z.literal("observe-snapshot"), id }).strict(),
+  z
+    .object({
+      type: z.literal("observe-history"),
+      id,
+      botId: z.string().min(1).max(128),
+      scope: z.string().min(1).max(64).optional(),
+      before: z
+        .string()
+        .regex(/^e_[0-9]+$/)
+        .optional(),
+      limit: z.number().int().min(1).max(200).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("observe-changes"),
+      id,
+      limit: z.number().int().min(1).max(500).optional(),
+    })
+    .strict(),
 ]);

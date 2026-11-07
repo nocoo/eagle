@@ -3,6 +3,7 @@ import type { IncomingMessage, Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import { MAX_FRAME, ServiceError } from "./domain.ts";
 import { type Identity, serverProof } from "./identity.ts";
+import type { ObservationClient } from "./observation.ts";
 import { authentication, command, hello } from "./protocol.ts";
 import type { ChatRuntime } from "./runtime.ts";
 
@@ -12,7 +13,14 @@ export const allowedRequest = (request: IncomingMessage) =>
 
 export function attachSockets(
   server: Server,
-  options: { token: string; identity: Identity; port: number; runtime: ChatRuntime },
+  options: {
+    token: string;
+    identity: Identity;
+    port: number;
+    runtime: ChatRuntime;
+    /** SG-002 observation; the service always supplies one, configured or not. */
+    observation: ObservationClient;
+  },
 ) {
   const { runtime, identity, token, port } = options;
   const sockets = new WebSocketServer({
@@ -180,6 +188,20 @@ export function attachSockets(
             case "abort":
               await runtime.abort();
               value = { stopped: true };
+              break;
+            case "observe-snapshot":
+              value = await options.observation.snapshot();
+              break;
+            case "observe-history":
+              value = await options.observation.history({
+                botId: input.botId,
+                scope: input.scope,
+                before: input.before,
+                limit: input.limit,
+              });
+              break;
+            case "observe-changes":
+              value = await options.observation.changes(input.limit);
               break;
           }
           send({ type: "result", id: input.id, value });

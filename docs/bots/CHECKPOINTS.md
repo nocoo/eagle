@@ -772,3 +772,22 @@ Verified:
 Next broken hop: nothing on the Superagent side consumes this yet — no `observe-*`
 socket command, no consumer baseline store, no native status block, no CLI paging, and
 the SG-002 acceptance matrix (A01–A17) has not been run.
+
+## 2026-11-08 07:20 — the Superagent consumes observation over its own socket
+
+Verified:
+
+- `apps/superagent/src/observation.ts`: reads the daemon's routes with the dedicated
+  credential file, commits a baseline with each consumed result, drops the stale
+  baseline on `cursor_reset`/`cursor_invalid`/`stale_page`, and reports
+  `ready`/`refused`/`unreachable`/`reset`/`unconfigured`/`internal` as **values**.
+- `observe-snapshot`, `observe-history` and `observe-changes` are strict commands on the
+  existing authenticated socket; `serve.ts` wires the client from
+  `BOTS_OBSERVATION_ENDPOINT` and `BOTS_OBSERVATION_TOKEN_FILE`.
+- A reply with the wrong `kind`, an error body without a code, a non-JSON 200, a
+  directory or a loose/short credential file are all refused rather than trusted.
+- `apps/superagent`: `npm run check` green, **59** tests, coverage
+  98.98 / 95.35 / 98.50 / 98.98.
+
+Next broken hop: no native surface and no CLI paging exist yet; nobody has run the
+consumer against a live daemon, and the SG-002 acceptance matrix (A01–A17) is unrun.

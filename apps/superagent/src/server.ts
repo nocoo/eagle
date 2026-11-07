@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { closeServer, listen, ownRoot, serverProof } from "./identity.ts";
+import { ObservationClient } from "./observation.ts";
 import { ChatRuntime, markInitialized } from "./runtime.ts";
 import { allowedRequest, attachSockets } from "./socket.ts";
 
@@ -7,6 +8,8 @@ export async function startService(options: {
   root: string;
   port: number;
   openRuntime?: (root: string) => Promise<ChatRuntime>;
+  /** SG-002: the daemon observation client; absent leaves the commands unconfigured. */
+  observation?: ObservationClient;
 }) {
   const owner = await ownRoot(options.root);
   let runtime: ChatRuntime | undefined;
@@ -19,6 +22,9 @@ export async function startService(options: {
     throw error;
   }
   if (runtime === undefined) throw new Error("runtime_missing");
+  // SG-002: an unconfigured consumer answers "unconfigured" without touching the network.
+  const observation =
+    options.observation ?? new ObservationClient({ root: owner.root, endpoint: "", tokenFile: "" });
   let port = 0;
   const server = createServer((request, response) => {
     response.setHeader("content-type", "application/json");
@@ -71,6 +77,7 @@ export async function startService(options: {
     identity: owner.identity,
     port,
     runtime,
+    observation,
   });
   let closing: Promise<void> | undefined;
   return {

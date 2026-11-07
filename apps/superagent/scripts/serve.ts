@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { ObservationClient } from "../src/observation.ts";
 import { startService } from "../src/server.ts";
 
 process.umask(0o077);
@@ -11,7 +12,16 @@ try {
   );
   const port = Number(values.port ?? process.env.SUPERAGENT_PORT ?? "43127");
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("invalid_port");
-  const service = await startService({ root, port });
+  // SG-002: the worker daemon's observation routes. The credential is the daemon's own
+  // file; nothing is read from a worker token, an environment value or an argument.
+  const observation = new ObservationClient({
+    root,
+    endpoint: process.env.BOTS_OBSERVATION_ENDPOINT ?? "http://127.0.0.1:43117",
+    tokenFile:
+      process.env.BOTS_OBSERVATION_TOKEN_FILE ??
+      `${homedir()}/.local/share/eagle-bots/observation/token`,
+  });
+  const service = await startService({ root, port, observation });
   process.stdout.write(
     `${JSON.stringify({ type: "ready", port: service.port, ...service.identity })}\n`,
   );
