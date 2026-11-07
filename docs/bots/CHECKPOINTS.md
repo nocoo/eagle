@@ -854,3 +854,29 @@ Verified:
 Next broken hop: the App strip has not been looked at by eye, and the five residual gaps
 (A07 read cancellation, A10 >500 scopes and unsupported kinds, A14 crash between consume
 and commit, A15 visual inspection, A17 maximum page through the socket) are unrun.
+
+## 2026-11-08 08:20 — SG-002 delivered in source; one row waits for a human eye
+
+Verified this round:
+
+- **A10** now pages scope enumeration at 500 with `scopeAfter` (501-scope store, no scope
+  repeated or lost) and an unmappable entry kind forces `coverage.content: "partial"` with
+  `unsupported_kind`.
+- **A17** closes at both ends: the provider keeps a large page inside 192 KiB and offers the
+  next boundary, and the consumer serializes the largest allowed page into one `result`
+  frame under the 256 KiB socket cap.
+- **A07** covers an abandoned read: cancelling one request does not disturb the daemon, and
+  the next read is served normally.
+- **A14** covers an uncommittable baseline: the read is reported `state_unwritable` and the
+  stored baseline does not advance, so nothing is presented as consumed.
+- Gates: `apps/bots` **1135** tests (95.58 / 88.26 / 91.08), `apps/superagent` **61**
+  (98.99 / 95.25 / 98.50), `apps/superagent-macos` 46 tests with every logic file ≥90 %
+  lines, `apps/macos` design-guard green.
+
+The dev App with the observation strip is running in the right pane (`w1J:pW`) against
+`~/.local/share/eagle-bots`, whose observation credential exists, so the strip reads a real
+source.
+
+Next broken hop: **A15 needs the owner's eyes** — nobody has looked at the rendered strip,
+so the native half is unverified. Nothing else in the SG-002 matrix is unrun, and no release
+artifact (packaged App, published version) exists for this milestone.
