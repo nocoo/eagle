@@ -68,6 +68,17 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 — Client staging and sending in progress
+
+- File admission review fixes landed in `c239707`; Bots check and the independent
+  Swift client tests passed, and the targeted review found no remaining issue.
+- Client-private staging tests cover exact UTF-8, source snapshots and the 50 MiB
+  boundary. The upload/outbox/send path is still under implementation; a user cannot
+  yet send a file from the App or verify a file card or preview.
+- `file_publish` and `eagle-dev` acceptance are not implemented. No live Herdr
+  collection, authentication, D1 or website rendering was exercised, and tests have
+  not used the installed production App or its daemon.
+
 ## 2026-11-07 — File admission review fixes
 
 - File admission and history projection are committed in `f1b5e2f`. Review found
