@@ -338,15 +338,19 @@ private final class ComposerFocusDelegate: NSObject, NSApplicationDelegate {
     ]
     await fixture.settle()
     fixture.focusOther()
-    ComposerFocusTrace.mark("sheet.open.enter")
+    ComposerFocusTrace.mark("toolDetail.open.enter")
     fixture.click(NSPoint(x: messagePoint.x, y: messagePoint.y - 10))
     await fixture.settle()
-    ComposerFocusTrace.mark("sheet.open.return count=\(fixture.window.sheets.count)")
+    ComposerFocusTrace.mark(
+      "toolDetail.open.return id=\(fixture.model.presentedToolRunId ?? "nil") "
+        + "composerFocus=\(fixture.hasComposerFocus)")
     check(
       "transcript tool button opens its details without focusing the composer",
-      fixture.window.sheets.count == 1 && !fixture.hasComposerFocus && fixture.model.draft == draft
-    )
-    await fixture.dismissSheets()
+      fixture.model.presentedToolRunId == "tool" && !fixture.hasComposerFocus
+        && fixture.model.draft == draft)
+    fixture.model.presentedToolRunId = nil
+    fixture.model.focusRestore += 1
+    await fixture.settle()
 
     fixture.model.entries = (0..<30).map {
       .assistant(id: "long-\($0)", blocks: [.paragraph("History message \($0)")])
@@ -405,6 +409,8 @@ private final class ComposerFocusModel: ObservableObject {
   @Published var conversationID = "first"
   @Published var running = false
   @Published var preparedMarkdown: [String: [RenderedMarkdownBlock]] = [:]
+  @Published var presentedToolRunId: String?
+  @Published var focusRestore = 0
   var sends = 0
   var attachments = 0
   var inserts = 0
@@ -417,19 +423,33 @@ private struct ComposerFocusView: View {
 
   var body: some View {
     if conversation {
-      ConversationColumn(
-        title: "Fixture", tintIndex: 0, entries: model.entries,
-        preparedMarkdown: model.preparedMarkdown,
-        draft: $model.draft, onSend: { model.sends += 1 },
-        onInsert: model.running ? { model.inserts += 1 } : nil
-      )
-      .id(model.conversationID)
-      .environment(
-        \.openURL,
-        OpenURLAction { url in
-          model.openedURLs.append(url.absoluteString)
-          return .handled
-        })
+      let showsToolDetail = model.presentedToolRunId != nil
+      ZStack {
+        ConversationColumn(
+          title: "Fixture", tintIndex: 0, entries: model.entries,
+          preparedMarkdown: model.preparedMarkdown,
+          draft: $model.draft, onSend: { model.sends += 1 },
+          onInsert: model.running ? { model.inserts += 1 } : nil,
+          focusRestore: model.focusRestore,
+          onOpenToolRun: { model.presentedToolRunId = $0 }
+        )
+        .id(model.conversationID)
+        .disabled(showsToolDetail)
+        .allowsHitTesting(!showsToolDetail)
+        .environment(
+          \.openURL,
+          OpenURLAction { url in
+            model.openedURLs.append(url.absoluteString)
+            return .handled
+          })
+        if let id = model.presentedToolRunId,
+          let rows = model.entries.toolRunRows(id: id)
+        {
+          ModalHost(onDismiss: dismissToolRun) {
+            ToolRunDetailView(rows: rows, onClose: dismissToolRun)
+          }
+        }
+      }
     } else {
       Composer(
         placeholder: "Fixture input", text: $model.draft,
@@ -438,6 +458,11 @@ private struct ComposerFocusView: View {
         onAttach: { model.attachments += 1 }
       )
     }
+  }
+
+  private func dismissToolRun() {
+    model.presentedToolRunId = nil
+    model.focusRestore += 1
   }
 }
 
