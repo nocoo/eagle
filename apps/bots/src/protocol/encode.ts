@@ -222,6 +222,7 @@ export const encodeServerEvent = (event: ServerEvent): Wire => {
         peers: event.capabilities.peers === true,
         triggers: event.capabilities.triggers === true,
         files: event.capabilities.files === true,
+        sendFiles: event.capabilities.sendFiles === true,
       };
       wire.bots = event.bots.map(encodeBot);
       if (event.groups !== undefined) wire.groups = event.groups.map(encodeGroup);

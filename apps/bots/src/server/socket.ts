@@ -367,6 +367,13 @@ export const attachConnection = (
       // Wire limits live here, after the handshake: a version mismatch must still reach
       // its own final frame and close code.
       checked = validateCommand(command);
+      if (
+        checked.type === "send" &&
+        checked.fileIds !== undefined &&
+        deps.capabilities.sendFiles !== true
+      ) {
+        throw new FrameError("invalid_command", "this daemon does not support file attachments");
+      }
     } catch (error) {
       const reason = error instanceof FrameError ? error.reason : "invalid_command";
       const kind = reason === "limit_exceeded" ? "limit_exceeded" : "invalid_command";
@@ -506,9 +513,6 @@ export const attachConnection = (
       return;
     }
     if (command.type === "send") {
-      if (command.fileIds !== undefined && deps.capabilities.files !== true) {
-        throw new FrameError("invalid_command", "this daemon does not support file attachments");
-      }
       const record = await service.send(
         connId,
         {

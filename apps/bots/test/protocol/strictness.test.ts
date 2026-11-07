@@ -270,7 +270,7 @@ test("a bot summary only carries a reason while unavailable", () => {
   });
 });
 
-test("welcome files capability defaults false and rejects non-booleans", () => {
+test("welcome sendFiles capability is independent, defaults false and rejects non-booleans", () => {
   const welcome = {
     type: "welcome",
     protocolVersion: 1,
@@ -286,20 +286,28 @@ test("welcome files capability defaults false and rejects non-booleans", () => {
     },
     bots: [],
   };
-  const old = decodeServerEvent(welcome);
-  assert.equal(old.type, "welcome");
-  if (old.type === "welcome") assert.equal(old.capabilities.files, false);
-
-  const withFiles = decodeServerEvent({
+  const old = decodeServerEvent({
     ...welcome,
     capabilities: { ...welcome.capabilities, files: true },
   });
-  assert.equal(withFiles.type, "welcome");
-  if (withFiles.type === "welcome") assert.equal(withFiles.capabilities.files, true);
+  assert.equal(old.type, "welcome");
+  if (old.type === "welcome") {
+    assert.equal(old.capabilities.files, true);
+    assert.equal(old.capabilities.sendFiles, false);
+  }
+
+  const withSendFiles = decodeServerEvent({
+    ...welcome,
+    capabilities: { ...welcome.capabilities, files: true, sendFiles: true },
+  });
+  assert.equal(withSendFiles.type, "welcome");
+  if (withSendFiles.type === "welcome") {
+    assert.equal(withSendFiles.capabilities.sendFiles, true);
+  }
 
   invalidEvent({
     ...welcome,
-    capabilities: { ...welcome.capabilities, files: "yes" },
+    capabilities: { ...welcome.capabilities, sendFiles: "yes" },
   });
 });
 

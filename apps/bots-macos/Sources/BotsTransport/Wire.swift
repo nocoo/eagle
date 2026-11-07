@@ -15,20 +15,20 @@ public enum Wire {
     /// The absolute catalog a `welcome` or `bots` frame carries.
     public let catalog: BotCatalog?
     /// Whether this daemon implements managed file attachment send. Missing is false.
-    public let supportsFiles: Bool
+    public let sendFiles: Bool
 
     public init(
       event: ConversationEvent?,
       rev: Int?,
       type: String,
       catalog: BotCatalog? = nil,
-      supportsFiles: Bool = false
+      sendFiles: Bool = false
     ) {
       self.event = event
       self.rev = rev
       self.type = type
       self.catalog = catalog
-      self.supportsFiles = supportsFiles
+      self.sendFiles = sendFiles
     }
   }
 
@@ -44,7 +44,7 @@ public enum Wire {
       }
       return Decoded(
         event: .connection(.ready), rev: nil, type: "welcome", catalog: frame.catalog,
-        supportsFiles: frame.capabilities?["files"] ?? false)
+        sendFiles: frame.capabilities?["sendFiles"] ?? false)
     case "snapshot":
       let frame = try decoder.decode(SnapshotFrame.self, from: data)
       return Decoded(event: .snapshot(frame.value), rev: frame.rev, type: "snapshot")

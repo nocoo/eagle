@@ -893,6 +893,10 @@ export function decodeServerEvent(raw: Record<string, unknown>): ServerEvent {
         capabilitiesRaw.files === undefined
           ? false
           : bool(ctx, capabilitiesRaw.files, "capabilities.files");
+      capabilities.sendFiles =
+        capabilitiesRaw.sendFiles === undefined
+          ? false
+          : bool(ctx, capabilitiesRaw.sendFiles, "capabilities.sendFiles");
       return {
         type,
         protocolVersion: int(ctx, required(ctx, raw, "protocolVersion"), "protocolVersion"),

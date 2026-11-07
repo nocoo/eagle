@@ -106,12 +106,12 @@ final class FixtureDecodingTests: XCTestCase {
       "server": ["version": "0.1.0", "instance": "i_test", "pid": 1],
       "capabilities": [
         "agent": false, "tools": true, "tasks": false, "entries": false,
-        "usage": false, "peers": false, "triggers": true,
+        "usage": false, "peers": false, "triggers": true, "files": true,
       ],
       "bots": [],
     ])
     let oldDecoded = try Wire.decode(oldWelcome)
-    XCTAssertFalse(oldDecoded.supportsFiles)
+    XCTAssertFalse(oldDecoded.sendFiles)
 
     let newWelcome = try JSONSerialization.data(withJSONObject: [
       "type": "welcome",
@@ -120,11 +120,12 @@ final class FixtureDecodingTests: XCTestCase {
       "capabilities": [
         "agent": false, "tools": true, "tasks": false, "entries": false,
         "usage": false, "peers": false, "triggers": true, "files": true,
+        "sendFiles": true,
       ],
       "bots": [],
     ])
     let newDecoded = try Wire.decode(newWelcome)
-    XCTAssertTrue(newDecoded.supportsFiles)
+    XCTAssertTrue(newDecoded.sendFiles)
   }
 
   func testTheAgentFixtureReachesTheConversation() throws {

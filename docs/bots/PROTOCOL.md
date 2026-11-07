@@ -317,10 +317,11 @@ exactly as before.
 
 ## Managed files
 
-The daemon announces `files:true` when this upload/download surface is enabled. It is
-intentionally transport-only in this slice: no Swift UI, CLI, pi adapter, transcript
-entry or `file_publish` is defined yet. Future model and tool consumers must use the
-same opaque `fileId` and metadata store rather than invent a second byte transport.
+The daemon announces `files:true` when this upload/download surface is enabled.
+`sendFiles` is an independent optional capability: it is absent/false by default and is
+announced true only by a daemon that also implements attachment admission into a send.
+Future model and tool consumers must use the same opaque `fileId` and metadata store rather
+than invent a second byte transport.
 
 ```json
 {
@@ -406,9 +407,11 @@ same opaque `fileId` and metadata store rather than invent a second byte transpo
   `data.files` for live append, snapshot and history; it ignores the synthetic model-only
   path text in the displayed bubble. A replay or reopen reconstructs the same optional
   `Message.files` from `entry.data` and never by trusting a client frame.
-- A retry with the same `requestId` returns the original submission record. It does not
-  create a second entry and does not replace the first entry's files if a later caller sends
-  a different `fileIds` list. The first admitted file set is authoritative for that requestId.
+- A retry with the same `requestId` returns the original submission record before any
+  attachment validation. It does not create a second entry and does not replace the first
+  entry's files if a later caller sends a different, missing, pending or cross-Bot
+  `fileIds` list. The first admitted file set is authoritative for that requestId, including
+  after a daemon restart.
 - Malformed IDs, traversal forms, symlink directories, symlinks/FIFOs at content or
   metadata paths, interrupted bodies, size/hash mismatches, and storage failures fail
   closed. Responses expose only a stable kind/message, never a filesystem path or file
@@ -885,7 +888,7 @@ server → { "type": "welcome", "protocolVersion": 1,
            "server": { "version": "0.1.0", "instance": "i_7f3", "pid": 4711 },
            "capabilities": { "agent": false, "tools": true, "tasks": false,
                              "entries": false, "usage": false, "peers": false,
-                             "triggers": true, "files": true },
+                             "triggers": true, "files": true, "sendFiles": true },
            "bots": [ BotSummary, … ] }
 ```
 
@@ -898,10 +901,12 @@ server → { "type": "error", "kind": "version_mismatch", "message": "…",
 ```
 
 `welcome.bots` equals `GET /v1/bots`, so the sidebar needs no second request.
-A client that predates `fileIds` must not infer success from an old daemon: it performs
-its own capability check and sends file IDs only while `welcome.capabilities.files === true`.
-An old daemon that ignores unknown fields is not evidence of attachment admission; v1 servers
-validate and reject `fileIds` under `files:false` before the runtime sees the command.
+A client that predates `fileIds` must not infer send support from managed-file transport:
+it sends file IDs only while `welcome.capabilities.sendFiles === true`. A missing
+`sendFiles` defaults false, even when `welcome.capabilities.files === true`; unknown fields
+remain ignored. An old daemon that ignores unknown fields is not evidence of attachment
+admission; v1 servers validate and reject `fileIds` under `sendFiles:false` before the runtime
+sees the command.
 
 ## Subscription
 

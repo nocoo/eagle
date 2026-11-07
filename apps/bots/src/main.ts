@@ -669,6 +669,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     peers: false,
     triggers: true,
     files: true,
+    sendFiles: true,
   };
   // One save at a time: the second one reads what the first stored, so two pages that
   // save at the same moment cannot drop each other's field.

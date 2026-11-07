@@ -660,7 +660,6 @@ export class ConversationService implements InvocationPort {
     this.#admitting += 1;
     try {
       this.#assertInvocation(input);
-      await this.#validateFileIds(input.botId, input.fileIds, input.requestId);
       if (this.#lease !== undefined) {
         if (!this.#lease.acquire(botId)) {
           throw new CommandError(
@@ -782,6 +781,17 @@ export class ConversationService implements InvocationPort {
     requestId: string,
   ): Promise<readonly ManagedFileRef[]> {
     if (fileIds === undefined || fileIds.length === 0) return [];
+    if (fileIds.length > MAX_SEND_FILE_IDS) {
+      throw this.#refuse(`fileIds exceeds ${MAX_SEND_FILE_IDS}`, requestId);
+    }
+    const seen = new Set<string>();
+    for (const fileId of fileIds) {
+      if (!/^f_[0-9a-f]{64}$/.test(fileId)) {
+        throw this.#refuse("a fileId is malformed", requestId);
+      }
+      if (seen.has(fileId)) throw this.#refuse("fileIds contains duplicate ids", requestId);
+      seen.add(fileId);
+    }
     if (this.#files === undefined) {
       throw new CommandError(
         this.#mint("storage_failed"),
@@ -850,19 +860,6 @@ export class ConversationService implements InvocationPort {
     }
     if (!ORIGIN_KINDS.has(input.origin?.kind as string)) {
       throw this.#refuse("the invocation origin is unknown", input.requestId);
-    }
-    if (input.fileIds !== undefined) {
-      if (input.fileIds.length > MAX_SEND_FILE_IDS) {
-        throw this.#refuse("fileIds exceeds 16", input.requestId);
-      }
-      const seen = new Set<string>();
-      for (const fileId of input.fileIds) {
-        if (!/^f_[0-9a-f]{64}$/.test(fileId)) {
-          throw this.#refuse("a fileId is malformed", input.requestId);
-        }
-        if (seen.has(fileId)) throw this.#refuse("fileIds contains duplicate ids", input.requestId);
-        seen.add(fileId);
-      }
     }
     if (input.whenBusy === "steer" && input.origin.kind !== "human") {
       throw this.#refuse("only a person may steer a running answer", input.requestId);
@@ -1082,6 +1079,7 @@ export class ConversationService implements InvocationPort {
         }
         return stored;
       }
+      await this.#validateFileIds(botId, input.fileIds, input.requestId);
       // A reservation already visible as pending is the same admission, not a second one.
       // An expired one is released only after the runtime says it is not outstanding:
       // time alone is not evidence that an admission ended.

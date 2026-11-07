@@ -14,7 +14,8 @@
     "usage": false,
     "peers": false,
     "triggers": false,
-    "files": false
+    "files": false,
+    "sendFiles": false
   },
   "bots": [
     {

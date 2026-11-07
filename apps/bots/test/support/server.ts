@@ -119,6 +119,8 @@ export type StackOptions = {
     /** The bound port, known only after the listener exists. */
     readonly port: () => number;
   }) => ObservationRoutes;
+  /** Simulate an older daemon that can serve files but cannot admit fileIds on send. */
+  readonly sendFiles?: boolean;
 };
 
 export const startStack = async (options: StackOptions = {}): Promise<Stack> => {
@@ -340,6 +342,7 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
       peers: false,
       triggers: true,
       files: true,
+      sendFiles: options.sendFiles ?? true,
     },
     ...(options.triggers === undefined ? {} : { triggers: options.triggers }),
     ...(options.secretsApi === undefined ? {} : { secrets: options.secretsApi }),

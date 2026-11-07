@@ -643,6 +643,7 @@ test("the welcome advertises managed files without sending bytes on the socket",
     await send(socket, hello);
     const welcome = await frames.next();
     assert.equal((welcome.capabilities as Record<string, boolean> | undefined)?.files, true);
+    assert.equal((welcome.capabilities as Record<string, boolean> | undefined)?.sendFiles, true);
   } finally {
     socket.close();
     await stack.close();
