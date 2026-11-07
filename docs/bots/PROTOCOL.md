@@ -37,7 +37,7 @@ Runtime details live in [RUNTIME.md](RUNTIME.md), layers in
 
 | Limit | Value | Violation |
 | --- | --- | --- |
-| `send.text` | 8 000 characters | `error{invalid_command}` |
+| `send.text` | 8 000 Unicode code points | `error{invalid_command}` with a safe length explanation and the request ID |
 | `send.fileIds` | 0–16 complete managed file IDs; no duplicates | `error{invalid_command}` or `unknown_bot` |
 | `Message.files` metadata | At most 16 refs; each name/MIME at most 255 UTF-8 bytes; no paths or byte content | `error{invalid_command}` or omitted invalid data |
 | `bot.title` (HTTP) | 80 characters | HTTP `400` |

@@ -17,7 +17,7 @@ import {
   parseJson,
   type ServerEvent,
 } from "../protocol/frames.ts";
-import { TRACE_ID } from "../protocol/limits.ts";
+import { MAX_SEND_TEXT, TRACE_ID } from "../protocol/limits.ts";
 import { assertFrameBudget, assertInboundBytes, validateCommand } from "../protocol/validate.ts";
 import { PROTOCOL_VERSION } from "../protocol/version.ts";
 import { serverFailure } from "./failures.ts";
@@ -396,7 +396,11 @@ export const attachConnection = (
         kind,
         disposition: "not_admitted",
         failure: refusal.id,
-        message: "the command was refused",
+        message:
+          error instanceof FrameError &&
+          error.message === `text exceeds ${MAX_SEND_TEXT} characters`
+            ? error.message
+            : "the command was refused",
         ...(command.type === "send" ? { requestId: command.requestId } : {}),
       });
       return;

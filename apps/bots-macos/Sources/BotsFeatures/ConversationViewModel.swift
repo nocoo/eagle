@@ -8,6 +8,7 @@ import SwiftUI
 /// (docs/bots/ARCHITECTURE.md, "Layers").
 @MainActor
 public final class ConversationViewModel: ObservableObject {
+  private static let oversizedDraftError = "消息超过 8,000 个 Unicode 字符，原文仍在输入框中。"
   @Published public private(set) var state: ConversationState
   @Published public private(set) var connection: ConnectionState = .connecting
   @Published public private(set) var hasSnapshot = false
@@ -122,8 +123,15 @@ public final class ConversationViewModel: ObservableObject {
   /// `inserting` steers the run that is answering instead of queueing behind it; while the
   /// bot is idle the daemon places it like any other input.
   public func send(inserting: Bool) {
-    let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty, connection == .ready, let botId = selectedBotId else { return }
+    let text = draft
+    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      connection == .ready, let botId = selectedBotId
+    else { return }
+    guard text.unicodeScalars.dropFirst(8_000).isEmpty else {
+      errorBanner = Self.oversizedDraftError
+      return
+    }
+    if errorBanner == Self.oversizedDraftError { errorBanner = nil }
     let requestId = Identifiers.request()
     draft = ""
     send(text: text, requestId: requestId, botId: botId, optimistic: true, inserting: inserting)

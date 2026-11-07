@@ -140,6 +140,19 @@ struct BotsWindowTests {
     try await waitUntil { bots.queuedMessages.isEmpty }
   }
 
+  @Test("an oversized message stays visible with a clear error")
+  func oversizedDraft() async throws {
+    let (bots, app, port, outbox) = try await window()
+    let draft = String(repeating: "界", count: 8_001)
+    bots.setDraft(draft)
+    bots.send()
+    try await waitUntil { bots.error?.contains("8,000") == true }
+    #expect(bots.composer.text == draft)
+    #expect(app.conversation.draft == draft)
+    #expect(port.sent.isEmpty)
+    #expect(try outbox.entries(for: "b_1").isEmpty)
+  }
+
   @Test("a repeated refusal republishes the restored draft without losing newer input")
   func repeatedRefusalRestoresDraft() async throws {
     let (bots, app, conversationPort, _) = try await window()

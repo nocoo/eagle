@@ -388,6 +388,8 @@ test("the wire limits refuse a bad requestId and an over-long text", async () =>
       "PROTOCOL.md maps an over-long text to invalid_command",
     );
     assert.equal(long.requestId, "r_long_000001", "the client can clear that outbox entry");
+    assert.equal(long.disposition, "not_admitted");
+    assert.equal(long.message, "text exceeds 8000 characters");
     socket.close();
   } finally {
     await stack.close();

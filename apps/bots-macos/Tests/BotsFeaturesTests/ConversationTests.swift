@@ -128,6 +128,63 @@ final class ConversationTests: XCTestCase {
     XCTAssertFalse(model.hasSnapshot)
   }
 
+  func testOversizedDraftRemainsVisibleAndIsNotSent() async throws {
+    let (model, fake, outbox) = makeModel()
+    ready(model)
+    fake.emit(.connection(.ready))
+    try await waitUntil { model.connection == .ready }
+
+    for draft in [
+      "  \(String(repeating: "界", count: 8_001))\n",
+      String(repeating: "😀", count: 90_000),
+      "\(String(repeating: "x", count: 8_000)) ",
+    ] {
+      model.draft = draft
+      model.send()
+      XCTAssertEqual(model.draft, draft)
+      XCTAssertTrue(model.errorBanner?.contains("8,000") == true)
+      XCTAssertTrue(model.state.messages.isEmpty)
+      XCTAssertTrue(try outbox.entries(for: "b_1").isEmpty)
+      XCTAssertTrue(fake.sent.isEmpty)
+    }
+
+    model.draft = String(repeating: "界", count: 8_000)
+    model.send()
+    try await waitUntil { fake.sent.count == 1 }
+    XCTAssertNil(model.errorBanner, "a valid retry clears the limit warning")
+  }
+
+  func testSendPreservesLeadingTrailingWhitespaceAndNewlines() async throws {
+    let (model, fake, _) = makeModel()
+    ready(model)
+    fake.emit(.connection(.ready))
+    try await waitUntil { model.connection == .ready }
+    let text = "  First line\r\nSecond line  \n"
+    model.draft = text
+    model.send()
+    try await waitUntil { fake.sent.count == 1 }
+    XCTAssertEqual(Array(fake.sent[0].text.utf8), Array(text.utf8))
+  }
+
+  func testTextLimitCountsUnicodeScalarsNotGraphemeClusters() async throws {
+    let (model, fake, _) = makeModel()
+    ready(model)
+    fake.emit(.connection(.ready))
+    try await waitUntil { model.connection == .ready }
+
+    model.draft = String(repeating: "😀", count: 8_000)
+    model.send()
+    try await waitUntil { fake.sent.count == 1 }
+    XCTAssertEqual(fake.sent[0].text.unicodeScalars.count, 8_000)
+
+    let decomposed = String(repeating: "e\u{301}", count: 4_001)
+    model.draft = decomposed
+    model.send()
+    XCTAssertEqual(model.draft, decomposed)
+    XCTAssertTrue(model.errorBanner?.contains("8,000") == true)
+    XCTAssertEqual(fake.sent.count, 1)
+  }
+
   func testComposerSendsOptimisticallyAndTheEntryReplacesTheBubble() async throws {
     let (model, fake, outbox) = makeModel()
     ready(model)
