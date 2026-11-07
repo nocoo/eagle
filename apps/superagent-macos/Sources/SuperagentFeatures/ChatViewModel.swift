@@ -20,6 +20,9 @@ public final class SuperagentChatViewModel: ObservableObject {
   /// Sends whose durable admission was never confirmed. They keep their request identity
   /// until an explicit retry settles them.
   @Published public private(set) var unconfirmed: [PendingInput] = []
+  /// One send at a time: a second tap while the first admission is unresolved must not
+  /// mint a second identity for the same text.
+  @Published public private(set) var sending = false
 
   private let port: SuperagentChatPort
   private let store: PendingInputStore
@@ -77,6 +80,7 @@ public final class SuperagentChatViewModel: ObservableObject {
   }
 
   public func send() async {
+    guard !sending else { return }
     if !unconfirmed.isEmpty {
       await retry()
       return
@@ -84,6 +88,8 @@ public final class SuperagentChatViewModel: ObservableObject {
     let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
     let pending = PendingInput(text: text)
+    sending = true
+    defer { sending = false }
     do { try await store.save(pending) } catch {
       self.error = message(error)
       return
@@ -130,6 +136,9 @@ public final class SuperagentChatViewModel: ObservableObject {
     for input in pending {
       guard (try? await port.submission(input.id)) != nil else { continue }
       try? await store.remove(input.id)
+      if draft.trimmingCharacters(in: .whitespacesAndNewlines) == input.text {
+        draft = ""
+      }
     }
     await refreshUnconfirmed()
   }

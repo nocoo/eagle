@@ -87,6 +87,7 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
       started = true
       await settings.load()
     }
+    guard windowOpen, isReady else { return }
     await chat.connect()
   }
 

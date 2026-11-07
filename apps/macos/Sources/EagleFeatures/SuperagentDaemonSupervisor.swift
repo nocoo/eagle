@@ -54,7 +54,12 @@ public final class SuperagentDaemonSupervisor: ObservableObject {
 
   public func startIfNeeded() async {
     if stopping { return }
-    if case .running = status { return }
+    if case .running = status, child?.isRunning != false {
+      return
+    }
+    if case .running = status {
+      status = .failed("Super Bot 进程已退出。")
+    }
     if let starting { return await starting.value }
     let work = Task { await self.start() }
     starting = work

@@ -363,3 +363,46 @@ final class ChatViewModelFailureTests: XCTestCase {
     XCTAssertFalse(model.stopping)
   }
 }
+
+@MainActor
+final class ChatSettlementTests: XCTestCase {
+  private func frame(rev: Int) -> SnapshotFrame {
+    SnapshotFrame(
+      instance: "44444444-4444-4444-8444-444444444444", rev: rev,
+      value: ChatSnapshot())
+  }
+
+  func testReconciliationSettlesTheMatchingDraftSoItCannotBeSentAgain() async throws {
+    let port = FakePort()
+    let store = MemoryStore()
+    await port.setSubmitError(.timeout)
+    let model = SuperagentChatViewModel(port: port, store: store)
+    await model.connect()
+    model.draft = "one intended request"
+    await model.send()
+    let pending = await store.values
+    XCTAssertEqual(pending.count, 1)
+    await port.setRecord(ChatAdmission(id: "s_9", requestId: pending[0].id, status: .done))
+    await model.connect()
+    XCTAssertEqual(model.draft, "")
+    let unconfirmed = model.unconfirmed
+    XCTAssertTrue(unconfirmed.isEmpty)
+    await model.send()
+    let sent = await port.sent
+    XCTAssertEqual(sent.count, 0, "a settled input must not be admitted again")
+  }
+
+  func testTwoOverlappingSendsOfOneDraftAdmitOnce() async throws {
+    let port = FakePort()
+    let store = MemoryStore()
+    await port.setSubmitDelay(120)
+    let model = SuperagentChatViewModel(port: port, store: store)
+    await model.connect()
+    model.draft = "only once"
+    async let first: Void = model.send()
+    async let second: Void = model.send()
+    _ = await (first, second)
+    let sent = await port.sent
+    XCTAssertEqual(sent.count, 1)
+  }
+}
