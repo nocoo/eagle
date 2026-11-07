@@ -1,5 +1,23 @@
 # Retrospective
 
+## 2026-11-07 — Preserve failed release gates when publication is explicitly requested
+
+Preparing macOS 0.21.0 exposed two fixture gaps in CI: the native focus fixture still
+expected the removed tool sheet and lacked the new callback, and the Reduce Motion
+snapshot compared a system preference with standalone ImageRenderer output. The native
+fixture was connected to the shared modal, and the snapshot moved to a settled native
+host without removing checks, changing thresholds or writing system preferences. Both
+checks passed in the last observed run on `138e9e4e`; that run still failed row cost
+(2.7827 versus 2.5) and device renewal (`unknown` versus `completed`).
+
+The owner then explicitly requested publication without waiting for or verifying CI.
+The DMG was published under `macos-v0.21.0` with its exact source and checksum, normal
+Git hooks intact, and a visible release-note disclosure of the known failures and CI
+waiver. No later CI outcome was consulted for the publication decision. Retain the
+failed evidence; local green tests or a valid signature do not turn this into a green
+CI or real installation certification. The update announcement follows the uploaded
+asset, and deployment remains unverified when the owner declines that wait.
+
 ## 2026-11-07 — ImageRenderer likely did not inherit Reduce Motion
 
 CI check 42316936489 on `cadd4b38` passed the native focus gate and the row-cost bound but

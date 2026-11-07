@@ -1,5 +1,28 @@
 # 用户视角检查点
 
+## 2026-11-07 — macOS v0.21.0 published with an explicit CI waiver
+
+- The owner explicitly requested immediate publication without waiting for or verifying CI.
+  Normal Git hooks were retained; this is not a CI-green certification. The last observed
+  Check on source `138e9e4eccf823cb0ea47ccd71f30438a01d104c` failed the row-cost benchmark
+  (minimum 2.7827 against 2.5) and the device-renewal integration assertion (`unknown`
+  instead of `completed`). Native focus's 42 checks and Reduce Motion passed that run.
+  No subsequent CI outcome was used to authorize publication.
+- Public release: https://github.com/nocoo/eagle/releases/tag/macos-v0.21.0 . The annotated
+  tag resolves to the exact source SHA above. GitHub reports both assets uploaded and
+  the DMG digest matches the local artifact: `a92c59a2ea228802b3a73224d09d5fafdc68b71e83e7b1d8966e02ad23882568`,
+  113,726,793 bytes. The release includes `SHA256SUMS`, the CI status disclosure and ordered
+  upgrade/unblock instructions. The build is arm64, macOS 15+, ad-hoc signed, not notarized.
+- Source and DMG checks covered bundle versions/URLs, empty relay configuration, deep/strict
+  signatures, preserved portable Node, bundled CLI and runtime receipts, and an owned
+  read-only DMG mount. No installed App or helper was replaced. Three complete isolated
+  CLI eval rounds passed on unchanged Bots/Agent code; real-provider and physical-Mac
+  acceptance remain unverified.
+- Only after the assets became public, the root App announcement was moved to 0.21.0.
+  Website version remains 0.14.3, bundled/source Agent 1.2.0, npm onboarding pin 1.0.0,
+  and Bots 0.1.0. The normal main-push workflow may deploy this metadata; its CI/deployment
+  result and the resulting live update hint are deliberately not awaited or verified.
+
 ## 2026-11-07 +08 — Release 0.21.0 Reduce Motion fixture fix
 
 - CI check 42316936489 on `cadd4b38`: native focus 42/42 passed, Linux green, row cost
