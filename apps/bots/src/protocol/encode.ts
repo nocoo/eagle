@@ -314,6 +314,8 @@ export const encodeCommand = (command: ClientCommand): Wire => {
         whenBusy: command.whenBusy,
         trace: command.trace,
       };
+    case "promote":
+      return { type: "promote", requestId: command.requestId, trace: command.trace };
     case "answer":
       return {
         type: "answer",

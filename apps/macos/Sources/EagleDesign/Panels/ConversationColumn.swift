@@ -1,5 +1,17 @@
 import SwiftUI
 
+/// A send the daemon has admitted but not placed yet. `promoted` means the person asked
+/// it to jump ahead of the other follow-ups; the row keeps waiting either way.
+public struct QueuedMessage: Equatable, Sendable {
+  public let requestId: String
+  public let promoted: Bool
+
+  public init(requestId: String, promoted: Bool = false) {
+    self.requestId = requestId
+    self.promoted = promoted
+  }
+}
+
 /// One transcript row. Assistant turns are plain text; only user turns and the
 /// delivery meta lines carry color.
 public enum TranscriptEntry: Identifiable, Hashable, Sendable {
@@ -62,6 +74,10 @@ public struct ConversationColumn: View {
   private let entries: [TranscriptEntry]
   private let showsToolCalls: Bool
   private let preparedMarkdown: [String: [RenderedMarkdownBlock]]
+  /// Queued sends by local bubble id, so a waiting row can offer the jump without a
+  /// separate transcript case (the message is still an ordinary user turn).
+  private let queuedMessages: [String: QueuedMessage]
+  private let onPromoteQueued: ((String) -> Void)?
   @Binding private var draft: String
   private let onSend: () -> Void
   private let onShowSidebar: () -> Void
@@ -95,6 +111,7 @@ public struct ConversationColumn: View {
     entries: [TranscriptEntry],
     showsToolCalls: Bool = true,
     preparedMarkdown: [String: [RenderedMarkdownBlock]] = [:],
+    queuedMessages: [String: QueuedMessage] = [:],
     draft: Binding<String>,
     onSend: @escaping () -> Void,
     showsSidebar: Bool = true,
@@ -111,6 +128,7 @@ public struct ConversationColumn: View {
     focusRestore: Int = 0,
     onOpenPeerExchange: ((String) -> Void)? = nil,
     onOpenToolRun: ((String) -> Void)? = nil,
+    onPromoteQueued: ((String) -> Void)? = nil,
     onAnswerCard: ((String, [[String]], Bool) async -> Result<Void, AskCardFailure>)? = nil,
     onAnswerSecret: ((SecretCardAnswer) async -> Result<Void, SecretCardFailure>)? = nil
   ) {
@@ -120,6 +138,8 @@ public struct ConversationColumn: View {
     self.entries = entries
     self.showsToolCalls = showsToolCalls
     self.preparedMarkdown = preparedMarkdown
+    self.queuedMessages = queuedMessages
+    self.onPromoteQueued = onPromoteQueued
     self._draft = draft
     self.onSend = onSend
     self.showsSidebar = showsSidebar
@@ -304,14 +324,21 @@ public struct ConversationColumn: View {
         )
       )
     case .user(_, let text, let origin):
-      UserBubble(text, origin: origin)
-        .transition(
-          .asymmetric(
-            insertion: .opacity.combined(
-              with: .scale(scale: Theme.Chat.messageEntryScale, anchor: .bottomTrailing)),
-            removal: .opacity
-          )
+      let queued = queuedMessages[entry.id]
+      UserBubble(
+        text,
+        origin: origin,
+        waiting: queued != nil,
+        promoted: queued?.promoted == true,
+        onPromote: queued.map { value in { onPromoteQueued?(value.requestId) } }
+      )
+      .transition(
+        .asymmetric(
+          insertion: .opacity.combined(
+            with: .scale(scale: Theme.Chat.messageEntryScale, anchor: .bottomTrailing)),
+          removal: .opacity
         )
+      )
     case .note(_, let text, let tintIndices):
       DeliveryNote(text, avatars: tintIndices.map(Theme.Palette.avatarTint))
     case .peerExchange(_, let exchange):

@@ -928,6 +928,7 @@ Every command except `hello` and `ping` carries `trace`.
 { "type": "hello",     "protocolVersion": 1, "client": "…" }
 { "type": "subscribe", "botId": "b_…", "trace": "tr_…" }
 { "type": "send",      "requestId": "r_…", "text": "…", "whenBusy": "followUp", "trace": "tr_…" }
+{ "type": "promote",   "requestId": "r_…", "trace": "tr_…" }
 { "type": "answer",    "entryId": "e_12", "answers": [["main"], ["unit","browser"]], "trace": "tr_…" }
 { "type": "answer",    "entryId": "e_12", "skipped": true, "trace": "tr_…" }
 { "type": "abort",     "trace": "tr_…" }
@@ -948,6 +949,11 @@ Every command except `hello` and `ping` carries `trace`.
   reply is recovered.
 - `whenBusy` defaults to `followUp`. `steer` places after the current tool round
   (phase 2). `reject` yields `error{kind:"invalid_command"}` when busy.
+- `promote` moves one of the connection's **queued** inputs to the front of that bot's
+  wait list and marks it `steer`, so the next boundary places it before every
+  follow-up. It keeps the submission id and entry: a placed, settled or repeated
+  request returns its record unchanged. Only the App's own token or a credential with
+  `write` may promote.
 - `answer` closes an `ask_user` card. `entryId` is the transcript entry carrying the call; the
   daemon reads the questions out of that entry's arguments, checks every label against them and
   composes one hidden user input that the bot reads next (`hidden: true`, `answersTo: entryId`).
@@ -1117,7 +1123,7 @@ sides.
 | `agent.server.json` | live agent configuration |
 | `status.server.json`, `submission.server.json`, `submission.connection.server.json` | run state and the connection-scoped duplicate reply |
 | `bots.server.json`, `error.server.json`, `error-rejected.server.json`, `version-mismatch.server.json` | catalog, runtime failure, definite rejection, exempt handshake failure |
-| `send.client.json`, `abort.client.json`, `recover.client.json`, `resync.client.json` | commands |
+| `send.client.json`, `promote.client.json`, `abort.client.json`, `recover.client.json`, `resync.client.json` | commands |
 | `ping.client.json`, `pong.server.json` | liveness |
 | `entities.json` | `BotSummary`, `Message` (user, assistant with a tool call, tool), `InboxItem` samples |
 

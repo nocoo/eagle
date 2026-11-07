@@ -266,6 +266,8 @@ export interface RuntimeHandle {
   subscribe(trace: string, sink: (event: RuntimeEvent) => void): Promise<RuntimeSubscription>;
   /** Idempotent by requestId. Returns the submission's current record. */
   submit(input: SubmitInput): Promise<Submission>;
+  /** Moves a queued input to the head of the wait list as a steer; placed work is unchanged. */
+  promote(requestId: string, trace: string): Promise<Submission>;
   /** Current record by submission id or requestId; used for duplicate replies. */
   submission(key: { submissionId: string } | { requestId: string }): Promise<Submission | undefined>;
   /** Older messages, oldest first. Byte budgets and paging stay in the wire layer. */
@@ -325,6 +327,7 @@ public struct CommandContext { public let trace: String; public let requestId: S
 public protocol ConversationPort: AnyObject {
   func open(botId: String) -> AsyncStream<ConversationEvent>
   func send(_ text: String, whenBusy: BusyMode, context: CommandContext) async throws
+  func promote(requestId: String, context: CommandContext) async throws
   func abort(context: CommandContext) async throws
   func recover(context: CommandContext) async throws
   func resync(context: CommandContext) async throws

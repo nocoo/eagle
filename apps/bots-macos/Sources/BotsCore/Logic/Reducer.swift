@@ -81,7 +81,8 @@ public enum Reducer {
   public static func snapshot(
     _ value: ConversationSnapshot,
     rev: Int?,
-    keeping previous: [String: Submission] = [:]
+    keeping previous: [String: Submission] = [:],
+    previousMessages: [Message] = []
   ) -> ConversationState {
     var ranks = previous
     for record in value.pending {
@@ -96,7 +97,7 @@ public enum Reducer {
     }
     return ConversationState(
       botId: value.botId,
-      messages: value.messages,
+      messages: value.messages + stillQueued(previousMessages, in: value),
       truncatedBefore: value.truncatedBefore,
       streaming: value.streaming,
       running: value.running,
@@ -124,7 +125,7 @@ public enum Reducer {
     var next = state
     switch event {
     case .snapshot(let value):
-      return snapshot(value, rev: rev)
+      return snapshot(value, rev: rev, previousMessages: state.messages)
     case .append(let message, let replaces):
       next.messages = upsert(next.messages, message, replaces: replaces)
       if !message.isOptimistic {
@@ -175,6 +176,21 @@ public enum Reducer {
       next.lastRev = rev
     }
     return next
+  }
+
+  /// A snapshot replaces the committed window, but a send that is still queued has no
+  /// entry there yet. Keeping its local bubble is what makes "waiting" visible across a
+  /// reconnect or resync; once it is placed, the real entry arrives and the bubble goes.
+  private static func stillQueued(
+    _ previous: [Message],
+    in value: ConversationSnapshot
+  ) -> [Message] {
+    let queued = Set(value.pending.filter { $0.status == .queued }.map(\.requestId))
+    let committed = Set(value.messages.compactMap(\.requestId))
+    return previous.filter { message in
+      guard message.isOptimistic, let requestId = message.requestId else { return false }
+      return queued.contains(requestId) && !committed.contains(requestId)
+    }
   }
 
   /// A submission record only moves up: `queued < placed < done = unanswered`.

@@ -83,6 +83,12 @@ export interface RuntimeHandle {
   subscribe(trace: string, sink: (event: RuntimeEvent) => void): Promise<RuntimeSubscription>;
   /** Idempotent by requestId; returns the submission's current record. */
   submit(input: SubmitInput): Promise<Submission>;
+  /**
+   * Moves one queued input to the front of this bot's queue and marks it as a steer,
+   * so it is placed at the next boundary ahead of every follow-up. A placed or settled
+   * input is returned unchanged. A runtime that cannot reorder may omit it.
+   */
+  promote?(requestId: string, trace: string): Promise<Submission>;
   submission(
     key: { submissionId: string } | { requestId: string },
   ): Promise<Submission | undefined>;

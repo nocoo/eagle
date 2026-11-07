@@ -161,6 +161,21 @@ public final class ConversationViewModel: ObservableObject {
     }
   }
 
+  /// Pulls this person's queued input ahead of the follow-ups already waiting. The daemon
+  /// keeps the submission id, so a second click is harmless and the outbox entry stays.
+  public func promote(_ requestId: String) {
+    guard connection == .ready, let botId = selectedBotId else { return }
+    let context = CommandContext.command("promote")
+    Task { [weak self] in
+      do {
+        try await self?.conversation.promote(
+          requestId: requestId, context: context, botId: botId)
+      } catch {
+        self?.errorBanner = Self.describe(error)
+      }
+    }
+  }
+
   public func recover() {
     guard let botId = selectedBotId else { return }
     let context = CommandContext.command("recover")
@@ -335,7 +350,12 @@ public final class ConversationViewModel: ObservableObject {
       connection = next
 
     case .snapshot(let value):
-      state = Reducer.snapshot(value, rev: state.lastRev.map { $0 + 1 }, keeping: state.ranks)
+      state = Reducer.snapshot(
+        value,
+        rev: state.lastRev.map { $0 + 1 },
+        keeping: state.ranks,
+        previousMessages: state.messages
+      )
       hasSnapshot = true
       parked = state.parked
       hasOlder = value.truncatedBefore != nil

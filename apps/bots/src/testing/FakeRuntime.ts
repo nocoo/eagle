@@ -114,6 +114,13 @@ export class FakeHandle implements RuntimeHandle {
     return Promise.resolve();
   }
 
+  promote(requestId: string, trace: string): Promise<Submission> {
+    void trace;
+    const record = this.#submissions.get(requestId);
+    if (record === undefined) return Promise.reject(new Error("no such submission"));
+    return Promise.resolve(record);
+  }
+
   recover(trace: string): Promise<void> {
     void trace;
     return Promise.resolve();

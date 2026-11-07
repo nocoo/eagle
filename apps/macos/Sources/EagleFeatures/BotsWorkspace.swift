@@ -71,6 +71,8 @@ final class BotsWorkspaceViewModel: ObservableObject {
   @Published private(set) var running = false
   /// A run with nothing to show yet: the wave line above the composer, not a transcript row.
   @Published private(set) var waiting = false
+  /// Queued sends by local bubble id; the transcript puts the waiting icon on them.
+  @Published private(set) var queuedMessages: [String: QueuedMessage] = [:]
   /// The selected bot's live tasks, already named and nested for the inspector's 任务 section.
   @Published private(set) var tasks: [InspectorTaskRow] = []
   /// The selected bot's spend, already formatted for the inspector's 用量 section.
@@ -551,6 +553,13 @@ final class BotsWorkspaceViewModel: ObservableObject {
     publish()
   }
 
+  /// A waiting message's icon: pull it ahead of the other follow-ups. The daemon keeps
+  /// its submission id, so a repeated click is harmless and the outbox entry stays.
+  func promoteQueued(_ requestId: String) {
+    app?.conversation.promote(requestId)
+    publish()
+  }
+
   func dismissModelSetup() {
     needsModelSetup = false
   }
@@ -668,6 +677,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
       if !usage.isEmpty { usage = [] }
       if !choices.isEmpty { choices = [] }
       if !triggerItems.isEmpty { triggerItems = [] }
+      if !queuedMessages.isEmpty { queuedMessages = [:] }
       if waiting { waiting = false }
       return
     }
@@ -746,6 +756,8 @@ final class BotsWorkspaceViewModel: ObservableObject {
       )
     }
     if triggerItems != nextTriggers { triggerItems = nextTriggers }
+    let nextQueued = Self.queuedMessages(conversation.state)
+    if queuedMessages != nextQueued { queuedMessages = nextQueued }
     if running != conversation.state.running { running = conversation.state.running }
     let nextWaiting = presenter.isWaiting(for: conversation.state)
     if waiting != nextWaiting { waiting = nextWaiting }
@@ -758,6 +770,20 @@ final class BotsWorkspaceViewModel: ObservableObject {
       error = nextError
       mirrorConversationDraftIntoComposer()
     }
+  }
+
+  /// The optimistic bubbles that are still queued, with the mode the daemon reports. The
+  /// local id is the transcript's row id, so the icon lands on exactly that message.
+  private static func queuedMessages(_ state: ConversationState) -> [String: QueuedMessage] {
+    let modes = Dictionary(uniqueKeysWithValues: state.inbox.map { ($0.id, $0.mode) })
+    var queued: [String: QueuedMessage] = [:]
+    for record in state.pending where record.status == .queued {
+      queued["local_\(record.requestId)"] = QueuedMessage(
+        requestId: record.requestId,
+        promoted: modes[record.id] == "steer"
+      )
+    }
+    return queued
   }
 
   /// The sidebar is rebuilt only when its sections actually change: a delta repaint must

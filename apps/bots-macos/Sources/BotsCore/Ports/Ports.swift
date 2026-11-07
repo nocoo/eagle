@@ -144,10 +144,21 @@ public protocol ConversationPort: AnyObject {
     botId: String
   ) async throws
   func abort(context: CommandContext, botId: String) async throws
+  /// Pulls one of this bot's queued inputs ahead of the other follow-ups.
+  func promote(requestId: String, context: CommandContext, botId: String) async throws
   func recover(context: CommandContext, botId: String) async throws
   func resync(context: CommandContext, botId: String) async throws
   func loadHistory(before messageId: String, context: CommandContext, botId: String) async throws
   func close()
+}
+
+extension ConversationPort {
+  /// A port without a reordering path refuses the click instead of silently doing nothing.
+  public func promote(
+    requestId: String, context: CommandContext, botId: String
+  ) async throws {
+    throw ClientError("this client cannot promote a queued message")
+  }
 }
 
 /// A failure the client itself produced (no connection, a rejected frame, a bad URL).

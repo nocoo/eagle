@@ -143,6 +143,37 @@ final class ReducerTests: XCTestCase {
     XCTAssertTrue(next.running)
   }
 
+  func testASnapshotKeepsAStillQueuedOptimisticBubble() {
+    var state = ConversationState(botId: botId)
+    state = Reducer.apply(
+      .append(message: .optimistic(requestId: "r_1", text: "排队的问题"), replaces: nil),
+      to: state
+    )
+    state = Reducer.apply(
+      .submission(Submission(id: "s_1", requestId: "r_1", status: .queued)),
+      to: state
+    )
+    let snapshot = ConversationSnapshot(
+      botId: botId,
+      messages: [message("e_1", text: "正在回答")],
+      pending: [Submission(id: "s_1", requestId: "r_1", status: .queued)]
+    )
+    let next = Reducer.apply(.snapshot(snapshot), to: state, rev: 9)
+    XCTAssertEqual(next.messages.map(\.id), ["e_1", "local_r_1"])
+    XCTAssertEqual(next.messages.last?.text, "排队的问题")
+
+    // A placement removes the bubble and the queue entry together.
+    state = Reducer.apply(
+      .append(message: message("e_2", role: .user, text: "排队的问题"), replaces: nil),
+      to: next
+    )
+    state = Reducer.apply(
+      .submission(Submission(id: "s_1", requestId: "r_1", status: .placed, entryId: "e_2")),
+      to: state
+    )
+    XCTAssertEqual(state.messages.map(\.id), ["e_1", "e_2"])
+  }
+
   func testAPlacementRemovesTheOptimisticBubbleEvenWithoutARequestIdOnTheEntry() {
     var state = ConversationState(botId: botId)
     state = Reducer.apply(

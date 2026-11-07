@@ -35,6 +35,7 @@ struct BotsConversationContent: View {
       entries: transcript.entries,
       showsToolCalls: !hideToolCalls,
       preparedMarkdown: transcript.markdown,
+      queuedMessages: bots.queuedMessages,
       draft: Binding(get: { composer.text }, set: { bots.setDraft($0) }),
       onSend: { bots.send() },
       showsSidebar: layout.showsSidebar, showsInspector: layout.showsInspector,
@@ -50,6 +51,7 @@ struct BotsConversationContent: View {
       focusRestore: focusRestore,
       onOpenPeerExchange: onOpenPeerExchange,
       onOpenToolRun: onOpenToolRun,
+      onPromoteQueued: { bots.promoteQueued($0) },
       onAnswerCard: { id, answers, skipped in
         await bots.answerQuestions(entryId: id, answers: answers, skipped: skipped)
       },

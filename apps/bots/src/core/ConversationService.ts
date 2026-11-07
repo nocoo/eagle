@@ -56,6 +56,9 @@ const Events = {
   submitStart: declareEvent("core.submit.start"),
   submitOk: declareEvent("core.submit.ok"),
   submitFail: declareEvent("core.submit.fail"),
+  promoteStart: declareEvent("core.promote.start"),
+  promoteOk: declareEvent("core.promote.ok"),
+  promoteFail: declareEvent("core.promote.fail"),
   historyStart: declareEvent("core.history.start"),
   historyOk: declareEvent("core.history.ok"),
   historyFail: declareEvent("core.history.fail"),
@@ -183,7 +186,11 @@ type Connection = {
   hub: HubSubscription | undefined;
 };
 
-type FailEvent = typeof Events.subscribeFail | typeof Events.submitFail | typeof Events.historyFail;
+type FailEvent =
+  | typeof Events.subscribeFail
+  | typeof Events.submitFail
+  | typeof Events.promoteFail
+  | typeof Events.historyFail;
 
 export class ConversationService implements InvocationPort {
   readonly #open: OpenBot;
@@ -788,6 +795,56 @@ export class ConversationService implements InvocationPort {
   /** `abort` withdraws the running input and everything queued behind it. */
   async abort(connectionId: string, trace: string): Promise<void> {
     await this.#handle(connectionId).abort(trace);
+  }
+
+  /**
+   * Moves the person's own queued input ahead of the other follow-ups. The runtime keeps
+   * the submission id and entry, so a repeated click and a reconnect are both harmless;
+   * an input that is already placed or settled comes back unchanged.
+   */
+  async promote(connectionId: string, requestId: string, trace: string): Promise<Submission> {
+    const bot = this.#botOf(connectionId, requestId);
+    const botId = bot.snapshot.botId;
+    const handle = this.#handleOfBot(bot, requestId);
+    this.#log?.emit("info", "core", Events.promoteStart, {
+      trace,
+      botId,
+      connId: connectionId,
+      reqId: requestId,
+    });
+    try {
+      const current = await handle.submission({ requestId });
+      if (current === undefined) {
+        throw this.#refuse("the request is not a submission of this bot", requestId);
+      }
+      if (current.status !== "queued") {
+        this.#log?.emit("info", "core", Events.promoteOk, {
+          trace,
+          botId,
+          connId: connectionId,
+          reqId: requestId,
+          detail: { queued: false },
+        });
+        return current;
+      }
+      if (handle.promote === undefined) {
+        throw this.#refuse("this runtime cannot promote a queued input", requestId);
+      }
+      const record = await handle.promote(requestId, trace);
+      this.#log?.emit("info", "core", Events.promoteOk, {
+        trace,
+        botId,
+        connId: connectionId,
+        reqId: requestId,
+        detail: { queued: record.status === "queued" },
+      });
+      return record;
+    } catch (error) {
+      if (error instanceof ClassifiedFailure) {
+        this.#record(Events.promoteFail, trace, botId, connectionId, error, requestId);
+      }
+      throw error;
+    }
   }
 
   /**

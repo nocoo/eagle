@@ -47,6 +47,10 @@ export function validateCommand(command: ClientCommand): ClientCommand {
       }
       return command;
     }
+    case "promote":
+      check(command.requestId, REQUEST_ID, "requestId");
+      check(command.trace, TRACE_ID, "trace");
+      return command;
     case "answer": {
       check(command.entryId, COMMITTED_ENTRY_ID, "entryId");
       check(command.trace, TRACE_ID, "trace");

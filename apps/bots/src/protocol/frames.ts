@@ -38,6 +38,11 @@ export type ClientCommand =
       readonly trace: string;
     }
   | {
+      readonly type: "promote";
+      readonly requestId: string;
+      readonly trace: string;
+    }
+  | {
       readonly type: "answer";
       readonly entryId: string;
       readonly answers?: readonly (readonly string[])[];
@@ -323,6 +328,12 @@ export function decodeCommand(raw: Record<string, unknown>): ClientCommand {
         trace: str(ctx, raw.trace, "trace"),
       };
     }
+    case "promote":
+      return {
+        type,
+        requestId: str(ctx, raw.requestId, "requestId"),
+        trace: str(ctx, raw.trace, "trace"),
+      };
     case "answer": {
       // Either the person's choices or one whole-card skip: never both, never neither.
       const answers =

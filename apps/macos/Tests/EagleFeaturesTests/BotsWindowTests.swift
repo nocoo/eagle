@@ -101,6 +101,45 @@ struct BotsWindowTests {
     #expect(bots.composer.text == "hello from Eagle", "the restored draft is what the user sees")
   }
 
+  @Test("a queued message carries a waiting action until it is placed")
+  func queuedMessage() async throws {
+    let (bots, _, conversationPort, _) = try await window()
+    bots.setDraft("排队的问题")
+    bots.send()
+    try await waitUntil { !conversationPort.sent.isEmpty }
+    let requestId = try #require(conversationPort.sent.last?.requestId)
+    conversationPort.emit(
+      .submission(Submission(id: "s_1", requestId: requestId, status: .queued)))
+    try await waitUntil { bots.queuedMessages["local_\(requestId)"] != nil }
+    #expect(bots.queuedMessages["local_\(requestId)"]?.promoted == false)
+
+    bots.promoteQueued(requestId)
+    try await waitUntil { conversationPort.promoted == [requestId] }
+    conversationPort.emit(
+      .status(
+        running: true,
+        inbox: [InboxItem(id: "s_1", mode: "steer")],
+        streaming: nil
+      ))
+    try await waitUntil { bots.queuedMessages["local_\(requestId)"]?.promoted == true }
+
+    // Placement removes the waiting state: the real entry is an ordinary user turn.
+    conversationPort.emit(
+      .submission(Submission(id: "s_1", requestId: requestId, status: .placed, entryId: "e_9")))
+    conversationPort.emit(
+      .append(
+        message: Message(
+          id: "e_9",
+          role: .user,
+          state: .complete,
+          createdAt: "x",
+          blocks: [.text("排队的问题")]
+        ),
+        replaces: nil
+      ))
+    try await waitUntil { bots.queuedMessages.isEmpty }
+  }
+
   @Test("sidebar previews use the last received chat text rather than lifecycle state")
   func sidebarPreview() async throws {
     let (bots, _, port, _) = try await window()
@@ -658,6 +697,13 @@ final class StubConversation: ConversationPort {
     botId: String
   ) async throws {
     sent.append(Sent(text: text, requestId: context.requestId ?? ""))
+    lastBotId = botId
+  }
+
+  var promoted: [String] = []
+
+  func promote(requestId: String, context: CommandContext, botId: String) async throws {
+    promoted.append(requestId)
     lastBotId = botId
   }
 

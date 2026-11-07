@@ -23,4 +23,12 @@ final class AnswerCommandTests: XCTestCase {
     XCTAssertEqual(body["skipped"] as? Bool, true)
     XCTAssertNil(body["chosen"])
   }
+
+  func testPromoteCarriesOnlyTheRequestItMoves() throws {
+    let body = try encoded(Wire.promote(requestId: "r_queued_1", trace: "tr_1"))
+    XCTAssertEqual(body["type"] as? String, "promote")
+    XCTAssertEqual(body["requestId"] as? String, "r_queued_1")
+    XCTAssertEqual(body["trace"] as? String, "tr_1")
+    XCTAssertNil(body["text"])
+  }
 }

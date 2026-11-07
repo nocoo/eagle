@@ -11,17 +11,39 @@ public enum AssistantBlock: Hashable, Sendable {
 public struct UserBubble: View {
   private let text: String
   private let origin: String?
+  private let waiting: Bool
+  private let promoted: Bool
+  private let onPromote: (() -> Void)?
   @State private var hovering = false
 
-  public init(_ text: String, origin: String? = nil) {
+  public init(
+    _ text: String,
+    origin: String? = nil,
+    waiting: Bool = false,
+    promoted: Bool = false,
+    onPromote: (() -> Void)? = nil
+  ) {
     self.text = text
     self.origin = origin
+    self.waiting = waiting
+    self.promoted = promoted
+    self.onPromote = onPromote
   }
 
   public var body: some View {
     HStack(spacing: Theme.Layout.rowGap) {
       Spacer(minLength: Theme.Chat.userLeadingSpace)
       HStack(alignment: .bottom, spacing: Theme.Layout.rowGap) {
+        if waiting {
+          IconButton(
+            systemName: promoted ? "arrow.up.circle.fill" : "hourglass",
+            label: promoted ? "已插队，等待当前回答结束" : "排队中，点击插队",
+            size: Theme.Metric.hitTarget,
+            glyphSize: Theme.Metric.messageActionGlyph,
+            tint: promoted ? Theme.Palette.accentStrong : Theme.Palette.textSecondary,
+            action: onPromote ?? {}
+          )
+        }
         copyAction
         selectable(
           bubbleText

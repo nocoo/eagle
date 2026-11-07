@@ -20,6 +20,7 @@ import {
   type EntryId,
   type Harness,
   Harness as HarnessFactory,
+  InboxDoc,
   type Registry,
   type ReportInfo,
   type SessionEnd,
@@ -93,6 +94,9 @@ const Events = {
   submitStart: declareEvent("runtime.submit.start"),
   submitOk: declareEvent("runtime.submit.ok"),
   submitFail: declareEvent("runtime.submit.fail"),
+  promoteStart: declareEvent("runtime.promote.start"),
+  promoteOk: declareEvent("runtime.promote.ok"),
+  promoteFail: declareEvent("runtime.promote.fail"),
   abortStart: declareEvent("runtime.abort.start"),
   abortOk: declareEvent("runtime.abort.ok"),
   abortFail: declareEvent("runtime.abort.fail"),
@@ -741,6 +745,75 @@ class PiRuntimeHandle implements RuntimeHandle {
     this.#submissionIds.set(key.requestId, String(stored.id));
     this.#requestIds.set(String(stored.id), key.requestId);
     return convertSubmission(stored);
+  }
+
+  /**
+   * Moves one queued input to the head of the bot's wait list and makes it a steer. The
+   * inbox is ordered: a boundary places user items in that order, so this is what lets a
+   * person jump their own message ahead of the follow-ups already waiting. A placed or
+   * settled input is returned unchanged, which keeps a click idempotent.
+   */
+  async promote(requestId: string, trace: string): Promise<Submission> {
+    const log = this.#options.log;
+    log.emit("info", "runtime", Events.promoteStart, {
+      trace,
+      botId: this.#spec.id,
+      reqId: requestId,
+    });
+    try {
+      const current = await this.submission({ requestId });
+      if (current === undefined) {
+        throw new ClassifiedFailure(
+          this.#classifier.classify("promote", "invalid_command", "runtime").classification.failure,
+          "not_admitted",
+          "the request is not a submission of this bot",
+        );
+      }
+      if (current.status !== "queued") {
+        log.emit("info", "runtime", Events.promoteOk, {
+          trace,
+          botId: this.#spec.id,
+          reqId: requestId,
+          detail: { queued: false },
+        });
+        return current;
+      }
+      const root = await this.#harness.root(BACKGROUND_CONTEXT);
+      const moved = await root.commit(async (tx) => {
+        const inbox = await tx.doc(InboxDoc, this.#rootId);
+        const index = inbox.items.findIndex((item) => String(item.id) === current.id);
+        if (index < 0) return false;
+        const item = inbox.items[index];
+        if (item === undefined || item.mode === "write") return false;
+        inbox.items.splice(index, 1);
+        item.mode = "steer";
+        const firstUser = inbox.items.findIndex((candidate) => candidate.mode !== "write");
+        inbox.items.splice(firstUser < 0 ? inbox.items.length : firstUser, 0, item);
+        return true;
+      }, BACKGROUND_CONTEXT);
+      if (!moved) {
+        // The boundary placed it between the read and the commit: that is the outcome the
+        // person wanted, and the record now names its entry.
+        return (await this.submission({ requestId })) ?? current;
+      }
+      log.emit("info", "runtime", Events.promoteOk, {
+        trace,
+        botId: this.#spec.id,
+        reqId: requestId,
+        detail: { queued: true },
+      });
+      return current;
+    } catch (cause) {
+      if (cause instanceof ClassifiedFailure) throw cause;
+      const minted = this.#classifier.classify("promote", "internal", "runtime");
+      this.#logFailure(minted, trace, Events.promoteFail, "runtime");
+      throw new ClassifiedFailure(
+        minted.classification.failure,
+        "unknown",
+        minted.classification.message,
+        { cause },
+      );
+    }
   }
 
   /** The durable index of a settled admission, for a key this process never admitted. */

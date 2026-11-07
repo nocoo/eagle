@@ -51,7 +51,15 @@ export const CLOSE = {
 } as const;
 
 /** Commands that only make sense on a connection that already subscribed. */
-const NEEDS_SUBSCRIPTION = new Set(["send", "answer", "abort", "recover", "resync", "history"]);
+const NEEDS_SUBSCRIPTION = new Set([
+  "send",
+  "promote",
+  "answer",
+  "abort",
+  "recover",
+  "resync",
+  "history",
+]);
 
 /** A connection that sends no frame for this long is closed with 4000. */
 export const IDLE_FRAME_MS = 60_000;
@@ -416,13 +424,18 @@ export const attachConnection = (
         disposition: "not_admitted",
         failure: refusal.id,
         message: "the connection has no subscription",
-        ...(command.type === "send" ? { requestId: command.requestId } : {}),
+        ...(command.type === "send" || command.type === "promote"
+          ? { requestId: command.requestId }
+          : {}),
       });
       return;
     }
     if (
       deps.canWrite === false &&
-      (command.type === "send" || command.type === "answer" || command.type === "abort")
+      (command.type === "send" ||
+        command.type === "promote" ||
+        command.type === "answer" ||
+        command.type === "abort")
     ) {
       // The credential may watch this bot but not act on it (PROTOCOL.md, "CLI clients
       // and scopes"): the refusal lands on the open connection, which keeps reading.
@@ -430,7 +443,9 @@ export const attachConnection = (
       log.emit("warn", "protocol", Events.commandFail, {
         trace,
         connId,
-        ...(command.type === "send" ? { reqId: command.requestId } : {}),
+        ...(command.type === "send" || command.type === "promote"
+          ? { reqId: command.requestId }
+          : {}),
         failure: refusal,
         detail: { kind: command.type },
       });
@@ -440,8 +455,10 @@ export const attachConnection = (
         kind: "auth_scope",
         disposition: "not_admitted",
         failure: refusal.id,
-        message: "this credential may not send or abort",
-        ...(command.type === "send" ? { requestId: command.requestId } : {}),
+        message: "this credential may not send, promote or abort",
+        ...(command.type === "send" || command.type === "promote"
+          ? { requestId: command.requestId }
+          : {}),
       });
       return;
     }
@@ -502,6 +519,11 @@ export const attachConnection = (
       emit({ type: "submission", trace, record });
       return;
     }
+    if (command.type === "promote") {
+      const record = await service.promote(connId, command.requestId, trace);
+      emit({ type: "submission", trace, record });
+      return;
+    }
     if (command.type === "answer") {
       const record = await service.answer(
         connId,
@@ -552,7 +574,8 @@ export const attachConnection = (
           );
     const kind = classified.failure.kind;
     const disposition: ErrorDisposition = classified.disposition;
-    const requestId = command.type === "send" ? command.requestId : undefined;
+    const requestId =
+      command.type === "send" || command.type === "promote" ? command.requestId : undefined;
     // A classified failure was recorded below: this layer records only that it handed it
     // on. An unclassified one has no other record, so this is its origin.
     log.emit(unclassified ? "error" : "warn", "protocol", Events.commandFail, {

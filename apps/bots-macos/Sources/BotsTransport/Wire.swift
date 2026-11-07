@@ -182,6 +182,11 @@ public enum Wire {
     try JSONEncoder().encode(TracedCommand(type: "abort", trace: trace))
   }
 
+  /// Moves one queued input to the front of the bot's wait list as a steer.
+  public static func promote(requestId: String, trace: String) throws -> Data {
+    try JSONEncoder().encode(Promote(type: "promote", requestId: requestId, trace: trace))
+  }
+
   public static func recover(trace: String) throws -> Data {
     try JSONEncoder().encode(TracedCommand(type: "recover", trace: trace))
   }
@@ -331,6 +336,12 @@ public enum Wire {
 
   struct TracedCommand: Encodable {
     let type: String
+    let trace: String
+  }
+
+  struct Promote: Encodable {
+    let type: String
+    let requestId: String
     let trace: String
   }
 

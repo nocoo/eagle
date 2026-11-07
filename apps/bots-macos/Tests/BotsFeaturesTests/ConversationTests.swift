@@ -287,6 +287,7 @@ final class FakeConversation: ConversationPort {
   var failRecover = false
   var answered: [(entryId: String, chosen: [String], skipped: Bool)] = []
   var aborted = 0
+  var promoted: [String] = []
   var historyRequests: [String] = []
   private var continuation: AsyncStream<ConversationEvent>.Continuation?
 
@@ -326,6 +327,11 @@ final class FakeConversation: ConversationPort {
 
   func abort(context: CommandContext, botId: String) async throws {
     aborted += 1
+    lastBotId = botId
+  }
+
+  func promote(requestId: String, context: CommandContext, botId: String) async throws {
+    promoted.append(requestId)
     lastBotId = botId
   }
 
@@ -382,6 +388,19 @@ final class ConversationLifecycleTests: XCTestCase {
     model.send()
     try await Task.sleep(nanoseconds: 40_000_000)
     XCTAssertEqual(fake.sent.count, 1)
+  }
+
+  func testPromotePullsTheQueuedRequestThroughThePort() async throws {
+    let (model, fake) = make()
+    model.select(botId: "b_1")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await Task.sleep(nanoseconds: 30_000_000)
+
+    model.promote("r_queued_1")
+    try await Task.sleep(nanoseconds: 40_000_000)
+    XCTAssertEqual(fake.promoted, ["r_queued_1"])
+    XCTAssertEqual(fake.lastBotId, "b_1")
   }
 
   func testAbortRecoverAndHistoryGoThroughThePort() async throws {

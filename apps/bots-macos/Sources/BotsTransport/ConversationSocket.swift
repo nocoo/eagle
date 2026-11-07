@@ -149,6 +149,10 @@ public final class ConversationSocket: NSObject {
     enqueue(try Wire.abort(trace: trace))
   }
 
+  public func promote(requestId: String, trace: String) throws {
+    enqueue(try Wire.promote(requestId: requestId, trace: trace))
+  }
+
   public func recover(trace: String) throws {
     enqueue(try Wire.recover(trace: trace))
   }
@@ -542,6 +546,10 @@ public final class BotsConnection: ConversationPort {
 
   public func abort(context: CommandContext, botId: String) async throws {
     try require(botId).abort(trace: context.trace)
+  }
+
+  public func promote(requestId: String, context: CommandContext, botId: String) async throws {
+    try require(botId).promote(requestId: requestId, trace: context.trace)
   }
 
   public func recover(context: CommandContext, botId: String) async throws {
