@@ -235,6 +235,8 @@ export type DeltaChange =
 export type SubmitInput = {
   readonly requestId: string;
   readonly text: string;
+  /** Optional completed managed file ids; never paths or bytes. */
+  readonly fileIds?: readonly string[];
   readonly whenBusy: BusyMode;
   readonly trace: string;
 };

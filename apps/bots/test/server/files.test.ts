@@ -493,6 +493,124 @@ test("chunked content over limit closes the connection after a bounded structure
   }
 });
 
+test("send rejects pending, cross-Bot, duplicate and malformed fileIds before admission", async () => {
+  const stack = await startStack();
+  try {
+    const botId = await stack.createBot("attachments");
+    const otherId = await stack.createBot("other");
+    const body = Buffer.from("attachment bytes");
+
+    const declared = await declare(stack, botId, body, {
+      name: "brief.txt",
+      mimeType: "text/plain",
+    });
+    assert.equal(declared.response.status, 201);
+    const completed = await upload(stack, botId, declared.id, body);
+    assert.equal(completed.status, 201);
+    const file = ((await completed.json()) as { file: { id: string } }).file;
+
+    const socket = stack.connect();
+    const frames = frameQueue(socket);
+    await send(socket, hello);
+    await frames.next();
+    await send(socket, { type: "subscribe", botId, trace: "tr_attach_probe_0001" });
+    await frames.next();
+
+    for (const fileIds of [[file.id, file.id], ["f_bad"]]) {
+      await send(socket, {
+        type: "send",
+        requestId: `r_attach_${fileIds[0]?.length}_${fileIds.length}`,
+        text: "请读取附件",
+        fileIds,
+        whenBusy: "followUp",
+        trace: "tr_attach_probe_0002",
+      });
+      const frame = await frames.next(1_000);
+      assert.equal(frame.type, "error", "invalid or cross-Bot file IDs never admit a send");
+    }
+
+    const pendingId = "u_pending_01234567890";
+    const pending = await declare(stack, botId, Buffer.from("pending"), {
+      uploadId: pendingId,
+      name: "pending.bin",
+    });
+    assert.equal(pending.response.status, 201);
+    const pendingFile = ((await pending.response.json()) as { file: { id: string } }).file;
+    await send(socket, {
+      type: "send",
+      requestId: "r_attach_pending_1",
+      text: "pending",
+      fileIds: [pendingFile.id],
+      whenBusy: "followUp",
+      trace: "tr_attach_probe_0003",
+    });
+    const pendingError = await frames.next(1_000);
+    assert.equal(pendingError.type, "error");
+
+    const otherBody = Buffer.from("other");
+    const other = await declare(stack, otherId, otherBody, { name: "other.txt" });
+    await upload(stack, otherId, other.id, otherBody);
+    const otherFile = (
+      (await (await upload(stack, otherId, other.id, otherBody)).json()) as {
+        file: { id: string };
+      }
+    ).file;
+    await send(socket, {
+      type: "send",
+      requestId: "r_attach_crossbot_1",
+      text: "cross bot",
+      fileIds: [otherFile.id],
+      whenBusy: "followUp",
+      trace: "tr_attach_probe_0004",
+    });
+    const crossError = await frames.next(1_000);
+    assert.equal(crossError.type, "error");
+    socket.close();
+  } finally {
+    await stack.close();
+  }
+});
+
+test("send fileIds require write scope and never admit a read-only credential", async () => {
+  const stack = await startStack();
+  try {
+    const botId = await stack.createBot("attachment-scope");
+    const body = Buffer.from("scope");
+    const declared = await declare(stack, botId, body);
+    assert.equal(declared.response.status, 201);
+    const completed = await upload(stack, botId, declared.id, body);
+    assert.equal(completed.status, 201);
+    const file = ((await completed.json()) as { file: { id: string } }).file;
+
+    const readClient = await jsonCall(stack, "/v1/clients", "POST", {
+      name: "reader-only",
+      scopes: ["read"],
+    });
+    assert.equal(readClient.status, 201);
+    const readerToken = ((await readClient.json()) as { token: string }).token;
+    const socket = stack.connect({ token: readerToken });
+    const frames = frameQueue(socket);
+    await send(socket, hello);
+    await frames.next();
+    await send(socket, { type: "subscribe", botId, trace: "tr_attach_scope_001" });
+    await frames.next();
+    await send(socket, {
+      type: "send",
+      requestId: "r_attach_scope_0001",
+      text: "attachment",
+      fileIds: [file.id],
+      whenBusy: "followUp",
+      trace: "tr_attach_scope_002",
+    });
+    const refused = await frames.next(1_000);
+    assert.equal(refused.type, "error");
+    assert.equal(refused.kind, "auth_scope");
+    socket.close();
+  } finally {
+    await stack.close();
+  }
+});
+
 test("a valid download request returns 503 for a malformed disk metadata id", async () => {
   const stack = await startStack();
   try {

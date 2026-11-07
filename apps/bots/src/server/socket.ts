@@ -506,11 +506,15 @@ export const attachConnection = (
       return;
     }
     if (command.type === "send") {
+      if (command.fileIds !== undefined && deps.capabilities.files !== true) {
+        throw new FrameError("invalid_command", "this daemon does not support file attachments");
+      }
       const record = await service.send(
         connId,
         {
           requestId: command.requestId,
           text: command.text,
+          ...(command.fileIds === undefined ? {} : { fileIds: command.fileIds }),
           whenBusy: command.whenBusy,
           trace,
         },

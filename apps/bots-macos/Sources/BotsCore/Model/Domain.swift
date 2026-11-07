@@ -176,6 +176,22 @@ public struct MessageOrigin: Codable, Sendable, Equatable, Hashable {
   }
 }
 
+public struct ManagedFileRef: Codable, Sendable, Equatable, Hashable {
+  public var id: String
+  public var name: String
+  public var mimeType: String
+  public var size: Int
+  public var sha256: String
+
+  public init(id: String, name: String, mimeType: String, size: Int, sha256: String) {
+    self.id = id
+    self.name = name
+    self.mimeType = mimeType
+    self.size = size
+    self.sha256 = sha256
+  }
+}
+
 public struct Message: Codable, Sendable, Equatable, Identifiable {
   public var id: String
   public var role: MessageRole
@@ -190,6 +206,8 @@ public struct Message: Codable, Sendable, Equatable, Identifiable {
   public var hidden: Bool?
   /// A hidden message only: the ask_user entry it answers, so the card closes.
   public var answersTo: String?
+  /// Generic metadata-only attachment refs; no path or file bytes are carried here.
+  public var files: [ManagedFileRef]?
 
   public init(
     id: String,
@@ -201,7 +219,8 @@ public struct Message: Codable, Sendable, Equatable, Identifiable {
     stopReason: StopReason? = nil,
     origin: MessageOrigin? = nil,
     hidden: Bool? = nil,
-    answersTo: String? = nil
+    answersTo: String? = nil,
+    files: [ManagedFileRef]? = nil
   ) {
     self.id = id
     self.role = role
@@ -213,6 +232,7 @@ public struct Message: Codable, Sendable, Equatable, Identifiable {
     self.origin = origin
     self.hidden = hidden
     self.answersTo = answersTo
+    self.files = files
   }
 
   public var text: String { blocks.map(\.displayText).joined() }

@@ -303,6 +303,74 @@ test("welcome files capability defaults false and rejects non-booleans", () => {
   });
 });
 
+test("Message.files is generic and FileRef unknown fields are tolerated", () => {
+  const ref = {
+    id: "f_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    name: "result.txt",
+    mimeType: "text/plain",
+    size: 42,
+    sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    path: "/must-not-cross-wire",
+  };
+  const tool = decodeServerEvent({
+    type: "append",
+    rev: 1,
+    trace,
+    message: {
+      id: "e_11",
+      role: "tool",
+      state: "complete",
+      createdAt: "x",
+      blocks: [{ type: "toolResult", callId: "c1", name: "read", text: "ok", isError: false }],
+      files: [ref],
+    },
+  });
+  assert.equal(tool.type, "append");
+  if (tool.type === "append") {
+    assert.equal(tool.message.files?.[0]?.name, "result.txt");
+    const ref = tool.message.files?.[0];
+    assert.equal(ref === undefined ? true : !("path" in ref), true);
+  }
+});
+
+test("send fileIds are bounded, unique and strict", () => {
+  const fileId = `f_${"a".repeat(64)}`;
+  const decoded = decodeCommand({
+    type: "send",
+    requestId,
+    text: "带附件",
+    fileIds: [fileId],
+    whenBusy: "followUp",
+    trace,
+  });
+  assert.equal(decoded.type, "send");
+  if (decoded.type === "send") {
+    assert.deepEqual((decoded as unknown as { fileIds?: readonly string[] }).fileIds, [fileId]);
+  }
+
+  invalidCommand({
+    type: "send",
+    requestId,
+    text: "带附件",
+    fileIds: [fileId, fileId],
+    trace,
+  });
+  invalidCommand({
+    type: "send",
+    requestId,
+    text: "带附件",
+    fileIds: ["f_bad"],
+    trace,
+  });
+  invalidCommand({
+    type: "send",
+    requestId,
+    text: "带附件",
+    fileIds: Array.from({ length: 17 }, (_, index) => `f_${index.toString(16).padStart(64, "0")}`),
+    trace,
+  });
+});
+
 test("live tasks decode with a status the client can render", () => {
   const task = {
     id: "t_12",

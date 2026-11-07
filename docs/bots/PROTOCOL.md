@@ -38,6 +38,8 @@ Runtime details live in [RUNTIME.md](RUNTIME.md), layers in
 | Limit | Value | Violation |
 | --- | --- | --- |
 | `send.text` | 8 000 characters | `error{invalid_command}` |
+| `send.fileIds` | 0–16 complete managed file IDs; no duplicates | `error{invalid_command}` or `unknown_bot` |
+| `Message.files` metadata | At most 16 refs; each name/MIME at most 255 UTF-8 bytes; no paths or byte content | `error{invalid_command}` or omitted invalid data |
 | `bot.title` (HTTP) | 80 characters | HTTP `400` |
 | `bot.label` (HTTP) | 24 characters, optional | HTTP `400` |
 | `bot.note` (HTTP and `note_set`) | 120 characters after trimming and whitespace collapse, optional | HTTP `400`, or the tool returns an error |
@@ -368,6 +370,45 @@ same opaque `fileId` and metadata store rather than invent a second byte transpo
   cannot race a move against an in-flight upload. File download also holds the lease
   until the stream ends. Completed files move with their Bot and are never cleaned by
   the file subsystem.
+- **Attachment metadata is generic.** `Message.files` is not restricted to `role:user`; it
+  is an additive metadata field on any message kind, including later `role:tool` results
+  that publish a file. The MVP uses it on user sends; `file_publish` may add tool-result
+  refs later without a breaking wire change. Unknown FileRef object fields are ignored.
+  Known fields remain strict: id/name/mimeType/size/sha256, no path or byte content. No
+  block type is added. A decoder that receives only old fields renders the message normally.
+- **Send attachment binding.** A completed file is admitted into a user send only in the
+  same pi-durable submission that places the user's entry. The entry kind is
+  `bots.user.files` (not `pi.*`) and its `data` carries only the display text and
+  daemon-derived `FileRef` metadata, never a path, uploadId or bytes:
+
+  ```json
+  {
+    "text": "请总结这个附件",
+    "files": [{
+      "id": "f_<64 lowercase hex>",
+      "name": "report.pdf",
+      "mimeType": "application/pdf",
+      "size": 12345,
+      "sha256": "<64 lowercase hex>"
+    }]
+  }
+  ```
+
+  The entry's model
+  contribution is a separate field: the original user text plus the actual local managed
+  file paths and a read-by-need instruction. The model receives no file bytes from this
+  path and gets no automatic file-send tool. The model-facing contribution is composed as
+  the original user text, followed by one `Managed file paths` section with each real
+  `<root>/bots/<botId>/files/<fileId>.bin` path and the fixed instruction `Use the read tool
+  on this path only when you need to inspect the file; do not assume its bytes are in this
+  message.` The path is daemon derived and never accepted from `send.fileIds` or a wire
+  `FileRef`; it is not logged or echoed as a wire field. Transcript projection uses `data.text` and
+  `data.files` for live append, snapshot and history; it ignores the synthetic model-only
+  path text in the displayed bubble. A replay or reopen reconstructs the same optional
+  `Message.files` from `entry.data` and never by trusting a client frame.
+- A retry with the same `requestId` returns the original submission record. It does not
+  create a second entry and does not replace the first entry's files if a later caller sends
+  a different `fileIds` list. The first admitted file set is authoritative for that requestId.
 - Malformed IDs, traversal forms, symlink directories, symlinks/FIFOs at content or
   metadata paths, interrupted bodies, size/hash mismatches, and storage failures fail
   closed. Responses expose only a stable kind/message, never a filesystem path or file
@@ -779,6 +820,11 @@ creation requires the updated daemon; clients must not retry a refusal with gree
   "createdAt": "2026-10-25T02:11:04.001Z",
   "blocks": [ { "type": "text", "text": "巴黎。" } ],
   "requestId": "r_0190a1b3",             // user messages only; ties the entry to a send
+  "files": [                             // optional; generic message attachment metadata
+    { "id": "f_<64 lowercase hex>", "name": "report.pdf",
+      "mimeType": "application/pdf", "size": 12345,
+      "sha256": "<64 lowercase hex>" }
+  ],
   "hidden": true,                        // optional: the person's answer to ask_user
   "answersTo": "e_12"                    // optional: the card this hidden input closes. A
                                          // secret card is "secret:e_12", and the second card of
@@ -839,7 +885,7 @@ server → { "type": "welcome", "protocolVersion": 1,
            "server": { "version": "0.1.0", "instance": "i_7f3", "pid": 4711 },
            "capabilities": { "agent": false, "tools": true, "tasks": false,
                              "entries": false, "usage": false, "peers": false,
-                             "triggers": true },
+                             "triggers": true, "files": true },
            "bots": [ BotSummary, … ] }
 ```
 
@@ -852,6 +898,10 @@ server → { "type": "error", "kind": "version_mismatch", "message": "…",
 ```
 
 `welcome.bots` equals `GET /v1/bots`, so the sidebar needs no second request.
+A client that predates `fileIds` must not infer success from an old daemon: it performs
+its own capability check and sends file IDs only while `welcome.capabilities.files === true`.
+An old daemon that ignores unknown fields is not evidence of attachment admission; v1 servers
+validate and reject `fileIds` under `files:false` before the runtime sees the command.
 
 ## Subscription
 
@@ -995,7 +1045,8 @@ Every command except `hello` and `ping` carries `trace`.
 ```jsonc
 { "type": "hello",     "protocolVersion": 1, "client": "…" }
 { "type": "subscribe", "botId": "b_…", "trace": "tr_…" }
-{ "type": "send",      "requestId": "r_…", "text": "…", "whenBusy": "followUp", "trace": "tr_…" }
+{ "type": "send",      "requestId": "r_…", "text": "…", "fileIds": ["f_<64 lowercase hex>"],
+  "whenBusy": "followUp", "trace": "tr_…" }
 { "type": "promote",   "requestId": "r_…", "trace": "tr_…" }
 { "type": "answer",    "entryId": "e_12", "answers": [["main"], ["unit","browser"]], "trace": "tr_…" }
 { "type": "answer",    "entryId": "e_12", "skipped": true, "trace": "tr_…" }
@@ -1010,6 +1061,13 @@ Every command except `hello` and `ping` carries `trace`.
 - A command rejection is reported twice with one identity: the protocol emits
   `error{kind, failure, requestId}` and the same `failure` is what the daemon logs.
   A client that is awaiting a call can match them by `failure`.
+- `send` requires a subscription. `fileIds` is optional and is additive in v1; absent means
+  a text-only send. Every ID must name a complete, verified file owned by the subscribed bot.
+  A bot/mime/name mismatch, a pending upload, a corrupt record, an unknown or malformed ID,
+  a duplicate ID in one send, or more than 16 IDs is refused before `pi-durable` admits the
+  input. The server uses the completed metadata store as the authority: client-supplied name,
+  size and hash are never trusted to replace it. `fileIds` never carries a path, uploadId,
+  botId or file bytes.
 - `send` requires a subscription. The daemon replies with a `submission` frame for
   that `requestId` carrying the record it reads, which may already be `done`
   because admission starts the run. A repeated `send` with the same `requestId`
@@ -1192,14 +1250,15 @@ sides.
 | --- | --- |
 | `hello.client.json`, `welcome.server.json`, `version-mismatch.server.json` | handshake |
 | `subscribe.client.json` | subscription |
-| `snapshot.server.json`, `snapshot.streaming.server.json`, `snapshot.unavailable.server.json` | attach states |
+| `snapshot.server.json`, `snapshot-files.server.json`, `snapshot.streaming.server.json`, `snapshot.unavailable.server.json` | attach states |
 | `append.server.json`, `append.streaming.server.json`, `append.finalize.server.json`, `delta.server.json` | transcript |
 | `append.tool.server.json`, `append.tool-result.server.json`, `snapshot.tools.server.json` | a tool call and its result, live and in a snapshot |
-| `history.client.json`, `history.server.json` | message paging |
+| `history.client.json`, `history.server.json`, `history-files.server.json` | message paging |
 | `agent.server.json` | live agent configuration |
 | `status.server.json`, `submission.server.json`, `submission.connection.server.json` | run state and the connection-scoped duplicate reply |
 | `bots.server.json`, `error.server.json`, `error-rejected.server.json`, `version-mismatch.server.json` | catalog, runtime failure, definite rejection, exempt handshake failure |
-| `send.client.json`, `promote.client.json`, `abort.client.json`, `recover.client.json`, `resync.client.json` | commands |
+| `send.client.json`, `send-files.client.json`, `promote.client.json`, `abort.client.json`, `recover.client.json`, `resync.client.json` | commands |
+| `append-files.server.json`, `history-files.server.json` | generic message/file metadata, live and history |
 | `ping.client.json`, `pong.server.json` | liveness |
 | `entities.json` | `BotSummary`, `Message` (user, assistant with a tool call, tool), `InboxItem` samples |
 

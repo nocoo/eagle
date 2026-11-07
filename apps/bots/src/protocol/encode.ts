@@ -46,6 +46,7 @@ export const encodeMessage = (m: Message): Wire => {
     blocks: m.blocks.map(block),
   };
   if (m.requestId !== undefined) wire.requestId = m.requestId;
+  if (m.files !== undefined) wire.files = m.files.map((file) => ({ ...file }));
   if (m.stopReason !== undefined) wire.stopReason = m.stopReason;
   // A hidden input is the person's answer to ask_user: the client needs the marks to close
   // the card it drew, and to keep that message out of the transcript.
@@ -312,6 +313,7 @@ export const encodeCommand = (command: ClientCommand): Wire => {
         type: "send",
         requestId: command.requestId,
         text: command.text,
+        ...(command.fileIds === undefined ? {} : { fileIds: command.fileIds }),
         whenBusy: command.whenBusy,
         trace: command.trace,
       };

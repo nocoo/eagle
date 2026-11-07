@@ -12,6 +12,7 @@ import type {
   ErrorDisposition,
   ErrorKind,
   Failure,
+  ManagedFileRef,
   Message,
   PullSummary,
   SecretsPort,
@@ -23,6 +24,7 @@ import {
   ClassifiedFailure,
   MAX_SECRET_TTL_MINUTES,
   MAX_SECRET_VALUE_BYTES,
+  MAX_SEND_FILE_IDS,
   MIN_SECRET_VALUE_CHARS,
   SecretsStorageError,
   SecretsValidationError,
@@ -35,6 +37,7 @@ import {
   type InvocationPort,
   MAX_INVOCATION_TEXT,
 } from "./Invocation.ts";
+import { ManagedFileError, type ManagedFileStore } from "./ManagedFileStore.ts";
 import type { OriginStore } from "./OriginStore.ts";
 import type { RuntimeEvent, RuntimeHandle, RuntimeHistory, SubmitInput } from "./RuntimePort.ts";
 import {
@@ -141,6 +144,8 @@ export type ConversationServiceOptions = {
    * has no secret storage, and a card answer is a refusal rather than a lost password.
    */
   readonly secrets?: SecretsPort;
+  /** Completed managed-file metadata; a send validates every file before runtime admission. */
+  readonly files?: ManagedFileStore;
 };
 
 /** Only `not_admitted` lets a client drop its outbox entry (docs/bots/PROTOCOL.md). */
@@ -215,6 +220,7 @@ export class ConversationService implements InvocationPort {
   readonly #triggersOf: ConversationServiceOptions["triggersOf"];
   readonly #pullsOf: ConversationServiceOptions["pullsOf"];
   readonly #secrets: SecretsPort | undefined;
+  readonly #files: ManagedFileStore | undefined;
   /** One answer at a time per card: the duplicate check must not have a window. */
   readonly #answerChains = new Map<string, Promise<unknown>>();
   /** Resolved views by bot id, so `observe` can answer synchronously without opening. */
@@ -254,6 +260,7 @@ export class ConversationService implements InvocationPort {
     this.#triggersOf = options.triggersOf;
     this.#pullsOf = options.pullsOf;
     this.#secrets = options.secrets;
+    this.#files = options.files;
     this.#hubOptions = {
       measure: options.measure,
       ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
@@ -653,6 +660,7 @@ export class ConversationService implements InvocationPort {
     this.#admitting += 1;
     try {
       this.#assertInvocation(input);
+      await this.#validateFileIds(input.botId, input.fileIds, input.requestId);
       if (this.#lease !== undefined) {
         if (!this.#lease.acquire(botId)) {
           throw new CommandError(
@@ -670,6 +678,7 @@ export class ConversationService implements InvocationPort {
       const record = await this.#admit(botId, {
         requestId: input.requestId,
         text: input.text,
+        ...(input.fileIds === undefined ? {} : { fileIds: input.fileIds }),
         whenBusy: input.whenBusy ?? "followUp",
         trace: input.trace,
         ...(input.hidden === undefined ? {} : { hidden: input.hidden }),
@@ -766,6 +775,61 @@ export class ConversationService implements InvocationPort {
     return changed ? { ...view, messages } : view;
   }
 
+  /** Managed file IDs are resolved by the authoritative store before origin or runtime admission. */
+  async #validateFileIds(
+    botId: string,
+    fileIds: readonly string[] | undefined,
+    requestId: string,
+  ): Promise<readonly ManagedFileRef[]> {
+    if (fileIds === undefined || fileIds.length === 0) return [];
+    if (this.#files === undefined) {
+      throw new CommandError(
+        this.#mint("storage_failed"),
+        "runtime",
+        "managed file storage is unavailable",
+        requestId,
+      );
+    }
+    const refs: ManagedFileRef[] = [];
+    for (const fileId of fileIds) {
+      try {
+        const file = await this.#files.metadata({ botId, fileId });
+        refs.push({
+          id: file.id,
+          name: file.name,
+          mimeType: file.mimeType,
+          size: file.size,
+          sha256: file.sha256,
+        });
+      } catch (error) {
+        if (error instanceof ManagedFileError && error.reason === "unknown_file") {
+          throw new CommandError(
+            this.#mint("invalid_command"),
+            "not_admitted",
+            "a managed file does not belong to this bot or is not complete",
+            requestId,
+          );
+        }
+        if (error instanceof ManagedFileError && error.reason === "invalid_request") {
+          throw new CommandError(
+            this.#mint("invalid_command"),
+            "not_admitted",
+            "a managed file id is malformed",
+            requestId,
+          );
+        }
+        throw new CommandError(
+          this.#mint("storage_failed"),
+          "runtime",
+          "managed file metadata could not be verified",
+          requestId,
+          { cause: error },
+        );
+      }
+    }
+    return refs;
+  }
+
   /** Refuses what can never be admitted before any runtime call: the key alphabet and the
    * send budget mirror the wire contract, and a non-human caller may not interrupt a run.
    */
@@ -786,6 +850,19 @@ export class ConversationService implements InvocationPort {
     }
     if (!ORIGIN_KINDS.has(input.origin?.kind as string)) {
       throw this.#refuse("the invocation origin is unknown", input.requestId);
+    }
+    if (input.fileIds !== undefined) {
+      if (input.fileIds.length > MAX_SEND_FILE_IDS) {
+        throw this.#refuse("fileIds exceeds 16", input.requestId);
+      }
+      const seen = new Set<string>();
+      for (const fileId of input.fileIds) {
+        if (!/^f_[0-9a-f]{64}$/.test(fileId)) {
+          throw this.#refuse("a fileId is malformed", input.requestId);
+        }
+        if (seen.has(fileId)) throw this.#refuse("fileIds contains duplicate ids", input.requestId);
+        seen.add(fileId);
+      }
     }
     if (input.whenBusy === "steer" && input.origin.kind !== "human") {
       throw this.#refuse("only a person may steer a running answer", input.requestId);

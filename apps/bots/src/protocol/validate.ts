@@ -7,6 +7,7 @@ import { type ClientCommand, FrameError } from "./frames.ts";
 import {
   BOT_ID,
   COMMITTED_ENTRY_ID,
+  FILE_ID,
   MAX_BOT_SUMMARY_BYTES,
   MAX_CATALOG,
   MAX_FRAME_BYTES,
@@ -14,6 +15,7 @@ import {
   MAX_MESSAGE_BYTES,
   MAX_NOTICE_BYTES,
   MAX_PENDING,
+  MAX_SEND_FILE_IDS,
   MAX_SEND_TEXT,
   PAGE_MAX_BYTES,
   PAGE_MAX_MESSAGES,
@@ -44,6 +46,21 @@ export function validateCommand(command: ClientCommand): ClientCommand {
       // Characters, not bytes: the contract caps user text in code points.
       if (Array.from(command.text).length > MAX_SEND_TEXT) {
         throw new FrameError("invalid_command", `text exceeds ${MAX_SEND_TEXT} characters`);
+      }
+      if (command.fileIds !== undefined) {
+        if (command.fileIds.length > MAX_SEND_FILE_IDS) {
+          throw new FrameError("invalid_command", `fileIds exceeds ${MAX_SEND_FILE_IDS}`);
+        }
+        const seen = new Set<string>();
+        for (const fileId of command.fileIds) {
+          if (!FILE_ID.test(fileId)) {
+            throw new FrameError("invalid_command", "fileIds contains a malformed id");
+          }
+          if (seen.has(fileId)) {
+            throw new FrameError("invalid_command", "fileIds contains duplicate ids");
+          }
+          seen.add(fileId);
+        }
       }
       return command;
     }

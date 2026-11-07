@@ -18,9 +18,12 @@ final class FixtureDecodingTests: XCTestCase {
   private static let serverFixtures = [
     "welcome.server.json",
     "snapshot.server.json",
+    "snapshot-files.server.json",
+    "snapshot-files.server.json",
     "snapshot.streaming.server.json",
     "snapshot.unavailable.server.json",
     "append.server.json",
+    "append-files.server.json",
     "append.streaming.server.json",
     "append.finalize.server.json",
     "append.tool.server.json",
@@ -28,6 +31,8 @@ final class FixtureDecodingTests: XCTestCase {
     "snapshot.tools.server.json",
     "delta.server.json",
     "history.server.json",
+    "history-files.server.json",
+    "history-files.server.json",
     "status.server.json",
     "submission.server.json",
     "submission.connection.server.json",
@@ -46,6 +51,80 @@ final class FixtureDecodingTests: XCTestCase {
       let data = try Data(contentsOf: url)
       XCTAssertNoThrow(try Wire.decode(data), "\(name) must decode")
     }
+  }
+
+  func testMessageFilesDecodeForAnyRoleAndIgnoreUnknownRefFields() throws {
+    let data = try Data(
+      contentsOf: Self.fixtures.appendingPathComponent("append-files.server.json")
+    )
+    let decoded = try Wire.decode(data)
+    guard case .append(let message, _) = decoded.event else {
+      return XCTFail("expected an append")
+    }
+    XCTAssertEqual(message.files?.count, 1)
+    XCTAssertEqual(message.files?.first?.name, "report.pdf")
+
+    let toolData = try JSONSerialization.data(withJSONObject: [
+      "id": "e_tool",
+      "role": "tool",
+      "state": "complete",
+      "createdAt": "2026-11-07T00:00:00Z",
+      "blocks": [
+        ["type": "toolResult", "callId": "c1", "name": "read", "text": "ok", "isError": false]
+      ],
+      "files": [
+        [
+          "id": "f_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "name": "result.txt",
+          "mimeType": "text/plain",
+          "size": 42,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "path": "/must-not-be-decoded",
+        ]
+      ],
+    ])
+    let tool = try JSONDecoder().decode(Message.self, from: toolData)
+    XCTAssertEqual(tool.files?.first?.name, "result.txt")
+    XCTAssertFalse(tool.files?.first?.id.isEmpty == true)
+  }
+
+  func testFilesAreAdditiveInSendAndWelcomeWithoutDroppingOldFrames() throws {
+    let fileId = "f_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    let sent = try Wire.send(
+      requestId: "r_attach_0001",
+      text: "请读取附件",
+      whenBusy: .followUp,
+      trace: "tr_attach_0001",
+      fileIds: [fileId]
+    )
+    let encoded = try JSONSerialization.jsonObject(with: sent) as? [String: Any]
+    XCTAssertEqual(encoded?["fileIds"] as? [String], [fileId])
+
+    let oldWelcome = try JSONSerialization.data(withJSONObject: [
+      "type": "welcome",
+      "protocolVersion": 1,
+      "server": ["version": "0.1.0", "instance": "i_test", "pid": 1],
+      "capabilities": [
+        "agent": false, "tools": true, "tasks": false, "entries": false,
+        "usage": false, "peers": false, "triggers": true,
+      ],
+      "bots": [],
+    ])
+    let oldDecoded = try Wire.decode(oldWelcome)
+    XCTAssertFalse(oldDecoded.supportsFiles)
+
+    let newWelcome = try JSONSerialization.data(withJSONObject: [
+      "type": "welcome",
+      "protocolVersion": 1,
+      "server": ["version": "0.1.0", "instance": "i_test", "pid": 1],
+      "capabilities": [
+        "agent": false, "tools": true, "tasks": false, "entries": false,
+        "usage": false, "peers": false, "triggers": true, "files": true,
+      ],
+      "bots": [],
+    ])
+    let newDecoded = try Wire.decode(newWelcome)
+    XCTAssertTrue(newDecoded.supportsFiles)
   }
 
   func testTheAgentFixtureReachesTheConversation() throws {

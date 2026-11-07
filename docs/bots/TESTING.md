@@ -163,6 +163,9 @@ is never started before its preconditions are green.
 | 52e | `test/e2e/outbox.test.ts` | `a not_admitted rejection restores the draft, an unknown result keeps the requestId` | 49 |
 | 52f | `test/e2e/outbox.test.ts` | `an admitted input whose status read fails keeps the outbox entry and reconciles on re-send` | 49 |
 | 52g | `test/e2e/overflow.test.ts` | `an over-limit attempt is withdrawn; a late join during it sees streaming null, and the notice replaces it after commit` | 49 |
+| 52h | `test/runtime/files.test.ts` | `a completed file send produces one pi custom user entry, model-only paths and no duplicate on requestId retry` | 49, managed-file store |
+| 52i | `test/server/files-send.test.ts` | `send validates file ownership, completion and scope; wrong/bad/pending/cross-Bot fileIds fail before admission` | 49, managed-file store |
+| 52j | `test/e2e/files.test.ts` | `file attachments survive live append, snapshot, history and real SQLite reopen without replaying bytes or paths in logs` | 52h, 52i |
 | 52d | `test/e2e/ordering.test.ts` | `a late connection-scoped record never downgrades a settlement` | 49 |
 | 53 | `test/crash/sigkill.test.ts` | `killing the daemon mid-answer loses no message and duplicates none` | 49 |
 | 53b | `test/crash/delete.test.ts` | `R4: a delete killed after rename reconciles on the next start` | 49 |
@@ -172,7 +175,7 @@ is never started before its preconditions are green.
 
 | # | File | First failing test | Needs |
 | --- | --- | --- | --- |
-| 55 | `BotsCoreTests/FixtureDecodingTests.swift` | `decodes every committed fixture` | 1 |
+| 55 | `BotsCoreTests/FixtureDecodingTests.swift` | `decodes every committed fixture, including old/new message.files and send.fileIds compatibility` | 1 |
 | 56 | `BotsCoreTests/ReducerTests.swift` | `append upserts by id and applies replaces` | 55 |
 | 57 | `BotsCoreTests/ReducerTests.swift` | `delta applies text, block and message changes in order` | 55 |
 | 58 | `BotsCoreTests/ReducerTests.swift` | `a snapshot replaces state and resets the baseline` | 55 |

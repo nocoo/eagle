@@ -123,6 +123,7 @@ export type StackOptions = {
 
 export const startStack = async (options: StackOptions = {}): Promise<Stack> => {
   const root = options.root ?? (await mkdtemp(join(tmpdir(), "bots-server-")));
+  const files = new ManagedFileStore({ botDir: (botId) => join(root, "bots", botId) });
   const clients = await ClientStore.open(
     root,
     options.now === undefined ? {} : { now: options.now },
@@ -160,6 +161,7 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
     const adapter = new PiDurableRuntime({
       models,
       log,
+      managedFiles: files,
       ...(options.maxMessageBytes === undefined
         ? {}
         : { maxMessageBytes: options.maxMessageBytes }),
@@ -219,7 +221,6 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
   await peerStore.open();
   const peersHolder: { current?: (botId: string) => PeerToolHost } = {};
   const directory = new BotDirectory(root, await nodeDirectoryFs());
-  const files = new ManagedFileStore({ botDir: directory.botDir.bind(directory) });
   await options.prepare?.({ root, directory });
   let opens = 0;
   const registry = new BotRegistry({
@@ -266,6 +267,7 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
       release: (botId) => registry.release(botId),
     },
     origins: { store: async (botId) => OriginStore.open(originPath(directory.botDir(botId))) },
+    files,
     ...(options.secrets === undefined ? {} : { secrets: options.secrets }),
     onRunning: (botId, running) => {
       if (registry.markRunning(botId, running)) broadcast?.();

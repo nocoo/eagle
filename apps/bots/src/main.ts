@@ -449,6 +449,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     log,
     compaction,
     usage: usageStore,
+    managedFiles: files,
     corePrompt: () => gateway?.corePrompt,
     machinePrompt: () => machinePrompt(),
     // The App's ticks are the only input: the daemon never scans a folder for skills.
@@ -574,6 +575,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     onSessionFailed: (botId, reason, message, dropHandle) => {
       if (registry.markUnavailable(botId, reason, message, { dropHandle })) broadcast?.();
     },
+    files,
     onUsage: (botId, usage) => {
       try {
         usageStore.recordModelUsage(botId, usage);

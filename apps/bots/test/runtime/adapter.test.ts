@@ -1,5 +1,8 @@
 // Ladder rows 28, 30-32, 36: the adapter against a real Harness over real sqlite.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import test from "node:test";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type { RuntimeEvent } from "../../src/core/RuntimePort.ts";
@@ -26,6 +29,105 @@ const collect = async (handle: {
   const subscription = await handle.subscribe(trace, (event) => events.push(event));
   return { events, subscription };
 };
+
+test("one file send creates a custom user entry, model paths and repeatable transcript files", async () => {
+  const bench = await createBench();
+  try {
+    const spec = bench.spec();
+    const uploadId = "u_runtime_attach_012345";
+    const fileId = `f_${createHash("sha256").update(spec.id).update("\0").update(uploadId).digest("hex")}`;
+    const filesDir = join(spec.dir, "files");
+    await mkdir(filesDir, { recursive: true, mode: 0o700 });
+    const bytes = Buffer.from([0, 1, 2, 255]);
+    await writeFile(join(filesDir, `${fileId}.bin`), bytes, { mode: 0o600 });
+    await writeFile(
+      join(filesDir, `${fileId}.json`),
+      `${JSON.stringify({
+        id: fileId,
+        botId: spec.id,
+        uploadId,
+        name: "binary.dat",
+        mimeType: "application/octet-stream",
+        size: bytes.length,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+        status: "complete",
+        createdAt: "2026-11-07T00:00:00.000Z",
+      })}\n`,
+      { mode: 0o600 },
+    );
+
+    let modelRequest = "";
+    bench.faux.setResponses([
+      (context) => {
+        modelRequest = JSON.stringify(context.messages);
+        return text("已收到附件。");
+      },
+    ]);
+    const handle = await bench.runtime.open(spec);
+    const { events } = await collect(handle);
+    const longText = `请按需读取这个文件 😀 ${"L".repeat(900)}`;
+    const record = await handle.submit({
+      requestId: "r_file_attach_0001",
+      text: longText,
+      fileIds: [fileId],
+      whenBusy: "followUp",
+      trace,
+    } as never);
+    assert.equal(record.requestId, "r_file_attach_0001");
+    await waitFor(
+      () => of(events, "submission").some((event) => event.record.status === "done"),
+      "the file turn to settle",
+    );
+
+    const user = of(events, "append").find((event) => event.message.role === "user");
+    assert.equal(user?.message.files?.length, 1);
+    assert.equal(user?.message.files?.[0]?.name, "binary.dat");
+    assert.equal("path" in (user?.message.files?.[0] ?? {}), false);
+
+    const history = await handle.history({ limit: 10 });
+    assert.equal(
+      history.messages.find((message) => message.role === "user")?.files?.[0]?.id,
+      fileId,
+    );
+
+    assert.match(modelRequest, /binary\.dat/);
+    assert.match(modelRequest, /files\/f_/);
+    assert.match(modelRequest, /read tool/i);
+    assert.match(modelRequest, /😀/);
+    assert.match(modelRequest, /L{900}/);
+    assert.doesNotMatch(modelRequest, /Buffer|\[0,1,2,255\]/);
+
+    const again = await handle.submit({
+      requestId: "r_file_attach_0001",
+      text: longText,
+      fileIds: [fileId],
+      whenBusy: "followUp",
+      trace,
+    } as never);
+    assert.equal(again.entryId, record.entryId, "the same request id keeps the first entry");
+
+    const changed = await handle.submit({
+      requestId: "r_file_attach_0001",
+      text: "请按需读取第二个文件",
+      fileIds: [`f_${"b".repeat(64)}`],
+      whenBusy: "followUp",
+      trace,
+    } as never);
+    assert.equal(
+      changed.entryId,
+      record.entryId,
+      "a second file list cannot replace the first entry",
+    );
+    assert.equal(
+      (await handle.history({ limit: 10 })).messages.find((message) => message.role === "user")
+        ?.files?.[0]?.id,
+      fileId,
+      "the history keeps the first admitted file set",
+    );
+  } finally {
+    await bench.cleanup();
+  }
+});
 
 test("one turn appends exactly one pi.assistant entry", async () => {
   const bench = await createBench();

@@ -1,0 +1,10 @@
+{
+  "type": "send",
+  "requestId": "r_0190a1b4-5061-7c72-8d3e-4f5061728394",
+  "text": "请读取这个附件",
+  "fileIds": [
+    "f_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "whenBusy": "followUp",
+  "trace": "tr_0190a1b2-3e4f-7a50-8b1c-2d3e4f506172"
+}

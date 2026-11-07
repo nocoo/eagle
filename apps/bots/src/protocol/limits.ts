@@ -5,6 +5,8 @@ export const MAX_FRAME_BYTES = 256 * 1024;
 /** An HTTP body, measured as received: a 4 000-character CJK instruction is already 12 KiB. */
 export const MAX_HTTP_BODY_BYTES = MAX_FRAME_BYTES;
 export const MAX_SEND_TEXT = 8_000;
+export const MAX_SEND_FILE_IDS = 16;
+export const FILE_ID = /^f_[0-9a-f]{64}$/;
 export const MAX_TITLE_CHARS = 80;
 /** A bot's optional label: short enough to sit next to the title in the sidebar. */
 export const MAX_LABEL_CHARS = 24;
