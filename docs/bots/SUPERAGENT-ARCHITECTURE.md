@@ -356,7 +356,7 @@ implement the entire platform before chat works.
 
 | Milestone | Scope | Exit evidence / dependency |
 | --- | --- | --- |
-| SG-001: independent native chat | Executable/storage foundation -> own pi-durable chat -> App launcher and native MVVM conversation | Start with workers absent; converse in the App; restart retains own history; bounded stop/errors work; zero worker calls or writes |
+| SG-001: independent native chat — **delivered, owner-accepted** | Executable/storage foundation -> own pi-durable chat -> App launcher and native MVVM conversation | Start with workers absent; converse in the App; restart retains own history; bounded stop/errors work; zero Superagent-to-worker calls or writes. Residual: packaged App, forced-quit/crash matrix, two-window manual run |
 | SG-002: passive worker evidence | Freeze snapshot/history/changes contracts, prove inert cold reading, add authenticated bounded observation | Complete retained worker history and honest coverage without open/resume/configure, idle retention or worker mutation; SG-001 remains usable |
 | SG-003: analysis and native decisions | Bounded evidence-backed analysis, suggestions, evidence details and human decision dashboard | One auditable suggestion and decision from real observations, with budget/replay controls; worker state unchanged |
 | SG-004: proactive supervision and richer observability | Change-driven analysis, rechecks, dedupe, source/analysis diagnostics and recovery timeline | Useful unattended suggestions, no self-trigger loops, explicit gaps/staleness, proven recovery and bounded resource use |

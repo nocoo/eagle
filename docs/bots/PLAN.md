@@ -12,7 +12,7 @@ in [Extensions and tools](EXTENSIONS-AND-TOOLS.md). That guide also
 specifies planned optional `memory`, `search` and `peers` groups and child-agent
 discovery. Those additions are not implemented or enabled by this plan update.
 
-## Independent Superagent (chat-first, spec-driven; implementation pending)
+## Independent Superagent (chat-first, spec-driven; SG-001 delivered)
 
 [Superagent architecture](SUPERAGENT-ARCHITECTURE.md) owns independence, strict
 interfaces, read-only worker access, native MVVM and TDD. The owner changed the
@@ -23,23 +23,26 @@ SG-001 neither connects to them nor needs their configuration or availability.
 
 | Spec / milestone | Scope | State |
 | --- | --- | --- |
-| [SG-001: native chat](specs/SUPERAGENT-001-CHAT.md) | A: executable/root/readiness -> B: own durable chat/protocol -> C: App launcher/native conversation -> D: acceptance | A review-closed; B review P1s fixed, 43 tests/4x95% floors; C native+CLI implemented, 27 package tests/90% line floor, 428 App tests, real-gateway CLI and native rendering recorded; two independent review rounds closed every finding, final targeted replay PASS; owner acceptance and SG001-D matrix pending |
-| SG-002: passive worker evidence | Exact snapshot/history/changes contract, inert cold reads and complete retained worker history | Planned; write its spec after SG-001 works |
+| [SG-001: native chat](specs/SUPERAGENT-001-CHAT.md) | A: executable/root/readiness -> B: own durable chat/protocol -> C: App launcher/native conversation -> D: acceptance | **Delivered and owner-accepted 2026-11-07** for the source dev App: A/B/C implemented, two review rounds plus targeted replay PASS, real-gateway CLI turns/restart, native conversation. Residual: packaged App, forced-quit/crash matrix, two-window manual run |
+| SG-002: passive worker evidence | Exact snapshot/history/changes contract, inert cold reads and complete retained worker history | **Next; spec not yet written.** Requires the passive cold-read spike before code |
 | SG-003: analysis and native decisions | Bounded evidence-backed suggestions and the native decision dashboard | Planned |
 | SG-004: proactive observation | Change-driven rechecks, notifications, recovery and richer observability | Planned |
 | Future management | Separately authorized worker command contract | Outside these read-only milestones |
 
-Spec-driven means active specification/fixtures -> independent review -> failing
-behavior -> minimum implementation -> affected gates/atomic commit -> acceptance
-record. Each row remains pending until evidence proves its exit. Startup/chat
-health, errors, authentication and recovery accompany SG-001; only richer
-observability is deferred. Passive-read feasibility remains mandatory before
-SG-002, not a prerequisite for a conversational Super Bot.
+Spec-driven progress: SG-001 moved through one active spec plus its protocol
+contract, two independent review rounds and a targeted replay, four runnable
+slices (A process, B durable chat, C native/CLI, D acceptance) and an owner
+acceptance on the source dev App. It is now closed except the residual environment
+gaps above. No SG-002 contract exists yet; writing and reviewing that spec is the
+next spec-driven step, not implementing observation first.
 
-[Research](MAIN-BOT-RESEARCH.md) retains the DSH/Pi comparison. The earlier design
-at `f79033d3` received a document-review PASS, not acceptance of the later SG-001
-contracts or working code. No executable, test result or App acceptance is claimed
-by this plan update.
+Evidence for SG-001: daemon 43 tests with four 95% coverage floors; Swift client
+package 37 tests with every logic file at or above 90% lines; App 428 tests; design
+guard and strict format; real local-gateway CLI turns, restart history and STOP;
+native App conversation with a permanent Super Bot row; owner created a worker bot
+in the isolated acceptance workspace and chatted successfully. Worker collection,
+website auth and D1 were not exercised. [Research](MAIN-BOT-RESEARCH.md) retains the
+DSH/Pi comparison and is not a current implementation claim.
 
 ## Shared-device idle and wake (in progress)
 

@@ -1,6 +1,6 @@
 # SG-001 — independent process and native Super Bot chat
 
-Status: **A/B/C implemented; final independent review and owner App acceptance pending**.
+Status: **delivered and owner-accepted 2026-11-07 for the source dev App; packaged/crash matrix remains open**.
 Owner-selected first milestone: start an independent Superagent process, then make
 its permanent Super Bot conversational in the Eagle App. Worker observation is
 not a prerequisite. [Architecture](../SUPERAGENT-ARCHITECTURE.md) owns invariant
@@ -363,6 +363,11 @@ settlement on reconciliation, one in-flight send, owned-child liveness recheck, 
 window-lifetime guard after settings. A third round replayed only those four probes
 and returned **PASS**, plus 37 package tests.
 
-Not verified: SG001-D integrated acceptance matrix from scratch, installed/packaged
-App, a real two-window session, forced-quit crash cases, and owner hand acceptance.
-No worker service call or worker storage access is part of this path.
+Owner acceptance on 2026-11-07: with an isolated worker workspace (`BOTS_ROOT`
+separate, port 43119) and the dev Superagent on 43127, the owner created a worker
+bot and chatted with Super Bot in the native App, then accepted the result.
+
+Remaining environment gates, not reopened product requirements: installed/packaged
+App, a real two-window run, and forced-quit/crash cases (dead child, quit mid-answer,
+SIGKILL service). No worker service call or worker storage access is part of the
+Superagent path; the isolated worker was used only for owner convenience.
