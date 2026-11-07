@@ -10,6 +10,7 @@
     "revision": "a1b2c3d4e5f60718",
     "bots": 3
   },
+  "consistent": true,
   "bots": [
     {
       "botId": "b_3f1a",
@@ -23,7 +24,12 @@
       "coverage": {
         "scopes": 2,
         "entries": 28,
-        "newestEntryId": "e_91"
+        "newestEntryId": "e_91",
+        "generation": {
+          "min": "e_10",
+          "max": "e_91",
+          "count": 28
+        }
       },
       "updatedAt": "2026-11-08T09:00:00.000Z"
     },
@@ -49,6 +55,6 @@
   ],
   "botsTotal": 3,
   "truncated": false,
-  "cursor": "eyJjIjoiYTFiMmMzZDRlNWY2MDcxOCIsImUiOiI2ZjFjMmE5MC0xYzFiLTRhNTUtOWExMy0wZDFlMmYzYTRiNWMiLCJrIjoiY2hhbmdlcyIsInAiOnsiYl8zZjFhIjp7ImUiOiJlXzkxIiwiaSI6IjlmMzFjMGI0YTdkMjBlNTUifX0sInMiOiI4ZjJhMWMwZDliZTRmN2ExIiwidiI6MX0",
+  "cursor": "eyJjIjoiYTFiMmMzZDRlNWY2MDcxOCIsImUiOiI2ZjFjMmE5MC0xYzFiLTRhNTUtOWExMy0wZDFlMmYzYTRiNWMiLCJrIjoiY2hhbmdlcyIsInAiOnsiYl8zZjFhIjp7ImEiOiJpZGxlIiwiZyI6eyJjb3VudCI6MjgsIm1heCI6ImVfOTEiLCJtaW4iOiJlXzEwIn0sImkiOiI5ZjMxYzBiNGE3ZDIwZTU1IiwicyI6ImF2YWlsYWJsZSJ9fSwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ",
   "lag": 0
 }

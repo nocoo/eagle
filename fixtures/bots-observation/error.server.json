@@ -66,17 +66,37 @@
         "protocolVersion": 1,
         "error": {
           "code": "cursor_invalid",
-          "detail": "cursor is bound to another source, epoch or operation"
+          "detail": "baseline is bound to another source, epoch or operation"
         }
       }
     },
     {
-      "status": 410,
+      "status": 409,
       "body": {
         "protocolVersion": 1,
         "error": {
           "code": "cursor_reset",
-          "detail": "the source epoch or a bot store changed; read a new baseline"
+          "detail": "the source epoch, a store incarnation or a store generation changed; read a new baseline"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "stale_page",
+          "detail": "the store changed between pages; restart from the newest page"
+        }
+      }
+    },
+    {
+      "status": 413,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "body_refused",
+          "detail": "this route does not accept a body"
         }
       }
     },

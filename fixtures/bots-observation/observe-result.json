@@ -1,0 +1,135 @@
+{
+  "cases": [
+    {
+      "name": "snapshot-ready",
+      "frame": {
+        "type": "result",
+        "id": "c_obs_1",
+        "value": {
+          "provider": {
+            "reachable": true,
+            "state": "ready",
+            "source": {
+              "id": "8f2a1c0d9be4f7a1",
+              "epoch": "6f1c2a90-1c1b-4a55-9a13-0d1e2f3a4b5c",
+              "capturedAt": 1794000000000
+            },
+            "lastReadAt": "2026-11-08T09:00:02.000Z",
+            "unavailable": 0
+          },
+          "snapshot": {
+            "protocolVersion": 1,
+            "kind": "snapshot",
+            "source": {
+              "id": "8f2a1c0d9be4f7a1",
+              "epoch": "6f1c2a90-1c1b-4a55-9a13-0d1e2f3a4b5c",
+              "capturedAt": 1794000000000
+            },
+            "catalog": {
+              "revision": "a1b2c3d4e5f60718",
+              "bots": 3
+            },
+            "consistent": true,
+            "bots": [
+              {
+                "botId": "b_3f1a",
+                "title": "Release captain",
+                "activity": "idle",
+                "store": {
+                  "state": "available",
+                  "schemaVersion": 2,
+                  "incarnation": "9f31c0b4a7d20e55"
+                },
+                "coverage": {
+                  "scopes": 2,
+                  "entries": 28,
+                  "newestEntryId": "e_91",
+                  "generation": {
+                    "min": "e_10",
+                    "max": "e_91",
+                    "count": 28
+                  }
+                },
+                "updatedAt": "2026-11-08T09:00:00.000Z"
+              },
+              {
+                "botId": "b_9c2",
+                "title": "Nightly triage",
+                "activity": "unknown",
+                "store": {
+                  "state": "session_missing"
+                },
+                "updatedAt": "2026-11-07T21:12:00.000Z"
+              },
+              {
+                "botId": "b_71d",
+                "title": "Docs runner",
+                "activity": "unknown",
+                "store": {
+                  "state": "schema_unsupported",
+                  "schemaVersion": 1
+                },
+                "updatedAt": "2026-10-30T08:00:00.000Z"
+              }
+            ],
+            "botsTotal": 3,
+            "truncated": false,
+            "cursor": "eyJjIjoiYTFiMmMzZDRlNWY2MDcxOCIsImUiOiI2ZjFjMmE5MC0xYzFiLTRhNTUtOWExMy0wZDFlMmYzYTRiNWMiLCJrIjoiY2hhbmdlcyIsInAiOnsiYl8zZjFhIjp7ImEiOiJpZGxlIiwiZyI6eyJjb3VudCI6MjgsIm1heCI6ImVfOTEiLCJtaW4iOiJlXzEwIn0sImkiOiI5ZjMxYzBiNGE3ZDIwZTU1IiwicyI6ImF2YWlsYWJsZSJ9fSwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ",
+            "lag": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "changes-reset",
+      "frame": {
+        "type": "result",
+        "id": "c_obs_2",
+        "value": {
+          "provider": {
+            "reachable": true,
+            "state": "reset",
+            "source": {
+              "id": "8f2a1c0d9be4f7a1",
+              "epoch": "6f1c2a90-1c1b-4a55-9a13-0d1e2f3a4b5c",
+              "capturedAt": 1794000000000
+            },
+            "lastReadAt": "2026-11-08T09:00:02.000Z",
+            "unavailable": 0
+          },
+          "changes": null
+        }
+      }
+    },
+    {
+      "name": "snapshot-refused",
+      "frame": {
+        "type": "result",
+        "id": "c_obs_3",
+        "value": {
+          "provider": {
+            "reachable": false,
+            "state": "refused",
+            "unavailable": 0
+          },
+          "snapshot": null
+        }
+      }
+    },
+    {
+      "name": "snapshot-unconfigured",
+      "frame": {
+        "type": "result",
+        "id": "c_obs_4",
+        "value": {
+          "provider": {
+            "reachable": false,
+            "state": "unconfigured",
+            "unavailable": 0
+          },
+          "snapshot": null
+        }
+      }
+    }
+  ]
+}

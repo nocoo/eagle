@@ -95,8 +95,12 @@ notice. A page has a fixed upper boundary and continues by entry id, so no entry
 duplicated or skipped and older entries stay reachable.
 
 Completeness is reported as three independent facts — scopes, page, content — with
-reasons. No part is `complete` unless it truly is, and no response may read as "that is
-all there is" when a scope, a page or a mapping was cut.
+reasons: `scopes` says whether every scope was enumerated, `page` whether the response
+budget cut the page, and `content` whether any delivered message had to be trimmed to
+fit the delivery budget. Entries the contract deliberately does not map (system
+prompts, internal reasoning) are reported as counted omissions by kind, not as
+incompleteness. No part is `complete` unless it truly is, and no response may read as
+"that is all there is" when a scope or a page was cut.
 
 ### SG002-R06 — honest admission facts
 
@@ -112,14 +116,18 @@ untrusted context, not authority.
 `changes` compares a baseline with the current state and reports, per Bot, an appended
 entry-id range, a replaced store, a changed store state, a changed activity, or a
 changed catalog. No event identity is derived from a commit sequence, because one
-commit can write several entries and tasks/submissions are updated in place. Duplicates
-across reads are allowed and replayable; no acknowledgement exists and no worker write
-depends on observer progress.
+commit can write several entries and tasks/submissions are updated in place. The
+baseline therefore carries each Bot's previous state, activity and store generation,
+and every change kind has a fixed dedupe key. Duplicates across reads are allowed and
+replayable; no acknowledgement exists and no worker write depends on observer progress.
 
 ### SG002-R08 — baselines, lag and resets
 
 A snapshot publishes its own baseline: catalog revision plus, per Bot, store
-incarnation and newest entry id. There is no fleet-wide sequence, so none is invented.
+incarnation, entry generation and last known state and activity. There is no
+fleet-wide sequence, so none is invented. A store replaced, copied or restored in
+place is detected by a changed incarnation or a generation that regresses, not only by
+the daemon's epoch.
 A projection lag is published rather than implied freshness. An epoch change, a
 replaced store or an unusable baseline is a typed reset requiring a new baseline; it
 never continues silently. Sequence numbers and wall-clock times remain separate fields.
@@ -185,17 +193,19 @@ fingerprint alone.
 | SG002-A02 | R02 | Given a missing, symlinked, wrong-mode, short or foreign observation token file, then observation is disabled and nothing is repaired or written |
 | SG002-A03 | R03, R08 | Given a baseline, when it is presented for another source/epoch/operation or after an epoch change, then `cursor_invalid` / `cursor_reset` appear and no range is fabricated |
 | SG002-A04 | R03 | Given a Bot store replaced or restored in place, when changes or history run, then the incarnation mismatch is reported and the stale baseline is not continued |
-| SG002-A05 | R04 | Given a cold Bot store, when history is read, then committed rows return and the logical state before/after is identical, including no Harness open, no migration and no new file |
+| SG002-A05 | R04 | Given a cold Bot store, when history is read, then committed rows return and the logical state before/after is identical, with no Harness open, no migration and no new file other than the named WAL sidecars |
 | SG002-A06 | R04 | Given missing, older-schema, foreign-schema and corrupt stores, then `session_missing` / `schema_unsupported` / `store_unreadable` appear and no file is created, migrated or repaired |
-| SG002-A07 | R04, R09 | Given a committing writer, when reads run repeatedly, then worker commits match baseline timing, no `SQLITE_BUSY` occurs, no idle lease is taken and cancelling a read cancels only the read |
+| SG002-A07 | R04, R09 | Given a committing writer, when reads run repeatedly, then every submission still settles `done`, no `SQLITE_BUSY` or worker failure occurs, no idle lease is taken and cancelling a read cancels only the read; the observed latency distribution is reported separately, never asserted as a gate |
 | SG002-A08 | R05 | Given a compacted conversation with child scopes, then pre-compaction entries return, every scope is enumerated with its owner, and boundaries are reported |
-| SG002-A09 | R05 | Given more entries than a page, when continuing by `next.before`, then boundaries are fixed, no entry is duplicated or skipped, and an oldest page reports no `next` |
+| SG002-A09 | R05, R08 | Given more entries than a page, when continuing by `next.before`, then boundaries are fixed, no entry is duplicated or skipped, an oldest page reports no `next`, and a page whose store changed in between answers `stale_page` instead of mixing stores |
 | SG002-A10 | R05, R06 | Given more than 500 scopes, an entry kind that cannot be mapped, or a page over the response cap, then the corresponding coverage part is not `complete` and states its reason |
 | SG002-A11 | R06 | Given a tool result and a hidden reasoning entry, then the tool result keeps `callId/name/isError`, reasoning never appears, and omitted entries are counted by kind |
 | SG002-A12 | R07 | Given two reads with one baseline, then ranges and duplicates are identical, a replaced store, a state change and a catalog change each appear once per Bot, and no worker progress depends on the read |
 | SG002-A13 | R10 | Given a provider reset, refusal, unreachability or unconfigured state, then the consumer reports that state, drops the stale baseline, keeps chat working and reads no daemon file |
 | SG002-A14 | R10 | Given a consumer crash between consuming an observation and committing its baseline, then no duplicate is presented as new evidence and the next read re-baselines honestly |
 | SG002-A15 | R11, R12 | Given a real daemon and a missing store, then App and CLI show coverage, watermark, lag and unknown states with no mutation control and no model call |
+| SG002-A16 | R01, R08 | Given a 200-Bot fleet, then its baseline fits the frozen `changes` body budget and round-trips through both decoders unchanged |
+| SG002-A17 | R01, R05 | Given the largest allowed history page, then the consumer result frame stays inside the existing socket cap and no frame is silently closed |
 
 ## 6. Evidence discipline
 
