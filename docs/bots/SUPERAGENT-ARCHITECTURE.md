@@ -39,20 +39,24 @@ must never mark a healthy worker unavailable or delay a worker commit while it
 waits for the observer to consume an event. Bounded observation load is permitted;
 zero CPU/I/O overhead is not a realistic promise.
 
-### Process topology still needs one decision
+### Accepted process topology — 2026-11-07
 
-The owner required independent operation, but did not explicitly choose OS process
-isolation. Do not equate independent conversations with independent services.
+The owner confirmed **separate App-owned processes and separate stores**. The
+Superagent runs outside the existing worker daemon; this does not require one new
+process per worker Bot. Each service owns its lifecycle, execution state and storage,
+and they communicate only through the versioned local protocol.
 
-| Option | What it provides | Limitation |
-| --- | --- | --- |
-| Separate App-owned processes, separate stores — recommended | Independent start/stop/restart and crash containment; versioned IPC is a real boundary | Requires App process supervision and explicit local transport/authentication |
-| Separate components in one process, separate stores | Logical dependency and scheduling separation | Process crash, OOM or a blocked event loop still affects both; cannot claim process fault isolation |
+The App starts/stops its owned processes independently. Neither service supervises
+or restarts the other. The first release still stops with the App; no login or
+always-on background service is introduced. Existing externally owned processes
+must not be terminated merely because the App quits.
 
-Both options preserve the same external contract and App-scoped first release.
-The recommendation does not authorize spawning, installing or configuring a new
-service in this documentation change. Package paths and process wiring remain
-unset until this choice and the read-adapter feasibility gate are settled.
+Separate processes isolate process-local crashes and event-loop stalls; they do
+not provide an OS security sandbox or eliminate shared machine-resource failures.
+Local authentication, explicit process ownership and bounded reconnect behavior
+remain implementation requirements. No process or configuration is changed by this
+documentation update. Exact paths/wiring and the passive-read adapter still require
+implementation and verification, but the topology choice is settled.
 
 ## 2. First-class identity without worker dependency
 
@@ -312,8 +316,9 @@ fixture and CI enforcement remains in effect; no skip/focus or weaker threshold.
 Noninterference tests compare worker domain state and instrument model/tool/runtime
 calls. Logs and credential-use records are excluded only by the explicit allowed
 bookkeeping list, not by broad filesystem exclusions. Inject a slow or failing
-observer to prove worker progress is independent. If separate processes are chosen,
-add real crash/stop tests in addition to in-process fake failures.
+observer to prove worker progress is independent. With separate processes now
+selected, real independent crash/stop/restart tests are required in addition to
+in-process fake failures.
 
 No tests or App acceptance ran in this documentation update. A future daemon/UI
 change must run the affected independent package gates and actual native acceptance;
@@ -350,7 +355,7 @@ resource serialization and command methods require a separate contract and faili
 tests before they exist. Human-priority serial worker execution remains the owner's
 accepted requirement for that future managed phase.
 
-## 8. Decision record and open technical choice
+## 8. Accepted decisions and remaining implementation gates
 
 Accepted: default nondeletable main Bot; all retained histories visible; ordinary
 questions answered directly; execution delegated eventually; new goals suggested
@@ -361,7 +366,27 @@ New accepted principles: independent Superagent and workers; narrow strict
 interfaces; standalone operation in both directions; read-only observation first
 with unaware workers; native human decision dashboard; MVVM UI and TDD backend.
 
-Still open: separate App-owned OS processes versus logical separation in one
-process. Separate processes are recommended for the requested failure isolation;
-no implementation topology is silently selected here. The passive storage/read
-adapter is a required feasibility investigation, not another user preference.
+The owner subsequently confirmed separate App-owned processes and separate stores.
+No product choice remains open in this decision set. Exact schemas, passive cold
+reads, IPC/authentication and process lifecycle are implementation gates, not
+already proven capabilities.
+
+## 9. Design review record — 2026-11-07
+
+An independent read-only Pi reviewer (`group/reviewing`, `xhigh`) reviewed the design
+content committed as `f79033d3`, covering this document, `MAIN-BOT-RESEARCH.md`
+and the Superagent entry in `PLAN.md`. Its final verdict was **PASS (document
+review)**: no concrete semantic conflicts or missing necessary acceptance items
+were reported in that pass.
+
+The review checked independent identity and standalone operation, worker
+unawareness, phase-1 prohibition of commands, passive-read side effects, credential
+scope, retained-history coverage, paging/cursors/gaps, noninterference tests, native
+MVVM and removal of the earlier dispatch-first plan. It also checked that topology,
+exact schemas and the read-adapter spike were not represented as verified runtime
+capabilities. The owner's later topology confirmation resolves that product choice;
+it is not a new runtime verification or a second review pass.
+
+This records a design review only. No implementation, conformance suite, process
+isolation test, live model evaluation or native App acceptance has passed on its
+strength. Those gates remain required before the feature can be claimed complete.

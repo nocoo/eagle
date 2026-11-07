@@ -21,9 +21,10 @@ port. Both Superagent and workers must run independently; workers initially have
 no supervision-specific prompts, tools or reports. The first release reads complete
 retained histories and advises the owner, but sends no worker commands. A passive
 read-adapter feasibility gate comes first: existing chat subscriptions can open and
-resume workers. Separate App-owned processes are recommended, not yet selected;
-first-release lifetime remains App-scoped. No implementation or runtime acceptance
-is claimed by this plan entry.
+resume workers. The owner confirmed separate App-owned processes and stores;
+first-release lifetime remains App-scoped. The design committed as `f79033d3`
+received an independent read-only review with a PASS verdict; the architecture
+records its scope. No implementation or runtime acceptance is claimed here.
 
 ## Shared-device idle and wake (in progress)
 

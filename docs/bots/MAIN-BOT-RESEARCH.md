@@ -227,10 +227,11 @@ must not be reused as a supposedly passive observer. See the architecture's sour
 map and passive-adapter feasibility gate. Do not directly parse worker SQLite from
 the Superagent as a shortcut around the boundary.
 
-Separate App-owned processes and separate stores are recommended. Logical modules
-in one process cannot isolate process crash, OOM or a blocked event loop. The owner
-has not explicitly chosen OS process topology, so this remains an open choice.
-Neither option introduces an always-on service after App quit.
+The owner confirmed separate App-owned processes and separate stores. The
+Superagent runs outside the existing worker daemon and uses only the versioned
+local protocol. This does not require a separate process for every worker Bot or
+introduce an always-on service after App quit. Process-local failure isolation
+still needs real crash/stop tests; it is not an OS security sandbox.
 
 ## 6. First-release supervision semantics
 
@@ -331,14 +332,16 @@ or running App checks were executed for this documentation change.
 | Main role | Answer ordinary questions; delegate execution eventually | No general shell/coding executor role and no phase-1 delegation |
 | Worker concurrency | Serial execution, human requests first | Required when management is added; no worker scheduler change for observation |
 | Independence | Each side can run without the other | Separate runtime/storage ownership; no worker awareness or reporting dependency |
+| Process topology | Independent App-owned processes and stores | Superagent outside the worker daemon; explicit lifecycle and authenticated IPC |
 | Interfaces | Few, strictly defined and tested | Versioned passive contracts; no cross-core/runtime/schema coupling |
 | Human decisions | Native dashboard | Evidence, suggestions, source health and decision history, not only logs |
 | Engineering | MVVM UI, TDD backend | Explicit ownership and failing behavior tests before implementation |
 
 Default presence and nondeletion remain required. The new read-only-first principles
 refine the earlier management goal; they are not an approval to enable writes now.
-Process isolation remains a visible choice, with separate App-owned processes
-recommended. Technical schemas, implementation and runtime acceptance are pending.
+Separate App-owned processes and stores are now confirmed. Technical schemas,
+implementation and runtime acceptance are pending. The architecture document's
+review record distinguishes the completed design review from those unrun gates.
 
 ## 11. Verification and source map
 
