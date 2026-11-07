@@ -1,0 +1,45 @@
+{
+  "source": {
+    "id": "8f2a1c0d9be4f7a1",
+    "epoch": "6f1c2a90-1c1b-4a55-9a13-0d1e2f3a4b5c"
+  },
+  "cursors": [
+    {
+      "value": "eyJlIjoiNmYxYzJhOTAtMWMxYi00YTU1LTlhMTMtMGQxZTJmM2E0YjVjIiwiayI6ImNoYW5nZXMiLCJxIjo4OCwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ",
+      "binding": {
+        "operation": "changes",
+        "source": "8f2a1c0d9be4f7a1",
+        "epoch": "6f1c2a90-1c1b-4a55-9a13-0d1e2f3a4b5c",
+        "position": 88
+      }
+    },
+    {
+      "value": "eyJiIjoiYl8zZjFhIiwiYyI6ImNfMSIsImUiOiI2ZjFjMmE5MC0xYzFiLTRhNTUtOWExMy0wZDFlMmYzYTRiNWMiLCJrIjoiaGlzdG9yeSIsInEiOiJlXzkxIiwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ",
+      "binding": {
+        "operation": "history",
+        "source": "8f2a1c0d9be4f7a1",
+        "epoch": "6f1c2a90-1c1b-4a55-9a13-0d1e2f3a4b5c",
+        "botId": "b_3f1a",
+        "scopeId": "c_1",
+        "position": "e_91"
+      }
+    }
+  ],
+  "rejections": [
+    {
+      "value": "eyJlIjoiNmYxYzJhOTAtMWMxYi00YTU1LTlhMTMtMGQxZTJmM2E0YjVjIiwiayI6ImNoYW5nZXMiLCJxIjo4OCwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ",
+      "why": "presented to history",
+      "expect": "cursor_invalid"
+    },
+    {
+      "value": "eyJiIjoiYl8zZjFhIiwiYyI6ImNfMSIsImUiOiI2ZjFjMmE5MC0xYzFiLTRhNTUtOWExMy0wZDFlMmYzYTRiNWMiLCJrIjoiaGlzdG9yeSIsInEiOiJlXzkxIiwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ",
+      "why": "presented for another bot",
+      "expect": "cursor_invalid"
+    },
+    {
+      "value": "eyJlIjoiNmYxYzJhOTAtMWMxYi00YTU1LTlhMTMtMGQxZTJmM2E0YjVjIiwiayI6ImNoYW5nZXMiLCJxIjo4OCwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ",
+      "why": "presented with another epoch",
+      "expect": "cursor_reset"
+    }
+  ]
+}

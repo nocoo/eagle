@@ -1,0 +1,49 @@
+{
+  "protocolVersion": 1,
+  "kind": "snapshot",
+  "source": {
+    "id": "8f2a1c0d9be4f7a1",
+    "epoch": "6f1c2a90-1c1b-4a55-9a13-0d1e2f3a4b5c",
+    "capturedAt": 1794000000000
+  },
+  "bots": [
+    {
+      "botId": "b_3f1a",
+      "title": "Release captain",
+      "activity": "idle",
+      "store": {
+        "state": "available",
+        "schemaVersion": 3
+      },
+      "coverage": {
+        "scopes": 2,
+        "entries": 53,
+        "watermark": 88
+      },
+      "updatedAt": "2026-11-08T09:00:00.000Z"
+    },
+    {
+      "botId": "b_9c2",
+      "title": "Nightly triage",
+      "activity": "unknown",
+      "store": {
+        "state": "session_missing"
+      },
+      "updatedAt": "2026-11-07T21:12:00.000Z"
+    },
+    {
+      "botId": "b_71d",
+      "title": "Docs runner",
+      "activity": "unknown",
+      "store": {
+        "state": "schema_unsupported",
+        "schemaVersion": 2
+      },
+      "updatedAt": "2026-10-30T08:00:00.000Z"
+    }
+  ],
+  "botsTotal": 3,
+  "truncated": false,
+  "cursor": "eyJlIjoiNmYxYzJhOTAtMWMxYi00YTU1LTlhMTMtMGQxZTJmM2E0YjVjIiwiayI6ImNoYW5nZXMiLCJxIjo4OCwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ",
+  "lag": 0
+}

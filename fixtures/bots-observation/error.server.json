@@ -1,0 +1,94 @@
+{
+  "cases": [
+    {
+      "status": 401,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "unauthenticated",
+          "detail": "observation credential missing or wrong"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "credential_kind",
+          "detail": "this credential is not valid on this route"
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "unknown_bot",
+          "detail": "no such bot"
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "unknown_scope",
+          "detail": "no such conversation scope for this bot"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "cursor_invalid",
+          "detail": "cursor is bound to another source, epoch, operation or scope"
+        }
+      }
+    },
+    {
+      "status": 410,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "cursor_reset",
+          "detail": "the source epoch changed; read a new baseline"
+        }
+      }
+    },
+    {
+      "status": 422,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "limit_invalid",
+          "detail": "limit must be an integer between 1 and 200"
+        }
+      }
+    },
+    {
+      "status": 503,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "provider_unavailable",
+          "detail": "the store cannot be read now"
+        }
+      }
+    },
+    {
+      "status": 503,
+      "body": {
+        "protocolVersion": 1,
+        "error": {
+          "code": "shutting_down",
+          "detail": "the daemon is shutting down"
+        }
+      }
+    }
+  ]
+}

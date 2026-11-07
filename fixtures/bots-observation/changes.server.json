@@ -1,0 +1,42 @@
+{
+  "protocolVersion": 1,
+  "kind": "changes",
+  "source": {
+    "id": "8f2a1c0d9be4f7a1",
+    "epoch": "6f1c2a90-1c1b-4a55-9a13-0d1e2f3a4b5c",
+    "capturedAt": 1794000000000
+  },
+  "changes": [
+    {
+      "kind": "history_appended",
+      "botId": "b_3f1a",
+      "scopeId": "c_1",
+      "commitSeq": 88,
+      "at": "2026-11-08T08:59:00.000Z"
+    },
+    {
+      "kind": "history_appended",
+      "botId": "b_3f1a",
+      "scopeId": "c_1",
+      "commitSeq": 88,
+      "at": "2026-11-08T08:59:00.000Z"
+    },
+    {
+      "kind": "store_state_changed",
+      "botId": "b_9c2",
+      "state": "session_missing"
+    },
+    {
+      "kind": "bot_added",
+      "botId": "b_71d",
+      "at": "2026-11-07T21:00:00.000Z"
+    }
+  ],
+  "next": {
+    "cursor": "eyJlIjoiNmYxYzJhOTAtMWMxYi00YTU1LTlhMTMtMGQxZTJmM2E0YjVjIiwiayI6ImNoYW5nZXMiLCJxIjo4OCwicyI6IjhmMmExYzBkOWJlNGY3YTEiLCJ2IjoxfQ"
+  },
+  "coverage": {
+    "complete": false,
+    "reason": "truncated"
+  }
+}

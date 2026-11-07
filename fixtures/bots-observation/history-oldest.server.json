@@ -1,0 +1,58 @@
+{
+  "protocolVersion": 1,
+  "kind": "history",
+  "source": {
+    "id": "8f2a1c0d9be4f7a1",
+    "epoch": "6f1c2a90-1c1b-4a55-9a13-0d1e2f3a4b5c",
+    "capturedAt": 1794000000000
+  },
+  "botId": "b_3f1a",
+  "scopes": [
+    {
+      "id": "c_1",
+      "kind": "root",
+      "entries": 23
+    },
+    {
+      "id": "c_12",
+      "kind": "child",
+      "owner": {
+        "conversationId": "c_1",
+        "taskId": "t_9"
+      },
+      "entries": 5
+    }
+  ],
+  "scope": {
+    "id": "c_1",
+    "kind": "root"
+  },
+  "boundary": {
+    "newestEntryId": "e_91",
+    "before": "e_11"
+  },
+  "messages": [
+    {
+      "entryId": "e_10",
+      "commitSeq": 10,
+      "role": "user",
+      "kind": "pi.user",
+      "state": "complete",
+      "at": "2026-11-08T08:40:00.000Z",
+      "bounded": false,
+      "blocks": [
+        {
+          "type": "text",
+          "text": "Start the release check."
+        }
+      ]
+    }
+  ],
+  "omitted": {
+    "entries": 0,
+    "kinds": []
+  },
+  "coverage": {
+    "complete": true
+  }
+}
