@@ -13,6 +13,8 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
   public let supervisor: SuperagentDaemonSupervisor
   public let chat: SuperagentChatViewModel
   public let settings: SuperagentSettingsViewModel
+  /// SG-002: read-only worker coverage. It has no command surface by construction.
+  public let observation: SuperagentObservationViewModel
   private var forwarding: AnyCancellable?
   private var started = false
   private var windowOpen = true
@@ -40,6 +42,8 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
     .appendingPathComponent("eagle-superagent", isDirectory: true)
     chat = SuperagentChatViewModel(port: port, store: FilePendingInputStore(directory: support))
     settings = SuperagentSettingsViewModel(port: settingsPort)
+    observation = SuperagentObservationViewModel(
+      port: port as? SuperagentObservationPort ?? FailingObservationPort())
     forwarding = Publishers.Merge(
       chat.objectWillChange.map { _ in () },
       supervisor.objectWillChange.map { _ in () }
@@ -105,6 +109,10 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
 
 /// A resolved endpoint always exists in production; this keeps a malformed override visible
 /// instead of silently pointing the App at something else.
+final class FailingObservationPort: SuperagentObservationPort {
+  func observation() async throws -> ObservationSummary { throw SuperagentError.identity }
+}
+
 final class FailingSuperagentPort: SuperagentServicePort {
   func health() async throws -> ServiceHealth { throw SuperagentError.identity }
   func events() async throws -> AsyncThrowingStream<SnapshotFrame, Error> {
