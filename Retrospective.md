@@ -1,5 +1,21 @@
 # Retrospective
 
+## 2026-11-07 — A modal migration left the native focus fixture on native sheets
+
+The macOS `test:focus` CI job failed exactly one of 42 checks on release candidate
+`6d875b41`: the transcript tool row opened nothing. When the shell moved every dialog onto
+one `ModalHost`, `ConversationColumn.onOpenToolRun` became the only route to the tool
+details, but the native fixture still built `ConversationColumn` without that callback and
+asserted `window.sheets.count == 1` on a native sheet. The fixture covered the old
+presentation, not the shipped one; the product code was correct.
+
+A native fixture must drive the same route the product renders. It now owns the opened
+tool-run id, routes `onOpenToolRun` to `ModalHost` + `ToolRunDetailView` with an explicit
+close, and asserts the requested id plus a real AppKit marker at the dialog's shared size,
+with the composer unfocused and the draft unchanged. It also uses a conversation viewport
+that fits the 680 x 520 dialog instead of shrinking production. Asserting a presentation
+flag is not enough: after a route change, check that the new surface is actually on screen.
+
 ## 2026-11-07 — Treat delegated prompts as shell data
 
 During the compact-dialog work, a coordinator prompt placed Swift snippets in

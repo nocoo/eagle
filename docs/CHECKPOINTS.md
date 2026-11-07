@@ -1,5 +1,22 @@
 # 用户视角检查点
 
+## 2026-11-07 +08 — Release 0.21.0 focus-fixture fix
+
+- CI check 42313777880 on `6d875b41`: Linux green, macOS `test:focus` failed 1 of 42 —
+  the transcript tool row did not open details because the native fixture never supplied
+  `ConversationColumn.onOpenToolRun` after every dialog moved to `ModalHost`.
+- Fixture-only fix: the conversation fixture owns `openedToolRunID`, routes the callback to
+  `ModalHost` + `ToolRunDetailView` with an explicit close, and asserts the requested id plus
+  an on-screen AppKit marker at 680 x 520 with the composer unfocused and draft unchanged.
+  The conversation viewport is now 760 x 600 to fit the shared dialog; the standalone
+  composer stays 360 pt. Native sheets are no longer used; all 42 checks are preserved.
+- Local gates: `swift build --target ComposerFocusFixture`, apps/macos `swift test`,
+  coverage 94.8% (min 90), strict `swift format`, `npm run check:design` and
+  `npm run test:design` (91) all exit 0. The live `test:focus` probe is CI-only (no local
+  CG automation).
+- No push, tag, upload or deploy. The repository is at the new fixture commit for the
+  coordinator to push and gate the 0.21.0 artifact rebuild.
+
 ## 2026-11-07 07:01 +08 — Compact Bot dialogs, final local verification
 
 - Code candidate `02b46e84`: creation is approximately 460 × 458 instead of
