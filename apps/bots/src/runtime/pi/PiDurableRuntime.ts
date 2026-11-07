@@ -130,6 +130,7 @@ export type PiSettings = {
   };
   readonly progress?: { readonly partialIntervalMs?: number };
   readonly restartLimit?: number;
+  readonly afterFailedRun?: "keep" | "continue" | "withdraw";
 };
 
 const DEFAULT_SETTINGS: PiSettings = {
@@ -140,6 +141,9 @@ const DEFAULT_SETTINGS: PiSettings = {
   compaction: { enabled: true },
   progress: { partialIntervalMs: 100 },
   restartLimit: 5,
+  // A failed run must not strand the follow-ups the person already queued behind it
+  // (RUNTIME.md, "Settings per bot").
+  afterFailedRun: "continue",
 };
 
 /** `t_12` is the wire id; pi knows the task by its number. */

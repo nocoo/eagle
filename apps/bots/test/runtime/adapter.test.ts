@@ -202,6 +202,45 @@ test("a provider error settles unanswered with reason model_error", async () => 
   }
 });
 
+test("a failed run starts the follow-up queued behind it", async () => {
+  // A model error must not strand the input the person already queued behind it
+  // (RUNTIME.md, settings per bot: afterFailedRun).
+  const bench = await createBench({ settings: { retry: { maxRetries: 0 } } });
+  try {
+    bench.faux.setResponses([providerError("upstream 500"), text("第二条回答")]);
+    const handle = await bench.runtime.open(bench.spec());
+    const { events } = await collect(handle);
+    await handle.submit({
+      requestId: "r_fail_first",
+      text: "会失败的问题",
+      whenBusy: "followUp",
+      trace,
+    });
+    const queued = await handle.submit({
+      requestId: "r_fail_next",
+      text: "排队的问题",
+      whenBusy: "followUp",
+      trace,
+    });
+    assert.equal(queued.status, "queued", "the second input is waiting behind the run");
+    await waitFor(
+      () =>
+        of(events, "submission").some(
+          (event) => event.record.requestId === "r_fail_next" && event.record.status === "done",
+        ),
+      "the queued follow-up to run after the failed run",
+      15_000,
+    );
+    const settled = of(events, "submission").find(
+      (event) => event.record.requestId === "r_fail_next" && event.record.status === "done",
+    );
+    assert.equal(settled?.record.status, "done");
+    await handle.close(trace, 5_000);
+  } finally {
+    await bench.cleanup();
+  }
+});
+
 test("a model asking for a tool gets an error result and the run continues", async () => {
   const bench = await createBench();
   try {
