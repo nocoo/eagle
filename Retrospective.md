@@ -1,5 +1,13 @@
 # Retrospective
 
+## 2026-11-07 — Verify executable paths during App replacement
+
+The 0.21.0 installation stopped before moving either bundle because the replacement
+command named `/usr/bin/mv`, while this Mac provides `/bin/mv`. The old App remained
+in place and the staged release remained intact. Verify the executable path and both
+bundle locations before retrying an installation step; then continue only after the
+original update-preparation and service-stop checks have succeeded.
+
 ## 2026-11-07 — Preserve failed release gates when publication is explicitly requested
 
 Preparing macOS 0.21.0 exposed two fixture gaps in CI: the native focus fixture still
