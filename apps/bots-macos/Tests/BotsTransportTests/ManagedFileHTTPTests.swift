@@ -92,7 +92,7 @@ final class ManagedFileHTTPTests: XCTestCase {
       return (
         201, ["content-type": "application/json"],
         Data(
-          "{\"file\":{\"id\":\"\(id)\",\"status\":\"complete\",\"size\":\(file.size),\"sha256\":\"\(file.sha256)\"}}"
+          "{\"file\":{\"id\":\"\(id)\",\"botId\":\"b_1\",\"uploadId\":\"u_0123456789abcdef\",\"name\":\"file.bin\",\"mimeType\":\"application/octet-stream\",\"status\":\"complete\",\"size\":\(file.size),\"sha256\":\"\(file.sha256)\"}}"
             .utf8)
       )
     }
@@ -101,6 +101,53 @@ final class ManagedFileHTTPTests: XCTestCase {
     XCTAssertEqual(id, "f_\(String(repeating: "a", count: 64))")
     XCTAssertEqual(manifestCalls, 1)
     XCTAssertEqual(contentCalls, 1)
+  }
+
+  func testCompleteManifestAcknowledgementLostReturnsTheOriginalFileIdWithoutContentRetry()
+    async throws
+  {
+    let (file, url) = try staged()
+    var contentCalls = 0
+    ManagedFileStubProtocol.handler = { request in
+      if request.url?.path.hasSuffix("/manifest") == true {
+        let id = "f_\(String(repeating: "c", count: 64))"
+        return (
+          200, ["content-type": "application/json"],
+          Data(
+            "{\"file\":{\"id\":\"\(id)\",\"botId\":\"b_1\",\"uploadId\":\"u_0123456789abcdef\",\"name\":\"file.bin\",\"mimeType\":\"application/octet-stream\",\"status\":\"complete\",\"size\":\(file.size),\"sha256\":\"\(file.sha256)\",\"createdAt\":\"2026-11-07T00:00:00.000Z\"}}"
+              .utf8)
+        )
+      }
+      contentCalls += 1
+      return (500, nil, Data())
+    }
+
+    let id = try await client().upload(botId: "b_1", file: file, from: url)
+    XCTAssertEqual(id, "f_\(String(repeating: "c", count: 64))")
+    XCTAssertEqual(contentCalls, 0, "a complete manifest is the post-ACK result")
+  }
+
+  func testCompleteManifestWithWrongMetadataOrIdentityIsRefusedBeforeContent() async throws {
+    let (file, url) = try staged()
+    var contentCalls = 0
+    for mismatch in [
+      "{\"file\":{\"id\":\"f_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"botId\":\"b_other\",\"uploadId\":\"u_0123456789abcdef\",\"name\":\"file.bin\",\"mimeType\":\"application/octet-stream\",\"status\":\"complete\",\"size\":3,\"sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}}",
+      "{\"file\":{\"id\":\"f_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"botId\":\"b_1\",\"uploadId\":\"u_wrong\",\"name\":\"file.bin\",\"mimeType\":\"application/octet-stream\",\"status\":\"complete\",\"size\":3,\"sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}}",
+    ] {
+      ManagedFileStubProtocol.handler = { request in
+        if request.url?.path.hasSuffix("/manifest") == true {
+          return (200, ["content-type": "application/json"], Data(mismatch.utf8))
+        }
+        contentCalls += 1
+        return (201, nil, Data())
+      }
+      do {
+        _ = try await client().upload(botId: "b_1", file: file, from: url)
+        XCTFail("wrong complete manifest metadata must fail")
+      } catch {
+        XCTAssertEqual(contentCalls, 0)
+      }
+    }
   }
 
   func testRedirectAndAuthenticationFailClosed() async throws {

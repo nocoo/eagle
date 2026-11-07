@@ -9,6 +9,10 @@ public final class ManagedFileHTTPClient: @unchecked Sendable {
 
   private struct ManagedFileWire: Decodable {
     let id: String
+    let botId: String?
+    let uploadId: String?
+    let name: String?
+    let mimeType: String?
     let status: String
     let size: Int64
     let sha256: String
@@ -73,9 +77,20 @@ public final class ManagedFileHTTPClient: @unchecked Sendable {
     let manifestFile = try JSONDecoder().decode(
       ManagedFilePayload.self, from: manifestResponse.data
     ).file
-    guard manifestFile.status == "uploading", manifestFile.size == file.size,
+    guard manifestFile.size == file.size,
       manifestFile.sha256 == file.sha256,
       Self.validFileId(manifestFile.id)
+    else { throw FileTransportFailure.invalidResponse }
+
+    if manifestFile.status == "complete" {
+      guard manifestFile.botId == botId,
+        manifestFile.uploadId == file.uploadId,
+        manifestFile.name == file.name,
+        manifestFile.mimeType == file.mimeType
+      else { throw FileTransportFailure.invalidResponse }
+      return manifestFile.id
+    }
+    guard manifestFile.status == "uploading"
     else { throw FileTransportFailure.invalidResponse }
 
     let contentPath = "/v1/bots/\(botId)/files/\(file.uploadId)/content"
@@ -88,6 +103,10 @@ public final class ManagedFileHTTPClient: @unchecked Sendable {
       .file
     guard contentFile.status == "complete",
       contentFile.id == manifestFile.id,
+      contentFile.botId == botId,
+      contentFile.uploadId == file.uploadId,
+      contentFile.name == file.name,
+      contentFile.mimeType == file.mimeType,
       contentFile.size == file.size,
       contentFile.sha256 == file.sha256
     else { throw FileTransportFailure.invalidResponse }
