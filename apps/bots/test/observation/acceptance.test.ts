@@ -315,3 +315,58 @@ test("SG002-A10: more than 500 scopes are listed in pages, never silently droppe
     await store.cleanup();
   }
 });
+
+test("SG002-A17: a page of large messages stops inside the frozen response budget", async () => {
+  const store = await realStore();
+  const opened = await bench([{ id: "b_real", title: "Real" }]);
+  try {
+    await installStore(opened, "b_real", store.dir);
+    const page = await opened.call("/v1/observe/history?botId=b_real&limit=200");
+    assert.equal(page.status, 200);
+    const bytes = Buffer.byteLength(JSON.stringify(page.body));
+    assert.ok(bytes <= 192 * 1024, `the page is ${bytes} bytes, inside the 192 KiB budget`);
+    const coverage = page.body.coverage as { page: string };
+    const next = page.body.next as { before?: string } | undefined;
+    if (coverage.page === "truncated") {
+      assert.ok(next?.before !== undefined, "a cut page always offers the next entry boundary");
+    }
+  } finally {
+    await opened.close();
+    await store.cleanup();
+  }
+});
+
+test("SG002-A07: an abandoned read cancels only itself, and an unknown kind is not complete", async () => {
+  const store = await realStore();
+  const opened = await bench([{ id: "b_real", title: "Real" }]);
+  try {
+    await installStore(opened, "b_real", store.dir);
+    const controller = new AbortController();
+    const abandoned = fetch(`http://127.0.0.1:${opened.port}/v1/observe/history?botId=b_real`, {
+      headers: {
+        host: `127.0.0.1:${opened.port}`,
+        authorization: `Bearer ${opened.token}`,
+      },
+      signal: controller.signal,
+    }).catch(() => undefined);
+    controller.abort();
+    await abandoned;
+    const after = await opened.call("/v1/observe/history?botId=b_real&limit=5");
+    assert.equal(after.status, 200, "the daemon serves the next read normally");
+
+    const path = join(opened.botsDir, "b_real", "session.sqlite");
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(path);
+    db.prepare(
+      "INSERT INTO entries (id, conversation_id, head, commit_seq, record) VALUES (?, 1, NULL, 1, ?)",
+    ).run(900100, JSON.stringify({ kind: "future.unknowable" }));
+    db.close();
+    const unknown = await opened.call("/v1/observe/history?botId=b_real&limit=200");
+    const coverage = unknown.body.coverage as { content: string; reasons: string[] };
+    assert.equal(coverage.content, "partial", "an unmappable kind is not claimed as complete");
+    assert.ok(coverage.reasons.includes("unsupported_kind"));
+  } finally {
+    await opened.close();
+    await store.cleanup();
+  }
+});

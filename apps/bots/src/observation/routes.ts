@@ -104,6 +104,8 @@ export type ObservationRoutes = {
 
 export const createObservationRoutes = (options: ObservationOptions): ObservationRoutes => {
   const reply = (response: ServerResponse, value: Reply): void => {
+    // A reader that hung up cancels only its read; nothing is written into a dead socket.
+    if (response.writableEnded || response.destroyed) return;
     const body = JSON.stringify(value.body);
     if (Buffer.byteLength(body) <= RESPONSE_BYTES) {
       json(response, value.status, value.body);
@@ -257,7 +259,8 @@ export const createObservationRoutes = (options: ObservationOptions): Observatio
     const page = await readHistoryPage(path, {
       scopeId,
       limit,
-      ...(before === null ? {} : { before }),
+      before,
+      maxBytes: RESPONSE_BYTES - 32 * 1024,
     });
     const resolved =
       scopeId === "root" ? page.scopes.find((scope) => scope.kind === "root")?.id : scopeId;

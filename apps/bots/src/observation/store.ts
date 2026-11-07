@@ -318,8 +318,10 @@ const trimForDelivery = (message: Message): Message | undefined => {
 
 export type HistoryRequest = {
   readonly scopeId: string;
-  readonly before?: string;
+  readonly before?: string | null;
   readonly limit: number;
+  /** Messages stop here, so one page stays inside the frozen response budget. */
+  readonly maxBytes?: number;
 };
 
 export const readHistoryPage = async (
@@ -346,7 +348,10 @@ export const readHistoryPage = async (
     const newest = handle.db.prepare(`SELECT MAX(id) AS high FROM ${TABLES.entries}`).get() as {
       high: number | null;
     };
-    const beforeNumber = request.before === undefined ? undefined : numbered(request.before);
+    const beforeNumber =
+      request.before === undefined || request.before === null
+        ? undefined
+        : numbered(request.before);
 
     const rows = handle.db
       .prepare(
@@ -369,9 +374,14 @@ export const readHistoryPage = async (
     let trimmed = 0;
     let unmapped = false;
     let hasMore = false;
+    let bytes = 0;
 
     for (const row of rows) {
       if (messages.length >= request.limit) {
+        hasMore = true;
+        break;
+      }
+      if (messages.length > 0 && bytes >= (request.maxBytes ?? Number.POSITIVE_INFINITY)) {
         hasMore = true;
         break;
       }
@@ -411,6 +421,7 @@ export const readHistoryPage = async (
       const delivery = trimForDelivery(hidden.message);
       if (delivery !== undefined) trimmed += 1;
       const final = delivery ?? hidden.message;
+      bytes += messageBytes(final);
       messages.push({
         entryId: final.id,
         commitSeq: row.commit_seq,

@@ -235,25 +235,24 @@ from what runs.
 | A04 | "SG002-A12/A04" (replaced store forces `cursor_reset`) | pass |
 | A05 | "SG002-A05" (reads leave open count at zero) + `store.test.ts` byte diff | pass, with the named WAL sidecars allowed |
 | A06 | `store.test.ts` (missing / older schema / corrupt) | pass |
-| A07 | "SG002-A07" (concurrent reads never fail) + spike read-beside-writer probe | pass for load; reader cancellation is not exercised (gap) |
+| A07 | "SG002-A07" (concurrent reads never fail; an abandoned read cancels only itself and the next read is served) + spike read-beside-writer probe | pass |
 | A08 | "SG002-A08/A09" (child scope with owner, compaction boundary) | pass |
 | A09 | same test + `store.test.ts` paging | pass |
-| A10 | "SG002-A10" (501 scopes page at 500 and continue by `scopeAfter`) + `store.test.ts` trimmed delivery; the unsupported-kind path is implemented but not exercised (gap) | pass for scopes, partial for kinds |
+| A10 | "SG002-A10" (501 scopes page at 500 and continue by `scopeAfter`) and an unmappable kind forcing `content: partial` with `unsupported_kind` | pass |
 | A11 | "SG002-A11" (no reasoning on the wire, tool row keeps its shape) | pass |
 | A12 | "SG002-A12/A04" (same baseline replays) + `changes.ts` ranges | pass |
 | A13 | `apps/superagent/test/observation.test.ts` (refused / unreachable / unconfigured / reset) | pass |
 | A14 | `apps/superagent/test/observation.test.ts` "SG002-A14" (a read that cannot commit its baseline is reported `state_unwritable` and the stored baseline does not advance) | pass |
 | A15 | CLI chain on a real daemon (`observe-chain.log`); App strip compiled and running, not yet inspected by eye (gap) | partial |
 | A16 | `cursor.test.ts` measured 200-Bot baseline against 64 KiB | pass |
-| A17 | provider 192 KiB page cap + socket 256 KiB frame; the largest page was not rendered through a socket end to end (gap) | partial |
+| A17 | "SG002-A17" (a page of large messages stays inside the 192 KiB budget and a cut page always offers the next boundary) | pass at the provider; the socket frame itself was not measured with a maximum page (gap) |
 
 Real-data evidence: the acceptance tests run against stores written by the real runtime
 (five turns, a compaction, six forked reflection scopes). The CLI chain evidence uses a
 Bot whose store the daemon had just created, so it proves plumbing, not content.
 
-Gaps are listed, not hidden: reader cancellation (A07), the unsupported-kind coverage
-path (A10), a hand-inspected App strip (A15), and one maximum-size page through the real
-socket (A17).
+Gaps are listed, not hidden: a hand-inspected App strip (A15) and a measured maximum-size
+page through the real socket (A17's frame half). Everything else above is deterministic.
 
 ## 9. Review record (2026-11-08)
 
