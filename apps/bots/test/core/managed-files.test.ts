@@ -384,6 +384,46 @@ test("IDs, paths and unsafe filesystem entries are refused without following the
   }
 });
 
+test("completed and pending disk statuses fail closed instead of changing phase", async () => {
+  const { root, botDir, store } = await open();
+  try {
+    const body = Buffer.from("status matter");
+    await declare(store, { body });
+    const fileId = fileIdFor(botId, uploadId);
+    const filesDir = join(botDir, "files");
+    const pendingPath = join(filesDir, `${fileId}.upload.json`);
+    const pending = JSON.parse(await readFile(pendingPath, "utf8"));
+    await writeFile(pendingPath, `${JSON.stringify({ ...pending, status: "complete" })}\n`, {
+      mode: 0o600,
+    });
+    await assert.rejects(
+      store.upload({ botId, uploadId, source: Readable.from([body]) }),
+      (error) => error instanceof ManagedFileError && error.reason === "storage_failed",
+    );
+
+    await rm(pendingPath);
+    await store.declare({
+      botId,
+      uploadId,
+      name: "status.bin",
+      size: body.length,
+      sha256: digest(body),
+    });
+    const complete = await store.upload({ botId, uploadId, source: Readable.from([body]) });
+    const completedPath = join(filesDir, `${complete.id}.json`);
+    const record = JSON.parse(await readFile(completedPath, "utf8"));
+    await writeFile(completedPath, `${JSON.stringify({ ...record, status: "uploading" })}\n`, {
+      mode: 0o600,
+    });
+    await assert.rejects(
+      store.metadata({ botId, fileId: complete.id }),
+      (error) => error instanceof ManagedFileError && error.reason === "storage_failed",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("metadata verifies the requested id, bot and every completed record field", async () => {
   const { root, botDir, store } = await open();
   try {

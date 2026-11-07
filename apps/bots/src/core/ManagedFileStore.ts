@@ -229,7 +229,8 @@ export class ManagedFileStore {
       const files = await this.#filesDirectory(declaration.botId);
       const complete = await this.#readMetadata(join(files, `${id}.json`));
       if (complete !== undefined) {
-        if (!sameDeclaration(complete, declaration) || complete.status !== "complete") {
+        if (complete.status !== "complete") throw storage();
+        if (!sameDeclaration(complete, declaration)) {
           throw new ManagedFileError(
             "upload_conflict",
             "upload id is already declared differently",
@@ -240,7 +241,8 @@ export class ManagedFileStore {
       const pendingPath = join(files, `${id}.upload.json`);
       const pending = await this.#readMetadata(pendingPath);
       if (pending !== undefined) {
-        if (!sameDeclaration(pending, declaration) || pending.status !== "uploading") {
+        if (pending.status !== "uploading") throw storage();
+        if (!sameDeclaration(pending, declaration)) {
           throw new ManagedFileError(
             "upload_conflict",
             "upload id is already declared differently",
@@ -284,8 +286,11 @@ export class ManagedFileStore {
       const files = await this.#filesDirectory(input.botId);
       const completedPath = join(files, `${id}.json`);
       const existing = await this.#readMetadata(completedPath);
+      if (existing !== undefined && existing.status !== "complete") throw storage();
       const pendingPath = join(files, `${id}.upload.json`);
       const pending = existing ?? (await this.#readMetadata(pendingPath));
+      if (pending !== undefined && existing === undefined && pending.status !== "uploading")
+        throw storage();
       if (pending === undefined) {
         throw new ManagedFileError("unknown_file", "declare the upload manifest first");
       }
