@@ -68,6 +68,16 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 — File admission review fixes
+
+- File admission and history projection are committed in `f1b5e2f`. Review found
+  retry ordering, attachment capability and refusal-disposition defects; coding is
+  fixing these with real socket and SQLite tests. Their combined gate is not yet green.
+- The user-facing composer, file card, preview, Bot publishing tool and `eagle-dev`
+  file acceptance remain unimplemented; no end-to-end file chat is claimed.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  Tests have not used the installed production App or its daemon.
+
 ## 2026-11-07 — File admission checks in progress
 
 - The file-admission slice now has focused tests for protocol, a real pi-durable
