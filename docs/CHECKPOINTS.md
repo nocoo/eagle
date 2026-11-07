@@ -1,5 +1,18 @@
 # 用户视角检查点
 
+## 2026-11-07 — SG-001 accepted by the owner
+
+- Owner accepted the source dev App after creating a worker bot in the isolated
+  acceptance workspace and chatting with Super Bot in the native conversation.
+- Running pair during acceptance: Superagent `127.0.0.1:43127` (own root/token,
+  modelReady), isolated worker `43119` (`BOTS_ROOT=~/.local/share/eagle-bots-accept`);
+  the daily worker on 43117 was not used.
+- Evidence: real-gateway CLI turns and restart history; native transcript with a
+  live CLI-sent message; 43 daemon tests/4x95% coverage, 37 client tests/90% line
+  floor, 428 App tests, design and format; two review rounds plus targeted PASS.
+- Still open only as environment matrix: packaged/installed App, forced-quit/crash
+  cases, and a physical two-window run. SG-002 has no spec yet.
+
 ## 2026-11-07 — SG-001 native Super Bot conversation works end to end
 
 - With `EAGLE_DISABLE_WORKERS=1`, the source App starts its own Superagent process,
