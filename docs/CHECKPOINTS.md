@@ -68,6 +68,17 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 — Client replay and staging review
+
+- Several client fixes are committed: staged-source identity, complete-manifest
+  retry, outbox refusal retention and attachment order. A review of the first group
+  still found durability and ordinary-send regressions; those remain unresolved.
+- The current test investigates whether a cancelled upload resumes when its Bot is
+  reselected. The App file card and preview, Bot file publishing and `eagle-dev`
+  file acceptance are still absent. The publishing work remains in stash `0a334c0`.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  Tests have not used the installed production App or its daemon.
+
 ## 2026-11-07 — Client send recovery review
 
 - Client review found data-loss and replay risks. Initial storage fixes are committed,
