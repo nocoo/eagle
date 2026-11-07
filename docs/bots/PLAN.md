@@ -12,6 +12,19 @@ in [Extensions and tools](EXTENSIONS-AND-TOOLS.md). That guide also
 specifies planned optional `memory`, `search` and `peers` groups and child-agent
 discovery. Those additions are not implemented or enabled by this plan update.
 
+## Independent Superagent (design accepted, implementation pending)
+
+[Superagent architecture](SUPERAGENT-ARCHITECTURE.md) records the owner's
+read-only-first principles, narrow observation boundary, native decision dashboard,
+MVVM and TDD requirements. [Research](MAIN-BOT-RESEARCH.md) compares DSH and the Pi
+port. Both Superagent and workers must run independently; workers initially have
+no supervision-specific prompts, tools or reports. The first release reads complete
+retained histories and advises the owner, but sends no worker commands. A passive
+read-adapter feasibility gate comes first: existing chat subscriptions can open and
+resume workers. Separate App-owned processes are recommended, not yet selected;
+first-release lifetime remains App-scoped. No implementation or runtime acceptance
+is claimed by this plan entry.
+
 ## Shared-device idle and wake (in progress)
 
 [DEVICE-IDLE-AND-WAKE.md](DEVICE-IDLE-AND-WAKE.md) owns the target design, current

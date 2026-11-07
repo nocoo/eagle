@@ -1,17 +1,19 @@
 # Main Bot — research and architecture proposal
 
-Status: **owner decisions accepted on 2026-11-07; implementation pending**.
-Section 10 records the five product choices the owner confirmed after the research.
-The technical architecture remains a proposal, not implemented behavior. No runtime
-permissions, model configuration or daemon lifecycle have changed. The existing
-contracts remain authoritative until an implementation updates them explicitly.
+Status: **owner decisions and independence principles accepted; implementation pending**.
+The owner confirmed product choices and then required independent operation,
+read-only observation first, strict interfaces, a native decision dashboard, MVVM
+and TDD. [Superagent architecture](SUPERAGENT-ARCHITECTURE.md) now owns that design;
+this document retains the comparative research and its source evidence. No runtime
+permissions, model configuration or daemon lifecycle have changed.
 
 ## 1. Recommendation
 
-Make the main Bot an Eagle-owned, nondeletable catalog identity with an ordinary
-conversation and a bounded supervision capability. Keep pi-durable as the only
-execution runtime. Add the missing business responsibilities above it: authorized
-work, ownership, structured reports, evidence, follow-up, and accountable actions.
+Make the main Bot an Eagle-owned, nondeletable Superagent identity, independent of
+the worker catalog and runtime. Use pi-durable in its own host. Start with passive
+observation, complete-history queries, evidence-based suggestions and a native
+human decision dashboard. Worker management is a later, separately contracted
+capability, not a prerequisite for the first useful release.
 
 Do not embed the pi-superagent daemon, Engine, PiSessions or CLI inside Eagle. Do
 not implement the feature as a prompt plus a repeating `peer_send` loop.
@@ -21,12 +23,12 @@ The central distinction is:
 > A model run ending is not a task finishing. A Bot receiving information is not
 > that Bot receiving authority. Being the main Bot is not permission to do anything.
 
-The owner chose a conversational coordinator: the main Bot answers ordinary
-questions directly and delegates execution to existing Bots. It manages delegated
-work within its grant and suggests new goals before starting them. It can read all
-Bots' complete histories, but that visibility grants no new execution authority.
-The first version runs with the App and serializes each Bot's execution, with
-human priority at safe boundaries. Section 10 records these accepted choices.
+The owner chose a conversational coordinator with access to all Bots' complete
+histories. It answers ordinary questions and suggests new goals. The first release
+is strictly read-only toward unaware workers; eventual delegation remains limited
+to authorized work. The first version runs with the App. Human-priority serial
+worker execution remains required when management is introduced. Product presence
+in one UI does not imply shared execution, storage or lifecycle ownership.
 
 ## 2. Research baseline and upstream result
 
@@ -190,424 +192,153 @@ Retain the philosophy, but improve these boundaries in Eagle rather than inherit
 them. Keep Eagle's memory and reflection facilities; do not call the existing
 sidebar-note reflection a quality reviewer.
 
-## 5. Proposed Eagle architecture
+## 5. Current architecture direction
 
-### 5.1 A system identity, not a special title
-
-Add a host-owned immutable role, for example `systemRole: "coordinator"`, and a
-reserved stable Bot ID. These are illustrative field names, not an API commitment.
-
-- Exactly one coordinator per canonical daemon root, not one per window or device group.
-- Ensure it during serialized catalog initialization, before runtime recovery.
-- Its history, model and appearance remain normal Bot-owned data.
-- Refuse removal in the domain deletion boundary, before taking leases or moving files.
-- Refuse role/identity replacement through ordinary create/update/import paths.
-- Publish capabilities for UI affordances; hiding Delete is not the enforcement.
-- Reserve capacity for it; a full ordinary catalog must not prevent initialization.
-- A valid catalog without it may initialize it. Corrupt storage must fail visibly,
-  not be interpreted as a fresh installation and silently discard history.
-- Allow pausing supervision and changing its model. Nondeletable does not mean
-  uninterruptible, unconfigurable, always generating, or immune to storage failure.
-
-Application-level nondeletion cannot prevent an OS user or unrestricted shell
-from deleting files. Do not market it as filesystem tamper resistance.
-
-### 5.2 Keep the runtime; add a small business control layer
+[Superagent architecture](SUPERAGENT-ARCHITECTURE.md) owns the revised boundaries,
+read-interface semantics, dashboard, MVVM ownership and TDD acceptance matrix.
+The owner explicitly chose independent, read-only supervision as the first slice.
+It supersedes the earlier integrated-coordinator rollout, not the research above.
 
 ```text
-Bot reports / settled submissions / failures / due checks
-  -> CoordinationService: durable facts, ownership, policy and coalescing
-  -> bounded decision run in the main Bot's pi-durable Harness
-  -> typed action proposal
-  -> host authorization + current-state check + action receipt
-  -> InvocationPort -> target Bot's existing runtime adapter
-  -> report / result -> durable notification -> next decision or human handoff
+Worker runtime / stored history
+  -> generic passive observation provider
+  -> narrow versioned read protocol
+  -> independent Superagent + its own pi-durable Harness and store
+  -> evidence, bounded analysis, suggestions and human decisions
+  -> native MVVM dashboard and main-Bot conversation
 ```
 
-Proposed ownership:
+The Superagent owns its stable nondeletable identity outside the worker catalog.
+The shell composes the two identity sources. A full, unavailable or absent worker
+catalog cannot prevent the main Bot from starting. No worker imports Superagent
+core, depends on its acknowledgements, or gains supervision-specific prompts,
+tools, report hooks or task wrappers. Both sides can operate independently.
 
-| Layer | Responsibility |
-| --- | --- |
-| `core/coordination` | WorkItem, Grant, Assignment, Report/Evidence, decisions, attention, action receipts |
-| `coordination/` composition | Event production, reconciliation, low-cost wake scheduling, host bindings |
-| `runtime/pi/` | Internal conversations, native tasks/documents, model runs, recovery and event conversion |
-| `tools/coordination` | Narrow typed management/report tools; identity comes from the host |
-| `protocol/`, `server/` | Additive read models, authenticated human controls and revision semantics |
-| BotsCore / BotsFeatures | Work and attention models, pure folds, view models |
-| EagleFeatures | Pinned main Bot, task cards, concise attention and activity views |
+The candidate read boundary has exactly three operation families: `snapshot`,
+`history`, and `changes`. The detailed design requires frozen pagination, provenance,
+coverage watermarks, source/epoch-bound cursors, explicit gaps, bounded load and
+producer/consumer conformance tests. These are proposed contracts, not endpoints
+already available. No generic execute RPC or phase-1 worker write capability exists.
 
-Core must not import pi-durable. Runtime must not become the owner of the catalog
-or product policy. Use a typed host port, as existing peer/trigger tools do.
+Read-only is stronger than today's read credential scope: chat subscribe opens a
+Bot and refreshes tools; runtime open enables recovery scheduling; sockets hold
+idle leases; peer exchange detail can backfill persisted answers. These routes
+must not be reused as a supposedly passive observer. See the architecture's source
+map and passive-adapter feasibility gate. Do not directly parse worker SQLite from
+the Superagent as a shortcut around the boundary.
 
-A small root-owned SQLite coordination store is a suitable recommendation for
-cross-Bot product state and atomic decision/outbox writes. It is not another
-session database or execution engine. pi-durable still owns transcripts, model
-inboxes, generation/tool task checkpoints, retry and compaction. Store references
-to transcript entries and artifacts rather than duplicate all conversations.
+Separate App-owned processes and separate stores are recommended. Logical modules
+in one process cannot isolate process crash, OOM or a blocked event loop. The owner
+has not explicitly chosen OS process topology, so this remains an open choice.
+Neither option introduces an always-on service after App quit.
 
-There is no transaction spanning that store and every Bot's separate Harness.
-Use write-ahead intents, stable IDs and reconciliation; do not claim cross-Harness
-atomicity or arbitrary exactly-once side effects.
+## 6. First-release supervision semantics
 
-### 5.3 Distinguish identity, work and conversation
+The main Bot may read all Bots' complete retained histories, analyze committed
+facts, answer the owner, and present suggestions. It may persist its own observations,
+cursors, analyses and human decisions. It cannot send, steer, promote, abort,
+recover, retry, configure, mutate triggers, assign work or request worker reports.
+Workers do not need to know it exists or cooperate with it.
 
-A Bot is a long-lived participant with its own model, tools and memory. A WorkItem
-is an authorized objective. An Assignment is one executor's responsibility for
-that objective. A conversation is the context in which that responsibility runs.
+A suggestion marked reviewed or useful is still **not executed**. Even an explicit
+request to delegate is a proposal in this phase, not permission to use a hidden
+worker command path. Existing workers remain directly usable through their normal
+UI; the Superagent's evidence viewer must use passive reads rather than open an
+ordinary chat as an accidental warm-up.
 
-Recommended target:
+Use deterministic coalescing and durable evidence identities before invoking a
+model. Inferences retain uncertainty and source references; runtime idle or a
+completed submission never establishes business acceptance. Supervisor failure,
+source availability, evidence freshness and worker health are separate facts.
+No raw hidden reasoning is required for observability.
 
-- Main Bot root: human conversation, with normal responsiveness and result cards.
-- Main Bot supervision conversation: bounded internal decisions, not a new Bot.
-- Worker Bot root: its existing human conversation.
-- Managed WorkItem conversation: stable within the assigned worker's Harness,
-  reused across execution attempts; bound to its grant by the host.
-- An optional short reviewer conversation: bounded and owned, used only when
-  the acceptance policy needs it; not an always-on second supervisor.
+Complete-history visibility includes retained pre-compaction entries. It does not
+open credential stores, grant general file/shell access, or let old instructions
+mint new authority. Missing or unavailable history stays explicit. Paging bounds
+each query, not which Bot's history the owner allowed it to inspect.
 
-This avoids injecting background reviews into the person's FIFO chat queue and
-avoids combining unrelated task authority in one mutable conversation. Start with
-one active managed Assignment per worker Bot; keep ordinary human chat available.
-The owner chose serialized execution turns per Bot, with human priority at safe
-boundaries, without aborting managed work merely to switch chats. Separate
-conversations do not isolate files, accounts or external services. Parallel
-execution needs an explicit resource-conflict policy; separate working directories
-alone would not establish it. A safe boundary also accounts for background jobs:
-a model turn ending does not stop their writes. Before handing conflicting
-resources to a human turn, those jobs must finish, pause, or be proven nonconflicting.
+## 7. Native human decision dashboard
 
-Independent catalog Bots must not be reclassified as `agent_*` children. Native
-child tasks and task-owned conversations are useful inside one Harness, but their
-ownership and cancellation do not span other Bots' SQLite files.
+DSH's panel prioritizes three questions: does anything need me, is the system
+healthy, and what led to this outcome (`D docs/005-panel.md`). Eagle needs the same
+decision support in SwiftUI/AppKit, not a web view or only a conversation transcript.
 
-**This is a real adapter change.** Today's InvocationPort targets only a Bot's
-root conversation. Add a host-only typed conversation scope with durable lookup,
-origin, lease, status, cancellation and observation semantics. Scope must also
-cover history, cursors, question answers, configuration and admission budgets;
-Bot-level busy is only the lifecycle aggregate. Do not let a client supply an
-arbitrary SDK conversation ID. Lookup identity is `(botId, scope, requestId)`;
-pi dedupes within a conversation, not across the whole Bot.
+The first release includes an attention overview, observed workers, evidence and
+decision details, supervisor/source health, and a decision timeline. Each suggestion
+links to facts and states what is uncertain. Counts match their drill-down lists.
+Healthy state takes little space. Dashboard actions affect only supervisor-owned
+state: review, dismiss, defer, or reanalyze. No worker retry/dispatch controls ship.
 
-Bind assignment ID, fencing epoch and grant ID durably to the invocation and its
-actual generation/tool tasks. Never infer authority from a conversation's latest
-assignment: an old tool or report may finish after reassignment. Before replacing
-an attempt, settle or explicitly fence its pending input and owned background work.
-A timeout is not proof the old execution stopped. A Grant is immutable; revocation
-is a separate host-owned fact, not a model edit to the Grant. Late reports retain
-their original assignment, attempt and grant epoch. Keep stale reports as audit
-evidence, but do not let them advance current work, satisfy acceptance or trigger
-a fresh action after cancellation or reassignment.
+MVVM is mandatory: pure domain models/reducers; ViewModels with injected ports,
+selection, cancellation and explicit intent; passive Views; transport-owned codecs
+and authentication. Views do not run network requests, classify work or schedule
+models. Reuse EagleDesign controls/tokens and retain Bots/Eagle dependency direction.
+The detailed architecture owns this split and its tests.
 
-Direct user chats are initially observations, not automatically accepted tasks.
-The main Bot can notice a problem and propose adoption. A user delegation or an
-approved standing rule creates the WorkItem. This prevents a casual conversation
-from becoming an unsolicited autonomous project.
+## 8. Example: the first useful read-only product
 
-### 5.4 Minimal product state
+Bot A has produced a research answer and Bot B is working on a prototype. Neither
+was started or modified by the Superagent. The observer reads their committed
+history through the passive interface and notices a missing source in A's answer.
 
-| Record | Essential facts |
-| --- | --- |
-| WorkItem | Goal, acceptance criteria, origin, owner, dependencies, state, revision |
-| Grant | Explicit delegation or standing rule, scope, permitted actions/targets, policy revision, revocation |
-| Assignment | WorkItem, Bot, stable conversation, attempt, request/submission IDs, current owner |
-| Report | Progress/wait/blocked/failed/ready, question if any, evidence references, source run |
-| Decision/action | Evidence revision, reason, action key, authorization, delivery/outcome state |
-| Attention | One current question or actionable problem, owner, resolution, notification identity |
+It shows a suggestion with the precise evidence, freshness and uncertainty. The
+owner can inspect it, dismiss it, or act manually through the usual worker UI.
+The Superagent does not prompt A, unblock B, retry either Bot or approve a device.
+If the worker source disappears, the dashboard keeps the last observation marked
+stale while the main conversation remains available. If the Superagent fails,
+both workers keep operating normally within the chosen process-isolation limits.
 
-Reports and verification evidence should be append-only facts; the current card
-is a projection. Keep model-authored claims separate from runtime observations and
-independent checks. Do not use a model's sidebar note as proof of progress.
+This is the accepted initial product, not a claim that autonomous management has
+already shipped.
 
-Illustrative work states:
+## 9. Delivery and future-management boundary
 
-```text
-proposed -> authorized -> assigned -> running
-                             -> waiting_external / waiting_human / blocked
-                             -> ready_for_review -> completed
-any live state -> cancelled (explicit revocation)
-```
+The delivery order is now: prove the passive contract; ship independent identity,
+complete-history observation and a native decision dashboard; harden read-only
+analysis and recovery; only later introduce an explicitly enabled command contract.
+The architecture document contains the strict TDD and producer/consumer test matrix.
 
-Keep runtime health on a separate axis. A crashed runtime does not make the goal
-failed forever; an idle runtime does not make it complete. `submission.done`
-means answered. Even an independently reviewed answer may remain awaiting the
-owner's acceptance, depending on the stated criteria.
+Tests must demonstrate noninterference, not just successful reads: no model starts,
+worker writes, prompt/tool changes, runtime opens, idle retention or worker commit
+backpressure attributable to observation. Allow only explicitly listed transport
+logging/credential bookkeeping. Test each side without the other, source gaps,
+fixed-boundary paging, stale responses, cursor recovery and native MVVM behavior.
 
-## 6. The proactive loop and its safety properties
+Future management still needs the DSH-derived authorization and ownership model:
+WorkItem is not a model run, Assignment is not a Bot, and ready is not accepted.
+Any command must cross a small authenticated public contract, never an in-process
+ConversationService or RuntimeHandle reference. The worker may implement that
+contract with its existing InvocationPort internally; that choice stays private.
 
-### Events first, deadlines second, no model heartbeat
+Preserve stable action IDs, durable receipts, grant/attempt fences, human stop,
+evidence-based acceptance, human-priority serialization and unknown-effect handling.
+A timeout does not prove execution stopped. An old report after reassignment cannot
+advance current work. Cross-Harness atomicity and exactly-once arbitrary external
+side effects remain unsupported claims. These future requirements must not impose
+worker changes or dormant write capabilities on the read-only release.
 
-Wake on a new authorized goal, structured worker report, committed result,
-classified failure, overdue dependency, changed relevant artifact, or resolved
-human question. Suppress token deltas and routine tool progress. Use deterministic
-coalescing by work/reason/evidence revision before considering a model call.
+Backend work follows strict TDD. Native logic follows MVVM and fake-port/reducer
+tests, with real transport and App acceptance separately reported. No product tests
+or running App checks were executed for this documentation change.
 
-Use the existing trigger infrastructure for user schedules. A narrow supervisor
-producer handles work deadlines and startup reconciliation. One layer must own
-each deadline: either a host producer or a native durable sleeping task, never
-both. Persist the deadline and work revision in the product ledger; any timer
-only wakes a recheck against that authority. Missed recurring schedule ticks may
-be skipped, as today, but an overdue work obligation must be reconciled after
-restart rather than discarded under the schedule's 90-second freshness rule.
-A model does not poll `peer_read` or wait for time inside a turn.
+## 10. Accepted decisions and additional principles — 2026-11-07
 
-Native `defineTask` / `sleepUntil` can persist internal waits. They do not wake a
-terminated process, and closing an idle Harness removes its in-process timers.
-The host therefore needs a known wake/reopen path, or an explicitly retained
-coordinator Harness. This lifecycle choice must be proven, not inferred from the
-existence of durable sleep.
-
-### Observation must survive missed UI events
-
-Today's `observe()` exposes only a running boolean; an unopened Bot can report
-false. WebSocket `rev` and bounded snapshots are delivery mechanisms, not a durable
-audit feed. Add narrow committed observations and durable reconciliation keys.
-
-For managed work, bind a stable assignment before admitting its input. Record the
-source submission/report and consume it idempotently. If the daemon crashes after
-an answer commits but before its notification, reopening must reconstruct the
-missing notification by querying the original submission. A structured report
-tool returns success only after the business report is durable; replay uses the
-same operation ID. Commit an observation cursor together with its consumed fact
-and notification intent, never before them. A live callback is only a wake hint.
-Historical unregistered work may remain unknown; never invent it.
-
-Install event/report hosts, the service and policy state before calling
-`harness.resume()`. Current startup opens/recoveries happen before the service is
-fully composed; a new cross-Bot recovery path must not inherit that temporal gap.
-Stop producers first, drain admissions and durable writes, then close Harnesses.
-The App currently allows three seconds before SIGKILL, while the daemon defaults
-to a six-second close budget (`config.ts:38`); ordinary quit can therefore cut the
-drain short. Reconcile this lifecycle budget when implementing, and keep recovery
-correct even when graceful shutdown does not complete.
-
-### Decide briefly; execute through typed boundaries
-
-A decision receives a compact evidence packet and reads more only through scoped
-queries. It chooses no action, clarification, assignment, bounded follow-up,
-recovery proposal, verification or escalation. A structured decision records even
-"do nothing" when needed for dedupe/audit. No internal prose is silently treated as
-a command, completion or a message sent to the person.
-
-The host validates current grant, identity, work revision, target and budget at
-execution time. An action based on a superseded revision is rejected or re-evaluated.
-User stop has a durable generation/revocation fence; queued or recovered actions
-from the old generation cannot resume work.
-
-A peer answer cannot mint authority. Preserve the existing prohibition on
-non-human `steer` for ordinary root chats. If managed work needs mid-run correction,
-add an explicit assignment-scoped command with grant checks; never label it human
-or reuse whole-Bot abort, which also withdraws unrelated queued inputs.
-
-### Delivery and recovery
-
-1. Atomically persist the authorized decision and its outbound action intent.
-2. Deliver through the core admission boundary with a stable action-derived ID.
-3. Record the recipient's durable admission receipt.
-4. Observe or reconcile that same submission; do not resend to a new target on timeout.
-5. Persist its outcome and the notification intent together.
-6. Publish one work/result/attention update; wake the main Bot only when useful.
-
-An unconfirmed admission can be retried under the same key. An admitted run that
-ends `unanswered` is not a delivery retry: another execution needs a new, bounded
-business decision. An external side effect with unknown outcome needs its original
-operation receipt or a human decision, never blind replay.
-
-A `peer_send` receipt is useful precedent, but the current pairwise exchange is
-not a durable task-return subscription. Its ten-messages-per-side limit is also
-not a fleet budget; closed exchanges can be replaced by new ones.
-
-### Safety, cost and attention
-
-- Separate automatic remediation from new inferred work. Delegated work may be
-  managed within its grant while new goals remain observe-only.
-- Bound decision requests, elapsed time, retries, outstanding work, notifications
-  and automated follow-ups. Persist counters across restart.
-- Reserve capacity for human interactions; automation cannot consume every slot.
-- Classify unknown/stale observations honestly. Time without output is not proof
-  of a stuck worker, especially during a long tool call or human approval.
-- Use root event/work causality and dedupe across Bot pairs, not just exchange caps.
-- Suppress self-generated no-change notifications; aggregate routine progress.
-  A supervision/reviewer run settling must not itself trigger another review of
-  the same work revision. Deterministic reduction precedes model consideration.
-- Blocked-on-human work remains held until the actual answer/approval arrives.
-- Distinguish pause supervision, cancel one task, and emergency stop managed work.
-- A failure of the main Bot must appear in ordinary deterministic UI health; do
-  not ask the failed model to diagnose itself or restart indefinitely.
-
-Budget enforcement needs an adapter spike. pi-durable reports and skips most
-throwing generation hooks; throwing from `beforeRequest` is not a reliable hard
-budget gate. The host must prove the admission/reservation and actual cancellation
-boundary, including retry, compaction, reflection and child spend. Unknown model
-pricing cannot support a claimed exact dollar cap.
-
-## 7. Permissions, scope and native presentation
-
-### Role policy must be real
-
-Today `core` and `coding` are mandatory, and gateway tool-group changes apply to
-all Bots. Adding a coordinator prompt does not remove `bash`, `write`, shared
-memory mutation, remote execution or inherited child tools.
-
-Introduce role-aware capability selection and enforcement, with ordinary worker
-behavior explicitly preserved. A supervision run should receive read/work/report
-management tools, not unrestricted coding tools, secrets, policy editing or device
-approval. Validate the callable set, not just what the model is offered:
-`modelTools` filtering alone does not remove tools from nested callers.
-
-Management design implementing the accepted product choices:
-
-| Operation | Design target |
-| --- | --- |
-| Observe Bot health and queue state | Allowed; missing or stale facts remain unknown |
-| Read any Bot's complete stored history | Allowed for the main Bot through controlled history queries, not general filesystem access |
-| Ask a worker for a bounded status/result update | Allowed for assigned work, with dedupe and budget |
-| Delegate/review/continue a person's authorized task | Allowed inside the recorded grant |
-| Start an unrelated inferred project | Observe/propose; needs a standing rule or human approval |
-| Interrupt another Bot's human conversation | Not allowed |
-| Delete Bots, change permissions, reveal secrets, approve devices | Not allowed |
-| Change provider/model spending policy or supervision grants | Human control only by default |
-| Publish, deploy, spend money or perform destructive external actions | Existing approval plus explicit action scope |
-
-Complete-history access replaces the earlier recommendation to read only managed
-work evidence. It includes retained history before compaction, not just the current
-UI page or a summary. Read it through bounded, paginated queries with Bot and entry
-provenance; do not inject every transcript into every model request. Unavailable or
-removed records remain unavailable, never reconstructed as if they were retrieved.
-This permission does not expose credential stores, enable arbitrary file or shell
-access, or grant blanket onward disclosure to workers. Relevant task context may
-be shared within its grant; ordinary Bots do not inherit the main Bot's global
-history access. Existing secret redaction remains in force.
-
-`ask_user` is reusable presentation, not an approval credential. A permission
-answer must resolve a host-authored proposal bound to action digest, target,
-revision and expiry, through a verified human control path. Do not accept a model
-boolean such as `confirmed_human_request` as authorization. Development CLI
-credentials can currently carry human origin; origin labels alone are insufficient
-for a stronger future human-only authorization boundary.
-
-Existing native shell/file tools are not a sandbox. Role restrictions reduce what
-the supervisor can call, but do not magically confine unrestricted workers or the
-OS user. Strong control-state isolation from arbitrary shell access would require
-an additional execution boundary and explicit product/security work.
-
-### First-class, not another management app
-
-Pin the main Bot above ordinary user groups, with a visible coordinator role and
-no Delete/Hide control. It still uses normal catalog identity, model selection,
-usage, history and unavailable/recover behavior.
-
-Its conversation should show useful summaries, linked work cards and one concrete
-question when blocked. An activity view exposes what it observed, why it acted,
-which Bot it addressed, the receipt and evidence. Healthy checks need not occupy
-chat space. Workers show which work is supervised and can hand back scope conflicts.
-
-Internal supervision inputs need an explicit protocol representation or an
-internal-only lane. Do not misuse today's `hidden` answer-to-question flag, and do
-not fabricate a human message. Publishing a result without another model call may
-use a new typed entry projected by the adapter; current arbitrary custom entries
-are not automatically visible in the transcript.
-
-Reuse existing conversation/sidebar/inspector components, question cards and
-peer exchange detail where appropriate. Add a business-work read model distinct
-from runtime tasks. Keep the Bots logic package independent of Eagle UI and of the
-website/Worker/Agent contracts. Preserve v1's additive wire rules and fixtures.
-
-## 8. Example: supervision without taking over
-
-The owner asks the main Bot to coordinate a research comparison and a local
-implementation prototype, with no publication.
-
-- The main Bot records the goal, separate acceptance criteria and a no-publish grant.
-- It assigns research to Bot A and the dependent prototype to Bot B.
-- Bot A's answer settles. A durable completion notification wakes supervision.
-- The answer lacks an important source. The main Bot requests that missing evidence
-  once; it does not report the research complete or ask the person to chase Bot A.
-- Bot B waits for the accepted research. This is a dependency, not a stuck runtime.
-- Bot B later needs a device approval. The main Bot surfaces the existing approval;
-  it cannot impersonate the owner or switch the device to All approve.
-- A runtime crash resumes the original assignment. Unknown external effects are
-  queried by their original receipt, not repeated because the worker restarted.
-- Both results meet the recorded criteria. The main Bot delivers one concise result
-  with evidence and leaves any required human acceptance open.
-
-This is proactive management of authorized work, not unsolicited task generation.
-
-## 9. Delivery slices and acceptance evidence
-
-Each slice must be end-to-end usable. No timeframe estimate is asserted here.
-
-| Slice | User-visible outcome | Required proof |
+| Decision | Accepted choice | First-release meaning |
 | --- | --- | --- |
-| 1: identity and observation | Main Bot always exists, chats normally, reports one meaningful fleet issue | Fresh/existing/full catalog, restart uniqueness, API deletion refusal, no-page-selected observation, pause |
-| 2: one delegated task | Main Bot delegates to an existing Bot and returns the result without another user prompt | Grant and work identity, durable admission, automatic return, scoped evidence, no duplicate execution |
-| 3: supervision and handoff | Main Bot notices blocked or incomplete work and manages bounded follow-up | Structured reports, acceptance evidence, no-progress dedupe, human hold, user-stop fence |
-| 4: multi-Bot coordination | Dependencies and bounded reassignment, useful aggregated suggestions | Resource conflicts, human priority, cross-Bot cycle caps, stale action rejection, revoked grants |
+| Autonomy | Manage delegated work eventually; suggest new goals first | Initially read-only: analyze and advise, no worker commands |
+| Visibility | All Bots' complete histories | Controlled access to complete retained transcripts, including pre-compaction |
+| Lifetime | First version runs with the App | No new always-on service; a closed window is not a quit App |
+| Main role | Answer ordinary questions; delegate execution eventually | No general shell/coding executor role and no phase-1 delegation |
+| Worker concurrency | Serial execution, human requests first | Required when management is added; no worker scheduler change for observation |
+| Independence | Each side can run without the other | Separate runtime/storage ownership; no worker awareness or reporting dependency |
+| Interfaces | Few, strictly defined and tested | Versioned passive contracts; no cross-core/runtime/schema coupling |
+| Human decisions | Native dashboard | Evidence, suggestions, source health and decision history, not only logs |
+| Engineering | MVVM UI, TDD backend | Explicit ownership and failing behavior tests before implementation |
 
-Background operation after App quit is excluded from the accepted first version.
-Closing a window may leave supervision running while the App remains alive. A
-separate background service would require a new product decision, not an implicit
-fifth delivery slice.
-
-Observation-only delivery is not completion of the requested management feature;
-slice 2 is the minimum autonomous delegation loop. Role/grant enforcement,
-revocation fences, scoped cancellation and a proven minimum persistent automation
-budget are prerequisites to enabling its first automatic dispatch. Later slices
-extend these safeguards; they do not introduce them for the first time. Do not
-claim hard budget enforcement until the adapter spike proves it. Design the
-grant/identity/receipt boundaries first so later slices extend a working product
-rather than replace it.
-
-Mandatory scenarios include:
-
-- Crash before admission, after recipient commit, after answer, and before notification.
-- Return notification while no conversation window is subscribed.
-- Model says "done" without evidence; idle/ready/accepted remain distinguishable.
-- Existing human follow-up stays with its owner; out-of-scope handback creates no duplicate.
-- Pause/revocation races with admission, a running tool, restart and delayed results.
-- An old `ready` after reassignment, or a late result after cancellation, cannot
-  complete or reactivate the current work.
-- A loop of two or three Bots exhausts a durable global work budget and stops.
-- Corrupt catalog, missing main model, supervisor failure and offline device remain visible.
-- Supervisor cannot use nested tools, child agents or peer origins to expand its grant.
-- The main Bot can page every Bot's complete retained history, including entries
-  before compaction; provenance, pagination and unavailable history remain explicit.
-- Ordinary Bots cannot inherit the main Bot's history privilege, and a history
-  read grants neither credential access nor unrestricted onward disclosure.
-- Human and managed execution on one Bot remain serialized, including conflicting
-  background work; human priority does not silently abort or replay managed work.
-- Closing a window leaves App-owned supervision possible; quitting the App stops
-  its owned daemon. A disabled or sleeping App is not shown as actively supervising.
-
-Use strict TDD, the independent Bots gate, both Swift package gates, and real
-`eagle-dev` CLI acceptance with isolated state and a scripted model. Add real
-Harness/SIGKILL cases for the crash boundaries. Model quality and installed-App
-acceptance remain separate from deterministic tests. No such checks ran for this
-research-only change.
-
-## 10. Accepted owner decisions — 2026-11-07
-
-The owner explicitly answered all five choices in panel H of the research page.
-These are accepted product requirements, not recommendations awaiting an answer:
-
-| Decision | Accepted choice | Consequence |
-| --- | --- | --- |
-| Autonomy | Manage delegated work; suggest new goals first | Automatically assign, follow up and assess within the original grant; do not self-authorize a new goal |
-| Visibility | All Bots' complete histories | Replace the earlier managed-evidence-only recommendation with controlled access to complete retained transcripts |
-| Lifetime | First version runs with the App | No new always-on service; window closure and App quit remain distinct |
-| Main role | Answer ordinary questions; delegate execution | No general shell/coding executor role for the main Bot |
-| Worker concurrency | Serial execution, human requests first | Prioritize humans at safe resource boundaries, without silently aborting existing work |
-
-The main Bot's default presence and nondeletion remain required. The five choices
-are settled; they do not enable any runtime behavior in this documentation change.
-Implementation, its technical contracts and its acceptance evidence are pending.
-
-Full-history visibility is a reading permission, not authority to execute what an
-old message says. Historical instructions retain their original provenance and
-cannot authorize a new action. Access also does not grant blanket onward disclosure.
-Define retention and recipient checks in the implementation contract. Any later
-revocation blocks future use but cannot make a model forget material already in
-its durable conversation; retire that context when necessary, without claiming
-retroactive erasure of information or audit records.
+Default presence and nondeletion remain required. The new read-only-first principles
+refine the earlier management goal; they are not an approval to enable writes now.
+Process isolation remains a visible choice, with separate App-owned processes
+recommended. Technical schemas, implementation and runtime acceptance are pending.
 
 ## 11. Verification and source map
 
