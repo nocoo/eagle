@@ -355,6 +355,14 @@ under `EAGLE_DISABLE_WORKERS` (C4), owned-process exit and retry (C5), settings
 client lifecycle (C7), authenticated health proof for process adoption (C12), and
 supervisor status publication (C13).
 
+Second incremental review over `5662d494..94b54d9e` closed 9 of 13 findings and
+left C1 (reconciliation left an admitted draft sendable), C5 (owned-child exit kept
+readiness), C10 (overlapping same-draft sends) and C11 (close during settings load)
+open with isolated probes. They were fixed with regressions at `9070b771`: draft
+settlement on reconciliation, one in-flight send, owned-child liveness recheck, and a
+window-lifetime guard after settings. A third round replayed only those four probes
+and returned **PASS**, plus 37 package tests.
+
 Not verified: SG001-D integrated acceptance matrix from scratch, installed/packaged
 App, a real two-window session, forced-quit crash cases, and owner hand acceptance.
 No worker service call or worker storage access is part of this path.

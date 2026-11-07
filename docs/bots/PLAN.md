@@ -23,7 +23,7 @@ SG-001 neither connects to them nor needs their configuration or availability.
 
 | Spec / milestone | Scope | State |
 | --- | --- | --- |
-| [SG-001: native chat](specs/SUPERAGENT-001-CHAT.md) | A: executable/root/readiness -> B: own durable chat/protocol -> C: App launcher/native conversation -> D: acceptance | A review-closed; B review P1s fixed, 43 tests/4x95% floors; C native+CLI implemented, 27 package tests/90% line floor, 428 App tests, real-gateway CLI and native rendering recorded; final review and owner acceptance pending |
+| [SG-001: native chat](specs/SUPERAGENT-001-CHAT.md) | A: executable/root/readiness -> B: own durable chat/protocol -> C: App launcher/native conversation -> D: acceptance | A review-closed; B review P1s fixed, 43 tests/4x95% floors; C native+CLI implemented, 27 package tests/90% line floor, 428 App tests, real-gateway CLI and native rendering recorded; two independent review rounds closed every finding, final targeted replay PASS; owner acceptance and SG001-D matrix pending |
 | SG-002: passive worker evidence | Exact snapshot/history/changes contract, inert cold reads and complete retained worker history | Planned; write its spec after SG-001 works |
 | SG-003: analysis and native decisions | Bounded evidence-backed suggestions and the native decision dashboard | Planned |
 | SG-004: proactive observation | Change-driven rechecks, notifications, recovery and richer observability | Planned |

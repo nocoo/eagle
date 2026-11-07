@@ -19,6 +19,9 @@
   preservation, queued/aborted rows, start/stop fencing, owned-process exit,
   authenticated health proof, settings client close, disabled-worker quit guard,
   supervisor status publication, byte-trimmed history marker).
+- Round-two review closed 9/13 findings and left four reproducible gaps; they were
+  fixed and round three replayed only those probes: **PASS**. The dev App is running
+  for owner acceptance.
 - The next broken hop is owner hand acceptance (typing in the App, two windows, quit
   behaviour) and the remaining SG001-D crash/packaged-App matrix. Worker collection,
   website auth and D1 were not exercised or modified; no installed App was replaced.
