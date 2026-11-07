@@ -331,6 +331,42 @@ final class FileSendTests: XCTestCase {
     XCTAssertEqual((json["entries"] as? [[String: Any]])?.count, 2)
   }
 
+  func testPartialUploadPreservesEntryOrderAndWhenBusyMode() async throws {
+    let fake = FakeFileConversation()
+    let file = PartialFilePort()
+    let outbox = OutboxStore(directory: directory)
+    let model = ConversationViewModel(
+      botId: "b_1", conversation: fake, outbox: outbox, filePort: file)
+    model.select(botId: "b_1")
+    fake.emit(.capabilities(sendFiles: true))
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.connection == .ready && model.hasSnapshot }
+
+    let entry = OutboxEntry(
+      botId: "b_1", requestId: "r_partial_0001", text: "partial",
+      whenBusy: .steer,
+      files: [
+        StagedFile(
+          kind: .selected, uploadId: "u_a", name: "a.bin",
+          mimeType: "application/octet-stream", size: 1,
+          sha256: String(repeating: "a", count: 64), relativePath: "staging/a",
+          fileId: "f_\(String(repeating: "a", count: 64))"),
+        StagedFile(
+          kind: .selected, uploadId: "u_b", name: "b.bin",
+          mimeType: "application/octet-stream", size: 1,
+          sha256: String(repeating: "b", count: 64), relativePath: "staging/b"),
+      ])
+    try outbox.add(entry)
+    model.retry(entry)
+    try await waitUntil { fake.sent.count == 1 }
+    XCTAssertEqual(
+      fake.sent.last?.fileIds,
+      ["f_\(String(repeating: "a", count: 64))", "f_\(String(repeating: "b", count: 64))"])
+    XCTAssertEqual(file.uploadedUploadIds, ["u_b"])
+    XCTAssertEqual(fake.busyModes.last, .steer)
+  }
+
   func testOutboxV3RejectsMissingOrNullFilesAndV2MayMigrate() throws {
     let file = directory.appendingPathComponent("outbox.json")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -475,6 +511,23 @@ private final class BlockingStageFilePort: FilePort {
   func url(for file: StagedFile) async throws -> URL { URL(fileURLWithPath: "/tmp/file") }
 }
 
+private final class PartialFilePort: FilePort {
+  var uploadedUploadIds: [String] = []
+
+  func stage(
+    text: String, selectedFiles: [URL], botId: String, requestId: String
+  ) async throws
+    -> StagedSend
+  { .init(text: text) }
+  func upload(_ file: StagedFile, botId: String) async throws -> String {
+    uploadedUploadIds.append(file.uploadId)
+    return "f_\(String(repeating: file.uploadId == "u_b" ? "b" : "a", count: 64))"
+  }
+  func originalText(_ send: StagedSend) async throws -> String { send.text }
+  func selectedURLs(_ send: StagedSend) async throws -> [URL] { [] }
+  func url(for file: StagedFile) async throws -> URL { URL(fileURLWithPath: "/tmp/file") }
+}
+
 private final class BlockingFilePort: FilePort {
   var uploadCalls = 0
   var lastTaskWasCancelled = false
@@ -513,6 +566,7 @@ private final class FakeFileConversation: ConversationPort, FileConversationPort
     let fileIds: [String]?
   }
   var sent: [Sent] = []
+  var busyModes: [BusyMode] = []
   private var continuation: AsyncStream<ConversationEvent>.Continuation?
 
   func open(botId: String) -> AsyncStream<ConversationEvent> {
@@ -523,11 +577,13 @@ private final class FakeFileConversation: ConversationPort, FileConversationPort
   func emit(_ event: ConversationEvent) { continuation?.yield(event) }
   func send(_ text: String, whenBusy: BusyMode, context: CommandContext, botId: String) async throws
   {
+    busyModes.append(whenBusy)
     sent.append(Sent(text: text, requestId: context.requestId ?? "", fileIds: nil))
   }
   func send(
     _ text: String, whenBusy: BusyMode, context: CommandContext, botId: String, fileIds: [String]
   ) async throws {
+    busyModes.append(whenBusy)
     sent.append(Sent(text: text, requestId: context.requestId ?? "", fileIds: fileIds))
   }
   func answer(

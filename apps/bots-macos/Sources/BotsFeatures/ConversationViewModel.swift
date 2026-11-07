@@ -462,19 +462,19 @@ public final class ConversationViewModel: ObservableObject {
             to: state
           )
         }
-        var fileIds: [String] = []
-        for file in entry.files where file.fileId == nil {
+        var fileIds: [String?] = Array(repeating: nil, count: entry.files.count)
+        for (index, file) in entry.files.enumerated() {
+          if let existing = file.fileId {
+            fileIds[index] = existing
+            continue
+          }
           try Task.checkCancellation()
           let id = try await filePort?.upload(file, botId: entry.botId)
           guard let id else { throw ClientError("这个客户端不能上传文件") }
           try outbox.recordFileId(requestId: entry.requestId, uploadId: file.uploadId, fileId: id)
-          fileIds.append(id)
+          fileIds[index] = id
         }
-        fileIds.append(
-          contentsOf: entry.files.compactMap(
-            \.fileId
-          ))
-        let unique = Array(NSOrderedSet(array: fileIds).compactMap { $0 as? String })
+        let unique = fileIds.compactMap { $0 }
         try Task.checkCancellation()
         guard selectedBotId == entry.botId,
           connection == .ready,
