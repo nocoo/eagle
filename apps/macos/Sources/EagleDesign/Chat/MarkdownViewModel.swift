@@ -25,7 +25,7 @@ public actor MarkdownRenderer {
     out.reserveCapacity(parsed.count)
     for block in parsed {
       try Task.checkCancellation()
-      out.append(mapBlock(block))
+      out.append(Self.mapBlock(block))
     }
     return out
   }

@@ -127,6 +127,7 @@ public struct AssistantBubble: View, Equatable {
     }
   }
 
+  @ViewBuilder
   private func paragraph(_ text: AttributedString, caret: Bool) -> some View {
     switch paragraphExperiment {
     case .productionMarkdownInline:
