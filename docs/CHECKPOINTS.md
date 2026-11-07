@@ -68,6 +68,18 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 — Conversation file work in progress
+
+- A repeated rejected send could restore the original draft in the Bots view model
+  without updating the composer. Commit `326949d` makes drafts Bot-scoped and keeps
+  the composer synchronized; its Swift and design checks passed. The file card,
+  long-input conversion and file preview are not yet available to the user.
+- The daemon's 50 MiB file store and authenticated transfer are being built; upload,
+  durable message references, model reads, file publishing, preview and CLI acceptance
+  have not yet been verified end to end. The next broken hop is file transfer.
+- No live Herdr collection, authentication, D1 or website rendering was exercised in
+  this work. The installed production App and its daemon were not used for tests.
+
 ## 2026-11-07 — macOS v0.21.0 published with an explicit CI waiver
 
 - The owner explicitly requested immediate publication without waiting for or verifying CI.
