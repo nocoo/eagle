@@ -418,33 +418,30 @@ export class ManagedFileStore {
 
   async #filesDirectory(botId: string): Promise<string> {
     const previous = this.#directoryQueues.get(botId) ?? Promise.resolve();
-    const work = previous.then(
-      async () => {
-        const bot = this.#botDir(botId);
+    const work = previous.then(async () => {
+      const bot = this.#botDir(botId);
+      try {
+        const botStats = await lstat(bot);
+        if (!botStats.isDirectory() || botStats.isSymbolicLink()) throw storage();
+        const files = join(bot, "files");
         try {
-          const botStats = await lstat(bot);
-          if (!botStats.isDirectory() || botStats.isSymbolicLink()) throw storage();
-          const files = join(bot, "files");
-          try {
-            await mkdir(files, { mode: 0o700 });
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-          }
-          const stats = await lstat(files);
-          if (!stats.isDirectory() || stats.isSymbolicLink()) throw storage();
-          await chmod(files, 0o700);
-          if (!this.#syncedDirectories.has(bot)) {
-            await this.#syncDirectory(bot);
-            this.#syncedDirectories.add(bot);
-          }
-          return files;
+          await mkdir(files, { mode: 0o700 });
         } catch (error) {
-          if (error instanceof ManagedFileError) throw error;
-          throw storage(error);
+          if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
         }
-      },
-      () => Promise.resolve(),
-    );
+        const stats = await lstat(files);
+        if (!stats.isDirectory() || stats.isSymbolicLink()) throw storage();
+        await chmod(files, 0o700);
+        if (!this.#syncedDirectories.has(bot)) {
+          await this.#syncDirectory(bot);
+          this.#syncedDirectories.add(bot);
+        }
+        return files;
+      } catch (error) {
+        if (error instanceof ManagedFileError) throw error;
+        throw storage(error);
+      }
+    });
     const settled = work.then(
       () => undefined,
       () => undefined,
