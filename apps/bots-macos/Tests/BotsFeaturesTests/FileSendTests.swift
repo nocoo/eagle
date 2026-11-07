@@ -150,6 +150,47 @@ final class FileSendTests: XCTestCase {
     XCTAssertEqual(reopened.draft, " first")
   }
 
+  func testMissingFilePortAndCorruptSnapshotDoNotClearOriginalDraft() async throws {
+    let fake = FakeFileConversation()
+    let model = ConversationViewModel(
+      botId: "b_1", conversation: fake,
+      outbox: OutboxStore(directory: directory), filePort: nil
+    )
+    model.select(botId: "b_1")
+    fake.emit(.capabilities(sendFiles: true))
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.connection == .ready && model.hasSnapshot }
+
+    let exact = "  " + String(repeating: "原稿😀\r\n", count: 2_500) + "  "
+    model.draft = exact
+    model.send()
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertEqual(model.draft, exact)
+    XCTAssertEqual(fake.sent.count, 0)
+  }
+
+  func testCorruptSnapshotNotAdmittedKeepsDraftAndOutbox() async throws {
+    let fake = FakeFileConversation()
+    let file = FakeFilePort()
+    file.corruptOriginal = true
+    let outbox = OutboxStore(directory: directory)
+    let model = ConversationViewModel(
+      botId: "b_1", conversation: fake, outbox: outbox, filePort: file)
+    model.select(botId: "b_1")
+    fake.emit(.capabilities(sendFiles: true))
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.connection == .ready && model.hasSnapshot }
+
+    model.draft = "  " + String(repeating: "保持原稿😀\r\n", count: 2_500) + "  "
+    model.send()
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertEqual(fake.sent.count, 0)
+    XCTAssertEqual(model.draft, "  " + String(repeating: "保持原稿😀\r\n", count: 2_500) + "  ")
+    XCTAssertEqual(try outbox.entries(for: "b_1").count, 0)
+  }
+
   func testOutboxBareArrayAndNonFileEntriesMigrateWithoutRollback() throws {
     let file = directory.appendingPathComponent("outbox.json")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -223,6 +264,7 @@ final class FileSendTests: XCTestCase {
 
 private final class FakeFilePort: FilePort {
   var stageCalls = 0
+  var corruptOriginal = false
   var originals: [String: String] = [:]
   var uploadCalls = 0
 
@@ -261,6 +303,7 @@ private final class FakeFilePort: FilePort {
   }
 
   func originalText(_ send: StagedSend) async throws -> String {
+    if corruptOriginal { throw ClientError("原文快照内容已改变") }
     if send.files.contains(where: { $0.kind == .input }) {
       let key = send.files.first(where: { $0.kind == .input })?.uploadId
       if let key, let exact = originals[key] { return exact }

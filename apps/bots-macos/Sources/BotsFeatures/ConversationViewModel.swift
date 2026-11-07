@@ -112,8 +112,14 @@ public final class ConversationViewModel: ObservableObject {
           else { continue }
           let staged = StagedSend(text: entry.text, files: entry.files)
           do {
-            let stagedText = try await self.filePort?.originalText(staged) ?? entry.text
-            let selected = try await self.filePort?.selectedURLs(staged) ?? []
+            guard let filePort = self.filePort else {
+              if !staged.files.isEmpty { throw ClientError("附件快照不可恢复") }
+              self.restoreDraft(entry.text, for: botId)
+              self.restoredRefusals.insert(entry.requestId)
+              continue
+            }
+            let stagedText = try await filePort.originalText(staged)
+            let selected = try await filePort.selectedURLs(staged)
             self.restoreDraft(stagedText, for: botId)
             self.restoredRefusals.insert(entry.requestId)
             if !selected.isEmpty {
@@ -203,7 +209,7 @@ public final class ConversationViewModel: ObservableObject {
             botId: botId,
             requestId: requestId
           )
-          let optimisticText = (try? await filePort.originalText(staged)) ?? staged.text
+          let optimisticText = try await filePort.originalText(staged)
           self.commitSend(
             staged: staged,
             optimisticText: optimisticText,
@@ -249,7 +255,7 @@ public final class ConversationViewModel: ObservableObject {
       errorBanner = "无法保存待发送的消息，消息没有发出。"
       return
     }
-    if draftRevision == capturedRevision {
+    if draftRevision == capturedRevision && staged.files.isEmpty {
       draft = ""
       clearSelectedFiles()
     }
@@ -389,10 +395,20 @@ public final class ConversationViewModel: ObservableObject {
       }
       do {
         if optimistic && !state.messages.contains(where: { $0.requestId == entry.requestId }) {
-          let text =
-            (try? await filePort?.originalText(
-              StagedSend(text: entry.text, files: entry.files)
-            )) ?? entry.text
+          guard let filePort else {
+            if !entry.files.isEmpty {
+              throw ClientError("附件快照不可恢复")
+            }
+            let text = entry.text
+            state = Reducer.apply(
+              .append(message: .optimistic(requestId: entry.requestId, text: text), replaces: nil),
+              to: state
+            )
+            return
+          }
+          let text = try await filePort.originalText(
+            StagedSend(text: entry.text, files: entry.files)
+          )
           state = Reducer.apply(
             .append(message: .optimistic(requestId: entry.requestId, text: text), replaces: nil),
             to: state
@@ -613,8 +629,19 @@ public final class ConversationViewModel: ObservableObject {
             guard let self else { return }
             let staged = StagedSend(text: entry.text, files: entry.files)
             do {
-              let original = try await self.filePort?.originalText(staged) ?? entry.text
-              let selected = try await self.filePort?.selectedURLs(staged) ?? []
+              guard let filePort = self.filePort else {
+                if !staged.files.isEmpty { throw ClientError("附件快照不可恢复") }
+                try self.outbox.refuse(requestId: requestId)
+                self.refused.insert(requestId)
+                self.uploadTasks[requestId]?.cancel()
+                self.uploadTasks.removeValue(forKey: requestId)
+                self.activeUploads.remove(requestId)
+                self.state.messages.removeAll { $0.id == "local_\(requestId)" }
+                self.restoreDraft(entry.text, for: entry.botId)
+                return
+              }
+              let original = try await filePort.originalText(staged)
+              let selected = try await filePort.selectedURLs(staged)
               try self.outbox.refuse(requestId: requestId)
               self.refused.insert(requestId)
               self.uploadTasks[requestId]?.cancel()

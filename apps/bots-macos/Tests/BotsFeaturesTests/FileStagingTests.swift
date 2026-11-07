@@ -90,6 +90,39 @@ final class FileStagingTests: XCTestCase {
     }
   }
 
+  func testOriginalTextRejectsMissingTruncatedAndHashChangedSnapshots() async throws {
+    let port = DiskFilePort(directory: root, uploader: RefusingUploader())
+    let exact = String(repeating: "原稿😀\r\n", count: 2_500)
+    let staged = try await port.stage(
+      text: exact, selectedFiles: [], botId: "b_1", requestId: "r_integrity_0001")
+    let path = try await port.url(for: try XCTUnwrap(staged.files.first))
+
+    try Data().write(to: path)
+    do {
+      _ = try await port.originalText(staged)
+      XCTFail("truncated snapshot must fail")
+    } catch let error as ClientError {
+      XCTAssertTrue(error.message.contains("快照") || error.message.contains("附件"))
+    }
+
+    try Data(exact.utf8).write(to: path)
+    try Data(String(repeating: "X", count: exact.utf8.count).utf8).write(to: path)
+    do {
+      _ = try await port.originalText(staged)
+      XCTFail("same-size hash mismatch must fail")
+    } catch let error as ClientError {
+      XCTAssertFalse(error.message.isEmpty)
+    }
+
+    try FileManager.default.removeItem(at: path)
+    do {
+      _ = try await port.originalText(staged)
+      XCTFail("missing snapshot must fail")
+    } catch let error as ClientError {
+      XCTAssertFalse(error.message.isEmpty)
+    }
+  }
+
   func testRepeatedRequestIdDoesNotOverwriteADifferentSnapshot() async throws {
     let source = root.appendingPathComponent("repeat.bin")
     try Data([1, 2, 3]).write(to: source)

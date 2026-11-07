@@ -42,15 +42,52 @@ public final class DiskFilePort: FilePort {
 
   public func originalText(_ send: StagedSend) async throws -> String {
     guard let input = send.files.first(where: { $0.kind == .input }) else { return send.text }
-    let url = try await self.url(for: input)
-    guard let value = String(data: try Data(contentsOf: url), encoding: .utf8) else {
-      throw ClientError("原文快照不可读")
+    let candidate = try Self.resolve(directory: directory, relativePath: input.relativePath)
+    let fd = open(candidate.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+    guard fd >= 0 else { throw ClientError("原文快照不可读") }
+    defer { close(fd) }
+    var statValue = stat()
+    guard fstat(fd, &statValue) == 0,
+      (statValue.st_mode & mode_t(S_IFMT)) == S_IFREG,
+      statValue.st_size == input.size
+    else { throw ClientError("原文快照大小已改变") }
+
+    var hasher = SHA256()
+    var data = Data()
+    data.reserveCapacity(Int(input.size))
+    var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+    while true {
+      let readCount = Darwin.read(fd, &buffer, buffer.count)
+      if readCount > 0 {
+        let chunk = Data(bytes: buffer, count: readCount)
+        data.append(chunk)
+        hasher.update(data: chunk)
+      } else if readCount == 0 {
+        break
+      } else if errno == EINTR {
+        continue
+      } else {
+        throw ClientError("原文快照不可读")
+      }
+    }
+    guard Int64(data.count) == input.size,
+      Self.hex(hasher.finalize()) == input.sha256
+    else { throw ClientError("原文快照内容已改变") }
+    guard let value = String(data: data, encoding: .utf8) else {
+      throw ClientError("原文快照不是完整 UTF-8")
     }
     return value
   }
 
   public func selectedURLs(_ send: StagedSend) async throws -> [URL] {
-    try await send.files.filter { $0.kind == .selected }.asyncMap { try await self.url(for: $0) }
+    try await send.files.filter { $0.kind == .selected }.asyncMap { file in
+      let url = try await self.url(for: file)
+      let metadata = try Self.metadataAt(url)
+      guard metadata.size == file.size, metadata.sha256 == file.sha256 else {
+        throw ClientError("附件快照已改变")
+      }
+      return url
+    }
   }
 
   public func url(for file: StagedFile) async throws -> URL {
