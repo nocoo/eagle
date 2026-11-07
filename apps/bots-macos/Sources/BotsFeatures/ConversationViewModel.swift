@@ -18,6 +18,10 @@ public final class ConversationViewModel: ObservableObject {
   @Published public private(set) var parked = false
   private var draftStorage = ""
   private var drafts: [String: String] = [:]
+  private var draftRevision = 0
+  private var draftRevisions: [String: Int] = [:]
+  private var selectedFilesByBot: [String: [URL]] = [:]
+  @Published public private(set) var selectedFiles: [URL] = []
   public var draft: String {
     get { draftStorage }
     set { updateDraft(newValue) }
@@ -30,6 +34,7 @@ public final class ConversationViewModel: ObservableObject {
 
   private let conversation: ConversationPort
   private let outbox: OutboxStore
+  private let filePort: FilePort?
   private let now: () -> Date
   private var eventsTask: Task<Void, Never>?
   private var selectedBotId: String?
@@ -39,8 +44,12 @@ public final class ConversationViewModel: ObservableObject {
   /// Requests the daemon refused. They are never replayed by a reconciliation, even if
   /// their outbox entry could not be removed (the user decides whether to retry).
   private var refused: Set<String> = []
+  private var restoredRefusals: Set<String> = []
   /// Sends the user asked for that have not been confirmed yet.
   private var inFlight: [String: OutboxEntry] = [:]
+  private var uploadTasks: [String: Task<Void, Never>] = [:]
+  private var activeUploads: Set<String> = []
+  private var sendFiles = false
   /// The absolute catalog a `bots` frame carries, for the window's sidebar.
   public var onCatalog: ((BotCatalog) -> Void)?
 
@@ -48,11 +57,17 @@ public final class ConversationViewModel: ObservableObject {
     botId: String = "",
     conversation: ConversationPort,
     outbox: OutboxStore,
-    now: @escaping () -> Date = { Date() }
+    now: @escaping () -> Date = { Date() },
+    filePort: FilePort? = nil
   ) {
     self.state = ConversationState(botId: botId)
     self.conversation = conversation
     self.outbox = outbox
+    self.filePort =
+      filePort
+      ?? (conversation as? ManagedFileUploadPort).map {
+        DiskFilePort(directory: outbox.directory.appendingPathComponent("staging"), uploader: $0)
+      }
     self.now = now
   }
 
@@ -66,7 +81,7 @@ public final class ConversationViewModel: ObservableObject {
   /// Tokens and cost so far, for the inspector's 用量 section.
   public var usage: Usage? { state.usage }
   public var canSend: Bool {
-    !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !selectedFiles.isEmpty)
       && connection == .ready
       && state.unavailable == nil
   }
@@ -75,15 +90,41 @@ public final class ConversationViewModel: ObservableObject {
   /// again is a no-op, so a list refresh does not reconnect.
   public func select(botId: String) {
     if selectedBotId == botId, eventsTask != nil { return }
+    cancelUploadTasks()
     eventsTask?.cancel()
     selectedBotId = botId
     draftStorage = drafts[botId] ?? ""
+    selectedFiles = selectedFilesByBot[botId] ?? []
+    draftRevision = draftRevisions[botId] ?? 0
     reconciled = false
     hasSnapshot = false
     state = ConversationState(botId: botId)
     applySettledRecords(for: botId)
     if let durable = try? outbox.refusedRequests() {
       refused.formUnion(durable)
+    }
+    if let recoverable = try? outbox.recoverableRefusals(for: botId) {
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        for entry in recoverable {
+          guard self.selectedBotId == botId,
+            !self.restoredRefusals.contains(entry.requestId)
+          else { continue }
+          let staged = StagedSend(text: entry.text, files: entry.files)
+          do {
+            let stagedText = try await self.filePort?.originalText(staged) ?? entry.text
+            let selected = try await self.filePort?.selectedURLs(staged) ?? []
+            self.restoreDraft(stagedText, for: botId)
+            self.restoredRefusals.insert(entry.requestId)
+            if !selected.isEmpty {
+              self.selectedFiles = selected
+              self.selectedFilesByBot[botId] = selected
+            }
+          } catch {
+            self.errorBanner = "拒绝前原文快照不可恢复，本地待发记录仍已保留。"
+          }
+        }
+      }
     }
     connection = .connecting
     errorBanner = nil
@@ -106,6 +147,7 @@ public final class ConversationViewModel: ObservableObject {
   }
 
   public func disconnect() {
+    cancelUploadTasks()
     eventsTask?.cancel()
     eventsTask = nil
     selectedBotId = nil
@@ -119,21 +161,118 @@ public final class ConversationViewModel: ObservableObject {
     send(inserting: false)
   }
 
+  public func selectFiles(_ urls: [URL]) {
+    guard let botId = selectedBotId else { return }
+    selectedFiles = urls
+    selectedFilesByBot[botId] = urls
+  }
+
+  public func clearSelectedFiles() {
+    guard let botId = selectedBotId else { return }
+    selectedFiles = []
+    selectedFilesByBot[botId] = []
+  }
+
   /// `inserting` steers the run that is answering instead of queueing behind it; while the
   /// bot is idle the daemon places it like any other input.
   public func send(inserting: Bool) {
-    let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty, connection == .ready, let botId = selectedBotId else { return }
+    let text = draft
+    let selected = selectedFiles
+    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !selected.isEmpty,
+      connection == .ready,
+      let botId = selectedBotId
+    else { return }
+
     let requestId = Identifiers.request()
-    draft = ""
-    send(text: text, requestId: requestId, botId: botId, optimistic: true, inserting: inserting)
+    let capturedRevision = draftRevision
+    if !selected.isEmpty || text.unicodeScalars.count > 8_000 {
+      guard sendFiles else {
+        errorBanner = "此 daemon 不支持附件发送"
+        return
+      }
+      guard let filePort else {
+        errorBanner = "这个客户端不能上传文件"
+        return
+      }
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        do {
+          let staged = try await filePort.stage(
+            text: text,
+            selectedFiles: selected,
+            botId: botId,
+            requestId: requestId
+          )
+          let optimisticText = (try? await filePort.originalText(staged)) ?? staged.text
+          self.commitSend(
+            staged: staged,
+            optimisticText: optimisticText,
+            requestId: requestId,
+            botId: botId,
+            capturedRevision: capturedRevision,
+            inserting: inserting
+          )
+        } catch {
+          self.errorBanner = Self.describe(error)
+        }
+      }
+    } else {
+      commitSend(
+        staged: StagedSend(text: text),
+        optimisticText: text,
+        requestId: requestId,
+        botId: botId,
+        capturedRevision: capturedRevision,
+        inserting: inserting
+      )
+    }
+  }
+
+  private func commitSend(
+    staged: StagedSend,
+    optimisticText: String,
+    requestId: String,
+    botId: String,
+    capturedRevision: Int,
+    inserting: Bool
+  ) {
+    let entry = OutboxEntry(
+      botId: botId,
+      requestId: requestId,
+      text: staged.text,
+      whenBusy: inserting ? .steer : .followUp,
+      files: staged.files
+    )
+    do {
+      try outbox.add(entry)
+    } catch {
+      errorBanner = "无法保存待发送的消息，消息没有发出。"
+      return
+    }
+    if draftRevision == capturedRevision {
+      draft = ""
+      clearSelectedFiles()
+    }
+    isSending = true
+    state = Reducer.apply(
+      .append(message: .optimistic(requestId: requestId, text: optimisticText), replaces: nil),
+      to: state
+    )
+    inFlight[requestId] = entry
+    startUploadAndSend(entry)
   }
 
   /// Retrying keeps the original requestId, which is how it is recovered, including after a
   /// restart of the app (`OutboxStore`).
   public func retry(_ entry: OutboxEntry) {
+    guard entry.botId == selectedBotId else { return }
     refused.remove(entry.requestId)
-    send(text: entry.text, requestId: entry.requestId, botId: entry.botId, optimistic: true)
+    do { try outbox.resumeUpload(requestId: entry.requestId) } catch {
+      errorBanner = "待发记录暂时无法恢复"
+      return
+    }
+    inFlight[entry.requestId] = entry
+    startUploadAndSend(entry, optimistic: true)
   }
 
   /// Answers an ask_user card. The daemon composes the hidden message, so this sends labels
@@ -214,58 +353,104 @@ public final class ConversationViewModel: ObservableObject {
 
   private func updateDraft(_ value: String) {
     guard draftStorage != value else { return }
+    draftRevision += 1
     draftStorage = value
-    if let selectedBotId { drafts[selectedBotId] = value }
+    if let selectedBotId {
+      drafts[selectedBotId] = value
+      draftRevisions[selectedBotId] = draftRevision
+    }
   }
 
   private func restoreDraft(_ text: String, for botId: String) {
     let current = drafts[botId] ?? ""
     let restored = current.isEmpty ? text : current + "\n\n" + text
     drafts[botId] = restored
-    if selectedBotId == botId { draftStorage = restored }
+    draftRevisions[botId] = (draftRevisions[botId] ?? 0) + 1
+    if selectedBotId == botId { updateDraft(restored) }
   }
 
   // MARK: - Sending
 
-  private func send(
-    text: String,
-    requestId: String,
-    botId: String,
-    optimistic: Bool,
-    inserting: Bool = false
-  ) {
-    // The entry is stored before the frame is written; if it cannot be stored, nothing is
-    // sent and the draft comes back (PROTOCOL.md, client duties 1).
-    let entry = OutboxEntry(botId: botId, requestId: requestId, text: text)
-    do {
-      try outbox.add(entry)
-    } catch {
-      draft = text
-      errorBanner = "无法保存待发送的消息，消息没有发出。"
-      return
-    }
+  private func cancelUploadTasks() {
+    for task in uploadTasks.values { task.cancel() }
+    uploadTasks.removeAll()
+  }
+
+  private func startUploadAndSend(_ entry: OutboxEntry, optimistic: Bool = false) {
+    guard activeUploads.insert(entry.requestId).inserted else { return }
     isSending = true
-    if optimistic {
-      state = Reducer.apply(
-        .append(message: .optimistic(requestId: requestId, text: text), replaces: nil),
-        to: state
-      )
-    }
-    inFlight[requestId] = entry
-    let context = CommandContext.send(requestId)
-    Task { [weak self] in
+    uploadTasks[entry.requestId] = Task { [weak self] in
       guard let self else { return }
+      defer {
+        self.activeUploads.remove(entry.requestId)
+        if self.uploadTasks[entry.requestId] != nil {
+          self.uploadTasks.removeValue(forKey: entry.requestId)
+        }
+      }
       do {
-        try await self.conversation.send(
-          text,
-          whenBusy: inserting ? .steer : .followUp,
-          context: context,
-          botId: botId
-        )
-        self.isSending = false
+        if optimistic && !state.messages.contains(where: { $0.requestId == entry.requestId }) {
+          let text =
+            (try? await filePort?.originalText(
+              StagedSend(text: entry.text, files: entry.files)
+            )) ?? entry.text
+          state = Reducer.apply(
+            .append(message: .optimistic(requestId: entry.requestId, text: text), replaces: nil),
+            to: state
+          )
+        }
+        var fileIds: [String] = []
+        for file in entry.files where file.fileId == nil {
+          try Task.checkCancellation()
+          let id = try await filePort?.upload(file, botId: entry.botId)
+          guard let id else { throw ClientError("这个客户端不能上传文件") }
+          try outbox.recordFileId(requestId: entry.requestId, uploadId: file.uploadId, fileId: id)
+          fileIds.append(id)
+        }
+        fileIds.append(
+          contentsOf: entry.files.compactMap(
+            \.fileId
+          ))
+        let unique = Array(NSOrderedSet(array: fileIds).compactMap { $0 as? String })
+        try Task.checkCancellation()
+        guard selectedBotId == entry.botId,
+          connection == .ready,
+          sendFiles || entry.files.isEmpty
+        else { return }
+        let context = CommandContext.send(entry.requestId)
+        if !unique.isEmpty {
+          guard let fileConversation = conversation as? FileConversationPort else {
+            throw ClientError("此连接不支持附件发送")
+          }
+          try await fileConversation.send(
+            entry.text,
+            whenBusy: entry.whenBusy,
+            context: context,
+            botId: entry.botId,
+            fileIds: unique
+          )
+        } else {
+          try await conversation.send(
+            entry.text,
+            whenBusy: entry.whenBusy,
+            context: context,
+            botId: entry.botId
+          )
+        }
+        isSending = false
+      } catch is CancellationError {
+        // A bot switch or disconnect owns cancellation; the durable entry stays for retry.
+        isSending = false
+      } catch let failure as FileTransportFailure {
+        isSending = false
+        if failure == .authentication {
+          try? outbox.pauseUpload(requestId: entry.requestId)
+          errorBanner = "认证失败，待发附件已暂停自动重试"
+        } else {
+          errorBanner = Self.describe(failure)
+        }
       } catch {
-        self.isSending = false
-        self.errorBanner = Self.describe(error)
+        isSending = false
+        errorBanner = Self.describe(error)
       }
     }
   }
@@ -297,10 +482,9 @@ public final class ConversationViewModel: ObservableObject {
     where !refused.contains(entry.requestId)
       && !durableRefusals.contains(entry.requestId)
     {
-      send(
-        text: entry.text,
-        requestId: entry.requestId,
-        botId: entry.botId,
+      guard !entry.uploadPaused else { continue }
+      startUploadAndSend(
+        entry,
         optimistic: !state.messages.contains { $0.requestId == entry.requestId }
       )
     }
@@ -351,6 +535,8 @@ public final class ConversationViewModel: ObservableObject {
 
   private func apply(_ event: ConversationEvent) {
     switch event {
+    case .capabilities(let nextSendFiles):
+      sendFiles = nextSendFiles
     case .connection(let next):
       if case .ready = next {
         // the first snapshot after any connection reconciles
@@ -415,21 +601,35 @@ public final class ConversationViewModel: ObservableObject {
       state = applyUnavailable(kind: kind)
       switch disposition {
       case .notAdmitted:
-        // The daemon refused before admission: drop the bubble and the entry, and put the
-        // text back so the user can fix or retry it (PROTOCOL.md, client duties 3).
         if let requestId {
-          let entry = inFlight.removeValue(forKey: requestId)
-          refused.insert(requestId)
-          do {
-            try outbox.refuse(requestId: requestId)
-          } catch {
-            // The store is not writable right now: the refusal stays in memory and is
-            // written as soon as a read succeeds again, so the entry is never replayed in
-            // the meantime. The failure is shown rather than swallowed.
-            errorBanner = "消息被拒绝，本地待发记录暂时没有删掉。"
+          let entry =
+            inFlight.removeValue(forKey: requestId)
+            ?? (try? outbox.entry(requestId: requestId))
+          guard let entry, entry.botId == selectedBotId else {
+            errorBanner = "拒绝记录不属于当前 Bot，本地待发记录已保留。"
+            break
           }
-          state.messages.removeAll { $0.id == "local_\(requestId)" }
-          if let entry { restoreDraft(entry.text, for: entry.botId) }
+          Task { @MainActor [weak self] in
+            guard let self else { return }
+            let staged = StagedSend(text: entry.text, files: entry.files)
+            do {
+              let original = try await self.filePort?.originalText(staged) ?? entry.text
+              let selected = try await self.filePort?.selectedURLs(staged) ?? []
+              try self.outbox.refuse(requestId: requestId)
+              self.refused.insert(requestId)
+              self.uploadTasks[requestId]?.cancel()
+              self.uploadTasks.removeValue(forKey: requestId)
+              self.activeUploads.remove(requestId)
+              self.state.messages.removeAll { $0.id == "local_\(requestId)" }
+              self.restoreDraft(original, for: entry.botId)
+              if !selected.isEmpty {
+                self.selectedFiles = selected
+                self.selectedFilesByBot[entry.botId] = selected
+              }
+            } catch {
+              self.errorBanner = "拒绝前原文快照不可恢复，本地待发记录和附件仍已保留。"
+            }
+          }
         }
       case .unknown:
         // Admission could not be confirmed: keep the bubble and the entry for a retry.

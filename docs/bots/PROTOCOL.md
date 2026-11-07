@@ -37,7 +37,7 @@ Runtime details live in [RUNTIME.md](RUNTIME.md), layers in
 
 | Limit | Value | Violation |
 | --- | --- | --- |
-| `send.text` | 8 000 characters | `error{invalid_command}` |
+| `send.text` | 8 000 Unicode scalars for an ordinary send; longer text is staged privately as `input.md` | `error{invalid_command}` only for a malformed or oversized staging record |
 | `send.fileIds` | 0–16 complete managed file IDs; no duplicates | `error{invalid_command}` or `unknown_bot` |
 | `Message.files` metadata | At most 16 refs; each name/MIME at most 255 UTF-8 bytes; no paths or byte content | `error{invalid_command}` or omitted invalid data |
 | `bot.title` (HTTP) | 80 characters | HTTP `400` |
@@ -47,7 +47,7 @@ Runtime details live in [RUNTIME.md](RUNTIME.md), layers in
 | Groups | 50 per catalog | `POST /v1/groups` answers `limit_exceeded` |
 | `bot.appearance` (HTTP) | valid shape; POST permits an omitted tint, PATCH requires a valid tint | HTTP `400` |
 | Any HTTP JSON/body except managed-file content | 256 KiB, measured as received (the shared frame cap) | HTTP `500` before the body is parsed |
-| Managed file content | 50 MiB (52 428 800 bytes), inclusive | HTTP `413`; other HTTP bodies keep the 256 KiB cap |
+| Managed file content / staged source | 50 MiB (52 428 800 bytes), inclusive | HTTP `413` or client `file_too_large`; other HTTP/WS bodies keep their existing 256 KiB cap |
 | Managed file display name / MIME | 1–255 UTF-8 bytes each | HTTP `400` |
 | `settings.corePrompt` (HTTP) | 4 000 characters after trimming | HTTP `400` |
 | `settings.skills` (HTTP) | ≤ 50 entries; `name` 1–80, `version` ≤ 40, `description` ≤ 500 characters after whitespace collapse; `path` ≤ 1 024 and absolute or `~/…`; one entry per name | HTTP `400` |
@@ -1073,6 +1073,13 @@ Every command except `hello` and `ping` carries `trace`.
   input. The server uses the completed metadata store as the authority: client-supplied name,
   size and hash are never trusted to replace it. `fileIds` never carries a path, uploadId,
   botId or file bytes.
+- A client may stage text above 8 000 Unicode scalars as an exact private UTF-8
+  `input.md` managed file and send a bounded display text plus its complete `fileId` set.
+  The staged bytes and source paths never enter JSON, logs or WebSocket frames; a source
+  selected for send is copied before upload and is not re-read for a later retry. Staging,
+  the outbox entry, `requestId`, `uploadId`, `whenBusy` and Bot ownership are persisted before
+  network send. A restart or `unknown` result keeps the same IDs; a `not_admitted` result
+  restores the draft only after the durable original and matching Bot ownership can be read.
 - `send` requires a subscription. The daemon replies with a `submission` frame for
   that `requestId` carrying the record it reads, which may already be `done`
   because admission starts the run. A repeated `send` with the same `requestId`

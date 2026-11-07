@@ -116,6 +116,29 @@ including the space below a short conversation and the side insets. Message text
 selection, links and buttons keep their own click targets; scrolling preserves
 the current focus.
 
+## File sends
+
+- The client sends ordinary text of at most 8 000 Unicode scalars through the existing
+  text field without trimming or rewriting it. Longer input is copied as exact UTF-8
+  `input.md` into private client staging, including leading/trailing whitespace, CRLF and
+  emoji, then uploaded as a managed file. Explicitly selected regular files are copied to
+  private staging first; later source changes do not alter that send. Zero-byte files and
+  files up to 50 MiB are accepted, while a larger file leaves the draft and selection intact
+  and reports a visible error.
+- A file send is available only after the daemon's `welcome.capabilities.sendFiles` is
+  explicitly true. `files:true` alone advertises storage only and never makes the client
+  claim attachment admission support.
+- Staging, upload IDs and the outbox entry are durable before HTTP or WebSocket send. The
+  client keeps one `requestId`, one `uploadId` per staged file and the original `whenBusy`
+  across cancellation, bot switches, restart and unknown/disconnected outcomes. Reconnect
+  and retry reuse those IDs. A `not_admitted` refusal is restored only from a matching Bot's
+  durable original record; that record remains recoverable after the active outbox entry is
+  withheld, so a process exit cannot leave only an in-memory copy.
+- Uploads use the daemon's manifest/content endpoints. File bytes go through a file URL
+  upload request, never JSON, Base64, logs or WebSocket frames. HTTP redirects are refused;
+  bearer credentials and file bodies are never forwarded. `401`/`403` stops automatic
+  retries until an explicit retry, while the durable request remains available.
+
 ## Conversation identity and activity
 
 Sidebar group headers show only a positive count of visible unread conversations,

@@ -167,7 +167,7 @@ public enum Reducer {
       next.usage = usage
     case .agent(let agent):
       next.agent = agent
-    case .connection, .catalog:
+    case .connection, .catalog, .capabilities:
       break
     case .error(let kind, _, _, _, _):
       if kind == .taskParked { next.parked = true }

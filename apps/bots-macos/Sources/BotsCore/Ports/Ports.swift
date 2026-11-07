@@ -22,6 +22,9 @@ public enum ConversationEvent: Sendable, Equatable {
   /// The bot's complete current model, thinking level and instructions.
   case agent(AgentView)
   case catalog(BotCatalog)
+  /// The welcome capability is connection state, not catalog state. Missing/false means
+  /// attachment admission is unavailable even if files upload storage exists.
+  case capabilities(sendFiles: Bool)
   case error(
     kind: ErrorKind,
     disposition: ErrorDisposition,
@@ -159,6 +162,18 @@ extension ConversationPort {
   ) async throws {
     throw ClientError("this client cannot promote a queued message")
   }
+}
+
+/// Implemented only by transports that can send managed file IDs on a subscribed socket.
+/// Keeping this separate preserves every text-only ConversationPort fake and caller.
+public protocol FileConversationPort: ConversationPort {
+  func send(
+    _ text: String,
+    whenBusy: BusyMode,
+    context: CommandContext,
+    botId: String,
+    fileIds: [String]
+  ) async throws
 }
 
 /// A failure the client itself produced (no connection, a rejected frame, a bad URL).
