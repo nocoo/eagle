@@ -63,6 +63,7 @@ export type Coverage = {
 };
 
 export type HistoryPage = {
+  readonly scopes: readonly Scope[];
   readonly messages: readonly ObservedMessage[];
   readonly boundary: {
     readonly newestEntryId: string | null;
@@ -328,6 +329,7 @@ export const readHistoryPage = async (
   const state = await inspectStore(path);
   const emptyBoundary = { newestEntryId: null, before: request.before ?? null, compactions: [] };
   const empty: HistoryPage = {
+    scopes: [],
     messages: [],
     boundary: emptyBoundary,
     omitted: { entries: 0, blocks: 0, kinds: [] },
@@ -428,6 +430,7 @@ export const readHistoryPage = async (
     ];
     const nextBefore = hasMore ? ordered[0]?.entryId : undefined;
     return {
+      scopes,
       messages: ordered,
       boundary: {
         newestEntryId: newest.high === null ? null : wired(newest.high),

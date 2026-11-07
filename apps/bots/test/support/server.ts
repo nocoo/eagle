@@ -17,9 +17,10 @@ import {
 import { OriginStore, originPath } from "../../src/core/OriginStore.ts";
 import { PeerExchangeStore } from "../../src/core/PeerExchangeStore.ts";
 import type { RuntimePort } from "../../src/core/RuntimePort.ts";
-import { captureLog, type LogRecord } from "../../src/log/log.ts";
+import { captureLog, type Log, type LogRecord } from "../../src/log/log.ts";
 import { measureEvent } from "../../src/main.ts";
 import { fileMemoryHost } from "../../src/memory/fileHost.ts";
+import type { ObservationRoutes } from "../../src/observation/routes.ts";
 import { peerApi } from "../../src/peers/api.ts";
 import { peerHostFor } from "../../src/peers/host.ts";
 import { PiDurableRuntime } from "../../src/runtime/pi/PiDurableRuntime.ts";
@@ -108,6 +109,15 @@ export type StackOptions = {
   readonly machinePrompt?: () => { readonly path: string; readonly text: string } | undefined;
   /** Wire the catalog-backed sidebar line, as `main.ts` does, so a run can refresh it. */
   readonly note?: boolean;
+  /** The SG-002 observation routes, built from the stack the test just started. */
+  readonly observation?: (state: {
+    readonly root: string;
+    readonly directory: BotDirectory;
+    readonly registry: BotRegistry;
+    readonly log: Log;
+    /** The bound port, known only after the listener exists. */
+    readonly port: () => number;
+  }) => ObservationRoutes;
 };
 
 export const startStack = async (options: StackOptions = {}): Promise<Stack> => {
@@ -298,7 +308,13 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
         return text === "" ? undefined : text;
       },
     });
+  let boundPort = 0;
+  const observationRoutes =
+    options.observation === undefined
+      ? undefined
+      : options.observation({ root, directory, registry, log, port: () => boundPort });
   const daemon = await startServer({
+    ...(observationRoutes === undefined ? {} : { observation: observationRoutes }),
     token,
     clients,
     ...(devToken === undefined ? {} : { devToken }),
@@ -326,6 +342,7 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
     ...(options.ingress === undefined ? {} : { ingress: options.ingress }),
     port: 0,
   });
+  boundPort = daemon.port;
   broadcast = daemon.broadcastCatalog;
   return {
     port: daemon.port,

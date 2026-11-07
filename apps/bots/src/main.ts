@@ -2,7 +2,7 @@
 // one token, one log, one registry and one server. Everything here is composition; the
 // behaviour lives in the modules it wires.
 import { readFileSync } from "node:fs";
-import { mkdir, realpath } from "node:fs/promises";
+import { mkdir, readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { DaemonConfig } from "./config.ts";
@@ -21,6 +21,7 @@ import { declareEvent } from "./log/events.ts";
 import { Log } from "./log/log.ts";
 import { FileLogSink } from "./log/sink.ts";
 import { fileMemoryHost } from "./memory/fileHost.ts";
+import { catalogDigest, createObservationRoutes } from "./observation/routes.ts";
 import { peerApi } from "./peers/api.ts";
 import { peerHostFor } from "./peers/host.ts";
 import { encodeServerEvent } from "./protocol/encode.ts";
@@ -740,7 +741,24 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     },
   };
   const catalogDescriptions = describeToolCatalog(createCatalogRegistry());
+  let observationPort = 0;
+  const observation = createObservationRoutes({
+    root,
+    version: packageVersion(),
+    endpoint: () => `127.0.0.1:${observationPort}`,
+    sessionPath: (botId) => join(directory.botDir(botId), "session.sqlite"),
+    bots: () =>
+      registry.summaries().map((bot) => ({
+        id: bot.id,
+        title: bot.title,
+        updatedAt: bot.updatedAt,
+      })),
+    catalogRevision: async () =>
+      catalogDigest(await readFile(directory.catalogPath, "utf8").catch(() => "")),
+    log,
+  });
   const daemon = await startServer({
+    observation,
     ...(canonical.deviceSocket === undefined ? {} : { deviceSocket: canonical.deviceSocket }),
     token,
     clients,
@@ -821,6 +839,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     })();
     return closing;
   };
+  observationPort = daemon.port;
   return { config: canonical, port: daemon.port, token, daemon, registry, close };
 };
 

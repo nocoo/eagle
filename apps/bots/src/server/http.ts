@@ -48,7 +48,11 @@ const Events = {
   requestFail: declareEvent("transport.request.fail"),
 } as const;
 
+import type { ObservationRoutes } from "../observation/routes.ts";
+
 export type ServerOptions = {
+  /** The SG-002 passive observation routes; absent means observation is not mounted. */
+  readonly observation?: ObservationRoutes;
   /** Host configuration identity, not a credential or authorization decision. */
   readonly deviceSocket?: string;
   readonly token: string;
@@ -561,6 +565,10 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
       });
       return;
     }
+    if (options.observation?.owns(path) === true) {
+      await options.observation.handle(request, response);
+      return;
+    }
     if (path === "/v1/health") {
       json(response, 200, {
         version: options.version,
@@ -624,6 +632,13 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
           json(response, 404, { error: { kind: "unknown_bot", message: "no such trigger" } });
           return;
       }
+    }
+    const presented = parseBearer(request.headers.authorization);
+    if (presented !== undefined && (await options.observation?.recognizes(presented)) === true) {
+      json(response, 403, {
+        error: { kind: "credential_kind", message: "this credential is not valid on this route" },
+      });
+      return;
     }
     const actor = await authenticate(request.headers.authorization);
     if (actor === undefined) {
