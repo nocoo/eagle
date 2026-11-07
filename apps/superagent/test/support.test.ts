@@ -107,6 +107,7 @@ test("projection preserves text boundaries, suppresses hidden reasoning, and lab
   const failed = entryMessage(
     entry({
       id: 3,
+      kind: "pi.assistant",
       model: [
         {
           role: "assistant",
@@ -121,6 +122,7 @@ test("projection preserves text boundaries, suppresses hidden reasoning, and lab
   const aborted = entryMessage(
     entry({
       id: 4,
+      kind: "pi.assistant",
       model: [
         {
           role: "assistant",

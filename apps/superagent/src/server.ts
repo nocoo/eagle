@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { closeServer, listen, ownRoot, serverProof } from "./identity.ts";
-import { ChatRuntime } from "./runtime.ts";
+import { ChatRuntime, markInitialized } from "./runtime.ts";
 import { allowedRequest, attachSockets } from "./socket.ts";
 
 export async function startService(options: {
@@ -9,13 +9,16 @@ export async function startService(options: {
   openRuntime?: (root: string) => Promise<ChatRuntime>;
 }) {
   const owner = await ownRoot(options.root);
-  let runtime: ChatRuntime;
+  let runtime: ChatRuntime | undefined;
   try {
     runtime = await (options.openRuntime ?? ChatRuntime.open)(owner.root);
+    await markInitialized(owner.root, owner.identity.storeId);
   } catch (error) {
+    await runtime?.close().catch(() => undefined);
     await owner.release();
     throw error;
   }
+  if (runtime === undefined) throw new Error("runtime_missing");
   let port = 0;
   const server = createServer((request, response) => {
     response.setHeader("content-type", "application/json");

@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { open, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import {
   createModels,
@@ -35,6 +37,55 @@ import { confirmedWithin, modelFailure } from "./failure.ts";
 import { boundedText, entryMessage, fitMessages, project } from "./projection.ts";
 
 const requestID = /^[A-Za-z0-9_-]{8,64}$/;
+const STORE_VERSION = 1;
+
+const exists = async (path: string) =>
+  stat(path).then(
+    () => true,
+    () => false,
+  );
+
+/** Refuse a store that is absent, truncated or not the durable SQLite pi wrote. */
+async function assertUsableStore(path: string) {
+  const info = await stat(path).catch(() => undefined);
+  if (!info?.isFile() || info.size < 100) throw new ServiceError("storage_failed");
+  const file = await open(path, "r");
+  try {
+    const header = Buffer.alloc(16);
+    const read = await file.read(header, 0, 16, 0);
+    if (read.bytesRead !== 16 || header.toString("latin1") !== "SQLite format 3\u0000") {
+      throw new ServiceError("storage_failed");
+    }
+  } finally {
+    await file.close();
+  }
+  let database: DatabaseSync | undefined;
+  try {
+    database = new DatabaseSync(path, { readOnly: true });
+    const row = database
+      .prepare(
+        "SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('entries','submissions','conversations')",
+      )
+      .get() as { n?: number } | undefined;
+    if (row?.n !== 3) throw new ServiceError("storage_failed");
+  } catch (error) {
+    if (error instanceof ServiceError) throw error;
+    throw new ServiceError("storage_failed");
+  } finally {
+    database?.close();
+  }
+}
+
+export async function markInitialized(root: string, storeId: string) {
+  const path = join(root, "session.initialized.json");
+  if (await exists(path)) return;
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  await writeFile(temporary, JSON.stringify({ version: STORE_VERSION, storeId }), {
+    mode: 0o600,
+    flag: "wx",
+  });
+  await rename(temporary, path);
+}
 const instructions =
   "You are Eagle Super Bot, an independent conversational assistant. Answer clearly in the user's language. You currently have no tools, no access to worker bots or their histories, and cannot execute commands or delegate tasks. Never claim to have observed or changed a worker.";
 
@@ -71,7 +122,13 @@ export class ChatRuntime {
     await store.load();
     const runtime = new ChatRuntime(store, models);
     runtime.#installModel();
-    const storage = await storageFactory(join(root, "session.sqlite"));
+    const databasePath = join(root, "session.sqlite");
+    const markerPath = join(root, "session.initialized.json");
+    const existed = await exists(databasePath);
+    const marker = await exists(markerPath);
+    const configured = await exists(store.path);
+    if (marker || existed || configured) await assertUsableStore(databasePath);
+    const storage = await storageFactory(databasePath);
     try {
       runtime.#harness = await Factory.open(
         storage,
@@ -115,7 +172,11 @@ export class ChatRuntime {
     } catch (error) {
       if (runtime.#harness) await runtime.#harness.close(context);
       else await storage.close(context);
-      throw error;
+      if (!existed) {
+        for (const suffix of ["", "-wal", "-shm"])
+          await rm(`${databasePath}${suffix}`, { force: true }).catch(() => undefined);
+      }
+      throw error instanceof ServiceError ? error : new ServiceError("storage_failed");
     }
   }
 

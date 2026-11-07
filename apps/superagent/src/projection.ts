@@ -20,7 +20,10 @@ function messageText(message: PiMessage): string {
   );
 }
 
+const CHAT_KINDS = new Set(["pi.user", "pi.assistant", "superagent.input"]);
+
 export function entryMessage(entry: EntryRecord): Message | undefined {
+  if (!CHAT_KINDS.has(entry.kind)) return undefined;
   const message = entry.model?.[0];
   if (!message || (message.role !== "user" && message.role !== "assistant")) return undefined;
   const state =
