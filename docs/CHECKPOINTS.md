@@ -68,6 +68,20 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 — Unsafe client file sending deferred
+
+- The first Swift file-send path passed its initial tests but review found data-loss,
+  replay and ordinary-text regressions. Commit `b3a97e5` removes that unfinished path
+  from the active client while retaining the Bot-scoped daemon file store, additive
+  send protocol, and the earlier rejected-draft fix. Swift package tests and Bots
+  `check` passed after removal; this does not establish a working file journey.
+- Long-input conversion, file cards and preview, Bot file publishing, and `eagle-dev`
+  file acceptance remain unimplemented. Publishing work and an unfinished client
+  barrier test are kept in local stashes for later inspection. No production data was
+  used by tests.
+- Live Herdr collection, authentication, D1 and website rendering were not exercised.
+  The next broken hop is a safe client send and recovery path before any file UI.
+
 ## 2026-11-07 — Client replay and staging review
 
 - Several client fixes are committed: staged-source identity, complete-manifest

@@ -1,5 +1,19 @@
 # Retrospective
 
+## 2026-11-07 — Do not leave an unsafe client send path active
+
+The first client-file implementation passed its local suite, but read-only review
+found loss and replay defects. Follow-up fixes introduced ordinary text-send and
+successful-draft regressions, and the next coding pane stalled while modifying the
+same recovery state machine. The unfinished client path was removed from the current
+product; its commits and the uncommitted Bot-publish and barrier work remain locally
+recoverable. The previously working draft fix and daemon file groundwork remain.
+
+Passing the initial suite was not evidence that the file-send lifecycle was safe.
+Next time start with one end-to-end file send and crash/duplicate tests before adding
+multiple staging and recovery paths, and verify ordinary text remains usable after
+such changes. Do not claim file cards, previews or CLI acceptance until they run.
+
 ## 2026-11-07 — Stop a confused coding pane before the wrong fix lands
 
 During the conversation-file work, a coding pane was redirected from client work to
