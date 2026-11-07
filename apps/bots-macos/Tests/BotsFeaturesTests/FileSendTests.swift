@@ -203,6 +203,38 @@ final class FileSendTests: XCTestCase {
     XCTAssertEqual(reopened.draft, " first")
   }
 
+  func testNotAdmittedPersistsTombstoneBeforeSnapshotRecoveryAndKeepsOtherBotDraft() async throws {
+    let fake = FakeFileConversation()
+    let file = FakeFilePort()
+    file.corruptOriginal = true
+    let outbox = OutboxStore(directory: directory)
+    let model = ConversationViewModel(
+      botId: "b_1", conversation: fake, outbox: outbox, filePort: file)
+    model.select(botId: "b_1")
+    fake.emit(.capabilities(sendFiles: true))
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.connection == .ready && model.hasSnapshot }
+
+    model.draft = "保持原稿"
+    model.send()
+    try await waitUntil { fake.sent.count == 1 }
+    let requestId = try XCTUnwrap(fake.sent.last?.requestId)
+    model.select(botId: "b_2")
+    model.draft = "另一 Bot 草稿"
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_2")))
+    fake.emit(
+      .error(
+        kind: .invalidCommand, disposition: .notAdmitted, message: "refused",
+        failure: "f_not_admitted", requestId: requestId))
+    try await Task.sleep(for: .milliseconds(30))
+
+    XCTAssertTrue(try outbox.refusedRequests().contains(requestId))
+    XCTAssertNotNil(try outbox.entry(requestId: requestId))
+    XCTAssertEqual(model.draft, "另一 Bot 草稿")
+    XCTAssertEqual(try outbox.entries(for: "b_1").count, 0)
+  }
+
   func testMissingFilePortAndCorruptSnapshotDoNotClearOriginalDraft() async throws {
     let fake = FakeFileConversation()
     let model = ConversationViewModel(

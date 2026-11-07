@@ -666,12 +666,29 @@ public final class ConversationViewModel: ObservableObject {
           let entry =
             inFlight.removeValue(forKey: requestId)
             ?? (try? outbox.entry(requestId: requestId))
-          guard let entry, entry.botId == selectedBotId else {
-            errorBanner = "拒绝记录不属于当前 Bot，本地待发记录已保留。"
+          guard let entry else {
+            errorBanner = "拒绝记录没有本地原始记录，本地待发记录已保留。"
+            break
+          }
+          let refusalGeneration = viewGeneration
+          do {
+            try outbox.refuse(requestId: requestId)
+            refused.insert(requestId)
+            uploadTasks[requestId]?.cancel()
+            uploadTasks.removeValue(forKey: requestId)
+            stagingTasks[requestId]?.cancel()
+            stagingTasks.removeValue(forKey: requestId)
+            activeUploads.remove(requestId)
+            state.messages.removeAll { $0.id == "local_\(requestId)" }
+          } catch {
+            errorBanner = "拒绝前本地记录不能持久化，本地待发记录仍已保留。"
             break
           }
           Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self,
+              self.selectedBotId == entry.botId,
+              self.viewGeneration == refusalGeneration
+            else { return }
             let staged = StagedSend(text: entry.text, files: entry.files)
             do {
               guard let filePort = self.filePort else {
@@ -687,8 +704,6 @@ public final class ConversationViewModel: ObservableObject {
               }
               let original = try await filePort.originalText(staged)
               let selected = try await filePort.selectedURLs(staged)
-              try self.outbox.refuse(requestId: requestId)
-              self.refused.insert(requestId)
               self.uploadTasks[requestId]?.cancel()
               self.uploadTasks.removeValue(forKey: requestId)
               self.activeUploads.remove(requestId)
