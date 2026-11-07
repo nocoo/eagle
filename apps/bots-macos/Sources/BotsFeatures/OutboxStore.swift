@@ -81,6 +81,28 @@ public struct OutboxEntry: Codable, Sendable, Equatable, Identifiable {
   }
 }
 
+private struct StrictOutboxEntryV3: Decodable {
+  let botId: String
+  let requestId: String
+  let text: String
+  let whenBusy: BusyMode
+  let createdAt: String
+  let files: [StagedFile]
+  let uploadPaused: Bool
+
+  var entry: OutboxEntry {
+    OutboxEntry(
+      botId: botId,
+      requestId: requestId,
+      text: text,
+      whenBusy: whenBusy,
+      createdAt: createdAt,
+      files: files,
+      uploadPaused: uploadPaused
+    )
+  }
+}
+
 private struct OutboxDocument: Codable {
   var version: Int
   var entries: [OutboxEntry]
@@ -100,8 +122,17 @@ private struct OutboxDocument: Codable {
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 2
-    entries = try container.decode([OutboxEntry].self, forKey: .entries)
+    let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 2
+    switch decodedVersion {
+    case 2:
+      version = 2
+      entries = try container.decode([OutboxEntry].self, forKey: .entries)
+    case 3:
+      version = 3
+      entries = try container.decode([StrictOutboxEntryV3].self, forKey: .entries).map(\.entry)
+    default:
+      throw ClientError("unsupported outbox schema")
+    }
     settled = try container.decodeIfPresent([SettledRequest].self, forKey: .settled) ?? []
     refused = try container.decodeIfPresent([String].self, forKey: .refused) ?? []
   }

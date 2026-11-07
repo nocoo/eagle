@@ -224,6 +224,25 @@ final class FileSendTests: XCTestCase {
     XCTAssertEqual((json["entries"] as? [[String: Any]])?.count, 2)
   }
 
+  func testOutboxV3RejectsMissingOrNullFilesAndV2MayMigrate() throws {
+    let file = directory.appendingPathComponent("outbox.json")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+    try
+      "{\"version\":2,\"entries\":[{\"botId\":\"b_1\",\"requestId\":\"r_v2\",\"text\":\"旧文本\",\"whenBusy\":\"followUp\",\"createdAt\":\"x\"}],\"settled\":[],\"refused\":[]}"
+      .write(to: file, atomically: true, encoding: .utf8)
+    XCTAssertEqual(
+      try OutboxStore(directory: directory).entries(for: "b_1").map(\.requestId), ["r_v2"])
+
+    for invalid in [
+      "{\"version\":3,\"entries\":[{\"botId\":\"b_1\",\"requestId\":\"r_v3\",\"text\":\"占位文本\",\"whenBusy\":\"followUp\",\"createdAt\":\"x\",\"uploadPaused\":false}],\"settled\":[],\"refused\":[]}",
+      "{\"version\":3,\"entries\":[{\"botId\":\"b_1\",\"requestId\":\"r_v3\",\"text\":\"占位文本\",\"whenBusy\":\"followUp\",\"createdAt\":\"x\",\"files\":null,\"uploadPaused\":false}],\"settled\":[],\"refused\":[]}",
+    ] {
+      try invalid.write(to: file, atomically: true, encoding: .utf8)
+      XCTAssertThrowsError(try OutboxStore(directory: directory).all())
+    }
+  }
+
   func testUnknownAndDisconnectKeepTheOriginalRequestIdAndEntry() async throws {
     let fake = FakeFileConversation()
     let file = FakeFilePort()
