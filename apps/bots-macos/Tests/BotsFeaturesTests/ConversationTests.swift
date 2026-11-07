@@ -355,6 +355,48 @@ final class ConversationTests: XCTestCase {
     }
   }
 
+  func testRecoveryRemainsVisibleWhenOutboxCannotBeReadDuringResync() async throws {
+    let outbox = OutboxStore(directory: outboxDirectory)
+    let text = String(repeating: "界", count: 8_001)
+    let entry = OutboxEntry(botId: "b_1", requestId: "r_stored_long", text: text)
+    try outbox.add(entry)
+    let file = outboxDirectory.appendingPathComponent("outbox.json")
+    let saved = try Data(contentsOf: file)
+    let fake = FakeConversation()
+    let model = ConversationViewModel(conversation: fake, outbox: outbox)
+    model.select(botId: "b_1")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.state.messages.first?.isLocalRecovery == true }
+
+    try Data("{".utf8).write(to: file)
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    fake.emit(.status(running: true, inbox: [], streaming: nil))
+    try await waitUntil { model.state.running }
+    XCTAssertTrue(model.state.messages.first?.text.utf8.elementsEqual(text.utf8) == true)
+    XCTAssertTrue(model.state.messages.first?.isLocalRecovery == true)
+    XCTAssertTrue(model.errorBanner?.contains("读不出来") == true)
+    XCTAssertTrue(fake.sent.isEmpty)
+
+    model.select(botId: "b_2")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_2")))
+    try await waitUntil { model.hasSnapshot }
+    XCTAssertTrue(model.state.messages.isEmpty, "another bot must not see the recovery")
+
+    try saved.write(to: file)
+    model.select(botId: "b_1")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.state.messages.first?.isLocalRecovery == true }
+    try outbox.remove(requestId: entry.requestId)
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    fake.emit(.status(running: true, inbox: [], streaming: nil))
+    try await waitUntil { model.state.running }
+    XCTAssertTrue(model.state.messages.isEmpty, "a successful read reflects the durable outbox")
+    XCTAssertTrue(fake.sent.isEmpty)
+  }
+
   func testTheStoredOutboxIsReplayedAfterTheFirstSnapshot() async throws {
     let outbox = OutboxStore(directory: outboxDirectory)
     let stored = OutboxEntry(botId: "b_1", requestId: "r_stored_1", text: "断网时写的")

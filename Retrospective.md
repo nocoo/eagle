@@ -9,7 +9,10 @@ The disk record was retained, but the presentation misrepresented its outcome.
 
 Test recovery across repeated snapshots and active tool calls before committing:
 local-only records must stay labelled and copyable without changing conversation
-turn semantics or triggering network replay.
+turn semantics or triggering network replay. A concurrent full Swift run then missed
+one of two sends in `testInsertingSendsASteerAndAPlainSendQueues`; a focused rerun
+and a serial full run passed. The cause was not established; the initial failure
+is not evidence of a clean first run.
 
 ## 2026-11-07 — Do not leave an unsafe client send path active
 

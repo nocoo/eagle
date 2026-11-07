@@ -800,6 +800,27 @@ struct BotsPresenterPeerTests {
     #expect(entries.isEmpty, "no row with an invented count, and no leaked answer")
   }
 
+  @Test("a local recovery remains visible in a peer run without exposing its messages")
+  func recoveryInsidePeerRun() {
+    let peer = MessageOrigin(kind: .peer, label: "A", exchangeId: "x_0123456789ab")
+    let recoveryText = "原文\n  keeps whitespace  "
+    let entries = presenter.transcript(
+      for: state([
+        message("e_1", role: .user, text: "问题", origin: peer),
+        message("e_2", role: .assistant, text: "只给 A 的回答"),
+        message("local_recovery_r_1", role: .notice, text: recoveryText),
+        message("e_3", role: .assistant, text: "仍只给 A 的回答"),
+      ]),
+      exchanges: [],
+      bots: []
+    )
+    #expect(entries.count == 1)
+    #expect(
+      entries.contains {
+        if case .user("local_recovery_r_1", recoveryText, "本机待确认") = $0 { true } else { false }
+      })
+  }
+
   @Test("the sender's own chat carries the same entry, without any peer message in it")
   func senderSide() {
     // This bot only sent: no peer message ever reached this transcript.

@@ -1139,6 +1139,8 @@ recovery guarantees depend on them.
    limit remains durable and visible for copying as a labelled local recovery, including
    after later snapshots, but is not automatically sent again; its admission outcome
    remains unknown until confirmed. The recovery does not count as a new user turn.
+   If the local outbox cannot be read on a later snapshot, already displayed recovery
+   remains visible in memory; no entry is replayed until the outbox can be read again.
 
 3. **Disposition decides the outbox.** Every `error` emitted after `welcome` carries
    `disposition`. The handshake failure (`version_mismatch`), which is sent before a

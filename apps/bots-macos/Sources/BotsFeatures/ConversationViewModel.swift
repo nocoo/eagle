@@ -292,8 +292,8 @@ public final class ConversationViewModel: ObservableObject {
 
   /// Replays every stored entry with its own requestId; pi answers with the stored record
   /// (PROTOCOL.md, client duties 2).
-  private func reconcileOutbox(replay: Bool) {
-    guard let botId = selectedBotId else { return }
+  private func reconcileOutbox(replay: Bool) -> Bool {
+    guard let botId = selectedBotId else { return false }
     persistPendingRefusals()
     let durableRefusals: Set<String>
     do {
@@ -301,7 +301,7 @@ public final class ConversationViewModel: ObservableObject {
     } catch {
       errorBanner = "本地待发消息暂时读不出来，稍后重试。"
       reconciled = false
-      return
+      return false
     }
     let entries: [OutboxEntry]
     do {
@@ -311,7 +311,7 @@ public final class ConversationViewModel: ObservableObject {
       // snapshot instead of pretending there is nothing to send.
       errorBanner = "本地待发消息暂时读不出来，稍后重试。"
       reconciled = false
-      return
+      return false
     }
     for entry in entries
     where !refused.contains(entry.requestId)
@@ -336,6 +336,7 @@ public final class ConversationViewModel: ObservableObject {
         whenBusy: entry.whenBusy
       )
     }
+    return true
   }
 
   /// Refusals whose durable write failed are retried on the next successful read.
@@ -393,6 +394,7 @@ public final class ConversationViewModel: ObservableObject {
       connection = next
 
     case .snapshot(let value):
+      let recoveries = state.botId == value.botId ? state.messages.filter(\.isLocalRecovery) : []
       state = Reducer.snapshot(
         value,
         rev: state.lastRev.map { $0 + 1 },
@@ -404,7 +406,12 @@ public final class ConversationViewModel: ObservableObject {
       hasOlder = value.truncatedBefore != nil
       let replay = !reconciled
       reconciled = true
-      reconcileOutbox(replay: replay)
+      if !reconcileOutbox(replay: replay) {
+        for recovery in recoveries
+        where !state.messages.contains(where: { $0.requestId == recovery.requestId }) {
+          state = Reducer.apply(.append(message: recovery, replaces: nil), to: state)
+        }
+      }
     case .append(let message, let replaces):
       state = Reducer.apply(.append(message: message, replaces: replaces), to: state)
     case .delta(let messageId, let changes):

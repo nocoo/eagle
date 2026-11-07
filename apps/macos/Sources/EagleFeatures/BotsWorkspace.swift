@@ -933,7 +933,7 @@ struct BotsPresenter {
           continue
         }
       }
-      if insidePeerRun { continue }
+      if insidePeerRun && !message.isLocalRecovery { continue }
       for row in entries(
         for: message,
         paired: paired,
