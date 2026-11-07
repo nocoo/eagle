@@ -540,3 +540,43 @@ test("a reply with the wrong kind is refused instead of trusted", async () => {
     await opened.close();
   }
 });
+
+test("SG002-A14: a read that cannot commit its baseline is not reported as consumed", async () => {
+  const opened = await bench();
+  const remote = await provider({
+    body: {
+      protocolVersion: 1,
+      kind: "changes",
+      source: PROVIDER_SOURCE,
+      changes: [],
+      next: { cursor: "eyJuZXh0IjoxfQ" },
+      coverage: { complete: true, reasons: [] },
+    },
+  });
+  const statePath = join(opened.root, "observation-state.json");
+  const before = JSON.stringify({
+    baseline: { source: PROVIDER_SOURCE, catalog: "c", positions: {}, cursor: "eyJvbGQiOjF9" },
+    state: "ready",
+    unavailable: 0,
+    lastReadAt: null,
+  });
+  try {
+    await writeFile(statePath, before);
+    const { chmod } = await import("node:fs/promises");
+    await chmod(opened.root, 0o500);
+    const client = new ObservationClient({
+      root: opened.root,
+      endpoint: `http://127.0.0.1:${remote.port}`,
+      tokenFile: opened.tokenFile,
+    });
+    const result = await client.changes();
+    assert.equal(result.provider.state, "internal");
+    assert.equal(result.provider.detail, "state_unwritable");
+    assert.equal(result.changes, null, "an unconsumed page is never reported as consumed");
+    await chmod(opened.root, 0o700);
+    assert.equal(await readFile(statePath, "utf8"), before, "the stored baseline did not advance");
+  } finally {
+    await remote.close();
+    await opened.close();
+  }
+});

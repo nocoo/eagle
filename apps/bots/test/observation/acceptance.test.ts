@@ -274,3 +274,44 @@ test("SG002-A07: reads beside a committing writer never fail a submission", asyn
     await store.cleanup();
   }
 });
+
+test("SG002-A10: more than 500 scopes are listed in pages, never silently dropped", async () => {
+  const store = await realStore();
+  const opened = await bench([{ id: "b_real", title: "Real" }]);
+  try {
+    await installStore(opened, "b_real", store.dir);
+    const path = join(opened.botsDir, "b_real", "session.sqlite");
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(path);
+    const insert = db.prepare(
+      "INSERT INTO conversations (id, owner_conversation_id, owner_task_id, record) VALUES (?, 1, 1, '{}')",
+    );
+    for (let index = 0; index < 501; index += 1) insert.run(900000 + index);
+    db.close();
+
+    const first = await opened.call("/v1/observe/history?botId=b_real&limit=1");
+    assert.equal(first.status, 200);
+    const scopes = first.body.scopes as { id: string }[];
+    assert.equal(scopes.length, 500, "the page is bounded");
+    assert.equal(
+      (first.body.coverage as { scopes: string }).scopes,
+      "truncated",
+      "the page says the enumeration was cut",
+    );
+    const after = (first.body.scopesNext as { afterScopeId: string }).afterScopeId;
+    assert.ok(after !== null && after !== undefined);
+    const second = await opened.call(
+      `/v1/observe/history?botId=b_real&limit=1&scopeAfter=${after}`,
+    );
+    const rest = second.body.scopes as { id: string }[];
+    assert.ok(rest.length > 0, "the remaining scopes are still reachable");
+    assert.equal(
+      new Set([...scopes, ...rest].map((scope) => scope.id)).size,
+      scopes.length + rest.length,
+      "no scope is repeated across enumeration pages",
+    );
+  } finally {
+    await opened.close();
+    await store.cleanup();
+  }
+});

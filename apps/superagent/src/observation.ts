@@ -2,7 +2,7 @@
 // its own baseline. Failures are values, never socket errors, and a reset drops the stale
 // baseline instead of continuing from it.
 import { constants } from "node:fs";
-import { lstat, open, readFile, rename, writeFile } from "node:fs/promises";
+import { lstat, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export type ObservationState =
@@ -101,12 +101,19 @@ export class ObservationClient {
     return this.#state;
   }
 
-  async #save(next: StoredState): Promise<void> {
+  /** Writes only after the reader has the value; a failure never advances the baseline. */
+  async #save(next: StoredState): Promise<boolean> {
+    const temporary = `${this.#path()}.tmp`;
+    try {
+      await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+      await rename(temporary, this.#path());
+    } catch {
+      await rm(temporary, { force: true }).catch(() => undefined);
+      return false;
+    }
     this.#state = next;
     this.#loaded = true;
-    const temporary = `${this.#path()}.tmp`;
-    await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
-    await rename(temporary, this.#path());
+    return true;
   }
 
   #report(state: ObservationState, detail: string | null = null): ProviderReport {
@@ -181,7 +188,7 @@ export class ObservationClient {
     const unavailable = bots.filter(
       (bot) => (bot.store as Record<string, unknown> | undefined)?.state !== "available",
     ).length;
-    await this.#save({
+    const stored = await this.#save({
       baseline:
         source === undefined || cursor === undefined || catalog === undefined
           ? null
@@ -190,6 +197,7 @@ export class ObservationClient {
       state: "ready",
       unavailable,
     });
+    if (!stored) return { provider: this.#report("internal", "state_unwritable"), snapshot: null };
     return { provider: this.#report("ready"), snapshot: result.body };
   }
 
@@ -232,12 +240,15 @@ export class ObservationClient {
       return { provider: this.#report("internal", "shape"), changes: null };
     }
     const next = (result.body.next as { cursor?: string } | undefined)?.cursor;
-    await this.#save({
+    const stored = await this.#save({
       baseline: next === undefined ? null : { ...baseline, cursor: next },
       lastReadAt: new Date().toISOString(),
       state: "ready",
       unavailable: this.#state.unavailable,
     });
+    if (!stored) {
+      return { provider: this.#report("internal", "state_unwritable"), changes: null };
+    }
     return { provider: this.#report("ready"), changes: result.body };
   }
 }

@@ -14,6 +14,7 @@ import { inspectStore, readHistoryPage, readSnapshotFacts } from "./store.ts";
 export const OBSERVATION_PREFIX = "/v1/observe/";
 const PROTOCOL_VERSION = 1;
 const SNAPSHOT_BOTS = 200;
+const SCOPES_PER_PAGE = 500;
 const HISTORY_LIMIT = { default: 50, max: 200 } as const;
 const CHANGES_LIMIT = { default: 100, max: 500 } as const;
 
@@ -281,6 +282,13 @@ export const createObservationRoutes = (options: ObservationOptions): Observatio
         );
       }
     }
+    // Scope enumeration is bounded and continued, so no scope becomes unreachable.
+    const scopeAfter = url.searchParams.get("scopeAfter");
+    const startAt =
+      scopeAfter === null ? 0 : page.scopes.findIndex((scope) => scope.id === scopeAfter) + 1;
+    const fromIndex = startAt <= 0 && scopeAfter !== null ? page.scopes.length : startAt;
+    const listed = page.scopes.slice(fromIndex, fromIndex + SCOPES_PER_PAGE);
+    const moreScopes = fromIndex + SCOPES_PER_PAGE < page.scopes.length;
     return {
       status: 200,
       body: {
@@ -293,13 +301,13 @@ export const createObservationRoutes = (options: ObservationOptions): Observatio
           id: resolved,
           kind: page.scopes.find((scope) => scope.id === resolved)?.kind ?? "child",
         },
-        scopes: page.scopes,
-        scopesNext: null,
+        scopes: listed,
+        scopesNext: moreScopes ? { afterScopeId: listed.at(-1)?.id ?? null } : null,
         boundary: page.boundary,
         messages: page.messages,
         omitted: page.omitted,
         ...(page.next === undefined ? {} : { next: page.next }),
-        coverage: page.coverage,
+        coverage: moreScopes ? { ...page.coverage, scopes: "truncated" } : page.coverage,
       },
     };
   };
