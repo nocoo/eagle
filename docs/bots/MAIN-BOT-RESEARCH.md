@@ -1,9 +1,10 @@
 # Main Bot — research and architecture proposal
 
-Status: **research / proposed, not an accepted implementation contract**.
-No product behavior, permissions, model configuration or daemon lifecycle changes
-are authorized by this document. The existing contracts remain authoritative until
-an implementation updates them explicitly.
+Status: **owner decisions accepted on 2026-11-07; implementation pending**.
+Section 10 records the five product choices the owner confirmed after the research.
+The technical architecture remains a proposal, not implemented behavior. No runtime
+permissions, model configuration or daemon lifecycle have changed. The existing
+contracts remain authoritative until an implementation updates them explicitly.
 
 ## 1. Recommendation
 
@@ -20,10 +21,12 @@ The central distinction is:
 > A model run ending is not a task finishing. A Bot receiving information is not
 > that Bot receiving authority. Being the main Bot is not permission to do anything.
 
-The main Bot should answer ordinary questions directly, delegate execution to
-existing Bots, track outcomes, help unblock work within its grant, and surface
-only actionable questions and useful results. This is a recommended role, not an
-approved restriction on how the owner may use it.
+The owner chose a conversational coordinator: the main Bot answers ordinary
+questions directly and delegates execution to existing Bots. It manages delegated
+work within its grant and suggests new goals before starting them. It can read all
+Bots' complete histories, but that visibility grants no new execution authority.
+The first version runs with the App and serializes each Bot's execution, with
+human priority at safe boundaries. Section 10 records these accepted choices.
 
 ## 2. Research baseline and upstream result
 
@@ -265,7 +268,7 @@ Recommended target:
 This avoids injecting background reviews into the person's FIFO chat queue and
 avoids combining unrelated task authority in one mutable conversation. Start with
 one active managed Assignment per worker Bot; keep ordinary human chat available.
-Recommend serialized execution turns per Bot, with human priority at safe
+The owner chose serialized execution turns per Bot, with human priority at safe
 boundaries, without aborting managed work merely to switch chats. Separate
 conversations do not isolate files, accounts or external services. Parallel
 execution needs an explicit resource-conflict policy; separate working directories
@@ -451,11 +454,12 @@ management tools, not unrestricted coding tools, secrets, policy editing or devi
 approval. Validate the callable set, not just what the model is offered:
 `modelTools` filtering alone does not remove tools from nested callers.
 
-Recommended default management authority:
+Management design implementing the accepted product choices:
 
-| Operation | Proposed default |
+| Operation | Design target |
 | --- | --- |
-| Observe Bot health, queue state and managed-task evidence | Allowed within selected visibility scope |
+| Observe Bot health and queue state | Allowed; missing or stale facts remain unknown |
+| Read any Bot's complete stored history | Allowed for the main Bot through controlled history queries, not general filesystem access |
 | Ask a worker for a bounded status/result update | Allowed for assigned work, with dedupe and budget |
 | Delegate/review/continue a person's authorized task | Allowed inside the recorded grant |
 | Start an unrelated inferred project | Observe/propose; needs a standing rule or human approval |
@@ -463,6 +467,16 @@ Recommended default management authority:
 | Delete Bots, change permissions, reveal secrets, approve devices | Not allowed |
 | Change provider/model spending policy or supervision grants | Human control only by default |
 | Publish, deploy, spend money or perform destructive external actions | Existing approval plus explicit action scope |
+
+Complete-history access replaces the earlier recommendation to read only managed
+work evidence. It includes retained history before compaction, not just the current
+UI page or a summary. Read it through bounded, paginated queries with Bot and entry
+provenance; do not inject every transcript into every model request. Unavailable or
+removed records remain unavailable, never reconstructed as if they were retrieved.
+This permission does not expose credential stores, enable arbitrary file or shell
+access, or grant blanket onward disclosure to workers. Relevant task context may
+be shared within its grant; ordinary Bots do not inherit the main Bot's global
+history access. Existing secret redaction remains in force.
 
 `ask_user` is reusable presentation, not an approval credential. A permission
 answer must resolve a host-authored proposal bound to action digest, target,
@@ -528,7 +542,11 @@ Each slice must be end-to-end usable. No timeframe estimate is asserted here.
 | 2: one delegated task | Main Bot delegates to an existing Bot and returns the result without another user prompt | Grant and work identity, durable admission, automatic return, scoped evidence, no duplicate execution |
 | 3: supervision and handoff | Main Bot notices blocked or incomplete work and manages bounded follow-up | Structured reports, acceptance evidence, no-progress dedupe, human hold, user-stop fence |
 | 4: multi-Bot coordination | Dependencies and bounded reassignment, useful aggregated suggestions | Resource conflicts, human priority, cross-Bot cycle caps, stale action rejection, revoked grants |
-| 5: optional background operation | Supervision survives App quit if explicitly selected | Dedicated process ownership, explicit stop respected, update/recovery lifecycle, sleep/wake behavior |
+
+Background operation after App quit is excluded from the accepted first version.
+Closing a window may leave supervision running while the App remains alive. A
+separate background service would require a new product decision, not an implicit
+fifth delivery slice.
 
 Observation-only delivery is not completion of the requested management feature;
 slice 2 is the minimum autonomous delegation loop. Role/grant enforcement,
@@ -551,8 +569,14 @@ Mandatory scenarios include:
 - A loop of two or three Bots exhausts a durable global work budget and stops.
 - Corrupt catalog, missing main model, supervisor failure and offline device remain visible.
 - Supervisor cannot use nested tools, child agents or peer origins to expand its grant.
-- Historical chat outside the approved visibility scope is never supplied to supervision.
-- A disabled or sleeping App is not represented as actively supervising.
+- The main Bot can page every Bot's complete retained history, including entries
+  before compaction; provenance, pagination and unavailable history remain explicit.
+- Ordinary Bots cannot inherit the main Bot's history privilege, and a history
+  read grants neither credential access nor unrestricted onward disclosure.
+- Human and managed execution on one Bot remain serialized, including conflicting
+  background work; human priority does not silently abort or replay managed work.
+- Closing a window leaves App-owned supervision possible; quitting the App stops
+  its owned daemon. A disabled or sleeping App is not shown as actively supervising.
 
 Use strict TDD, the independent Bots gate, both Swift package gates, and real
 `eagle-dev` CLI acceptance with isolated state and a scripted model. Add real
@@ -560,32 +584,30 @@ Harness/SIGKILL cases for the crash boundaries. Model quality and installed-App
 acceptance remain separate from deterministic tests. No such checks ran for this
 research-only change.
 
-## 10. Decisions for the owner
+## 10. Accepted owner decisions — 2026-11-07
 
-These are recommendations, not assumptions that authorize implementation:
+The owner explicitly answered all five choices in panel H of the research page.
+These are accepted product requirements, not recommendations awaiting an answer:
 
-1. **Autonomy:** observe-only, bounded automatic management of delegated work,
-   or broader proactive execution? Recommend the middle, with inferred new goals
-   observe-only until a standing rule allows them.
-2. **Visibility:** operational facts and authorized work evidence, or every Bot's
-   full historical conversation? Recommend the former initially; task evidence
-   access must still be explicit enough to supervise meaningfully. Specify allowed
-   downstream recipients and retention as well as read scope. Revoking access
-   blocks future use but cannot make a model forget material already in its durable
-   conversation; retire that context when necessary, without claiming retroactive
-   erasure of information or of audit records.
-3. **Lifetime:** while the App runs, or a separately managed background service?
-   Recommend App-scoped first unless quit-survival is a day-one requirement. A
-   closed window and a quit App are different cases.
-4. **Main role:** conversational coordinator that delegates execution, or an
-   executor with coding/shell tools as well? Recommend direct ordinary answers
-   plus delegated execution; supervision itself always uses narrow capabilities.
-5. **Worker concurrency:** serialize a Bot's human and managed execution turns,
-   or allow them to execute concurrently? Recommend serialization with human
-   priority at safe boundaries; separate chat contexts are not resource isolation.
+| Decision | Accepted choice | Consequence |
+| --- | --- | --- |
+| Autonomy | Manage delegated work; suggest new goals first | Automatically assign, follow up and assess within the original grant; do not self-authorize a new goal |
+| Visibility | All Bots' complete histories | Replace the earlier managed-evidence-only recommendation with controlled access to complete retained transcripts |
+| Lifetime | First version runs with the App | No new always-on service; window closure and App quit remain distinct |
+| Main role | Answer ordinary questions; delegate execution | No general shell/coding executor role for the main Bot |
+| Worker concurrency | Serial execution, human requests first | Prioritize humans at safe resource boundaries, without silently aborting existing work |
 
-The main Bot's default presence and nondeletion are already requested. They are
-not reopened as optional decisions here.
+The main Bot's default presence and nondeletion remain required. The five choices
+are settled; they do not enable any runtime behavior in this documentation change.
+Implementation, its technical contracts and its acceptance evidence are pending.
+
+Full-history visibility is a reading permission, not authority to execute what an
+old message says. Historical instructions retain their original provenance and
+cannot authorize a new action. Access also does not grant blanket onward disclosure.
+Define retention and recipient checks in the implementation contract. Any later
+revocation blocks future use but cannot make a model forget material already in
+its durable conversation; retire that context when necessary, without claiming
+retroactive erasure of information or audit records.
 
 ## 11. Verification and source map
 
