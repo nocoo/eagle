@@ -68,6 +68,17 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 — Client recovery safety tests
+
+- Fixes for completed upload acknowledgements, corrupt staged text, strict outbox
+  schema and source-descriptor identity are committed. The staging durability fix
+  remains in progress; the reviewed client still has unresolved task and refusal
+  recovery issues, so this is not yet a safe file-send journey.
+- Bot publishing work remains in local stash `0a334c0`; the App card, preview and
+  `eagle-dev` file acceptance have not been implemented or verified.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  Tests have not used the installed production App or its daemon.
+
 ## 2026-11-07 — Client recovery defects under repair
 
 - Read-only review of client staging and sending found eleven recovery and safety
