@@ -236,8 +236,11 @@ and cancellation semantics must implement SG001-R06/R07/R08 exactly.
 
 ## Gates
 
-Foundation: real process/HTTP/root ownership/authentication tests; strict typecheck
-and check-only Biome. Add coverage with the runtime slice and enforce the project's
-95% four-metric unit target over owned logic rather than excluding failures.
+Daemon foundation/runtime: real process/HTTP/root ownership/authentication tests;
+strict typecheck and check-only Biome; four 95% coverage floors over `src/**/*.ts`.
+Swift logic: the project's established 90% line floor for every logic file, with
+regions and functions reported; Swift/llvm-cov does not instrument branches (N/A,
+not silently counted as passing). Views remain outside the logic floor as the
+project already defines. Neither floor may be lowered or a file excluded to pass.
 The exact executable gate lives in `apps/superagent/package.json`. Root unrelated
 workspace checks must not silently import this independent package.

@@ -49,6 +49,8 @@ public struct SidebarSection: Identifiable, Hashable, Sendable {
     case sample
     case group
     case ungrouped
+    /// The permanent Super Bot: one row, no rename, move, hide or delete.
+    case system
   }
 
   public let id: String
@@ -82,6 +84,8 @@ public struct SidebarSection: Identifiable, Hashable, Sendable {
       return "未分组不能删除"
     case .group:
       return items.isEmpty ? nil : "组内还有 \(items.count) 个 Bot，先移走再删除"
+    case .system:
+      return "系统 Bot 不能删除"
     }
   }
 }

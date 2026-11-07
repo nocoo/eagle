@@ -12,10 +12,19 @@ public enum CLIEntry {
   ) async -> Int32 {
     let argv0 = arguments.first ?? "eagle-dev"
     let tokens = Array(arguments.dropFirst())
-    let config = CLIConfig.load(argv0: argv0, environment: environment, home: home)
     let printer =
       makePrinter?(tokens.contains("--json")) ?? Printer(json: tokens.contains("--json"))
     do {
+      if tokens.first == "superagent" {
+        let endpoint = try SuperagentCommands.resolve(
+          arguments: arguments, environment: environment, home: home)
+        try await SuperagentCommands(
+          endpoint: endpoint, printer: printer,
+          release: CLIConfig.binaryName(for: argv0) == "eagle"
+        ).run(Array(tokens.dropFirst()))
+        return 0
+      }
+      let config = CLIConfig.load(argv0: argv0, environment: environment, home: home)
       try await Commands(config: config, printer: printer, session: session).run(tokens)
       return 0
     } catch let error as CLIError {

@@ -19,7 +19,8 @@ let package = Package(
     .executable(name: "eagle-cli", targets: ["EagleCLI"]),
   ],
   dependencies: [
-    .package(path: "../bots-macos")
+    .package(path: "../bots-macos"),
+    .package(path: "../superagent-macos"),
   ],
   targets: [
     .target(name: "EagleDesign", resources: [.process("Resources")]),
@@ -35,6 +36,9 @@ let package = Package(
         .product(name: "BotsCore", package: "bots-macos"),
         .product(name: "BotsTransport", package: "bots-macos"),
         .product(name: "BotsFeatures", package: "bots-macos"),
+        .product(name: "SuperagentCore", package: "superagent-macos"),
+        .product(name: "SuperagentTransport", package: "superagent-macos"),
+        .product(name: "SuperagentFeatures", package: "superagent-macos"),
       ]
     ),
     .executableTarget(
@@ -53,7 +57,13 @@ let package = Package(
       name: "ComposerFocusFixture",
       dependencies: ["EagleDesign"]
     ),
-    .target(name: "EagleCLIKit"),
+    .target(
+      name: "EagleCLIKit",
+      dependencies: [
+        .product(name: "SuperagentCore", package: "superagent-macos"),
+        .product(name: "SuperagentTransport", package: "superagent-macos"),
+      ]
+    ),
     .executableTarget(name: "EagleCLI", dependencies: ["EagleCLIKit"]),
     .testTarget(name: "EagleDesignTests", dependencies: ["EagleDesign"]),
     .testTarget(name: "EagleCLITests", dependencies: ["EagleCLIKit"]),

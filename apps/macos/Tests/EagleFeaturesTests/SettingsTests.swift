@@ -33,7 +33,11 @@ struct SettingsTests {
     #expect(SettingsSection.prompts.rawValue == "提示词")
     #expect(
       SettingsSection.allCases.map(\.rawValue)
-        == ["通用", "模型", "工具", "技能", "提示词", "服务", "密码", "设备", "CLI", "用量", "关于"])
+        == [
+          "通用", "模型", "Super Bot", "工具", "技能", "提示词", "服务", "密码", "设备", "CLI", "用量",
+          "关于",
+        ])
+    #expect(SettingsSection.superagent.symbol == "person.crop.circle.badge.checkmark")
   }
 
   @Test("the skills own a tab of their own, right after 工具")

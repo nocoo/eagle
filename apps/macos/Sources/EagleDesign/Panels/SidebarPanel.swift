@@ -195,7 +195,7 @@ public struct SidebarPanel: View {
       sectionHeader(section, isFirst: isFirst)
       if section.isExpanded {
         ForEach(section.items) { item in
-          row(item)
+          row(item, role: section.role)
             .transition(.opacity)
         }
       }
@@ -206,7 +206,7 @@ public struct SidebarPanel: View {
 
   @ViewBuilder
   private func sectionHeader(_ section: SidebarSection, isFirst: Bool) -> some View {
-    if section.role == .ungrouped {
+    if section.role == .ungrouped || section.role == .system {
       sectionHeaderContent(section, isFirst: isFirst)
     } else {
       sectionHeaderContent(section, isFirst: isFirst)
@@ -310,12 +310,12 @@ public struct SidebarPanel: View {
   }
 
   @ViewBuilder
-  private func row(_ item: SidebarItem) -> some View {
-    selectableRow(item).id(item.id)
+  private func row(_ item: SidebarItem, role: SidebarSection.Role) -> some View {
+    selectableRow(item, role: role).id(item.id)
   }
 
   @ViewBuilder
-  private func selectableRow(_ item: SidebarItem) -> some View {
+  private func selectableRow(_ item: SidebarItem, role: SidebarSection.Role) -> some View {
     Button {
       withAnimation(Theme.Motion.selection) { onSelect(item.id) }
     } label: {
@@ -336,7 +336,9 @@ public struct SidebarPanel: View {
       }
     }
     .buttonStyle(.plain)
-    .contextMenu { itemMenu(item) }
+    .contextMenu {
+      if role != .system { itemMenu(item) }
+    }
   }
 
   @ViewBuilder

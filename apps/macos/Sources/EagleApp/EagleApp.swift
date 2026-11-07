@@ -61,16 +61,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if Bundle.main.bundleIdentifier == nil { NSApp.applicationIconImage = EagleIcon.image }
     NSApp.activate(ignoringOtherApps: true)
     DeviceApprovalWindowController.shared.observe(DeviceSettingsViewModel.shared)
+    guard ProcessInfo.processInfo.environment["EAGLE_DISABLE_WORKERS"] != "1" else { return }
     Task { @MainActor in await DeviceSettingsViewModel.shared.startLocal() }
   }
 
+  /// Closing the last window keeps the independent Superagent usable from the Dock.
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-    true
+    false
   }
 
-  /// The daemon is a child of the app: quitting the app must not leave it running.
-  func applicationWillTerminate(_ notification: Notification) {
-    BotsDaemonSupervisor.terminateRecordedDaemon()
+  private var terminating = false
+
+  /// App quit owns a bounded shutdown: stop the Superagent processes this App started, then
+  /// let the worker daemon close through its recorded ownership. Closing a window never quits.
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    guard !terminating else { return .terminateNow }
+    terminating = true
+    Task { @MainActor in
+      await SuperagentDaemonSupervisor.shared.stopOwned()
+      BotsDaemonSupervisor.terminateRecordedDaemon()
+      sender.reply(toApplicationShouldTerminate: true)
+    }
+    return .terminateLater
   }
 }
 

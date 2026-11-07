@@ -13,6 +13,7 @@ public struct WorkspaceShellView: View {
   @StateObject private var daemon = BotsDaemonSupervisor.shared
   @StateObject private var devices = DeviceSettingsViewModel.shared
   @StateObject private var bots = BotsWorkspaceViewModel()
+  @StateObject private var superagent = SuperagentWorkspaceViewModel()
   @StateObject private var chrome = SidebarChromeViewModel()
   /// The dialog the shell itself raised; a peer exchange reads from its transcript instead.
   @State private var dialogs = WorkspaceDialogState()
@@ -39,12 +40,20 @@ public struct WorkspaceShellView: View {
   }
 
   private var sidebarSections: [SidebarSection] {
-    SidebarComposition.sections(
+    var sections = SidebarComposition.sections(
       botSections: bots.sections,
       mock: list.sections,
       showsMock: loadMockData
     )
     .map(chrome.decorate)
+    sections.insert(
+      SidebarComposition.systemSection(subtitle: superagent.statusLine), at: 0)
+    return sections
+  }
+
+  /// The Super Bot is selected by a source-qualified id: no worker Bot can claim it.
+  private var selectedIsSuperagent: Bool {
+    list.selection == SuperagentWorkspaceViewModel.selectionID
   }
 
   /// Identifiers that belong to the sample workspace, so switching it off drops them.
@@ -117,7 +126,10 @@ public struct WorkspaceShellView: View {
     }
     // Hiding the open bot must move the conversation too, not only the sidebar's
     // highlight.
-    if bots.owns(next) {
+    if next == SuperagentWorkspaceViewModel.selectionID {
+      list.selection = next
+      Task { await superagent.start() }
+    } else if bots.owns(next) {
       bots.select(next)
     } else {
       list.selection = next
@@ -229,7 +241,10 @@ public struct WorkspaceShellView: View {
           selection: list.selection,
           onSelect: { id in
             chrome.markRead(id)
-            if bots.owns(id) {
+            if id == SuperagentWorkspaceViewModel.selectionID {
+              list.selection = id
+              Task { await superagent.start() }
+            } else if bots.owns(id) {
               bots.select(id)
               list.selection = id
             } else {
@@ -312,7 +327,10 @@ public struct WorkspaceShellView: View {
               onDismiss: { bots.dismissModelSetup() }
             )
           }
-          if selectedIsBot {
+          if selectedIsSuperagent {
+            SuperagentConversationContent(
+              model: superagent, layout: layout, focusRestore: focusRestore)
+          } else if selectedIsBot {
             BotsConversationContent(
               bots: bots,
               layout: layout,
@@ -349,8 +367,12 @@ public struct WorkspaceShellView: View {
         }
       } inspector: {
         InspectorColumn(
-          name: selectedIsBot ? bots.title : (selectedIsMock ? (item?.title ?? "示例") : "未选择"),
-          subtitle: selectedIsBot ? "Bots" : (selectedIsMock ? (item?.tag ?? "示例") : ""),
+          name: selectedIsSuperagent
+            ? "Super Bot"
+            : (selectedIsBot ? bots.title : (selectedIsMock ? (item?.title ?? "示例") : "未选择")),
+          subtitle: selectedIsSuperagent
+            ? superagent.statusLine
+            : (selectedIsBot ? "Bots" : (selectedIsMock ? (item?.tag ?? "示例") : "")),
           tintIndex: item?.tintIndex ?? 2,
           pulls: selectedIsBot ? bots.pullRows : (selectedIsMock ? inspector.pulls : []),
           tasks: selectedIsBot ? bots.tasks : [],
@@ -397,9 +419,15 @@ public struct WorkspaceShellView: View {
           settings.selection = .bots
           present(.settings)
         }
+        if list.selection == nil {
+          list.selection = SuperagentWorkspaceViewModel.selectionID
+          await superagent.start()
+        }
+        guard ProcessInfo.processInfo.environment["EAGLE_DISABLE_WORKERS"] != "1" else { return }
         await daemon.startIfNeeded()
       }
       .task(id: daemon.status) {
+        guard ProcessInfo.processInfo.environment["EAGLE_DISABLE_WORKERS"] != "1" else { return }
         // Every window follows readiness, including a shared start or a Settings retry.
         guard case .running = daemon.status else {
           bots.disconnect()
@@ -409,11 +437,15 @@ public struct WorkspaceShellView: View {
         guard !Task.isCancelled else { return }
         await bots.loadModels()
       }
-      .task { await devices.observeLocal() }
+      .task {
+        guard ProcessInfo.processInfo.environment["EAGLE_DISABLE_WORKERS"] != "1" else { return }
+        await devices.observeLocal()
+      }
       .onDisappear {
         // Closing the window must release the bot's connection, or its subscriber slot
         // stays taken for as long as the process lives.
         bots.disconnect()
+        Task { await superagent.closeWindow() }
       }
       .onChange(of: loadMockData) { _, _ in dropSampleSelectionIfHidden() }
       .task { dropSampleSelectionIfHidden() }

@@ -11,6 +11,10 @@ public protocol SuperagentChatPort: Sendable {
   func close() async
 }
 
+public protocol SuperagentServicePort: SuperagentChatPort {
+  func health() async throws -> ServiceHealth
+}
+
 public protocol PendingInputStore: Sendable {
   func save(_ input: PendingInput) async throws
   func list() async throws -> [PendingInput]

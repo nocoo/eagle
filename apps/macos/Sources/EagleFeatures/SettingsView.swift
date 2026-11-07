@@ -9,6 +9,7 @@ public struct SettingsView: View {
   /// fresh view model per render silently discarded all three.
   @StateObject private var cli: CLISettingsViewModel
   /// The 技能 page keeps its own state: the folders it scans and the skills a person ticked.
+  @StateObject private var superagent = SuperagentWorkspaceViewModel.makeSettings()
   @StateObject private var skills: SkillsSettingsViewModel
   @ObservedObject private var devices: DeviceSettingsViewModel
   @AppStorage("eagle.appearance") private var appearance = "system"
@@ -57,6 +58,8 @@ public struct SettingsView: View {
         general
       case .bots:
         bots
+      case .superagent:
+        SuperagentSettingsPage(model: superagent)
       case .tools:
         tools
       case .skills:

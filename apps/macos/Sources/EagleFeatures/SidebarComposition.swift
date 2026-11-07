@@ -30,6 +30,24 @@ public enum SidebarComposition {
     showsMock ? botSections + mock : botSections
   }
 
+  /// The permanent row above every group, independent of the worker catalog. It is not a
+  /// worker Bot and no group, mock setting or catalog event can remove it.
+  public static func systemSection(
+    title: String = "Super Bot",
+    subtitle: String
+  ) -> SidebarSection {
+    SidebarSection(
+      id: "superagent.section",
+      title: "SUPER BOT",
+      items: [
+        SidebarItem(
+          id: "superagent:main", title: title, subtitle: subtitle,
+          tintIndex: 4, pinned: true, unread: false, busy: false)
+      ],
+      role: .system
+    )
+  }
+
   /// A selection that belongs to the sample workspace cannot survive switching it off.
   public static func keepsSelection(
     _ selection: String?,

@@ -35,6 +35,7 @@ final class SidebarChromeViewModel: ObservableObject {
 
   /// Applies the view state to a section: hidden rows drop out, pinned rows sort first.
   func decorate(_ section: SidebarSection) -> SidebarSection {
+    guard section.role != .system else { return section }
     let visible = section.items
       .filter { !hidden.contains($0.id) }
       .map { item in

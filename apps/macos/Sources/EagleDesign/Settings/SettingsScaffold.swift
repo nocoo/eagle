@@ -4,6 +4,7 @@ import SwiftUI
 public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
   case general = "通用"
   case bots = "模型"
+  case superagent = "Super Bot"
   case tools = "工具"
   case skills = "技能"
   case prompts = "提示词"
@@ -20,6 +21,7 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
     switch self {
     case .general: return "gearshape"
     case .bots: return "sparkles"
+    case .superagent: return "person.crop.circle.badge.checkmark"
     case .tools: return "wrench.and.screwdriver"
     case .skills: return "square.stack.3d.up"
     case .prompts: return "text.alignleft"

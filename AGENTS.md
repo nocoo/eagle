@@ -39,6 +39,7 @@ packages/contracts  shared zod contracts and pure helpers (private, not publishe
 packages/agent    @nocoo/eagle-agent, published to npm
 apps/bots         Bots daemon: independent product, not a workspace member
 apps/superagent   independent Super Bot service; own lock and npm run check, no worker imports
+apps/superagent-macos  Super Bot client logic (Core/Transport/Features), own tests and 90% line gate
 docs/bots         Bots contracts; fixtures/bots-protocol holds the wire samples
 tests             one Node/Playwright suite at the root, spanning all packages
 scripts           live verification and deployment entry points

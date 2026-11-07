@@ -36,7 +36,7 @@ private struct Challenge: Decodable {
 private struct Reply<Value: Decodable>: Decodable { var value: Value }
 private struct Stopped: Decodable, Sendable { var stopped: Bool }
 
-public actor SuperagentClient: SuperagentChatPort {
+public actor SuperagentClient: SuperagentServicePort {
   public let endpoint: SuperagentEndpoint
   private let session: URLSession
   private var socket: URLSessionWebSocketTask?

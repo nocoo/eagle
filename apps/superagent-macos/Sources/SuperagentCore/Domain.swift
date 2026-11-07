@@ -8,6 +8,18 @@ public struct ServiceIdentity: Codable, Equatable, Sendable {
   public var instance: String
   public var storeId: String
   public var rootBinding: String
+  public init(
+    service: String, version: String, protocolVersion: Int, pid: Int, instance: String,
+    storeId: String, rootBinding: String
+  ) {
+    self.service = service
+    self.version = version
+    self.protocolVersion = protocolVersion
+    self.pid = pid
+    self.instance = instance
+    self.storeId = storeId
+    self.rootBinding = rootBinding
+  }
 }
 
 public struct ServiceHealth: Codable, Equatable, Sendable {
@@ -20,6 +32,20 @@ public struct ServiceHealth: Codable, Equatable, Sendable {
   public var rootBinding: String
   public var modelReady: Bool
   public var failure: ServiceFailure?
+  public init(
+    service: String, version: String, protocolVersion: Int, pid: Int, instance: String,
+    storeId: String, rootBinding: String, modelReady: Bool, failure: ServiceFailure? = nil
+  ) {
+    self.service = service
+    self.version = version
+    self.protocolVersion = protocolVersion
+    self.pid = pid
+    self.instance = instance
+    self.storeId = storeId
+    self.rootBinding = rootBinding
+    self.modelReady = modelReady
+    self.failure = failure
+  }
 }
 
 public struct ServiceFailure: Codable, Equatable, Sendable {
@@ -32,6 +58,10 @@ public struct ServiceFailure: Codable, Equatable, Sendable {
   }
   public var code: Code
   public var id: String
+  public init(code: Code, id: String) {
+    self.code = code
+    self.id = id
+  }
 }
 
 public struct ModelConfiguration: Codable, Equatable, Sendable {
@@ -47,7 +77,7 @@ public struct ModelConfiguration: Codable, Equatable, Sendable {
   }
 }
 
-public struct ConfigurationChange: Codable, Sendable {
+public struct ConfigurationChange: Codable, Equatable, Sendable {
   public var baseUrl: String
   public var model: String
   public var thinkingLevel: String
@@ -88,6 +118,11 @@ public struct QueuedInput: Codable, Equatable, Sendable {
   public var id: String
   public var requestId: String
   public var text: String
+  public init(id: String, requestId: String, text: String) {
+    self.id = id
+    self.requestId = requestId
+    self.text = text
+  }
 }
 
 public struct ChatWindow: Codable, Equatable, Sendable {
@@ -112,7 +147,7 @@ public struct ChatSnapshot: Codable, Equatable, Sendable {
   public var failure: ServiceFailure?
   public init(
     messages: [ChatMessage] = [], running: Bool = false, modelReady: Bool = false,
-    configuration: ModelConfiguration? = nil, window: ChatWindow = ChatWindow()
+    configuration: ModelConfiguration? = nil, window: ChatWindow? = nil
   ) {
     botId = "superagent"
     self.messages = messages
@@ -120,7 +155,10 @@ public struct ChatSnapshot: Codable, Equatable, Sendable {
     self.running = running
     self.modelReady = modelReady
     self.configuration = configuration
-    self.window = window
+    let ids = messages.compactMap { message in
+      message.id.hasPrefix("e_") ? Int(message.id.dropFirst(2)) : nil
+    }
+    self.window = window ?? ChatWindow(oldestEntryId: ids.first, newestEntryId: ids.last)
   }
 }
 
