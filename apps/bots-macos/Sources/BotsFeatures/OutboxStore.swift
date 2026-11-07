@@ -41,70 +41,26 @@ public struct OutboxEntry: Codable, Sendable, Equatable, Identifiable {
   public var requestId: String
   public var text: String
   public var whenBusy: BusyMode
-  public var files: [StagedFile]
-  public var uploadPaused: Bool
   public var createdAt: String
 
   public var id: String { requestId }
-
-  private enum CodingKeys: String, CodingKey {
-    case botId, requestId, text, whenBusy, createdAt, files, uploadPaused
-  }
 
   public init(
     botId: String,
     requestId: String,
     text: String,
     whenBusy: BusyMode = .followUp,
-    createdAt: String = ISO8601DateFormatter().string(from: Date()),
-    files: [StagedFile] = [],
-    uploadPaused: Bool = false
+    createdAt: String = ISO8601DateFormatter().string(from: Date())
   ) {
     self.botId = botId
     self.requestId = requestId
     self.text = text
     self.whenBusy = whenBusy
     self.createdAt = createdAt
-    self.files = files
-    self.uploadPaused = uploadPaused
-  }
-
-  public init(from decoder: any Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    botId = try container.decode(String.self, forKey: .botId)
-    requestId = try container.decode(String.self, forKey: .requestId)
-    text = try container.decode(String.self, forKey: .text)
-    whenBusy = try container.decode(BusyMode.self, forKey: .whenBusy)
-    createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
-    files = try container.decodeIfPresent([StagedFile].self, forKey: .files) ?? []
-    uploadPaused = try container.decodeIfPresent(Bool.self, forKey: .uploadPaused) ?? false
-  }
-}
-
-private struct StrictOutboxEntryV3: Decodable {
-  let botId: String
-  let requestId: String
-  let text: String
-  let whenBusy: BusyMode
-  let createdAt: String
-  let files: [StagedFile]
-  let uploadPaused: Bool
-
-  var entry: OutboxEntry {
-    OutboxEntry(
-      botId: botId,
-      requestId: requestId,
-      text: text,
-      whenBusy: whenBusy,
-      createdAt: createdAt,
-      files: files,
-      uploadPaused: uploadPaused
-    )
   }
 }
 
 private struct OutboxDocument: Codable {
-  var version: Int
   var entries: [OutboxEntry]
   var settled: [SettledRequest]
   /// Requests the daemon refused: they are never replayed, even if their entry could not
@@ -112,27 +68,16 @@ private struct OutboxDocument: Codable {
   var refused: [String]
 
   init(entries: [OutboxEntry] = [], settled: [SettledRequest] = [], refused: [String] = []) {
-    version = 3
     self.entries = entries
     self.settled = settled
     self.refused = refused
   }
 
-  private enum CodingKeys: String, CodingKey { case version, entries, settled, refused }
+  private enum CodingKeys: String, CodingKey { case entries, settled, refused }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 2
-    switch decodedVersion {
-    case 2:
-      version = 2
-      entries = try container.decode([OutboxEntry].self, forKey: .entries)
-    case 3:
-      version = 3
-      entries = try container.decode([StrictOutboxEntryV3].self, forKey: .entries).map(\.entry)
-    default:
-      throw ClientError("unsupported outbox schema")
-    }
+    entries = try container.decode([OutboxEntry].self, forKey: .entries)
     settled = try container.decodeIfPresent([SettledRequest].self, forKey: .settled) ?? []
     refused = try container.decodeIfPresent([String].self, forKey: .refused) ?? []
   }
@@ -145,7 +90,7 @@ public final class OutboxStore {
   /// Terminal records are kept for the last this many requests.
   private static let settledLimit = 200
 
-  public let directory: URL
+  private let directory: URL
   private let fileURL: URL
   /// Refusals are also written here when the support directory cannot be written, so a
   /// process restart still cannot replay a refused message.
@@ -174,23 +119,7 @@ public final class OutboxStore {
     return document.entries.filter { $0.botId == botId && !refused.contains($0.requestId) }
   }
 
-  public func all() throws -> [OutboxEntry] {
-    let document = try reload()
-    let refused = Set(document.refused)
-    return document.entries.filter { !refused.contains($0.requestId) }
-  }
-
-  /// Returns the raw durable record, including one retained behind a refusal tombstone.
-  public func entry(requestId: String) throws -> OutboxEntry? {
-    try reload().entries.first { $0.requestId == requestId }
-  }
-
-  /// Returns refused records in the durable active shape, for in-window and restart recovery.
-  public func recoverableRefusals(for botId: String) throws -> [OutboxEntry] {
-    let document = try reload()
-    let refused = Set(document.refused)
-    return document.entries.filter { $0.botId == botId && refused.contains($0.requestId) }
-  }
+  public func all() throws -> [OutboxEntry] { try reload().entries }
 
   public func settledRequests() throws -> [SettledRequest] { try reload().settled }
 
@@ -213,9 +142,11 @@ public final class OutboxStore {
   public func refuse(requestId: String) throws {
     do {
       try mutate { entries, settled, refused in
-        let next = entries
+        var next = entries
+        next.removeAll { $0.requestId == requestId }
         var ids = refused.filter { $0 != requestId }
         ids.append(requestId)
+        if ids.count > Self.settledLimit { ids.removeFirst(ids.count - Self.settledLimit) }
         return (next, settled, ids)
       }
       try? removeFallbackRefusal(requestId)
@@ -224,16 +155,6 @@ public final class OutboxStore {
       // survive a restart, so it goes to a user-private temporary directory.
       try writeFallbackRefusal(requestId)
     }
-  }
-
-  /// Removes only the tombstone for an explicit retry; the entry stays in place and
-  /// is reconciled by its original requestId, botId and staged data.
-  public func unrefuse(requestId: String) throws {
-    try mutate { entries, settled, refused in
-      let ids = refused.filter { $0 != requestId }
-      return (entries, settled, ids)
-    }
-    try? removeFallbackRefusal(requestId)
   }
 
   private func fallbackRefusals() -> Set<String> {
@@ -260,49 +181,6 @@ public final class OutboxStore {
 
   /// A refused command is not a settlement: its entry goes away and the text becomes a
   /// draft, so nothing is recorded for it.
-  /// Records a completed managed file ID under the same upload key and request ID.
-  public func recordFileId(requestId: String, uploadId: String, fileId: String) throws {
-    try mutate { entries, settled, refused in
-      let next = entries.map { entry -> OutboxEntry in
-        guard entry.requestId == requestId else { return entry }
-        var updated = entry
-        updated.files = updated.files.map { file -> StagedFile in
-          guard file.uploadId == uploadId else { return file }
-          var saved = file
-          saved.fileId = fileId
-          return saved
-        }
-        return updated
-      }
-      return (next, settled, refused)
-    }
-  }
-
-  /// Authentication failures stop automatic reconciliation until an explicit retry.
-  public func pauseUpload(requestId: String) throws {
-    try mutate { entries, settled, refused in
-      let next = entries.map { entry -> OutboxEntry in
-        guard entry.requestId == requestId else { return entry }
-        var updated = entry
-        updated.uploadPaused = true
-        return updated
-      }
-      return (next, settled, refused)
-    }
-  }
-
-  public func resumeUpload(requestId: String) throws {
-    try mutate { entries, settled, refused in
-      let next = entries.map { entry -> OutboxEntry in
-        guard entry.requestId == requestId else { return entry }
-        var updated = entry
-        updated.uploadPaused = false
-        return updated
-      }
-      return (next, settled, refused)
-    }
-  }
-
   public func remove(requestId: String) throws {
     try mutate { entries, settled, refused in
       var next = entries

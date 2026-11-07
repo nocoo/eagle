@@ -192,9 +192,6 @@ is never started before its preconditions are green.
 | 68 | `BotsFeaturesTests/RecoveryTests.swift` | `recover reopens an unavailable bot and leaves a healthy one untouched` | 63 |
 | 68b | `BotsFeaturesTests/ComposerTests.swift` | `only not_admitted clears the outbox entry; unknown and runtime keep it` | 64 |
 | 69 | `BotsCoreTests/DependencyRulesTests.swift` | `no networking API in core or features; no wire decoding outside transport` | 55 |
-| 69b | `BotsTransportTests/ManagedFileHTTPClientTests.swift` | manifest/content stream from a file URL, reject redirects and stop on 401/403 | 55 |
-| 69c | `BotsFeaturesTests/FileStagingTests.swift` | exact long text and selected-file snapshots stay private, bounded and hashed | 65 |
-| 69d | `BotsFeaturesTests/FileSendTests.swift` | staging/outbox precede upload/send; IDs, modes, cancellation, refusal and restart are recoverable | 69b, 69c |
 | 70 | `test/e2e/tools.test.ts` (daemon) | `a tool round is live in the transcript and in a later snapshot` | real stack + faux model |
 | 71 | `test/runtime/tools.test.ts` | `a tool call and its result are live transcript rows and survive a late join` | 70 |
 | 72 | `BotsCoreTests/FixtureDecodingTests.swift` | `the tool snapshot carries calls and their results` | 55 |

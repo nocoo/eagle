@@ -136,17 +136,8 @@ public final class ConversationSocket: NSObject {
 
   // MARK: - Commands
 
-  public func send(
-    text: String,
-    requestId: String,
-    whenBusy: BusyMode,
-    trace: String,
-    fileIds: [String]? = nil
-  ) throws {
-    enqueue(
-      try Wire.send(
-        requestId: requestId, text: text, whenBusy: whenBusy, trace: trace, fileIds: fileIds)
-    )
+  public func send(text: String, requestId: String, whenBusy: BusyMode, trace: String) throws {
+    enqueue(try Wire.send(requestId: requestId, text: text, whenBusy: whenBusy, trace: trace))
   }
 
   public func answer(entryId: String, chosen: [String], skipped: Bool, trace: String) throws {
@@ -252,7 +243,6 @@ public final class ConversationSocket: NSObject {
       if let catalog = decoded.catalog {
         continuation.yield(.catalog(catalog))
       }
-      continuation.yield(.capabilities(sendFiles: decoded.sendFiles))
       continuation.yield(.connection(.ready))
       enqueue(try? Wire.subscribe(botId: botId, trace: Identifiers.trace("sub")))
       return
@@ -507,7 +497,7 @@ extension ConversationSocket: URLSessionWebSocketDelegate {
 }
 
 /// The `ConversationPort` implementation the view models use: one socket per selected bot.
-public final class BotsConnection: ConversationPort, FileConversationPort, ManagedFileUploadPort {
+public final class BotsConnection: ConversationPort {
   private let baseURL: URL
   private let token: String
   private var socket: ConversationSocket?
@@ -540,24 +530,6 @@ public final class BotsConnection: ConversationPort, FileConversationPort, Manag
       requestId: requestId,
       whenBusy: whenBusy,
       trace: context.trace
-    )
-  }
-
-  public func send(
-    _ text: String,
-    whenBusy: BusyMode,
-    context: CommandContext,
-    botId: String,
-    fileIds: [String]
-  ) async throws {
-    guard let requestId = context.requestId else { throw ClientError("the send has no request id") }
-    let socket = try require(botId)
-    try socket.send(
-      text: text,
-      requestId: requestId,
-      whenBusy: whenBusy,
-      trace: context.trace,
-      fileIds: fileIds
     )
   }
 
@@ -594,11 +566,6 @@ public final class BotsConnection: ConversationPort, FileConversationPort, Manag
     botId: String
   ) async throws {
     try require(botId).loadHistory(before: messageId, limit: 50, trace: context.trace)
-  }
-
-  public func upload(botId: String, file: StagedFile, from url: URL) async throws -> String {
-    let client = ManagedFileHTTPClient(baseURL: baseURL, token: token)
-    return try await client.upload(botId: botId, file: file, from: url)
   }
 
   public func close() {

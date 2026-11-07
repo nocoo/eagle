@@ -67,7 +67,7 @@ L0  pi-durable          @earendil-works/pi-durable 1.4.0 (pinned dependency)
 
 | Layer | Owns | Must not know | Type ownership |
 | --- | --- | --- | --- |
-| L4 client | Views, view models, reducer, drafts, private file staging, durable upload state | Wire encoding, pi-durable, sqlite | `BotsCore/Model`, `BotsCore/Logic`, `BotsCore/Ports` |
+| L4 client | Views, view models, reducer, drafts, connection state | Wire encoding, pi-durable, sqlite | `BotsCore/Model`, `BotsCore/Logic`, `BotsCore/Ports` |
 | L3 wire | Frames, versions, limits, auth, close codes; mapping domain ⇄ frames | Bots behaviour, pi-durable | Envelope types live in `protocol/`; **domain types are imported from `core/`** |
 | L2 core | Domain types, catalog, lifecycle, ordering, fanout, command routing | `@earendil-works/*`, sockets, frame shapes | `core/domain.ts` |
 | L1 adapter | pi-durable ⇄ `RuntimeEvent`; failure classification | Catalog, transport, `rev` numbering | `runtime/pi/**` |
@@ -165,18 +165,16 @@ Sources/
     Model/Domain.swift        domain types mirroring core/domain.ts names
     Logic/Reducer.swift       pure fold into ConversationState, ranked submissions
     Logic/RevisionGap.swift   the gap rule the transport applies
-    Ports/Ports.swift         CatalogPort, ConversationPort, FilePort, ConversationEvent
+    Ports/Ports.swift         CatalogPort, ConversationPort, ConversationEvent, ConnectionState
   BotsTransport/
     Wire.swift                frame codec (decode server events, encode commands)
     CatalogHTTPClient.swift   /v1/bots over HTTP
     ConversationSocket.swift  handshake, subscribe, gap/resync, close codes, backoff
-    ManagedFileHTTPClient.swift  streaming managed-file manifest/content upload
     TokenStore.swift          `<root>/token` (env override for a dev shell), AppPaths
   BotsFeatures/
     AppViewModel.swift        catalog, selection, create/rename/delete
-    ConversationViewModel.swift  connection, transcript, composer, file-send orchestration
-    FileStaging.swift         private source snapshots and local hash/size validation
-    OutboxStore.swift         persisted unsent sends and recoverable refusals
+    ConversationViewModel.swift  connection, transcript, composer, outbox reconciliation
+    OutboxStore.swift         persisted unsent sends (PROTOCOL.md, client duties)
 Tests/
   BotsCoreTests/ BotsTransportTests/ BotsFeaturesTests/
 Scripts/coverage.sh           logic coverage gate (90% lines)
