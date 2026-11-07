@@ -701,3 +701,29 @@ Verified:
 Next broken hop: the per-trigger hourly cap and token bucket remain planned; `peers` is
 untouched; nobody has reviewed a rendered screenshot of the new header face or the
 trigger rows.
+
+## 2026-11-07 11:20 — queued sends are visible, promotable, and never stranded
+
+Observed: the live daemon log showed three sends admitted as `queued: true` while a bot
+was answering, and all three later settled `done`; the App nevertheless showed no
+waiting state, so they looked ignored. A failed run could leave them in the inbox
+forever because `afterFailedRun` was never set and pi's default is `keep`.
+
+Verified:
+
+- `afterFailedRun: "continue"` is now explicit; a runtime test proves the input queued
+  behind a provider error starts instead of waiting for another input.
+- A queued optimistic bubble keeps its local id across a snapshot, so a reconnect or
+  resync no longer hides it while it waits.
+- The App draws a waiting icon on that bubble; clicking it sends `promote`, which moves
+  the submission to the head of the bot's inbox and marks it `steer`. The icon switches
+  to `已插队` until the entry is placed, then the ordinary user turn has no icon.
+- `apps/bots`: `npm run check` passed (1105 tests; coverage 95.87 / 89.07 / 91.37).
+- `apps/bots-macos`: `swift test` passed; `Scripts/coverage.sh` 90.9% lines.
+- `apps/macos`: `swift test`, `swift build`, `npm run check:design` and strict
+  `swift format lint` passed. A Dev App is running in the right pane against the
+  isolated root `/tmp/eagle-bots-dev-20261107` on port 43119.
+
+Next broken hop: nobody has clicked the new icon in a rendered window. That Dev App
+has no gateway configured (the owner's production key was not copied); configure a
+gateway in its Settings before checking the waiting/insert path.
