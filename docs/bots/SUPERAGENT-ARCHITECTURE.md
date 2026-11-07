@@ -326,16 +326,73 @@ documentation is not evidence that these protections already work.
 
 ## 7. Delivery sequence and later automation
 
-| Stage | Usable result | Exit condition |
+The implementation order below refines the accepted read-only rollout. It is a
+plan, not work started or a claim that the earlier design review verified it.
+Each step builds on the previous usable slice; do not build a complete backend
+and only then discover integration problems in a complete UI.
+
+| Order | Work | Usable result / exit evidence |
 | --- | --- | --- |
-| 0: passive contract spike | Proves the observation boundary can serve complete history without opening workers | Normative fixtures, real adapter noninterference tests, explicit capability gaps |
-| 1: independent identity and read-only native dashboard | Main Bot exists, reads all histories, answers and presents actionable suggestions | Independent startup, passive evidence viewer, supervisor health, local decision history, MVVM/TDD gates |
-| 2: read-only supervision quality | Bounded recurring analysis, freshness, low-noise notification and robust recovery | Deterministic loop/race tests plus real model and App evaluation reported separately |
-| Later: explicitly enabled management | Delegation and remediation of authorized work | A separately specified, tested command capability; not an automatic phase-1 upgrade |
+| 1: contract and acceptance baseline | Define the three read operations, exact schemas/limits, coverage, errors, authentication and fixtures; record affected existing checks and isolate test state | Both consumers and producer have one normative contract; no worker command surface or hidden private-store dependency |
+| 2: prove and implement passive reads | Start with a failing cold-worker noninterference case; implement snapshot/history first, then committed changes and their baseline/cursor boundary | Real local transport reads complete retained history without opening/resuming workers, changing business records or retaining idle leases; scoped credentials reject every mutation |
+| 3: independent process plus minimum native slice | Separate App-owned process/store/model configuration, stable nondeletable identity, authenticated read client, minimum MVVM health/fleet/history view | App displays real worker facts through the new process; either service can start without the other; passive navigation never opens chat; no model analysis needed to prove this path |
+| 4: one bounded analysis and human decision | Main-Bot conversation, on-demand evidence-backed analysis, suggestion persistence, native evidence/detail and reviewed/dismissed/deferred states | One real observation produces one auditable suggestion; the owner records a decision; all writes stay in supervisor storage; analysis failure leaves the factual dashboard usable |
+| 5: proactive observation and recovery | Subscribe/poll the bounded change interface, coalesce evidence, schedule rechecks, dedupe notifications and persist cursor/analysis intent | Useful new facts produce suggestions without another human prompt; no token-triggered model loop; restart/gap/expired cursor/slow observer preserve honest state and do not affect workers |
+| 6: integrated acceptance and handoff | Run affected package gates, complete required integration gates, real process fault cases, scripted CLI acceptance and native App inspection | Independent process start/stop/crash, no-source mode, full-history paging, human decisions and App quit all have evidence; deterministic, real-model and manual results remain separate |
+
+### First executable proof
+
+Before building the new service or dashboard, create an isolated worker fixture
+with retained history and pending durable work but no open runtime. A history read
+must return the stored evidence without calling runtime open/resume/configure,
+starting a model/tool, acquiring an idle lease or changing worker domain state.
+Demonstrate the failing behavior first, not merely a missing-module compile error.
+Use real storage plus instrumentation; exempt only the documented access-audit
+bookkeeping, never all filesystem changes. Extend the case to warm and busy workers.
+
+If passive cold reading or complete-history coverage cannot satisfy the contract,
+stop at that gate, report the exact unsupported operation and revise the adapter
+design. Do not substitute ordinary chat subscription, private SQL in the consumer,
+root-only history or a claim that a credential named `read` makes it safe.
+
+### Build the safety boundary with each capability
+
+Ordering is not permission to postpone safety until step 6. Step 2 includes auth,
+limits and noninterference. Step 3 includes process ownership, separate storage,
+standalone startup and basic crash/stop tests. Step 4 includes the minimum proven
+persistent model budget, stable analysis identity, evidence provenance and replay
+safety before enabling its first model call. Step 5 extends these controls to
+unattended rechecks; it does not introduce them for the first time.
+
+Within step 3, start from domain models and fake-port ViewModel tests, then native
+Views, then the real transport. A fixture-backed screen helps implementation but
+is not the accepted vertical slice: its exit needs real observations through the
+independent process. Within step 4, test decision semantics with a scripted model
+before a separate real-model quality check. Never claim useful inference merely
+because a process or protocol test passed.
+
+### Work and review cadence
+
+- One integrating writer owns repository changes on main and preserves user work.
+- Use independent read-only review for each coherent boundary change, with explicit
+  base/head and at most three review/fix rounds; later rounds address the findings.
+- Demonstrate a behavior failing, implement the smallest fix, run affected checks,
+  and commit an atomic working slice. Review fixes receive their own regression proof.
+- Run broad gates at integration milestones rather than after every small edit;
+  never skip a required final gate or weaken a threshold. A new independent service
+  must have its own explicit gate, not silently rely on the current worker package's.
+- After any macOS code change, launch the inspectable dev App as the project requires.
+  During long implementation, record actual user-visible progress and the next
+  broken boundary at the required checkpoint cadence.
+- Parallel work is useful for independent contract/review investigation and fixture
+  validation. Do not parallelize incompatible interpretations of an unfrozen API
+  or permit multiple agents to write the same integration surface.
 
 The first read-only release is a complete, accepted product slice. It does not claim
-to implement the eventual autonomous-management goal. This replaces the earlier
-statement that automatic delegation must be the first minimum useful release.
+to implement the eventual autonomous-management goal. No dispatch/report hooks,
+worker scheduling changes, always-on service or dormant write credentials belong
+to this execution plan. The next management stage requires its own accepted command
+contract and explicit enablement, not an automatic continuation after step 6.
 
 Later command design must preserve independent operation. Commands cross a narrow,
 versioned, authenticated port with stable action IDs, grants, cancellation fences,

@@ -24,7 +24,11 @@ read-adapter feasibility gate comes first: existing chat subscriptions can open 
 resume workers. The owner confirmed separate App-owned processes and stores;
 first-release lifetime remains App-scoped. The design committed as `f79033d3`
 received an independent read-only review with a PASS verdict; the architecture
-records its scope. No implementation or runtime acceptance is claimed here.
+records its scope. The [execution order](SUPERAGENT-ARCHITECTURE.md#7-delivery-sequence-and-later-automation)
+is contract/baseline → passive reads → independent process with a minimum native
+view → one bounded analysis/decision → proactive observation/recovery → integrated
+acceptance. Safety tests accompany each capability; the final stage is not their
+first execution. No implementation or runtime acceptance is claimed here.
 
 ## Shared-device idle and wake (in progress)
 
