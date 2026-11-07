@@ -5,6 +5,7 @@
       "**",
       "!**/worker-configuration.d.ts",
       "!apps/bots",
+      "!apps/superagent",
       "!**/dist",
       "!**/.build",
       "!node_modules",

@@ -1,0 +1,136 @@
+import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
+import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { type TestContext, test } from "node:test";
+import type { Identity } from "../src/identity.ts";
+import { startService } from "../src/server.ts";
+
+async function temporary(t: TestContext) {
+  const root = await mkdtemp(join(tmpdir(), "eagle-superagent-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  return root;
+}
+
+test("SG001-A01: standalone service is ready without workers or model configuration", async (t) => {
+  const root = await temporary(t);
+  const service = await startService({ root, port: 0 });
+  t.after(() => service.close());
+  const response = await fetch(`http://127.0.0.1:${service.port}/v1/health`);
+  const health = (await response.json()) as Identity & { modelReady: boolean };
+  assert.equal(health.service, "eagle-superagent");
+  assert.equal(health.protocolVersion, 1);
+  assert.equal(health.modelReady, false);
+  assert.equal(health.pid, process.pid);
+  assert.match(health.instance, /^[0-9a-f-]{36}$/);
+  assert.match(health.rootBinding, /^[0-9a-f]{64}$/);
+  assert.equal((await stat(join(root, "token"))).mode & 0o777, 0o600);
+  assert.equal((await stat(join(root, "identity.json"))).mode & 0o777, 0o600);
+});
+
+test("SG001-A02: root ownership is exclusive across different service ports", async (t) => {
+  const root = await temporary(t);
+  const first = await startService({ root, port: 0 });
+  t.after(() => first.close());
+  await assert.rejects(async () => {
+    await (await startService({ root, port: 0 })).close();
+  }, /root_locked/);
+});
+
+test("SG001-A07: restart retains identity and credentials but changes instance", async (t) => {
+  const root = await temporary(t);
+  const first = await startService({ root, port: 0 });
+  t.after(() => first.close());
+  const before = (await (
+    await fetch(`http://127.0.0.1:${first.port}/v1/health`)
+  ).json()) as Identity;
+  const token = await readFile(join(root, "token"), "utf8");
+  await first.close();
+  const second = await startService({ root, port: 0 });
+  t.after(() => second.close());
+  const after = (await (
+    await fetch(`http://127.0.0.1:${second.port}/v1/health`)
+  ).json()) as Identity;
+  assert.equal(before.storeId, after.storeId);
+  assert.equal(before.rootBinding, after.rootBinding);
+  assert.notEqual(before.instance, after.instance);
+  assert.equal(token, await readFile(join(root, "token"), "utf8"));
+});
+
+test("health proves possession of this root credential without disclosing it", async (t) => {
+  const root = await temporary(t);
+  const service = await startService({ root, port: 0 });
+  t.after(() => service.close());
+  const nonce = "a".repeat(32);
+  const response = await fetch(`http://127.0.0.1:${service.port}/v1/health`, {
+    headers: { "x-eagle-challenge": nonce },
+  });
+  const body = await response.text();
+  const health = JSON.parse(body);
+  const token = (await readFile(join(root, "token"), "utf8")).trim();
+  assert.equal(
+    health.proof,
+    createHmac("sha256", token)
+      .update(`${nonce}\n127.0.0.1:${service.port}\n${health.rootBinding}\n${health.instance}`)
+      .digest("hex"),
+  );
+  assert.equal(body.includes(token), false);
+  assert.equal(body.includes(root), false);
+});
+
+test("foreign or corrupt storage is refused without replacing its files", async (t) => {
+  const root = await temporary(t);
+  await writeFile(join(root, "catalog.json"), "foreign");
+  await assert.rejects(async () => {
+    await (await startService({ root, port: 0 })).close();
+  }, /foreign_root/);
+  assert.deepEqual(await readdir(root), ["catalog.json"]);
+  await rm(join(root, "catalog.json"));
+  await writeFile(join(root, "identity.json"), "broken", { mode: 0o600 });
+  await assert.rejects(async () => {
+    await (await startService({ root, port: 0 })).close();
+  }, /invalid_identity/);
+  assert.equal(await readFile(join(root, "identity.json"), "utf8"), "broken");
+});
+
+test("unsafe existing token is refused, not repaired", async (t) => {
+  const root = await temporary(t);
+  const first = await startService({ root, port: 0 });
+  await first.close();
+  await chmod(join(root, "token"), 0o644);
+  await assert.rejects(async () => {
+    await (await startService({ root, port: 0 })).close();
+  }, /unsafe_token/);
+  assert.equal((await stat(join(root, "token"))).mode & 0o777, 0o644);
+});
+
+test("browser origins, foreign hosts, malformed challenges and unknown routes are refused", async (t) => {
+  const root = await temporary(t);
+  const service = await startService({ root, port: 0 });
+  t.after(() => service.close());
+  const url = `http://127.0.0.1:${service.port}`;
+  assert.equal(
+    (await fetch(`${url}/v1/health`, { headers: { origin: "https://example.com" } })).status,
+    403,
+  );
+  const foreignHostStatus = await new Promise<number | undefined>((resolve, reject) => {
+    const request = httpRequest(
+      `${url}/v1/health`,
+      { headers: { host: "example.com" } },
+      (response) => {
+        response.resume();
+        resolve(response.statusCode);
+      },
+    );
+    request.on("error", reject);
+    request.end();
+  });
+  assert.equal(foreignHostStatus, 403);
+  assert.equal(
+    (await fetch(`${url}/v1/health`, { headers: { "x-eagle-challenge": "bad" } })).status,
+    400,
+  );
+  assert.equal((await fetch(`${url}/v1/bots`, { method: "DELETE" })).status, 404);
+});

@@ -1,6 +1,6 @@
 # SG-001 — independent process and native Super Bot chat
 
-Status: **active draft spec; implementation not started**.
+Status: **implementation in progress; SG001-A foundation under verification**.
 Owner-selected first milestone: start an independent Superagent process, then make
 its permanent Super Bot conversational in the Eagle App. Worker observation is
 not a prerequisite. [Architecture](../SUPERAGENT-ARCHITECTURE.md) owns invariant
@@ -303,6 +303,11 @@ choices. Do not block process foundation on future observation decisions.
 | SG001-B | App chat protocol/fixtures, exact auth/bootstrap/config owner, model route/limits, busy/Stop semantics, stream/history/recovery mapping |
 | SG001-C | Swift targets/ports and UI routing, App launcher/configuration integration, scoped CLI acceptance commands |
 
+[Local implementation protocol](SUPERAGENT-001-PROTOCOL.md) freezes SG001-A's
+entrypoint, roots, identity proof, lock, readiness and cleanup budgets. Two
+independent spec-review findings (endpoint binding and owned-child cleanup) were
+fixed and accepted before foundation implementation. B/C details remain gated.
+
 The separate-process, separate-store, default identity, App lifetime and chat-first
 decisions are already accepted. No worker read-adapter investigation, complete
 Dashboard specification or autonomous-management policy belongs in this table.
@@ -316,7 +321,9 @@ necessary acceptance omission reported in that scope. The review confirmed the
 chat-first order, zero worker dependency, R01-R12 acceptance mapping and honest
 freeze-before-code items. It does not freeze unresolved wire/configuration details.
 
-Documentation only. No executable, fixture, test, model call, process launch or UI
-acceptance for SG-001 is claimed. Implementation remains blocked on the relevant
-technical decisions above being written into the spec, not on completion of later
-milestones.
+SG001-A: the minimal server first failed seven behavior cases (missing readiness
+fields, duplicate root accepted and invalid origins accepted). The implemented
+foundation passes eight tests, including a real process start, duplicate-root
+refusal, SIGKILL/reopen and graceful stop. Type/lint and independent code review
+are recorded with the slice's commit. No model conversation or native App acceptance
+is claimed yet. Evidence: `.local/superagent-evidence/foundation-red.log`.

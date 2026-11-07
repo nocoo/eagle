@@ -38,6 +38,7 @@ apps/bots-macos   Bots client logic (SPM package: BotsCore/BotsTransport/BotsFea
 packages/contracts  shared zod contracts and pure helpers (private, not published)
 packages/agent    @nocoo/eagle-agent, published to npm
 apps/bots         Bots daemon: independent product, not a workspace member
+apps/superagent   independent Super Bot service; own lock and npm run check, no worker imports
 docs/bots         Bots contracts; fixtures/bots-protocol holds the wire samples
 tests             one Node/Playwright suite at the root, spanning all packages
 scripts           live verification and deployment entry points

@@ -12,6 +12,9 @@ cd "$(git rev-parse --show-toplevel)"
 echo "pre-push: npm run check"
 npm run check
 
+echo "pre-push: superagent checks"
+npm --prefix apps/superagent run check
+
 echo "pre-push: browser automation"
 npm run test:browser
 

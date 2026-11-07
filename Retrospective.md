@@ -1668,3 +1668,12 @@ I corrected the interim statement. The reference checkout was not changed.
 Report a changed revision as a changed revision until ancestry and the tree diff
 are checked. With replaced root commits, a failed ancestry comparison does not
 establish new code or lost local work; compare the two trees directly.
+
+## 2026-11-07 — Verify transport headers at the real boundary
+
+The new Superagent Host-refusal test used fetch with a custom Host header, but the
+installed fetch implementation normalized it to the request target. The assertion
+therefore saw an allowed request, not the hostile header the test intended. The
+case now uses node:http to transmit the actual header and proves the refusal.
+For protocol-security tests, verify the wire input rather than assume the high-level
+client preserves a reserved header. No production guard or test limit was weakened.

@@ -1,5 +1,18 @@
 # 用户视角检查点
 
+## 2026-11-07 — SG001-A independent process foundation
+
+- Superagent implementation has started, separately from workers. An isolated real
+  Node process now starts without a model or worker, reports its own readiness,
+  rejects duplicate root ownership, survives SIGKILL/reopen and stops cleanly.
+- Seven behavior tests failed before implementation; eight now pass. Safe token
+  handling and browser/Host refusal are tested. Spec review corrected endpoint
+  binding and startup-timeout child cleanup before implementation.
+- No conversation/model call or native App UI exists yet. The next broken hop is
+  the independent durable conversation and its authenticated client protocol.
+- Worker collection, website authentication and D1 are unchanged/not exercised.
+  No installed App, live worker, device credential or remote service was modified.
+
 ## 2026-11-07 — macOS v0.21.0 published with an explicit CI waiver
 
 - The owner explicitly requested immediate publication without waiting for or verifying CI.

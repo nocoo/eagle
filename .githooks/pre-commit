@@ -33,7 +33,7 @@ fi
 staged=$(git diff --cached --name-only --diff-filter=ACM)
 [ -n "$staged" ] || exit 0
 
-code=$(printf '%s\n' "$staged" | grep -E '\.(ts|tsx|js|mjs|cjs|json|css|html)$' | grep -v '^apps/bots/' || true)
+code=$(printf '%s\n' "$staged" | grep -E '\.(ts|tsx|js|mjs|cjs|json|css|html)$' | grep -vE '^apps/(bots|superagent)/' || true)
 if [ -n "$code" ]; then
   echo "pre-commit: biome"
   # shellcheck disable=SC2086
@@ -50,6 +50,11 @@ if [ -n "$bots" ]; then
   else
     echo "pre-commit: apps/bots dependencies missing, skipping bots lint" >&2
   fi
+fi
+
+if printf '%s\n' "$staged" | grep -qE '^apps/superagent/'; then
+  echo "pre-commit: superagent checks"
+  (cd apps/superagent && npm run check)
 fi
 
 if printf '%s\n' "$staged" | grep -qE '^apps/(macos|bots-macos)/.*\.swift$'; then
