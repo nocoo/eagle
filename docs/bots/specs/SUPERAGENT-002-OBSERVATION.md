@@ -245,14 +245,14 @@ from what runs.
 | A14 | `apps/superagent/test/observation.test.ts` "SG002-A14" (a read that cannot commit its baseline is reported `state_unwritable` and the stored baseline does not advance) | pass |
 | A15 | CLI chain on a real daemon (`observe-chain.log`); App strip compiled and running, not yet inspected by eye (gap) | partial |
 | A16 | `cursor.test.ts` measured 200-Bot baseline against 64 KiB | pass |
-| A17 | "SG002-A17" (a page of large messages stays inside the 192 KiB budget and a cut page always offers the next boundary) | pass at the provider; the socket frame itself was not measured with a maximum page (gap) |
+| A17 | "SG002-A17" (provider page inside 192 KiB with a next boundary) and the consumer's largest page serialized as one `result` frame under 256 KiB | pass |
 
 Real-data evidence: the acceptance tests run against stores written by the real runtime
 (five turns, a compaction, six forked reflection scopes). The CLI chain evidence uses a
 Bot whose store the daemon had just created, so it proves plumbing, not content.
 
-Gaps are listed, not hidden: a hand-inspected App strip (A15) and a measured maximum-size
-page through the real socket (A17's frame half). Everything else above is deterministic.
+One gap is listed, not hidden: **A15 needs the owner's eye** — the strip compiles, the dev
+App runs, and nobody has looked at it. Every other row above is a deterministic test.
 
 ## 9. Review record (2026-11-08)
 

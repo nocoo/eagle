@@ -580,3 +580,46 @@ test("SG002-A14: a read that cannot commit its baseline is not reported as consu
     await opened.close();
   }
 });
+
+test("SG002-A17: the largest allowed provider page still fits one socket frame", async () => {
+  const opened = await bench();
+  const blocks = Array.from({ length: 180 }, (_unused, index) => ({
+    type: "text",
+    text: "x".repeat(1000) + index,
+  }));
+  const remote = await provider({
+    body: {
+      protocolVersion: 1,
+      kind: "history",
+      source: PROVIDER_SOURCE,
+      botId: "b_3f1a",
+      scopes: [{ id: "c_1", kind: "root", entries: 180 }],
+      boundary: { newestEntryId: "e_180", before: null, compactions: [] },
+      messages: blocks.map((block, index) => ({
+        entryId: `e_${index + 1}`,
+        commitSeq: index + 1,
+        role: "text",
+        kind: "pi.assistant",
+        state: "complete",
+        at: "2026-11-08T08:00:00.000Z",
+        blocks: [block],
+      })),
+      omitted: { entries: 0, blocks: 0, kinds: [] },
+      coverage: { scopes: "complete", page: "complete", content: "complete", reasons: [] },
+    },
+  });
+  try {
+    const client = new ObservationClient({
+      root: opened.root,
+      endpoint: `http://127.0.0.1:${remote.port}`,
+      tokenFile: opened.tokenFile,
+    });
+    const result = await client.history({ botId: "b_3f1a", limit: 200 });
+    const frame = JSON.stringify({ type: "result", id: "obs_frame_fixture", value: result });
+    const bytes = Buffer.byteLength(frame);
+    assert.ok(bytes <= 256 * 1024, `the result frame is ${bytes} bytes, inside the 256 KiB cap`);
+  } finally {
+    await remote.close();
+    await opened.close();
+  }
+});
