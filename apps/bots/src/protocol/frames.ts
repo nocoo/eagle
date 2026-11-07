@@ -846,22 +846,17 @@ export function decodeServerEvent(raw: Record<string, unknown>): ServerEvent {
       if (!isObject(capabilitiesValue)) fail(ctx, "capabilities must be an object");
       const capabilitiesRaw = capabilitiesValue as Record<string, unknown>;
       const capabilities: Record<string, boolean> = {};
-      for (const name of [
-        "agent",
-        "tools",
-        "tasks",
-        "entries",
-        "usage",
-        "peers",
-        "triggers",
-        "files",
-      ]) {
+      for (const name of ["agent", "tools", "tasks", "entries", "usage", "peers", "triggers"]) {
         capabilities[name] = bool(
           ctx,
           required(ctx, capabilitiesRaw, name),
           `capabilities.${name}`,
         );
       }
+      capabilities.files =
+        capabilitiesRaw.files === undefined
+          ? false
+          : bool(ctx, capabilitiesRaw.files, "capabilities.files");
       return {
         type,
         protocolVersion: int(ctx, required(ctx, raw, "protocolVersion"), "protocolVersion"),

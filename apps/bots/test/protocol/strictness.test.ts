@@ -270,6 +270,39 @@ test("a bot summary only carries a reason while unavailable", () => {
   });
 });
 
+test("welcome files capability defaults false and rejects non-booleans", () => {
+  const welcome = {
+    type: "welcome",
+    protocolVersion: 1,
+    server: { version: "0.1.0", instance: "i_test", pid: 1 },
+    capabilities: {
+      agent: false,
+      tools: false,
+      tasks: false,
+      entries: false,
+      usage: false,
+      peers: false,
+      triggers: false,
+    },
+    bots: [],
+  };
+  const old = decodeServerEvent(welcome);
+  assert.equal(old.type, "welcome");
+  if (old.type === "welcome") assert.equal(old.capabilities.files, false);
+
+  const withFiles = decodeServerEvent({
+    ...welcome,
+    capabilities: { ...welcome.capabilities, files: true },
+  });
+  assert.equal(withFiles.type, "welcome");
+  if (withFiles.type === "welcome") assert.equal(withFiles.capabilities.files, true);
+
+  invalidEvent({
+    ...welcome,
+    capabilities: { ...welcome.capabilities, files: "yes" },
+  });
+});
+
 test("live tasks decode with a status the client can render", () => {
   const task = {
     id: "t_12",
