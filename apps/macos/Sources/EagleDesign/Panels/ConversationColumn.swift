@@ -85,7 +85,6 @@ public struct ConversationColumn: View {
   private let onRecover: () -> Void
   private let onRetryConnection: () -> Void
   private let onDismissError: () -> Void
-  @State private var scroller = TranscriptScroller()
   @State private var composerFocusRequest = 0
 
   public init(
@@ -223,121 +222,18 @@ public struct ConversationColumn: View {
   }
 
   private var transcript: some View {
-    ScrollViewReader { proxy in
-      GeometryReader { viewport in
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: Theme.Metric.turnGap) {
-            ForEach(entries.hidingToolCalls(!showsToolCalls)) { entry in
-              row(entry).id(entry.id)
-            }
-            Theme.Palette.clear.frame(height: Theme.Metric.hairline).id("bottom")
-          }
-          .padding(.horizontal, Theme.Metric.conversationInset)
-          .frame(maxWidth: Theme.Chat.laneMaxWidth)
-          .frame(maxWidth: .infinity)
-          // Clear of the top edge fade: the first row must not start under it.
-          .padding(.top, Theme.Metric.edgeFadeHeight + Theme.Chat.transcriptTopClearance)
-          .padding(.bottom, Theme.Chat.transcriptBottomInset)
-          .frame(minHeight: viewport.size.height, alignment: .top)
-          // The document's background catches only blank space, behind message controls.
-          .background {
-            Theme.Palette.clear
-              .contentShape(Rectangle())
-              .onTapGesture { composerFocusRequest += 1 }
-              .accessibilityHidden(true)
-          }
-        }
-        .scrollEdgeFades(
-          Theme.Palette.surface, top: Theme.Metric.edgeFadeHeight,
-          bottom: Theme.Metric.edgeFadeHeight
+    TranscriptScrollColumn(focusRequestCounter: $composerFocusRequest) {
+      ForEach(entries.hidingToolCalls(!showsToolCalls)) { entry in
+        TranscriptEntryRow(
+          entry: entry,
+          preparedMarkdown: preparedMarkdown,
+          onOpenPeerExchange: onOpenPeerExchange,
+          onOpenToolRun: onOpenToolRun,
+          onAnswerCard: onAnswerCard,
+          onAnswerSecret: onAnswerSecret
         )
-        .onScrollPhaseChange { _, phase in
-          scroller.setUserScrolling(
-            phase == .tracking || phase == .interacting || phase == .decelerating)
-          if phase == .idle, scroller.endUserScroll() {
-            proxy.scrollTo("bottom", anchor: .bottom)
-          }
-        }
-        .onScrollGeometryChange(for: TranscriptScrollMetrics.self) { geometry in
-          TranscriptScrollMetrics(
-            contentHeight: geometry.contentSize.height, visibleBottom: geometry.visibleRect.maxY
-          )
-        } action: { _, metrics in
-          if scroller.update(metrics) {
-            proxy.scrollTo("bottom", anchor: .bottom)
-          }
-        }
+        .id(entry.id)
       }
-    }
-  }
-
-  @ViewBuilder
-  private func row(_ entry: TranscriptEntry) -> some View {
-    switch entry {
-    case .assistant(_, let blocks, let from):
-      VStack(alignment: .leading, spacing: Theme.Layout.labelGap) {
-        AssistantBubble(
-          text: blocks.markdown, preparedBlocks: preparedMarkdown[entry.id]
-        )
-        .equatable()
-        if let from {
-          PeerOriginRow(origin: from) { id in onOpenPeerExchange?(id) }
-        }
-      }
-      .transition(
-        .asymmetric(
-          insertion: .opacity.combined(
-            with: .scale(scale: Theme.Chat.messageEntryScale, anchor: .bottomLeading)),
-          removal: .opacity
-        )
-      )
-    case .streamingAssistant(_, let blocks):
-      AssistantBubble(
-        text: blocks.markdown, streaming: true, preparedBlocks: preparedMarkdown[entry.id]
-      )
-      .equatable()
-      .transition(
-        .asymmetric(
-          insertion: .opacity.combined(
-            with: .scale(scale: Theme.Chat.messageEntryScale, anchor: .bottomLeading)),
-          removal: .opacity
-        )
-      )
-    case .user(_, let text, let origin):
-      UserBubble(text, origin: origin)
-        .transition(
-          .asymmetric(
-            insertion: .opacity.combined(
-              with: .scale(scale: Theme.Chat.messageEntryScale, anchor: .bottomTrailing)),
-            removal: .opacity
-          )
-        )
-    case .note(_, let text, let tintIndices):
-      DeliveryNote(text, avatars: tintIndices.map(Theme.Palette.avatarTint))
-    case .peerExchange(_, let exchange):
-      PeerExchangeRow(exchange: exchange) { onOpenPeerExchange?(exchange.id) }
-        .transition(.opacity)
-    case .question(_, let card):
-      AskCardRow(
-        card: card,
-        onAnswer: { id, answers, skipped in
-          guard let onAnswerCard else { return .failure(AskCardFailure("这个客户端不能提交回答")) }
-          return await onAnswerCard(id, answers, skipped)
-        }
-      )
-      .transition(.opacity)
-    case .secret(_, let card):
-      SecretCardRow(card: card) { answer in
-        guard let onAnswerSecret else { return .failure(SecretCardFailure("这个客户端不能保存密码")) }
-        return await onAnswerSecret(answer)
-      }
-      .transition(.opacity)
-    case .tool(_, let row):
-      ToolCallRow(row)
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
-    case .toolRun(let id, let rows):
-      ToolRunRow(rows) { onOpenToolRun?(id) }
-        .transition(.opacity)
     }
   }
 }

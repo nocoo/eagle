@@ -1,5 +1,23 @@
 import SwiftUI
 
+/// Benchmark-only toggle: same `Text` font/lineSpacing/`fixedSize` as production paragraphs, but
+/// skip [`MarkdownInline`] (streaming caret + default `Text` branch). Not used in shipped UI.
+enum AssistantBubbleParagraphExperiment: Sendable {
+  case productionMarkdownInline
+  case plainTextWithParagraphStyling
+}
+
+private struct AssistantBubbleParagraphExperimentKey: EnvironmentKey {
+  static let defaultValue: AssistantBubbleParagraphExperiment = .productionMarkdownInline
+}
+
+extension EnvironmentValues {
+  var assistantBubbleParagraphExperiment: AssistantBubbleParagraphExperiment {
+    get { self[AssistantBubbleParagraphExperimentKey.self] }
+    set { self[AssistantBubbleParagraphExperimentKey.self] = newValue }
+  }
+}
+
 /// The assistant's turn inside a dialog bubble: rich text rendered from markdown — headings,
 /// paragraphs, bullet and numbered lists, quotes, fenced code and tables — with inline
 /// `**bold**`, `*italic*`, `` `code` `` chips and links. The card is the one surface a turn
@@ -10,6 +28,7 @@ public struct AssistantBubble: View, Equatable {
   private let preparedBlocks: [RenderedMarkdownBlock]?
   private let cornerRadius: CGFloat
   private let maxWidth: CGFloat
+  @Environment(\.assistantBubbleParagraphExperiment) private var paragraphExperiment
   @StateObject private var model = MarkdownViewModel()
   @State private var hovering = false
 
@@ -108,12 +127,22 @@ public struct AssistantBubble: View, Equatable {
     }
   }
 
+  @ViewBuilder
   private func paragraph(_ text: AttributedString, caret: Bool) -> some View {
-    MarkdownInline(text: text, caret: caret)
-      .font(Theme.TypeScale.body)
-      .foregroundStyle(Theme.Palette.textPrimary)
-      .lineSpacing(Theme.Chat.bodyLineSpacing)
-      .fixedSize(horizontal: false, vertical: true)
+    switch paragraphExperiment {
+    case .productionMarkdownInline:
+      MarkdownInline(text: text, caret: caret)
+        .font(Theme.TypeScale.body)
+        .foregroundStyle(Theme.Palette.textPrimary)
+        .lineSpacing(Theme.Chat.bodyLineSpacing)
+        .fixedSize(horizontal: false, vertical: true)
+    case .plainTextWithParagraphStyling:
+      Text(text)
+        .font(Theme.TypeScale.body)
+        .foregroundStyle(Theme.Palette.textPrimary)
+        .lineSpacing(Theme.Chat.bodyLineSpacing)
+        .fixedSize(horizontal: false, vertical: true)
+    }
   }
 
   private func code(language: String?, body: String) -> some View {
