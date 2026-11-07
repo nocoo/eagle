@@ -1656,3 +1656,15 @@ with affected checks first and the full acceptance rounds after the relevant sli
 stabilizes. Required security review remains mandatory; the repeated serialized
 waits and premature full-suite repetition were avoidable, not evidence that the
 underlying fix itself required ten hours.
+
+## 2026-11-07 — A changed upstream SHA is not a code update
+
+During the main-Bot investigation, I described a different remote HEAD as an
+upstream update before comparing its content. The local DSH reference and remote
+main were different root commits with identical trees; only the committer time
+changed by 52 seconds. A temporary-clone comparison confirmed an empty diff, and
+I corrected the interim statement. The reference checkout was not changed.
+
+Report a changed revision as a changed revision until ancestry and the tree diff
+are checked. With replaced root commits, a failed ancestry comparison does not
+establish new code or lost local work; compare the two trees directly.
