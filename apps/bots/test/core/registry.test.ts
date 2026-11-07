@@ -1404,6 +1404,49 @@ test("a delete waits for a warm-up open instead of leaking its handle", async ()
   }
 });
 
+test("a cold Bot lease timeout never quarantines a handleless Bot", async () => {
+  let releaseOpen: () => void = () => undefined;
+  const openGate = new Promise<void>((resolve) => {
+    releaseOpen = resolve;
+  });
+  const setup = await bench({ openGate });
+  try {
+    await setup.registry.start();
+    const summary = await setup.registry.create("冷文件", "tr_create_cold_file");
+    assert.equal(setup.registry.handleOf(summary.id), undefined, "the warm open is still cold");
+    assert.equal(setup.registry.touch(summary.id), true, "the file request owns a lease");
+
+    const removal = setup.registry.remove(summary.id, "tr_delete_cold_file").then(
+      () => undefined,
+      (error) => error,
+    );
+    await setup.timers.advance(40);
+    const refused = await removal;
+    assert.equal(refused instanceof ClassifiedFailure, true, "the delete waits for the slow lease");
+    assert.notEqual(
+      setup.registry.state(summary.id),
+      "quarantined",
+      "no handleless lease becomes quarantine",
+    );
+
+    releaseOpen();
+    await settle();
+    const handle = await setup.registry.open(summary.id, "tr_reopen_cold_file");
+    assert.ok(handle, "the warm open can finish after the lease ends");
+    setup.registry.release(summary.id);
+    await setup.registry.remove(summary.id, "tr_delete_after_cold_file");
+    assert.deepEqual(
+      setup.registry.summaries(),
+      [],
+      "a retry delete succeeds after the request ends",
+    );
+  } finally {
+    releaseOpen();
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});
+
 test("two concurrent creates cannot take the last catalog slot twice", async () => {
   const setup = await bench({ bots: Array.from({ length: 199 }, (_, index) => `b${index}`) });
   try {

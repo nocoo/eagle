@@ -742,6 +742,14 @@ export class BotRegistry {
       entry.leaseWaiters.push(waiter);
     });
     if (outcome === "released") return;
+    if (entry.handle === undefined) {
+      entry.closing = false;
+      throw new ClassifiedFailure(
+        newFailure("internal"),
+        "not_admitted",
+        "an admission did not drain; retry after the request ends",
+      );
+    }
     this.#quarantine(entry, trace);
     throw new ClassifiedFailure(
       newFailure("internal"),
