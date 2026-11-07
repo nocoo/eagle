@@ -93,9 +93,10 @@ struct CLISettingsLayoutTests {
         return
       }
       guard ContinuousClock.now < deadline else {
-        let tail = entries(host).first(where: { identifier($0) == "cli.copy.skill" }).map {
-          describeCopySkill(node: $0)
-        } ?? "missing cli.copy.skill"
+        let tail =
+          entries(host).first(where: { identifier($0) == "cli.copy.skill" }).map {
+            describeCopySkill(node: $0)
+          } ?? "missing cli.copy.skill"
         print(
           "CLI_COPY_DIAG timeout iteration=\(iteration) slot=\(slot.rawValue) copy_skill=\(tail)"
         )

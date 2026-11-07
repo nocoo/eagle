@@ -265,9 +265,9 @@ struct TranscriptRowCostTests {
 
   /// Same string pipeline as [`MarkdownViewModel`] / [`AssistantBubble`] when `preparedBlocks` are
   /// absent: fenced code, block quotes, tables — not flattened to one paragraph.
-  private static func productionPreparedMarkdown(_ entries: [TranscriptEntry])
-    -> [String: [RenderedMarkdownBlock]]
-  {
+  private static func productionPreparedMarkdown(
+    _ entries: [TranscriptEntry]
+  ) -> [String: [RenderedMarkdownBlock]] {
     var out: [String: [RenderedMarkdownBlock]] = [:]
     for entry in entries {
       guard case .assistant(let id, let blocks, _) = entry else { continue }
