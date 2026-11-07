@@ -685,6 +685,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
       return
     }
     let conversation = app.conversation
+    mirrorConversationDraftIntoComposer()
     if conversation.hasSnapshot {
       let state = conversation.state
       let source = presenter.previewSource(for: state)

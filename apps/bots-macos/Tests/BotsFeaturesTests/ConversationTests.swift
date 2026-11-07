@@ -542,6 +542,38 @@ final class ConversationLifecycleTests: XCTestCase {
     XCTAssertTrue(model.draft.contains("B"), "and the newer draft is not overwritten")
   }
 
+  func testARefusedDraftStaysWithTheBotThatSentIt() async throws {
+    let (model, fake) = make()
+    model.select(botId: "b_1")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await Task.sleep(nanoseconds: 40_000_000)
+    model.draft = "原文"
+    model.send()
+    try await Task.sleep(nanoseconds: 40_000_000)
+    let requestId = try XCTUnwrap(fake.sent.last?.requestId)
+    model.draft = "新草稿"
+    fake.emit(
+      .error(
+        kind: .invalidCommand,
+        disposition: .notAdmitted,
+        message: "refused",
+        failure: "f_1",
+        requestId: requestId
+      )
+    )
+    try await Task.sleep(nanoseconds: 40_000_000)
+    XCTAssertEqual(model.draft, "新草稿\n\n原文")
+
+    model.select(botId: "b_2")
+    XCTAssertEqual(model.draft, "", "the refused draft does not move to another bot")
+    model.draft = "另一个 Bot 的草稿"
+    model.select(botId: "b_1")
+    XCTAssertEqual(model.draft, "新草稿\n\n原文")
+    model.select(botId: "b_2")
+    XCTAssertEqual(model.draft, "另一个 Bot 的草稿")
+  }
+
   func testAReconnectReconcilesTheOutboxAgain() async throws {
     let (model, fake) = make()
     model.select(botId: "b_1")

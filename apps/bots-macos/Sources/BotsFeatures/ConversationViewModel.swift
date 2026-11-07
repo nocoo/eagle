@@ -17,6 +17,7 @@ public final class ConversationViewModel: ObservableObject {
   /// A parked task is recoverable: `recover` retries it.
   @Published public private(set) var parked = false
   private var draftStorage = ""
+  private var drafts: [String: String] = [:]
   public var draft: String {
     get { draftStorage }
     set { updateDraft(newValue) }
@@ -24,8 +25,7 @@ public final class ConversationViewModel: ObservableObject {
 
   /// Updates draft storage without `ObservableObject` fan-out (the shell mirrors into `composer`).
   public func writeDraft(_ value: String) {
-    guard draftStorage != value else { return }
-    draftStorage = value
+    updateDraft(value)
   }
 
   private let conversation: ConversationPort
@@ -40,7 +40,7 @@ public final class ConversationViewModel: ObservableObject {
   /// their outbox entry could not be removed (the user decides whether to retry).
   private var refused: Set<String> = []
   /// Sends the user asked for that have not been confirmed yet.
-  private var inFlight: [String: String] = [:]
+  private var inFlight: [String: OutboxEntry] = [:]
   /// The absolute catalog a `bots` frame carries, for the window's sidebar.
   public var onCatalog: ((BotCatalog) -> Void)?
 
@@ -77,6 +77,7 @@ public final class ConversationViewModel: ObservableObject {
     if selectedBotId == botId, eventsTask != nil { return }
     eventsTask?.cancel()
     selectedBotId = botId
+    draftStorage = drafts[botId] ?? ""
     reconciled = false
     hasSnapshot = false
     state = ConversationState(botId: botId)
@@ -108,6 +109,7 @@ public final class ConversationViewModel: ObservableObject {
     eventsTask?.cancel()
     eventsTask = nil
     selectedBotId = nil
+    draftStorage = ""
     conversation.close()
     connection = .stopped
     hasSnapshot = false
@@ -213,6 +215,14 @@ public final class ConversationViewModel: ObservableObject {
   private func updateDraft(_ value: String) {
     guard draftStorage != value else { return }
     draftStorage = value
+    if let selectedBotId { drafts[selectedBotId] = value }
+  }
+
+  private func restoreDraft(_ text: String, for botId: String) {
+    let current = drafts[botId] ?? ""
+    let restored = current.isEmpty ? text : current + "\n\n" + text
+    drafts[botId] = restored
+    if selectedBotId == botId { draftStorage = restored }
   }
 
   // MARK: - Sending
@@ -226,8 +236,9 @@ public final class ConversationViewModel: ObservableObject {
   ) {
     // The entry is stored before the frame is written; if it cannot be stored, nothing is
     // sent and the draft comes back (PROTOCOL.md, client duties 1).
+    let entry = OutboxEntry(botId: botId, requestId: requestId, text: text)
     do {
-      try outbox.add(OutboxEntry(botId: botId, requestId: requestId, text: text))
+      try outbox.add(entry)
     } catch {
       draft = text
       errorBanner = "无法保存待发送的消息，消息没有发出。"
@@ -240,7 +251,7 @@ public final class ConversationViewModel: ObservableObject {
         to: state
       )
     }
-    inFlight[requestId] = text
+    inFlight[requestId] = entry
     let context = CommandContext.send(requestId)
     Task { [weak self] in
       guard let self else { return }
@@ -407,7 +418,7 @@ public final class ConversationViewModel: ObservableObject {
         // The daemon refused before admission: drop the bubble and the entry, and put the
         // text back so the user can fix or retry it (PROTOCOL.md, client duties 3).
         if let requestId {
-          let text = inFlight.removeValue(forKey: requestId)
+          let entry = inFlight.removeValue(forKey: requestId)
           refused.insert(requestId)
           do {
             try outbox.refuse(requestId: requestId)
@@ -418,10 +429,7 @@ public final class ConversationViewModel: ObservableObject {
             errorBanner = "消息被拒绝，本地待发记录暂时没有删掉。"
           }
           state.messages.removeAll { $0.id == "local_\(requestId)" }
-          if let text {
-            // Neither the refused text nor a newer draft may be lost.
-            draft = draft.isEmpty ? text : draft + "\n\n" + text
-          }
+          if let entry { restoreDraft(entry.text, for: entry.botId) }
         }
       case .unknown:
         // Admission could not be confirmed: keep the bubble and the entry for a retry.

@@ -140,6 +140,44 @@ struct BotsWindowTests {
     try await waitUntil { bots.queuedMessages.isEmpty }
   }
 
+  @Test("a repeated refusal republishes the restored draft without losing newer input")
+  func repeatedRefusalRestoresDraft() async throws {
+    let (bots, app, conversationPort, _) = try await window()
+    bots.setDraft("原文")
+    bots.send()
+    try await waitUntil { conversationPort.sent.count == 1 }
+    let firstRequest = try #require(conversationPort.sent.last?.requestId)
+    conversationPort.emit(
+      .error(
+        kind: .invalidCommand,
+        disposition: .notAdmitted,
+        message: "same refusal",
+        failure: "f_1",
+        requestId: firstRequest
+      )
+    )
+    try await waitUntil { bots.composer.text == "原文" }
+
+    bots.send()
+    try await waitUntil { conversationPort.sent.count == 2 }
+    let secondRequest = try #require(conversationPort.sent.last?.requestId)
+    bots.setDraft("新草稿")
+    conversationPort.emit(
+      .error(
+        kind: .invalidCommand,
+        disposition: .notAdmitted,
+        message: "same refusal",
+        failure: "f_2",
+        requestId: secondRequest
+      )
+    )
+    try await waitUntil { bots.composer.text == "新草稿\n\n原文" }
+
+    let next = "新草稿\n\n原文！"
+    bots.setDraft(next)
+    #expect(app.conversation.draft == next, "later typing cannot overwrite the restored text")
+  }
+
   @Test("sidebar previews use the last received chat text rather than lifecycle state")
   func sidebarPreview() async throws {
     let (bots, _, port, _) = try await window()

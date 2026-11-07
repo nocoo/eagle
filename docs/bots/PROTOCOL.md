@@ -1014,9 +1014,17 @@ recovery guarantees depend on them.
 
    | `disposition` | Meaning | Outbox |
    | --- | --- | --- |
-   | `not_admitted` | The daemon refused the command before admission (validation, limits, busy with `reject`, unknown bot). Carries `requestId` when the command was a `send` | Remove that entry and restore its text as a draft; the user decides |
+   | `not_admitted` | The daemon refused the command before admission (validation, limits, busy with `reject`, unknown bot). Carries `requestId` when the command was a `send` | Remove that entry and restore its text to that Bot's draft; the user decides |
    | `unknown` | Admission could not be confirmed (a storage or read failure between `submit()` and reading its record) | Keep the entry; it is reconciled by re-sending the same `requestId` |
    | `runtime` | A run-time failure reported later (parked task, storage failure, watch escalation). May carry `requestId` for correlation | Keep the entry or not; it is about the bot, not that command |
+
+   A restored draft is client state owned by the Bot that sent it. A refusal must
+   retain a newer draft for that same Bot, and repeated errors with identical text
+   must still publish the restored composer value. Switching Bots neither moves the
+   restored text to another composer nor overwrites the other Bot's draft; later
+   typing changes only the selected Bot's draft. `unknown` and connection loss do
+   not restore text: their outbox entry remains pending for reconciliation with the
+   same `requestId`.
 
    Presence of `requestId` never implies non-admission by itself: only
    `disposition:"not_admitted"` clears the outbox.
