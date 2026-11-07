@@ -68,6 +68,17 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 — File admission integration under test
+
+- The send protocol and pi-durable file-entry projection are being implemented with
+  daemon-owned metadata and model-only paths. Their new server/runtime/fixture tests
+  are not green yet; a socket case is being diagnosed. This is not a usable file chat.
+- Upload/download storage and draft restoration are committed. The App composer,
+  file cards and preview, Bot file publishing and `eagle-dev` acceptance are still
+  absent. The next broken hop is completing and verifying file admission.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  The installed production App and its daemon were not used for tests.
+
 ## 2026-11-07 — File messages in progress
 
 - Managed file storage and the review's lifecycle, streaming and corruption fixes
