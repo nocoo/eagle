@@ -23,6 +23,7 @@ public final class ConversationViewModel: ObservableObject {
   @Published public private(set) var parked = false
   private var draftStorage = ""
   private var drafts: [String: String] = [:]
+  private var localRecoveries: [String: [Message]] = [:]
   public var draft: String {
     get { draftStorage }
     set { updateDraft(newValue) }
@@ -313,15 +314,17 @@ public final class ConversationViewModel: ObservableObject {
       reconciled = false
       return false
     }
+    var recoveries: [Message] = []
     for entry in entries
     where !refused.contains(entry.requestId)
       && !durableRefusals.contains(entry.requestId)
     {
       if Self.isOversized(entry.text) {
+        let recovery = Message(
+          id: "local_recovery_\(entry.requestId)", role: .notice, state: .complete,
+          createdAt: entry.createdAt, blocks: [.text(entry.text)], requestId: entry.requestId)
+        recoveries.append(recovery)
         if !state.messages.contains(where: { $0.requestId == entry.requestId }) {
-          let recovery = Message(
-            id: "local_recovery_\(entry.requestId)", role: .notice, state: .complete,
-            createdAt: entry.createdAt, blocks: [.text(entry.text)], requestId: entry.requestId)
           state = Reducer.apply(.append(message: recovery, replaces: nil), to: state)
         }
         errorBanner = Self.oversizedOutboxError
@@ -336,6 +339,7 @@ public final class ConversationViewModel: ObservableObject {
         whenBusy: entry.whenBusy
       )
     }
+    localRecoveries[botId] = recoveries
     return true
   }
 
@@ -394,7 +398,6 @@ public final class ConversationViewModel: ObservableObject {
       connection = next
 
     case .snapshot(let value):
-      let recoveries = state.botId == value.botId ? state.messages.filter(\.isLocalRecovery) : []
       state = Reducer.snapshot(
         value,
         rev: state.lastRev.map { $0 + 1 },
@@ -406,8 +409,8 @@ public final class ConversationViewModel: ObservableObject {
       hasOlder = value.truncatedBefore != nil
       let replay = !reconciled
       reconciled = true
-      if !reconcileOutbox(replay: replay) {
-        for recovery in recoveries
+      if !reconcileOutbox(replay: replay), selectedBotId == value.botId {
+        for recovery in localRecoveries[value.botId] ?? []
         where !state.messages.contains(where: { $0.requestId == recovery.requestId }) {
           state = Reducer.apply(.append(message: recovery, replaces: nil), to: state)
         }

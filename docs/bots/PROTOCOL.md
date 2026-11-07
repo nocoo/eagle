@@ -1140,7 +1140,8 @@ recovery guarantees depend on them.
    after later snapshots, but is not automatically sent again; its admission outcome
    remains unknown until confirmed. The recovery does not count as a new user turn.
    If the local outbox cannot be read on a later snapshot, already displayed recovery
-   remains visible in memory; no entry is replayed until the outbox can be read again.
+   remains in memory for its Bot across reconnects and Bot switches; no entry is replayed
+   until the outbox can be read again. A successful read replaces that Bot's cache.
 
 3. **Disposition decides the outbox.** Every `error` emitted after `welcome` carries
    `disposition`. The handshake failure (`version_mismatch`), which is sent before a

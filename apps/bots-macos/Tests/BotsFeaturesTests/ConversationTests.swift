@@ -384,16 +384,32 @@ final class ConversationTests: XCTestCase {
     try await waitUntil { model.hasSnapshot }
     XCTAssertTrue(model.state.messages.isEmpty, "another bot must not see the recovery")
 
-    try saved.write(to: file)
     model.select(botId: "b_1")
     fake.emit(.connection(.ready))
     fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
-    try await waitUntil { model.state.messages.first?.isLocalRecovery == true }
+    try await waitUntil { model.hasSnapshot }
+    XCTAssertTrue(model.state.messages.first?.text.utf8.elementsEqual(text.utf8) == true)
+    XCTAssertTrue(model.state.messages.first?.isLocalRecovery == true)
+    XCTAssertTrue(fake.sent.isEmpty)
+
+    try saved.write(to: file)
     try outbox.remove(requestId: entry.requestId)
     fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
     fake.emit(.status(running: true, inbox: [], streaming: nil))
     try await waitUntil { model.state.running }
     XCTAssertTrue(model.state.messages.isEmpty, "a successful read reflects the durable outbox")
+    XCTAssertTrue(fake.sent.isEmpty)
+
+    try Data("{".utf8).write(to: file)
+    model.select(botId: "b_2")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_2")))
+    try await waitUntil { model.hasSnapshot }
+    model.select(botId: "b_1")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.hasSnapshot }
+    XCTAssertTrue(model.state.messages.isEmpty, "a cleared recovery must not return")
     XCTAssertTrue(fake.sent.isEmpty)
   }
 

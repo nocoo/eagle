@@ -7,7 +7,9 @@ only on the first snapshot. Review found that a later snapshot removed the only
 copyable display and that the unsent recovery changed which tool appeared active.
 The disk record was retained, but the presentation misrepresented its outcome.
 
-Test recovery across repeated snapshots and active tool calls before committing:
+The first correction also lost recovery when the outbox became unreadable during a
+Bot switch, and hid it inside peer runs. Test recovery across repeated snapshots,
+read failures, Bot switches, peer runs and active tool calls before committing:
 local-only records must stay labelled and copyable without changing conversation
 turn semantics or triggering network replay. A concurrent full Swift run then missed
 one of two sends in `testInsertingSendsASteerAndAPlainSendQueues`; a focused rerun
