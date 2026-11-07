@@ -153,6 +153,29 @@ struct BotsWindowTests {
     #expect(try outbox.entries(for: "b_1").isEmpty)
   }
 
+  @Test("canonically equivalent edits preserve exact scalars before the length check")
+  func exactUnicodeDraft() async throws {
+    let (bots, app, port, outbox) = try await window()
+    let composed = String(repeating: "é", count: 4_001)
+    let decomposed = String(repeating: "e\u{301}", count: 4_001)
+    bots.setDraft(composed)
+    bots.setDraft(decomposed)
+    bots.send()
+    try await waitUntil { bots.error != nil || !port.sent.isEmpty }
+    #expect(bots.composer.text.utf8.elementsEqual(decomposed.utf8))
+    #expect(app.conversation.draft.utf8.elementsEqual(decomposed.utf8))
+    #expect(bots.error?.contains("8,000") == true)
+    #expect(port.sent.isEmpty)
+    #expect(try outbox.entries(for: "b_1").isEmpty)
+
+    bots.setDraft("é")
+    bots.setDraft("e\u{301}")
+    bots.send()
+    try await waitUntil { port.sent.count == 1 }
+    #expect(port.sent.first?.text.utf8.elementsEqual("e\u{301}".utf8) == true)
+    #expect(try outbox.entries(for: "b_1").first?.text.utf8.elementsEqual("e\u{301}".utf8) == true)
+  }
+
   @Test("a repeated refusal republishes the restored draft without losing newer input")
   func repeatedRefusalRestoresDraft() async throws {
     let (bots, app, conversationPort, _) = try await window()

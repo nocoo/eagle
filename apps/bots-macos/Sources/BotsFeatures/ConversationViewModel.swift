@@ -234,7 +234,7 @@ public final class ConversationViewModel: ObservableObject {
   }
 
   private func updateDraft(_ value: String) {
-    guard draftStorage != value else { return }
+    guard !draftStorage.utf8.elementsEqual(value.utf8) else { return }
     draftStorage = value
     if let selectedBotId { drafts[selectedBotId] = value }
   }

@@ -540,7 +540,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
   func setDraft(_ value: String) {
     guard let conversation = app?.conversation else { return }
     conversation.writeDraft(value)
-    if composer.text != value { composer.text = value }
+    if !composer.text.utf8.elementsEqual(value.utf8) { composer.text = value }
   }
 
   func send(inserting: Bool = false) {
@@ -805,7 +805,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
   private func mirrorConversationDraftIntoComposer() {
     guard let conversation = app?.conversation else { return }
     let next = conversation.draft
-    if composer.text != next { composer.text = next }
+    if !composer.text.utf8.elementsEqual(next.utf8) { composer.text = next }
   }
 
   /// The conversation view model publishes many times per answer (one delta each), so the

@@ -1,5 +1,13 @@
 # Retrospective
 
+## 2026-11-07 — Canonical equality hid a draft edit
+
+The composer used Swift `String` equality to suppress duplicate updates. Canonically
+identical but byte-distinct Unicode edits were ignored, so replacing 4,001 composed
+characters with 8,002 decomposed code points sent the old draft instead of rejecting
+and preserving the new one. Compare exact UTF-8 for user-authored drafts and test the
+boundary through the window, outbox and transport, not only the scalar counter.
+
 ## 2026-11-07 — Pending recovery was mistaken for a user turn
 
 An oversized outbox entry was initially restored as an optimistic user message
