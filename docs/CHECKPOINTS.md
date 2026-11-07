@@ -68,6 +68,17 @@
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
 
+## 2026-11-07 — Client send recovery review
+
+- Client review found data-loss and replay risks. Initial storage fixes are committed,
+  but their second review found residual durability and plain-text regressions. The
+  asynchronous staging task is now bound to its Bot in `9fccfa8`; refusal and replay
+  fixes are still being implemented. No complete client gate is claimed for this stage.
+- The user-facing file card and preview, Bot publishing tool, and `eagle-dev` file
+  acceptance remain incomplete. The publishing work remains in local stash `0a334c0`.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  Tests have not used the installed production App or its daemon.
+
 ## 2026-11-07 — Client recovery safety tests
 
 - Fixes for completed upload acknowledgements, corrupt staged text, strict outbox
