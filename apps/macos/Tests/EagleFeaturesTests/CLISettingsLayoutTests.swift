@@ -55,18 +55,30 @@ struct CLISettingsLayoutTests {
     let press = NSSelectorFromString("accessibilityPerformPress")
     try #require(button.responds(to: press))
     button.perform(press)
-    try await Task.sleep(for: .milliseconds(200))
-
+    // The feedback and its revert are two states of the same control, so the test waits for
+    // each state under a deadline instead of guessing how long a timer takes on a loaded CI
+    // machine. The bound is generous on purpose: it only has to be longer than the revert.
+    try await waitUntil("the pressed button says the copy happened") {
+      entries(host).compactMap(title).filter { $0 == "已复制" }.count == 1
+    }
     #expect(
       NSPasteboard.general.string(forType: .string) == "eagle-dev --skill",
       "the click copied the command")
-    #expect(
-      entries(host).compactMap(title).filter { $0 == "已复制" }.count == 1,
-      "the pressed button says the copy happened")
-    try await Task.sleep(for: .milliseconds(2200))
-    #expect(
-      entries(host).compactMap(title).contains("复制命令"),
-      "and the label comes back so it can be pressed again")
+    try await waitUntil("the label comes back so it can be pressed again") {
+      entries(host).compactMap(title).contains("复制命令")
+    }
+  }
+
+  /// Polls until `condition` holds, or fails after a deadline far longer than any timer here.
+  private func waitUntil(
+    _ what: String, timeoutMs: Int = 5_000, _ condition: () -> Bool
+  ) async throws {
+    let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000)
+    while Date() < deadline {
+      if condition() { return }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    Issue.record("timed out waiting for \(what)")
   }
 
   private func identifier(_ node: NSObject) -> String? {
