@@ -442,9 +442,10 @@ test("chunked content over limit closes the connection after a bounded structure
           "transfer-encoding": "chunked",
         },
       });
+      let remaining = MAX_MANAGED_FILE_BYTES + 1;
       const timer = setTimeout(() => {
         request.destroy();
-        reject(new Error("no bounded 413 response"));
+        reject(new Error(`no bounded 413 response; ${remaining} bytes not yet queued`));
       }, 1_000);
       request.on("response", (incoming) => {
         clearTimeout(timer);
@@ -459,7 +460,6 @@ test("chunked content over limit closes the connection after a bounded structure
         reject(error);
       });
       const chunk = Buffer.alloc(64 * 1024, 0x6b);
-      let remaining = MAX_MANAGED_FILE_BYTES + 1;
       const write = () => {
         while (remaining > 0) {
           const amount = Math.min(chunk.length, remaining);

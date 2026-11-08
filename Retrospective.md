@@ -1,5 +1,14 @@
 # Retrospective
 
+## 2026-11-08 — File tests competed for the same machine
+
+After the observation suites joined the Bots gate, two full runs failed the
+one-second oversized-upload test while the isolated file suite passed. A diagnostic
+run showed 16,973,825 bytes had not yet been queued when the deadline fired: with
+18 test processes, unrelated suites competed for CPU and disk during the 50 MiB
+transfer. Run all deterministic files and coverage with four concurrent test files;
+the file size, response deadline and coverage thresholds stay unchanged.
+
 ## 2026-11-08 — Check the rebase topology before replay
 
 A PR requested a linear rebase, but the first attempt used `--rebase-merges` and

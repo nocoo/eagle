@@ -341,7 +341,10 @@ swift test
 
 One file list, defined once in `scripts/unit-files.sh` and used by both `npm test`
 and `npm run coverage`, so the deterministic gate and the coverage gate can never
-drift. `test/crash/**` and `test/perf/**` are deliberately absent from it: a real
+drift. Both gates run at most four test files concurrently to keep independent 50 MiB
+file transfers from competing with unrelated suites for disk and CPU. All tests,
+deadlines and coverage thresholds remain unchanged. `test/crash/**` and `test/perf/**`
+are deliberately absent from the list: a real
 `SIGKILL` and a real clock are not deterministic. `package.json` is the single
 authority for these commands; the README points here instead of restating them.
 
