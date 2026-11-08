@@ -1,5 +1,13 @@
 # Retrospective
 
+## 2026-11-08 — Superagent root lock failed once in the push gate
+
+The first PR push was blocked because a Superagent test received `root_locked`
+while starting its first service in a fresh temporary directory. The same complete
+Superagent check passed on a diagnostic rerun. The lock maps roots into 1,000 local
+ports, so a collision is possible, but the failing root was removed and the cause was
+not established. The first failure remains evidence; do not claim it was fixed.
+
 ## 2026-11-08 — File tests competed for the same machine
 
 After the observation suites joined the Bots gate, two full runs failed the
