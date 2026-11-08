@@ -14,6 +14,7 @@ test("every group is described, with the tools it actually contributes", () => {
       "persona",
       "machine",
       "core",
+      "core-ui",
       "coding",
       "memory",
       "secrets",
@@ -27,7 +28,8 @@ test("every group is described, with the tools it actually contributes", () => {
   );
   const names = (group: string) =>
     catalog.find((entry) => entry.group === group)?.tools.map((tool) => tool.name) ?? [];
-  assert.deepEqual(names("core"), ["list", "note_set", "ask_user"]);
+  assert.deepEqual(names("core"), ["list"]);
+  assert.deepEqual(names("core-ui"), ["note_set", "ask_user"]);
   assert.deepEqual(names("coding"), ["read", "write", "edit", "bash", "pr_register", "pr_list"]);
   assert.deepEqual(names("memory"), [
     "memory_list",

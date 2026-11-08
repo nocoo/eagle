@@ -545,6 +545,7 @@ export const TOOL_GROUP_NAMES = [
   "persona",
   "machine",
   "core",
+  "core-ui",
   "coding",
   "memory",
   "secrets",
@@ -558,13 +559,14 @@ export const TOOL_GROUP_NAMES = [
 
 export type ToolGroup = (typeof TOOL_GROUP_NAMES)[number];
 
-export const MANDATORY_TOOL_GROUPS: readonly ToolGroup[] = ["core", "coding"];
+export const MANDATORY_TOOL_GROUPS: readonly ToolGroup[] = ["core", "core-ui", "coding"];
 
 /** What a daemon with no stored choice runs: the two core prompts come before the tools. */
 export const DEFAULT_TOOL_GROUPS: readonly ToolGroup[] = [
   "persona",
   "machine",
   "core",
+  "core-ui",
   "coding",
   "memory",
   "secrets",

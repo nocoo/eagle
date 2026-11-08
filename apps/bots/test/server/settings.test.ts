@@ -20,7 +20,7 @@ test("the settings endpoints read, validate, save and test behind the bearer", a
     model: "",
     hasApiKey: false,
     thinkingLevel: "medium",
-    toolGroups: ["core", "coding", "herdr"],
+    toolGroups: ["core", "core-ui", "coding", "herdr"],
     corePrompt: "你是一个务实、友好的 agent。",
     skills: [],
   };
@@ -43,7 +43,7 @@ test("the settings endpoints read, validate, save and test behind the bearer", a
         model: input.model ?? "",
         hasApiKey: true,
         thinkingLevel: "medium",
-        toolGroups: ["core", "coding", "herdr"],
+        toolGroups: ["core", "core-ui", "coding", "herdr"],
         corePrompt: input.corePrompt ?? "你是一个务实、友好的 agent。",
         skills: input.skills ?? [],
       };
@@ -131,7 +131,7 @@ test("the core prompt is saved with the gateway, and the machine prompt is read-
     model: "auto/gpt-6-astra",
     hasApiKey: true,
     thinkingLevel: "medium",
-    toolGroups: ["persona", "machine", "core", "coding"],
+    toolGroups: ["persona", "machine", "core", "core-ui", "coding"],
     corePrompt: "旧的人格",
     skills: [],
   };
@@ -184,7 +184,7 @@ test("the settings read carries the tool catalogue, and says nothing when it has
       model: "m1",
       hasApiKey: true,
       thinkingLevel: "medium",
-      toolGroups: ["core", "coding"],
+      toolGroups: ["core", "core-ui", "coding"],
       corePrompt: "",
       skills: [],
     }),
@@ -232,7 +232,7 @@ test("the skills selection is validated on the wire and crosses it additively", 
     model: "auto/gpt-6-astra",
     hasApiKey: true,
     thinkingLevel: "medium",
-    toolGroups: ["persona", "machine", "core", "coding"],
+    toolGroups: ["persona", "machine", "core", "core-ui", "coding"],
     corePrompt: "只说结论。",
     skills: [],
   };
@@ -366,7 +366,7 @@ test("a save applies only the fields it carries", async () => {
   assert.equal(stored?.thinkingLevel, "high", "the stored level is untouched");
   assert.deepEqual(
     stored?.toolGroups,
-    ["core", "coding", "herdr"],
+    ["core", "core-ui", "coding", "herdr"],
     "the stored groups are untouched",
   );
   assert.equal(stored?.model, "auto/gpt-6-astra", "the stored model is untouched");

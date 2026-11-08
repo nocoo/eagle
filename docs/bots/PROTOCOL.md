@@ -134,7 +134,7 @@ version, the instance id, the pid and a bot count, never bot content.
 // GatewaySettings: the key is never returned, only whether one is stored.
 { "configured": true, "provider": "magpie", "baseUrl": "http://127.0.0.1:3425/v1",
   "model": "auto/gpt-6-luna", "hasApiKey": true, "thinkingLevel": "medium",
-  "toolGroups": ["persona", "machine", "core", "coding", "herdr", "agents", "trigger"],
+  "toolGroups": ["persona", "machine", "core", "core-ui", "coding", "herdr", "agents", "trigger"],
   "corePrompt": "你是一个务实、友好的 agent：先说结论，再给依据。",
   "skills": [{ "name": "humanizer-zh", "version": "1.0.0",
     "description": "去除文本中的 AI 生成痕迹。",
@@ -183,10 +183,12 @@ Gateway rules:
   so a later change of the default cannot move it.
 - **Tool groups are chosen per daemon.** `toolGroups` lists the groups every bot is given:
   `persona` and `machine` (the two core prompts, see below), `core` (the `list` tool),
-  `coding` (pi-durable's `read`, `write`, `edit`, `bash`), `herdr` (the terminal
-  collaborator), and `agents` (child conversations). Only `core` and `coding` are mandatory:
-  an empty array selects exactly those two. An unknown name is a `400` and nothing is
-  written. Saving records the selection on every bot and changes what a live conversation
+  `core-ui` (the person-facing `ask_user` card and `note_set` sidebar line), `coding`
+  (pi-durable's `read`, `write`, `edit`, `bash`), `herdr` (the terminal collaborator), and
+  `agents` (child conversations). `core`, `core-ui` and `coding` are mandatory: an empty
+  array selects exactly those three. A child agent (`agent_spawn`) selects `persona`,
+  `machine`, `core` and `coding` and never `core-ui`. An unknown name is a `400` and nothing
+  is written. Saving records the selection on every bot and changes what a live conversation
   offers in place. There are no aliases for the old tool names.
 - **The two core prompts lead the system prompt.** `corePrompt` is one standing instruction
   for every bot, trimmed and bounded to 4 000 characters (a longer one is a `400`); an empty

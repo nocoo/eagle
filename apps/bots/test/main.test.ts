@@ -638,16 +638,21 @@ test("settings store tool groups, reject unknown names and keep core and coding 
       const shown = (await saved.json()) as { settings: { toolGroups: string[] } };
       assert.deepEqual(
         shown.settings.toolGroups,
-        ["core", "coding", "herdr"],
+        ["core", "core-ui", "coding", "herdr"],
         "both required groups are implied",
       );
-      assert.deepEqual((await readGateway(root))?.toolGroups, ["core", "coding", "herdr"]);
+      assert.deepEqual((await readGateway(root))?.toolGroups, [
+        "core",
+        "core-ui",
+        "coding",
+        "herdr",
+      ]);
 
       const trimmed = await put({ ...settings, toolGroups: [] });
       assert.equal(trimmed.status, 200);
       assert.deepEqual(
         (await readGateway(root))?.toolGroups,
-        ["core", "coding"],
+        ["core", "core-ui", "coding"],
         "neither required group can be disabled",
       );
     } finally {
@@ -1032,7 +1037,7 @@ test("a skills-only save leaves the model, the thinking level and the tool group
       assert.equal(stored?.thinkingLevel, "medium", "the stored level is untouched");
       assert.deepEqual(
         stored?.toolGroups,
-        ["core", "coding", "herdr"],
+        ["core", "core-ui", "coding", "herdr"],
         "the stored groups are untouched",
       );
       assert.equal(stored?.model, "auto/gpt-6-luna", "the stored model is untouched");

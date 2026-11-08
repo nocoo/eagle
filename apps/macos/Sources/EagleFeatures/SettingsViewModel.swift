@@ -82,17 +82,19 @@ public final class SettingsViewModel: ObservableObject {
   /// Every group the daemon knows, in display order; the daemon owns which are installed.
   /// The two core prompts lead, because they are the first sections of the system prompt.
   public static let toolGroups = [
-    "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "search",
-    "decision", "trigger", "peers",
+    "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "herdr", "agents",
+    "search", "decision", "trigger", "peers",
   ]
   /// What a daemon that predates a new group is assumed to run: both core prompts are on,
   /// memory is on because remembering is a habit, and the rest is opt-in.
   public static let defaultToolGroups = [
-    "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "trigger",
+    "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "herdr", "agents",
+    "trigger",
   ]
-  public static let mandatoryToolGroups: Set<String> = ["core", "coding"]
+  public static let mandatoryToolGroups: Set<String> = ["core", "core-ui", "coding"]
   public static let personaToolGroup = "persona"
   public static let machineToolGroup = "machine"
+  public static let coreUIToolGroup = "core-ui"
   public static let memoryToolGroup = "memory"
   public static let secretsToolGroup = "secrets"
   public static let herdrToolGroup = "herdr"

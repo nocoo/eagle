@@ -44,7 +44,11 @@ const runWithTools = async (handle: {
 
 test("a child gets the coding tools and list, and nothing that belongs to a person", async () => {
   const dir = await mkdtemp(join(tmpdir(), "bots-child-tools-"));
-  const bench = await createBench({ memory: () => fileMemoryHost({ dir, botId: "b_runtime" }) });
+  const bench = await createBench({
+    memory: () => fileMemoryHost({ dir, botId: "b_runtime" }),
+    corePrompt: () => "只说结论，不要客套。",
+    machinePrompt: () => ({ path: "/m/AGENTS.md", text: "机器规则：先跑测试。" }),
+  });
   let handle: RuntimeHandle | undefined;
   try {
     const parentTools: string[][] = [];
@@ -73,7 +77,7 @@ test("a child gets the coding tools and list, and nothing that belongs to a pers
     ]);
     handle = await bench.runtime.open({
       ...bench.spec(),
-      toolGroups: ["core", "coding", "agents", "memory", "herdr"],
+      toolGroups: ["persona", "machine", "core", "coding", "agents", "memory", "herdr"],
     });
     const results = await runWithTools(handle);
     const send = results.find((item) => item.name === "agent_send");
@@ -88,11 +92,14 @@ test("a child gets the coding tools and list, and nothing that belongs to a pers
       "a child gets the coding tools and core's list, and nothing that belongs to a person",
     );
     assert.match(parentPrompts[0] ?? "", /note_set/, "the parent is told to keep its sidebar line");
+    const childPrompt = childPrompts[0] ?? "";
     assert.doesNotMatch(
-      childPrompts[0] ?? "",
-      /note_set|sidebar/,
-      "a child is never told to write the parent's sidebar line",
+      childPrompt,
+      /note_set|sidebar|ask_user/,
+      "a child is never told to write the parent's sidebar line or ask the person",
     );
+    assert.match(childPrompt, /只说结论，不要客套。/, "the bot's persona reaches the child");
+    assert.match(childPrompt, /机器规则：先跑测试。/, "this machine's rules reach the child");
   } finally {
     await handle?.close(trace, 1_000);
     await bench.cleanup();

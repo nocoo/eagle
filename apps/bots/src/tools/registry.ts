@@ -64,6 +64,13 @@ import type {
 
 export const BOTS_TOOLS_EXTENSION = "bots-tools";
 /**
+ * The tools that act on the person's side of the App: the question card and the bot's sidebar
+ * line. They are their own mandatory group so a child agent can drop them wholesale
+ * (docs/bots/RUNTIME.md, "Subagents"), and they are installed after `core` so their section
+ * follows the one that explains the workspace.
+ */
+export const CORE_UI_EXTENSION = "bots-core-ui";
+/**
  * Selected by being installed, not by a tool group: the App's ticks are the switch, and a
  * group switch would be a second, contradictory one (docs/bots/EXTENSIONS-AND-TOOLS.md).
  */
@@ -73,6 +80,7 @@ const GROUP_EXTENSIONS: Record<ToolGroup, readonly string[]> = {
   persona: [PERSONA_EXTENSION],
   machine: [MACHINE_EXTENSION],
   core: [BOTS_TOOLS_EXTENSION],
+  "core-ui": [CORE_UI_EXTENSION],
   coding: [CodingTools.name, PULLS_TOOLS_EXTENSION],
   memory: [MEMORY_TOOLS_EXTENSION],
   secrets: [SECRETS_TOOLS_EXTENSION],
@@ -85,10 +93,12 @@ const GROUP_EXTENSIONS: Record<ToolGroup, readonly string[]> = {
 };
 
 /**
- * A child agent gets the mandatory groups and nothing else (docs/bots/RUNTIME.md,
- * "Subagents"): no delegation, no optional group, no deferred loader, no shared-device tool.
+ * A child agent selects the two prompt-only groups plus `core` and `coding`, and never
+ * `core-ui` (docs/bots/RUNTIME.md, "Subagents"): it reads the bot's persona and this
+ * machine's own rules, works in the same workspace, and has no tool that acts on the
+ * person's screen, no delegation, no optional group and no shared-device tool.
  */
-const CHILD_GROUPS: readonly ToolGroup[] = ["core", "coding"];
+const CHILD_GROUPS: readonly ToolGroup[] = ["persona", "machine", "core", "coding"];
 const CHILD_EXTENSIONS: readonly string[] = CHILD_GROUPS.flatMap(
   (group) => GROUP_EXTENSIONS[group],
 );
@@ -327,7 +337,7 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
   registry.install(
     defineExtension({
       name: BOTS_TOOLS_EXTENSION,
-      tools: [list, note, ask],
+      tools: [list],
       wraps: [
         wrapTool(bash, () =>
           devices === undefined ? bash : observeDeviceTool(guardNativeTool(bash, devices), devices),
@@ -342,24 +352,31 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
             )),
       ],
       sections: [
-        section("bots-tools", ({ agent }) => {
-          // A conversation that does not offer `note_set` (a child agent) must not be told to
-          // use it: the section describes the tools this conversation actually has.
-          const keepsNote = agent.tools.some((tool) => tool.name === "note_set");
-          return [
+        section("bots-tools", ({ agent }) =>
+          [
             `Your default working directory is ${agent.cwd ?? workspace.root}.`,
             "Use list to discover files, read to inspect them, edit for targeted changes, write for whole files, and bash for commands.",
-            ...(keepsNote
-              ? [
-                  "Keep the one line a person sees next to this bot in their sidebar with note_set: it is a status, so rewrite it when the nature of the work changes, not every turn; a plain follow-up leaves it alone.",
-                  ...(options.note === undefined
-                    ? []
-                    : [noteLine(options.note.current(), (options.now ?? Date.now)())]),
-                ]
-              : []),
             ...(devices === undefined || options.devices?.remoteCapability?.() !== "unavailable"
               ? []
               : ["The local device protection service is awaiting recovery."]),
+          ].join("\n"),
+        ),
+      ],
+    }),
+  );
+  registry.install(
+    defineExtension({
+      name: CORE_UI_EXTENSION,
+      tools: [note, ask],
+      sections: [
+        section("bots-core-ui", ({ agent }) => {
+          // A conversation that filtered the tool away must not be told to use it.
+          if (!agent.tools.some((tool) => tool.name === "note_set")) return undefined;
+          return [
+            "Keep the one line a person sees next to this bot in their sidebar with note_set: it is a status, so rewrite it when the nature of the work changes, not every turn; a plain follow-up leaves it alone. Keep it to at most 10 characters.",
+            ...(options.note === undefined
+              ? []
+              : [noteLine(options.note.current(), (options.now ?? Date.now)())]),
           ].join("\n");
         }),
       ],

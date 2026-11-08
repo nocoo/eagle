@@ -37,7 +37,7 @@ test("settings round-trip, stay 0600 and never expose the key", async () => {
       model: "auto/gpt-6-astra",
       apiKey: "sk-secret-0123456789",
       thinkingLevel: "medium",
-      toolGroups: ["core", "coding", "herdr", "agents", "trigger"],
+      toolGroups: ["core", "core-ui", "coding", "herdr", "agents", "trigger"],
       corePrompt: "你是一个务实、友好的 agent。",
       skills: [
         {
@@ -58,7 +58,7 @@ test("settings round-trip, stay 0600 and never expose the key", async () => {
       configured: true,
       provider: "magpie",
       thinkingLevel: "medium",
-      toolGroups: ["core", "coding", "herdr", "agents", "trigger"],
+      toolGroups: ["core", "core-ui", "coding", "herdr", "agents", "trigger"],
       baseUrl: "http://127.0.0.1:3425/v1",
       model: "auto/gpt-6-astra",
       hasApiKey: true,
@@ -96,6 +96,7 @@ test("dotenv values are the fallback, and a broken file is not configured", asyn
         "persona",
         "machine",
         "core",
+        "core-ui",
         "coding",
         "memory",
         "secrets",
@@ -225,7 +226,7 @@ test("a version-1 file gains every later group once, a saved choice keeps them o
       model: "auto/gpt-6-astra",
       apiKey: "sk-secret-0123456789",
       thinkingLevel: "medium",
-      toolGroups: ["core", "coding", "herdr"],
+      toolGroups: ["core", "core-ui", "coding", "herdr"],
     };
     await writeFile(gatewayPath(bench_.root), JSON.stringify(legacy), "utf8");
     const migrated = await readGateway(bench_.root);
@@ -233,6 +234,7 @@ test("a version-1 file gains every later group once, a saved choice keeps them o
       "persona",
       "machine",
       "core",
+      "core-ui",
       "coding",
       "memory",
       "herdr",
@@ -241,16 +243,24 @@ test("a version-1 file gains every later group once, a saved choice keeps them o
 
     // Saving records the version, so an explicit choice (here: the two prompts off) survives.
     assert.ok(migrated !== undefined);
-    await writeGateway(bench_.root, { ...migrated, toolGroups: ["core", "coding", "herdr"] });
+    await writeGateway(bench_.root, {
+      ...migrated,
+      toolGroups: ["core", "core-ui", "coding", "herdr"],
+    });
     const stored = await readGateway(bench_.root);
-    assert.deepEqual(stored?.toolGroups, ["core", "coding", "herdr"]);
+    assert.deepEqual(stored?.toolGroups, ["core", "core-ui", "coding", "herdr"]);
     const raw = JSON.parse(await readFile(gatewayPath(bench_.root), "utf8")) as { version: number };
     assert.equal(raw.version, 3);
 
     // A version-2 file gains memory the same way, and only once.
-    const earlier = { ...legacy, version: 2, toolGroups: ["core", "coding"] };
+    const earlier = { ...legacy, version: 2, toolGroups: ["core", "core-ui", "coding"] };
     await writeFile(gatewayPath(bench_.root), JSON.stringify(earlier), "utf8");
-    assert.deepEqual((await readGateway(bench_.root))?.toolGroups, ["core", "coding", "memory"]);
+    assert.deepEqual((await readGateway(bench_.root))?.toolGroups, [
+      "core",
+      "core-ui",
+      "coding",
+      "memory",
+    ]);
   } finally {
     await bench_.cleanup();
   }
@@ -266,7 +276,7 @@ test("the core prompt round-trips and defaults to one editable sentence", async 
       model: "auto/gpt-6-astra",
       apiKey: "sk-secret-0123456789",
       thinkingLevel: "medium",
-      toolGroups: ["core", "coding"],
+      toolGroups: ["core", "core-ui", "coding"],
       corePrompt: "只说结论。",
       skills: [],
     };
@@ -288,7 +298,7 @@ test("the selected skills round-trip, and an older file without them reads as no
       model: "auto/gpt-6-astra",
       apiKey: "sk-secret-0123456789",
       thinkingLevel: "medium",
-      toolGroups: ["persona", "machine", "core", "coding"],
+      toolGroups: ["persona", "machine", "core", "core-ui", "coding"],
     };
     await writeFile(gatewayPath(bench_.root), JSON.stringify(legacy), "utf8");
     assert.deepEqual((await readGateway(bench_.root))?.skills, []);
@@ -296,7 +306,7 @@ test("the selected skills round-trip, and an older file without them reads as no
     const config: GatewayConfig = {
       ...legacy,
       thinkingLevel: "medium",
-      toolGroups: ["persona", "machine", "core", "coding"],
+      toolGroups: ["persona", "machine", "core", "core-ui", "coding"],
       corePrompt: DEFAULT_CORE_PROMPT,
       skills: [
         { name: "alpha", version: "1.0.0", description: "Runs alpha.", path: "/skills/alpha" },

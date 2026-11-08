@@ -100,7 +100,7 @@ installed client or live Worker runs that revision:
 | Baseline path | Consequence |
 | --- | --- |
 | Packaged Bots receive a device socket even with an empty remote address; the App and helper do not start the service without that address | The socket is unavailable, so both remote tools and guarded local tools can return `device_unavailable`. The Node service also currently requires a URL and constructs `DeviceCloud` during initialization. |
-| A socket path causes the runtime to install and always select the shared-device extension, whose prompt says the Bot can use a shared device group | Registration follows injected configuration rather than actual remote setup; the prompt can claim a capability that has never been configured. `core` and `coding` remain mandatory local groups. |
+| A socket path causes the runtime to install and always select the shared-device extension, whose prompt says the Bot can use a shared device group | Registration follows injected configuration rather than actual remote setup; the prompt can claim a capability that has never been configured. `core`, `core-ui` and `coding` remain mandatory local groups. |
 | The remote tool definitions have no `deferred: true` flag, but the extension inventory describes them as deferred | Source and documentation disagree about whether a configured Bot sees the remote tool schemas immediately. Child agents also persist the parent's then-current tool list. |
 | `guardNativeTool` calls `directory()` before local `read`, `write`, `edit`, `bash` and `list` | Each local tool can request the cloud directory and its per-device observations before using local policy. Cloud failure falls back to local data only after the request fails; an individual HTTP request can wait up to 10 seconds. |
 | A new local runtime with no saved policy defaults to `always-ask`, while `DEVICES.md` says the default is `all-approve` | Local startup and direct command execution cannot be specified honestly from the existing documentation alone. The default must be settled explicitly; neither outcome permits bypassing a chosen policy. |
@@ -161,7 +161,7 @@ connection pool merely to optimize rare remote actions.
 
 ### Tool registration and model-facing semantics
 
-The existing mandatory `core` and `coding` groups remain selected: `list`,
+The existing mandatory `core`, `core-ui` and `coding` groups remain selected: `list`,
 `read`, `write`, `edit` and `bash` are local tools, with one native implementation
 per name and the current conversation's local working directory. Remote setup
 must not register a second local runner, alter those tools' target, disable them,

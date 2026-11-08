@@ -20,20 +20,6 @@ import { failed, type ToolOutcome } from "../types.ts";
 
 export const AGENTS_TOOLS_EXTENSION = "bots-agents";
 
-/**
- * Tools a child may never call, whatever it inherits. Delegation would grow a tree;
- * `ask_user` is a card the client draws from the conversation it watches, and nobody watches a
- * child's, so the tool would promise a screen that does not exist; `note_set` writes the one
- * sidebar line of the bot, which belongs to the conversation a person is looking at.
- */
-const CHILD_DENIED_TOOLS = [
-  "agent_spawn",
-  "agent_send",
-  "agent_stop",
-  "ask_user",
-  "note_set",
-] as const;
-
 async function managedChild(tx: Tx, id: ConversationId, parent: ConversationId): Promise<boolean> {
   let cursor: Awaited<ReturnType<Tx["scanEntries"]>>["next"];
   do {
@@ -121,17 +107,15 @@ export const createAgentTools = (
       }),
       execute: async (args, api, context) => {
         const parent = await api.agent(context);
+        // The selection is the limit, not a name denylist: a child never selects the
+        // delegation, person-facing or optional groups, so their tools cannot be inherited.
         const extensions = parent.extensions.filter((extension) =>
           childExtensions.includes(extension.name),
         );
         const callable = new Set(
           extensions.flatMap((extension) => (extension.tools ?? []).map((tool) => tool.name)),
         );
-        const tools = parent.tools.filter(
-          (tool) =>
-            callable.has(tool.name) &&
-            !(CHILD_DENIED_TOOLS as readonly string[]).includes(tool.name),
-        );
+        const tools = parent.tools.filter((tool) => callable.has(tool.name));
         const child = await api.commit(async (tx) => {
           const created = await tx.createConversation({ ownership: { kind: "ownerless" } });
           await configure(tx, created.id, {
@@ -236,7 +220,7 @@ export const agentsSection = (): string =>
   [
     "You can delegate a self-contained piece of work to a child agent.",
     "Start one with agent_spawn, give it work with agent_send, and stop it with agent_stop.",
-    "A child has its own conversation and the same model, but only the coding tools plus list: it cannot delegate, ask the person, use an optional group or reach another machine.",
+    "A child has its own conversation, the same model and your workspace rules, but only the coding tools plus list: it cannot delegate, ask the person, use an optional group or reach another machine.",
     "Prefer doing the work yourself when it is short: a child costs another model request.",
   ].join("\n");
 
