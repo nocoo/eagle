@@ -34,7 +34,8 @@ struct SettingsTests {
     #expect(
       SettingsSection.allCases.map(\.rawValue)
         == [
-          "通用", "模型", "工具", "技能", "提示词", "服务", "密码", "设备", "CLI", "用量", "关于",
+          "通用", "模型", "工具", "技能", "提示词", "Herdr", "服务", "密码", "设备", "CLI", "用量",
+          "关于",
         ])
     // The Super Bot has no settings tab of its own: its model and level live in the inspector
     // 模型 tab, exactly where a bot's pair lives.
@@ -564,7 +565,7 @@ struct SettingsGatewayTests {
     let model = SettingsViewModel(botsSettings: settings, urlSession: session)
     model.gatewayBaseURL = "http://typed/v1"
     model.gatewayModel = "typed-model"
-    model.setToolGroup("herdr", isOn: false)
+    model.setToolGroup("hc", isOn: false)
     await model.loadGateway()
     #expect(model.gatewayBaseURL == "http://typed/v1")
     #expect(model.gatewayModel == "typed-model")
@@ -642,7 +643,7 @@ struct SettingsGatewayTests {
     #expect(model.gateway?.toolGroups == ["core", "coding"])
     #expect(model.gatewayToolGroups == ["core", "core-ui", "coding"])
     #expect(model.isToolGroupEnabled("core"))
-    #expect(model.isToolGroupEnabled("herdr") == false)
+    #expect(model.isToolGroupEnabled("hc") == false)
     GatewayHTTPStub.handler = nil
   }
 
@@ -663,13 +664,13 @@ struct SettingsGatewayTests {
       model.gateway?.toolGroups
         == [
           "persona", "machine", "core", "core-ui", "coding", "memory", "secrets",
-          "herdr", "agents", "trigger",
+          "agents", "trigger",
         ])
     #expect(
       model.gatewayToolGroups
         == [
           "persona", "machine", "core", "core-ui", "coding", "memory", "secrets",
-          "herdr", "agents", "trigger",
+          "agents", "trigger",
         ])
     GatewayHTTPStub.handler = nil
   }
@@ -681,15 +682,14 @@ struct SettingsGatewayTests {
     #expect(model.isToolGroupEnabled("core"))
     model.setToolGroup("coding", isOn: false)
     #expect(model.isToolGroupEnabled("coding"))
-    #expect(model.isToolGroupEnabled("herdr"))
-    model.setToolGroup("herdr", isOn: false)
-    #expect(model.isToolGroupEnabled("herdr") == false)
-    model.setToolGroup("herdr", isOn: true)
+    #expect(model.isToolGroupEnabled("hc") == false, "the Herdr group is off by default")
+    model.setToolGroup("hc", isOn: true)
+    #expect(model.isToolGroupEnabled("hc"))
     #expect(
       model.gatewayToolGroups
         == [
-          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets",
-          "herdr", "agents", "trigger",
+          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "hc",
+          "agents", "trigger",
         ])
   }
 
@@ -841,12 +841,12 @@ struct SettingsGatewayTests {
         parsed?["toolGroups"] as? [String]
           == [
             "persona", "machine", "core", "core-ui", "coding", "memory", "secrets",
-            "herdr", "agents", "trigger",
+            "agents", "trigger",
           ])
       return (
         200,
         Data(
-          #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true,"toolGroups":["persona","machine","core","coding","memory","herdr","agents","trigger"]}}"#
+          #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true,"toolGroups":["persona","machine","core","coding","memory","hc","agents","trigger"]}}"#
             .utf8)
       )
     }
@@ -880,7 +880,7 @@ struct SettingsGatewayTests {
     let model = SettingsViewModel(botsSettings: settings, urlSession: session)
     model.gatewayBaseURL = "http://gw/v1"
     model.gatewayModel = "m1"
-    model.setToolGroup("herdr", isOn: false)
+    model.setToolGroup("hc", isOn: false)
     await model.saveGateway()
     GatewayHTTPStub.handler = nil
   }
@@ -901,7 +901,7 @@ struct SettingsGatewayTests {
       return (
         200,
         Data(
-          #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true,"toolGroups":["core","coding","herdr","agents","search"]}}"#
+          #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true,"toolGroups":["core","coding","hc","agents","search"]}}"#
             .utf8)
       )
     }
@@ -911,7 +911,7 @@ struct SettingsGatewayTests {
     #expect(
       saved
         == [
-          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "herdr",
+          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets",
           "agents", "search", "trigger",
         ])
 
@@ -920,7 +920,7 @@ struct SettingsGatewayTests {
       return (
         200,
         Data(
-          #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true,"toolGroups":["core","coding","herdr","agents","search"]}}"#
+          #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true,"toolGroups":["core","coding","hc","agents","search"]}}"#
             .utf8)
       )
     }
@@ -939,8 +939,7 @@ struct SettingsGatewayTests {
     #expect(
       model.gatewayToolGroups
         == [
-          "persona", "machine", "core", "core-ui", "coding", "secrets", "herdr", "agents",
-          "trigger",
+          "persona", "machine", "core", "core-ui", "coding", "secrets", "agents", "trigger",
         ])
   }
 
@@ -1017,7 +1016,7 @@ struct SettingsGatewayTests {
         200,
         Data(
           #"""
-          {"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true,"corePrompt":"","toolGroups":["persona","core","coding","herdr","agents","search"]}}
+          {"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true,"corePrompt":"","toolGroups":["persona","core","coding","hc","agents","search"]}}
           """#.utf8)
       )
     }
@@ -1029,7 +1028,7 @@ struct SettingsGatewayTests {
     #expect(
       body?["toolGroups"] as? [String]
         == [
-          "persona", "core", "core-ui", "coding", "memory", "secrets", "herdr", "agents", "search",
+          "persona", "core", "core-ui", "coding", "memory", "secrets", "agents", "search",
         ],
       "only the two prompt groups changed, and the order is the daemon's")
     GatewayHTTPStub.handler = nil

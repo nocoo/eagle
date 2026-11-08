@@ -58,6 +58,13 @@ public final class SettingsViewModel: ObservableObject {
   @Published public var gatewayAPIKey = ""
   @Published public var gatewayThinkingLevel = SettingsViewModel.defaultThinkingLevel
   @Published public var gatewayToolGroups = SettingsViewModel.defaultToolGroups
+  /// The Herdr page's three role rows: drafts until its save button writes them.
+  @Published public var gatewayHcRoles = HcRoles.fallback
+  /// What this machine reports about the two command-line tools, per tool.
+  @Published public var herdrToolStates: [HerdrTool: HerdrToolState] = [:]
+  @Published public var herdrInstalling: HerdrTool?
+  /// Detection and installation are injectable, so a test never runs a real command.
+  public var herdrToolchain = HerdrToolchain.live()
   /// The person's standing instruction, edited on the 提示词 page and shared by every bot.
   @Published public var gatewayCorePrompt = ""
   @Published public var gatewayCorePromptChosen = false
@@ -82,13 +89,13 @@ public final class SettingsViewModel: ObservableObject {
   /// Every group the daemon knows, in display order; the daemon owns which are installed.
   /// The two core prompts lead, because they are the first sections of the system prompt.
   public static let toolGroups = [
-    "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "herdr", "agents",
+    "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "hc", "agents",
     "search", "decision", "trigger", "peers",
   ]
   /// What a daemon that predates a new group is assumed to run: both core prompts are on,
   /// memory is on because remembering is a habit, and the rest is opt-in.
   public static let defaultToolGroups = [
-    "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "herdr", "agents",
+    "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "agents",
     "trigger",
   ]
   public static let mandatoryToolGroups: Set<String> = ["core", "core-ui", "coding"]
@@ -97,7 +104,7 @@ public final class SettingsViewModel: ObservableObject {
   public static let coreUIToolGroup = "core-ui"
   public static let memoryToolGroup = "memory"
   public static let secretsToolGroup = "secrets"
-  public static let herdrToolGroup = "herdr"
+  public static let hcToolGroup = "hc"
   public static let agentsToolGroup = "agents"
   public static let searchToolGroup = "search"
   public static let decisionToolGroup = "decision"
@@ -105,6 +112,7 @@ public final class SettingsViewModel: ObservableObject {
   public static let peersToolGroup = "peers"
   private var gatewayThinkingLevelChosen = false
   private var gatewayToolGroupsChosen = false
+  private var gatewayHcRolesChosen = false
   /// The queue of switch writes; the page flips faster than the daemon answers.
   private var toolSave: Task<Void, Never>?
   private var gatewayLoaded = false
@@ -148,6 +156,7 @@ public final class SettingsViewModel: ObservableObject {
         gatewayToolGroups = Self.normalizeToolGroups(settings.toolGroups)
       }
       if !gatewayCorePromptChosen { gatewayCorePrompt = settings.corePrompt }
+      if !gatewayHcRolesChosen { gatewayHcRoles = settings.hc }
       // Reading the form is not an action: nobody just did something, so nothing is reported.
       gatewayLoadError = nil
     } catch {
@@ -240,6 +249,68 @@ public final class SettingsViewModel: ObservableObject {
     gatewayCorePrompt = saved.corePrompt
     gatewayCorePromptChosen = false
     toasts.show(.success("已保存，提示词从下一轮开始生效"))
+  }
+
+  /// The Herdr page's drafts: a typed model or a picked level is stored only by its save.
+  public func setHcModel(_ role: HcRole, model: String) {
+    gatewayHcRolesChosen = true
+    gatewayHcRoles[role].model = model
+  }
+
+  public func setHcThinkingLevel(_ role: HcRole, level: String) {
+    gatewayHcRolesChosen = true
+    gatewayHcRoles[role].thinkingLevel = level
+  }
+
+  /// The Herdr page's one write: the hc switch travels with the group set, and the three role
+  /// rows replace the stored block together.
+  public func saveHerdrSettings() async {
+    gatewayBusy = true
+    defer { gatewayBusy = false }
+    do {
+      let snapshot = try await client().saveHerdrSettings(
+        roles: gatewayHcRoles, toolGroups: resolvedToolGroups)
+      gateway = snapshot.settings
+      gatewayMachinePrompt = snapshot.machinePrompt
+      if let tools = snapshot.tools { toolCatalog = tools }
+      gatewayHcRoles = snapshot.settings.hc
+      gatewayHcRolesChosen = false
+      gatewayToolGroupsChosen = false
+      gatewayLoaded = true
+      NotificationCenter.default.post(name: .botsGatewayChanged, object: nil)
+      toasts.show(.success("已保存，Bot 派活时按这些模型启动"))
+    } catch {
+      toasts.show(.failure((error as? ClientError)?.message ?? error.localizedDescription))
+    }
+  }
+
+  /// Reads the two command-line tools on a page visit; a failed read is its own row, never a
+  /// page-wide failure.
+  public func refreshHerdrTools() async {
+    for tool in HerdrTool.allCases where herdrToolStates[tool] == nil {
+      herdrToolStates[tool] = .checking
+    }
+    for tool in HerdrTool.allCases {
+      let state = await herdrToolchain.detect(tool)
+      herdrToolStates[tool] = state
+    }
+  }
+
+  /// Runs the vendor's installer for one tool, then re-reads what it installed.
+  public func install(_ tool: HerdrTool) async {
+    guard herdrInstalling == nil else { return }
+    herdrInstalling = tool
+    defer { herdrInstalling = nil }
+    let failure = await herdrToolchain.install(tool)
+    let state = await herdrToolchain.detect(tool)
+    herdrToolStates[tool] = state
+    if let failure {
+      toasts.show(.failure(failure))
+    } else if state.isInstalled {
+      toasts.show(.success("\(tool.command) 已安装"))
+    } else {
+      toasts.show(.failure("安装脚本结束了，但没有找到 \(tool.command)"))
+    }
   }
 
   /// The 工具 page writes each switch on its own and reports that one switch. The daemon stores

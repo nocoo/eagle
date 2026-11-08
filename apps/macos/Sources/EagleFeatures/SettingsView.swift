@@ -1,4 +1,5 @@
 import BotsCore
+import BotsTransport
 import EagleDesign
 import SwiftUI
 
@@ -63,6 +64,8 @@ public struct SettingsView: View {
         skillsPage
       case .prompts:
         prompts
+      case .herdr:
+        herdr
       case .providers:
         providersPage
       case .passwords:
@@ -451,6 +454,133 @@ public struct SettingsView: View {
     }
   }
 
+  /// The Herdr page: the two command-line tools this machine needs, and the three models a
+  /// Bot dispatches to. `hc` is the Bot's own hand; `herdr` is the person's, read only.
+  private var herdr: some View {
+    VStack(alignment: .leading, spacing: Theme.Layout.sectionGap) {
+      if let error = model.gatewayLoadError {
+        SettingsStatusNote(error, kind: .failure)
+      }
+      herdrHcCard
+      herdrHumanCard
+    }
+    .task {
+      await model.loadGatewayIfNeeded()
+      await model.refreshHerdrTools()
+    }
+  }
+
+  /// The tool's own row: what is installed here, and the one-click installer when it is not.
+  private func herdrToolRow(_ tool: HerdrTool) -> some View {
+    let state = model.herdrToolStates[tool] ?? .checking
+    return SettingsSectionRow(tool.title, detail: tool.summary) {
+      HStack(spacing: Theme.Layout.controlGap) {
+        if model.herdrInstalling == tool {
+          SpinnerArc(size: Theme.Metric.spinnerSize)
+          Text("正在安装…")
+            .font(Theme.TypeScale.note)
+            .foregroundStyle(Theme.Palette.textSecondary)
+        } else {
+          Text(state.detail)
+            .font(Theme.TypeScale.note)
+            .foregroundStyle(
+              state.isInstalled ? Theme.Palette.textSecondary : Theme.Palette.warning
+            )
+            .textSelection(.enabled)
+          if case .missing = state {
+            SettingsActionButton("安装", prominent: true) {
+              Task { @MainActor in await model.install(tool) }
+            }
+          }
+          if case .failed = state {
+            SettingsActionButton("重试") {
+              Task { @MainActor in await model.refreshHerdrTools() }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private func hcRoleRow(_ role: HcRole) -> some View {
+    SettingsSectionRow(
+      role.title,
+      detail: "以 \(role.rawValue) 身份启动 pi；模型与思考等级都从这里取"
+    ) {
+      HStack(spacing: Theme.Layout.controlGap) {
+        SettingsTextField(
+          "模型 id",
+          text: Binding(
+            get: { model.gatewayHcRoles[role].model },
+            set: { model.setHcModel(role, model: $0) }
+          )
+        )
+        .frame(width: Theme.Page.herdrModelFieldWidth)
+        .accessibilityIdentifier("herdr.role.\(role.rawValue).model")
+        PillSelect(
+          "思考等级",
+          options: model.thinkingLevels.map { .init($0.value, $0.label) },
+          selection: Binding(
+            get: { model.gatewayHcRoles[role].thinkingLevel },
+            set: { model.setHcThinkingLevel(role, level: $0) }
+          )
+        )
+        .accessibilityIdentifier("herdr.role.\(role.rawValue).level")
+      }
+    }
+  }
+
+  /// The Bot's half: `hc` must be installed before the switch means anything, because a Bot
+  /// with no `hc` cannot start a terminal at all.
+  private var herdrHcCard: some View {
+    let installed = model.herdrToolStates[.hc]?.isInstalled ?? false
+    return sectionCard(
+      "Bot 的 hc", detail: "Bot 用 hc 派活；它的终端与你自己的 herdr 完全分开"
+    ) {
+      if model.gatewayBusy { SpinnerArc(size: Theme.Metric.spinnerSize) }
+      SettingsActionButton("保存", prominent: true) {
+        Task { @MainActor in await model.saveHerdrSettings() }
+      }
+      .disabled(model.gatewayBusy)
+    } body: {
+      herdrToolRow(.hc)
+      Divider().overlay(Theme.Palette.line)
+      SettingsSectionRow(
+        "交给 Bot 使用",
+        detail: installed ? "开：Bot 能开终端、派活、读回；关：一个终端也开不了" : "先安装 hc 才能打开"
+      ) {
+        SwitchToggle(
+          isOn: toolGroupBinding(SettingsViewModel.hcToolGroup), label: "Herdr 终端协作"
+        )
+        .labelsHidden()
+        .tint(Theme.Palette.accentFill)
+        .disabled(!installed)
+        .accessibilityIdentifier("herdr.hc.switch")
+      }
+      ForEach(HcRole.allCases) { role in
+        Divider().overlay(Theme.Palette.line)
+        hcRoleRow(role)
+      }
+    }
+  }
+
+  /// The person's half: `herdr` is read by the App, never driven by a Bot.
+  private var herdrHumanCard: some View {
+    sectionCard(
+      "你的 herdr", detail: "你自己用的终端；Bot 不在这里操作，只读 Inspector 里它的样子"
+    ) {
+      herdrToolRow(.herdr)
+    } body: {
+      SettingsSectionRow(
+        "Bot 的权限",
+        detail: "只读：Bot 的工具不会开、写或关你的 herdr 终端；将来若要操作，会是另一项能力"
+      ) {
+        EmptyView()
+      }
+      .padding(.bottom, Theme.Layout.sectionInset)
+    }
+  }
+
   /// The 工具 page: every group a person can switch, one row each, and the tools it gives one
   /// chevron away. Group lines say what the group is for, never which tools it holds: the list
   /// under the row is the daemon's own answer, and it changes without a new App release.
@@ -489,10 +619,6 @@ public struct SettingsView: View {
       toolGroupRow(
         "secrets", "密码", detail: "Bot 需要密码时弹一张卡片要你填，值加密存放、不进对话记录；在“密码”页管理",
         group: SettingsViewModel.secretsToolGroup)
-      Divider().overlay(Theme.Palette.line)
-      toolGroupRow(
-        "herdr", "Herdr 终端协作", detail: "把终端工作区当作 Bot 的手脚：开、派发、读回",
-        group: SettingsViewModel.herdrToolGroup)
       Divider().overlay(Theme.Palette.line)
       toolGroupRow(
         "agents", "子 Agent", detail: "把独立任务交给子 agent，等它拿回结果",

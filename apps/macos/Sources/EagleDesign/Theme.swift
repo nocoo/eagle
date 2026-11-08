@@ -277,6 +277,8 @@ public enum Theme {
     public static let providerAddressWidth: CGFloat = 240
     public static let providerModelWidth: CGFloat = 220
     public static let machinePromptMaxHeight: CGFloat = 150
+    /// The Herdr page's model field: wide enough for `group/steering`-sized ids.
+    public static let herdrModelFieldWidth: CGFloat = 220
     public static let usageChartHeight: CGFloat = 56
     public static let usageEmptyHeight: CGFloat = 2
     public static let usageMinimumHeight: CGFloat = 3
