@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## macOS v0.23.0 — 2026-11-08
+
+- Give the shipped CLI a trigger surface: `triggers list`, `triggers enable|disable` and
+  `triggers fire` for a webhook delivery. Creation stays the Bot's own decision — its
+  `trigger_create` tool — and a hand-fired delivery presents the trigger's own token, never
+  the CLI credential. This is the same switch the inspector offers, reachable from a
+  terminal and from an agent.
+- State plainly what the Super Bot can see. Its instructions no longer claim there is no
+  observation at all: they say the model itself cannot read worker state and works from what
+  the person relays, which is what the App's read-only observation section beside the
+  conversation does not change.
+- Accept the same surfaces through one command line: the App's acceptance suite now drives
+  the Super Bot, the coding tool group and a webhook trigger through `eagle-dev` against a
+  real service, instead of proving them over the wire.
+
 ## macOS v0.22.2 — 2026-11-08
 
 - Keep the Super Bot's 模型 tab to the two rows a Bot has. 0.22.1 added a 密钥 row (inherit or
