@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## macOS v0.22.2 — 2026-11-08
+
+- Keep the Super Bot's 模型 tab to the two rows a Bot has. 0.22.1 added a 密钥 row (inherit or
+  clear); it is gone, so the inspector again carries no control a Bot's inspector lacks.
+  Inheritance happens on first use and from the unconfigured notice's action, and the Bot's
+  own 模型 settings remain the one place a credential is entered or replaced.
+
 ## macOS v0.22.1 — 2026-11-08
 
 - Let the Super Bot continue the Bot's model account instead of asking for it twice. First use

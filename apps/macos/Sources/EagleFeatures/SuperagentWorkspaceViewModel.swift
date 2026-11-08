@@ -121,16 +121,11 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
   /// Bot lacks is copied; a model, a level or a key chosen here is never replaced.
   ///
   /// Everything comes from the daemon's private gateway file, read here rather than over its
-  /// API: the API reports only whether a key exists, by design. This is the notice's action and
-  /// the 密钥 row too, so a Super Bot whose own configuration lost its credential can take it
-  /// again.
+  /// API: the API reports only whether a key exists, by design. This is also the notice's
+  /// action, so a Super Bot that lost its credential can take it again.
   public func inheritBotModel() async {
     guard let saved = BotsGatewayCredential.read(root: bots.rootURL) else { return }
     await adopt(saved)
-  }
-
-  public func clearBotKey() async {
-    await settings.clearKey()
   }
 
   private func adopt(_ inherited: BotsGatewayCredential) async {
@@ -151,12 +146,6 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
       await settings.apply(model: value, thinkingLevel: settings.thinkingLevel)
     case "thinking":
       await settings.apply(model: settings.model, thinkingLevel: value)
-    case "key":
-      switch value {
-      case "inherit-key": await inheritBotModel()
-      case "clear-key": await clearBotKey()
-      default: return
-      }
     default:
       return
     }

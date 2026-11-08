@@ -39,7 +39,7 @@ public struct SuperagentConversationContent: View {
       }
       if !model.chat.modelReady {
         SuperagentNotice(
-          text: "尚未配置模型。右侧「模型」里可以沿用 Bot 的模型和密钥。",
+          text: "尚未配置模型。可以沿用 Bot 的模型和密钥。",
           action: "沿用 Bot 的模型设置"
         ) { Task { await model.inheritBotModel() } }
       }
