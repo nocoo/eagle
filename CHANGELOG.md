@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## v0.15.0 — 2026-11-08
+
+- Add the SG-002 passive worker observation boundary, in source. A dedicated observation
+  credential (`<daemon root>/observation/token`, 0600, non-rankable `observe` actor, refused
+  on every other route and never replaced by the worker bearer) guards three read
+  operations: `snapshot`, `history` and `changes`. Reads open the Bot's committed SQLite
+  read-only after an existence and schema-version check, never create, migrate or recover a
+  store and never open a Harness; committed bytes stay identical.
+- Report complete retained history honestly. Every conversation scope is enumerated with its
+  owner (root plus forked child scopes, paged at 500 with `scopeAfter`), compaction is a
+  reported boundary rather than a deletion, paging continues by entry id with a pinned
+  boundary, a replaced store or a regressed generation is a typed reset, and coverage is
+  split into `scopes`/`page`/`content` so a cut page or an unmappable kind can never read as
+  "that is all there is".
+- Consume it from the Super Bot. `observe-snapshot`, `observe-history` and `observe-changes`
+  ride the existing authenticated socket, keep their own baseline committed with each
+  consumed result, drop it on `cursor_reset`, and report `refused`/`unreachable`/`reset`/
+  `unconfigured` as values instead of socket errors. `eagle-dev superagent observe
+  status|snapshot|history|changes` pages the same data from a terminal.
+- Show one read-only strip above the Super Bot conversation: coverage or the honest reason
+  it is unknown, plus a refresh control that only re-reads. The port has no send, steer,
+  abort or configure method by construction.
+
 ## macOS v0.21.0 — 2026-11-07
 
 - Add a 技能 settings page: the always-scanned `~/.agents/skills` root plus folders added
