@@ -91,6 +91,66 @@ test("an unknown command is refused and the connection kept", async () => {
   }
 });
 
+test("a refused promotion never presents the send's requestId as refused", async () => {
+  const stack = await startStack();
+  try {
+    const botId = await stack.createBot("插队拒绝");
+    const socket = stack.connect();
+    const frames = frameQueue(socket);
+    await send(socket, hello);
+    await frames.next();
+
+    const promote = { type: "promote", requestId: "r_promote_01", trace: tr("promote") };
+    await send(socket, promote);
+    const beforeSubscription = await frames.next();
+    assert.equal(beforeSubscription.kind, "invalid_command");
+    assert.equal(beforeSubscription.disposition, "not_admitted");
+    assert.equal(beforeSubscription.trace, promote.trace);
+    assert.equal(beforeSubscription.requestId, undefined);
+
+    await send(socket, { type: "subscribe", botId, trace: tr("subscribe") });
+    await frames.next();
+    await send(socket, promote);
+    const unknown = await frames.next();
+    assert.equal(unknown.type, "error");
+    assert.equal(unknown.trace, promote.trace);
+    assert.equal(unknown.requestId, undefined);
+    socket.close();
+
+    const created = await fetch(`http://127.0.0.1:${stack.port}/v1/clients`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${stack.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "promote-reader", scopes: ["read"] }),
+    });
+    assert.equal(created.status, 201);
+    const { token } = (await created.json()) as { token: string };
+    const reader = stack.connect({ token });
+    const readerFrames = frameQueue(reader);
+    await send(reader, hello);
+    await readerFrames.next();
+    await send(reader, { type: "subscribe", botId, trace: tr("reader") });
+    await readerFrames.next();
+    await send(reader, promote);
+    const forbidden = await readerFrames.next();
+    assert.equal(forbidden.kind, "auth_scope");
+    assert.equal(forbidden.trace, promote.trace);
+    assert.equal(forbidden.requestId, undefined);
+    await send(reader, {
+      type: "send",
+      requestId: "r_forbidden_01",
+      text: "not admitted",
+      whenBusy: "followUp",
+      trace: tr("send"),
+    });
+    const rejectedSend = await readerFrames.next();
+    assert.equal(rejectedSend.kind, "auth_scope");
+    assert.equal(rejectedSend.requestId, "r_forbidden_01");
+    reader.close();
+  } finally {
+    await stack.close();
+  }
+});
+
 test("sendFiles false is a keep-alive protocol refusal before the runtime", async (context) => {
   const stack = await startStack({ sendFiles: false });
   let runtimeCalls = 0;

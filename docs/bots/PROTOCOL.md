@@ -1006,7 +1006,7 @@ is never a gap.
   "failure": "f_7f3a",                     // identity, shared with the daemon log
   "disposition": "runtime",                // not_admitted | unknown | runtime
   "message": "…",                          // redacted, ≤ 200 chars
-  "requestId": "r_…",                      // present when a command caused it
+  "requestId": "r_…",                      // present when a send caused it
   "taskId": "t_3" }                        // reserved
 
 { "type": "bots", "bots": [ BotSummary, … ] }   // absolute catalog state, no rev
@@ -1064,8 +1064,10 @@ Every command except `hello` and `ping` carries `trace`.
 ```
 
 - A command rejection is reported twice with one identity: the protocol emits
-  `error{kind, failure, requestId}` and the same `failure` is what the daemon logs.
-  A client that is awaiting a call can match them by `failure`.
+  `error{kind, failure}` and the same `failure` is what the daemon logs.
+  Send errors also carry their `requestId`; promote errors use `trace` to identify the
+  command and never carry the target send's `requestId`. A refused promotion must not
+  be mistaken for refusal of the already admitted send.
 - `send` requires a subscription. `fileIds` is optional and is additive in v1; absent means
   a text-only send. Every ID must name a complete, verified file owned by the subscribed bot.
   A bot/mime/name mismatch, a pending upload, a corrupt record, an unknown or malformed ID,

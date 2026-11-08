@@ -272,6 +272,34 @@ final class ConversationTests: XCTestCase {
     XCTAssertNotNil(model.errorBanner)
   }
 
+  func testRefusedPromotionKeepsTheQueuedSendAndItsOutboxEntry() async throws {
+    let (model, fake, outbox) = makeModel()
+    ready(model)
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.hasSnapshot }
+    model.draft = "queued input"
+    model.send()
+    let entry = try XCTUnwrap(try outbox.entries(for: "b_1").first)
+    fake.emit(.submission(Submission(id: "s_1", requestId: entry.requestId, status: .queued)))
+    try await waitUntil { model.state.pending.contains { $0.requestId == entry.requestId } }
+    model.promote(entry.requestId)
+    try await waitUntil { fake.promoted == [entry.requestId] }
+    fake.emit(
+      .error(
+        kind: .invalidCommand,
+        disposition: .notAdmitted,
+        message: "promotion was refused",
+        failure: "f_promote",
+        requestId: nil
+      ))
+    try await waitUntil { model.errorBanner == "promotion was refused" }
+    XCTAssertEqual(try outbox.entries(for: "b_1"), [entry])
+    XCTAssertTrue(model.state.pending.contains { $0.requestId == entry.requestId })
+    XCTAssertTrue(model.state.messages.contains { $0.requestId == entry.requestId })
+    XCTAssertTrue(model.draft.isEmpty)
+  }
+
   func testAnUnconfirmedAdmissionKeepsTheOutboxEntry() async throws {
     let (model, fake, outbox) = makeModel()
     ready(model)

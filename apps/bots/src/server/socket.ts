@@ -435,9 +435,7 @@ export const attachConnection = (
         disposition: "not_admitted",
         failure: refusal.id,
         message: "the connection has no subscription",
-        ...(command.type === "send" || command.type === "promote"
-          ? { requestId: command.requestId }
-          : {}),
+        ...(command.type === "send" ? { requestId: command.requestId } : {}),
       });
       return;
     }
@@ -467,9 +465,7 @@ export const attachConnection = (
         disposition: "not_admitted",
         failure: refusal.id,
         message: "this credential may not send, promote or abort",
-        ...(command.type === "send" || command.type === "promote"
-          ? { requestId: command.requestId }
-          : {}),
+        ...(command.type === "send" ? { requestId: command.requestId } : {}),
       });
       return;
     }
@@ -616,7 +612,7 @@ export const attachConnection = (
       disposition,
       failure: classified.failure.id,
       message: safeMessage(classified.message),
-      ...(requestId === undefined ? {} : { requestId }),
+      ...(command.type === "send" ? { requestId: command.requestId } : {}),
     });
     if (command.type === "subscribe" && disposition === "runtime") {
       close(CLOSE.internal, "subscription failed");
