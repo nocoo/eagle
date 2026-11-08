@@ -7,7 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { TranscriptContext } from "@earendil-works/pi-ai";
-import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
+import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import type { ConversationId, ToolExecutionApi } from "@earendil-works/pi-durable";
 import type { RuntimeEvent, RuntimeHandle } from "../../src/core/RuntimePort.ts";
 import { fileMemoryHost } from "../../src/memory/fileHost.ts";
@@ -42,16 +42,19 @@ const runWithTools = async (handle: {
     .flatMap((block) => (block.type === "toolResult" ? [block] : []));
 };
 
-test("a child gets the core and coding tools and nothing else", async () => {
+test("a child gets the coding tools and list, and nothing that belongs to a person", async () => {
   const dir = await mkdtemp(join(tmpdir(), "bots-child-tools-"));
   const bench = await createBench({ memory: () => fileMemoryHost({ dir, botId: "b_runtime" }) });
   let handle: RuntimeHandle | undefined;
   try {
     const parentTools: string[][] = [];
+    const parentPrompts: string[] = [];
     const childTools: string[][] = [];
+    const childPrompts: string[] = [];
     bench.faux.setResponses([
       (context: TranscriptContext) => {
         parentTools.push(getCurrentTools(context.messages).map((tool) => tool.name));
+        parentPrompts.push(getCurrentSystemPrompt(context.messages));
         return assistant([toolCall("agent_spawn", { name: "child" })], { stopReason: "toolUse" });
       },
       (context: TranscriptContext) => {
@@ -63,6 +66,7 @@ test("a child gets the core and coding tools and nothing else", async () => {
       },
       (context: TranscriptContext) => {
         childTools.push(getCurrentTools(context.messages).map((tool) => tool.name));
+        childPrompts.push(getCurrentSystemPrompt(context.messages));
         return assistant("READY");
       },
       assistant("done"),
@@ -80,8 +84,14 @@ test("a child gets the core and coding tools and nothing else", async () => {
     assert.ok(parent.includes("agent_spawn"), "the parent offered delegation");
     assert.deepEqual(
       [...(childTools[0] ?? [])].sort(),
-      ["ask_user", "bash", "edit", "list", "note_set", "read", "write"],
-      "only the two mandatory groups reach a child",
+      ["bash", "edit", "list", "read", "write"],
+      "a child gets the coding tools and core's list, and nothing that belongs to a person",
+    );
+    assert.match(parentPrompts[0] ?? "", /note_set/, "the parent is told to keep its sidebar line");
+    assert.doesNotMatch(
+      childPrompts[0] ?? "",
+      /note_set|sidebar/,
+      "a child is never told to write the parent's sidebar line",
     );
   } finally {
     await handle?.close(trace, 1_000);

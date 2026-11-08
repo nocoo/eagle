@@ -101,7 +101,9 @@ nothing. The person's choices arrive as one hidden user message (`hidden: true`,
 `answersTo: <entry id>`) that the daemon composes and that the client cannot author: a
 client reports labels, the daemon checks them against the card and writes the text the bot
 reads. Nothing waits on a human: the tool call is already complete when the card appears, and
-a person may ignore the card, which the bot is told in the same message.
+a person may ignore the card, which the bot is told in the same message. A child agent
+never gets `ask_user`: its card is drawn from the conversation a client watches, and no
+client watches a child's, so the tool would claim a screen that does not exist.
 
 `secret_request` is the same card carrying a password field instead of options, and it is the
 only recommended way a person hands sensitive text to a Bot (§6.5). A Bot that cannot ask for
@@ -277,7 +279,7 @@ than a decision.
 
 | Group / tool | Input | Behavior | Replay |
 | --- | --- | --- | --- |
-| `agents` / `agent_spawn` | `name, instructions?` | Creates an ownerless conversation in this Harness with the parent's model/effort/cwd/instructions but only the `core` and `coding` tools (the caller's tools filtered to those two groups), records a `bots.agent` marker, returns `c_<id>`; no delegation tools, optional group, `tool_search`, `skill_read` or shared-device tool reaches a child | Default unsafe |
+| `agents` / `agent_spawn` | `name, instructions?` | Creates an ownerless conversation in this Harness with the parent's model/effort/cwd/instructions but only `read`, `write`, `edit`, `bash`, `list` (plus `pr_register`/`pr_list` when pull reports exist), records a `bots.agent` marker, returns `c_<id>`; `agent_*`, `ask_user`, `note_set`, every optional group, `tool_search`, `skill_read` and the shared-device tools never reach a child, and the `bots-tools` section drops the sidebar line when `note_set` is absent | Default unsafe |
 | `agents` / `agent_send` | `agentId, message` | Submits with `followUp`, waits for settlement, returns final text or the unanswered reason | Default unsafe |
 | `agents` / `agent_stop` | `agentId` | Aborts work; conversation remains readable | Default unsafe |
 | `herdr` / `herdr_open_space` | `path?` | Creates or reuses this Bot's recorded Space | Safe |

@@ -17,13 +17,19 @@ import {
 import { openWorkspace } from "../../src/tools/workspace.ts";
 
 /** The one section the model reads before it decides what to do with its own line. */
-const botsToolsSection = (registry: ReturnType<typeof createToolRegistry>): string => {
+const botsToolsSection = (
+  registry: ReturnType<typeof createToolRegistry>,
+  offered: readonly string[] = ["list", "note_set", "ask_user"],
+): string => {
   const entry = registry
     .snapshot()
     .sections()
     .find(({ section }) => section.key === "bots-tools");
   assert.ok(entry, "bots-tools is installed");
-  const text = entry.section.render({ agent: {} } as never, {} as never);
+  const text = entry.section.render(
+    { agent: { tools: offered.map((name) => ({ name })) } } as never,
+    {} as never,
+  );
   assert.equal(typeof text, "string");
   return text as string;
 };
@@ -216,6 +222,27 @@ test("a bot with no note is told the line is empty rather than left guessing", a
     assert.match(text, /sidebar/);
     assert.match(text, /empty/);
     assert.equal(text.includes("ago"), false);
+  } finally {
+    await rm(daemonRoot, { recursive: true, force: true });
+  }
+});
+
+test("a conversation without note_set is not told to write the sidebar line", async () => {
+  const daemonRoot = await mkdtemp(join(tmpdir(), "bots-note-absent-"));
+  try {
+    const workspace = await openWorkspace(join(daemonRoot, "workspace"));
+    const registry = createToolRegistry(workspace, {
+      note: {
+        botId: "b_1",
+        set: async (text) => (text.length === 0 ? {} : { note: text }),
+        current: () => ({ note: "在等 PR 审核", at: "2026-10-25T03:00:00.000Z" }),
+      },
+    });
+    const text = botsToolsSection(registry, ["list", "read", "write", "edit", "bash"]);
+    assert.match(text, /default working directory/);
+    assert.match(text, /Use list to discover files/);
+    assert.doesNotMatch(text, /note_set/);
+    assert.doesNotMatch(text, /sidebar/);
   } finally {
     await rm(daemonRoot, { recursive: true, force: true });
   }

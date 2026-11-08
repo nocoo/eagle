@@ -734,9 +734,11 @@ for.
 
 **Subagents.** `bots-agents` gives a bot `agent_spawn` / `agent_send` / `agent_stop`. A
 child is an ownerless conversation in the same Harness, configured from the caller's agent
-but limited to the mandatory `core` and `coding` tools, so delegation is one level deep and
-every optional group stays with the parent. Its turns are driven inside a tool call and its
-final text returns as the tool result; the transcript keeps only that result. The `peers`
+but limited to `read`, `write`, `edit`, `bash`, `list` and its pull reports, so delegation is
+one level deep and every optional group stays with the parent. `ask_user` and `note_set` are
+withheld too: nobody watches a child's conversation, so its card could not draw, and the
+sidebar line belongs to the parent. Its turns are driven inside a tool call and its final
+text returns as the tool result; the transcript keeps only that result. The `peers`
 capability stays false because nothing about children crosses the protocol yet.
 
 **Deferred tools.** The eight `herdr` tools are declared deferred and `tool_search` is

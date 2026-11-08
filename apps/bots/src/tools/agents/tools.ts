@@ -20,8 +20,19 @@ import { failed, type ToolOutcome } from "../types.ts";
 
 export const AGENTS_TOOLS_EXTENSION = "bots-agents";
 
-/** The tools a child must never get: one level of delegation, never a tree of it. */
-const AGENT_TOOLS = ["agent_spawn", "agent_send", "agent_stop"] as const;
+/**
+ * Tools a child may never call, whatever it inherits. Delegation would grow a tree;
+ * `ask_user` is a card the client draws from the conversation it watches, and nobody watches a
+ * child's, so the tool would promise a screen that does not exist; `note_set` writes the one
+ * sidebar line of the bot, which belongs to the conversation a person is looking at.
+ */
+const CHILD_DENIED_TOOLS = [
+  "agent_spawn",
+  "agent_send",
+  "agent_stop",
+  "ask_user",
+  "note_set",
+] as const;
 
 async function managedChild(tx: Tx, id: ConversationId, parent: ConversationId): Promise<boolean> {
   let cursor: Awaited<ReturnType<Tx["scanEntries"]>>["next"];
@@ -99,7 +110,7 @@ export const createAgentTools = (
     defineTool({
       name: "agent_spawn",
       description:
-        "Start a child agent that works on its own and remembers its own conversation. Returns its id; pass that id to agent_send and agent_stop. The child has the same model and reasoning level as you, and only the core and coding tools: it cannot start children, use an optional group, load deferred tools or reach another machine.",
+        "Start a child agent that works on its own and remembers its own conversation. Returns its id; pass that id to agent_send and agent_stop. The child has the same model and reasoning level as you, and only the coding tools plus list: it cannot start children, ask the person, write the sidebar line, use an optional group, load deferred tools or reach another machine.",
       parameters: Type.Object({
         name: Type.String({
           description: "Short name for the child, for your notes and the run log",
@@ -118,7 +129,8 @@ export const createAgentTools = (
         );
         const tools = parent.tools.filter(
           (tool) =>
-            callable.has(tool.name) && !(AGENT_TOOLS as readonly string[]).includes(tool.name),
+            callable.has(tool.name) &&
+            !(CHILD_DENIED_TOOLS as readonly string[]).includes(tool.name),
         );
         const child = await api.commit(async (tx) => {
           const created = await tx.createConversation({ ownership: { kind: "ownerless" } });
@@ -224,7 +236,7 @@ export const agentsSection = (): string =>
   [
     "You can delegate a self-contained piece of work to a child agent.",
     "Start one with agent_spawn, give it work with agent_send, and stop it with agent_stop.",
-    "A child has its own conversation and the same model, but only the core and coding tools: it cannot delegate, use an optional group or reach another machine.",
+    "A child has its own conversation and the same model, but only the coding tools plus list: it cannot delegate, ask the person, use an optional group or reach another machine.",
     "Prefer doing the work yourself when it is short: a child costs another model request.",
   ].join("\n");
 

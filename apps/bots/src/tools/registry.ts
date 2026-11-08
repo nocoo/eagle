@@ -342,19 +342,26 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
             )),
       ],
       sections: [
-        section("bots-tools", ({ agent }) =>
-          [
+        section("bots-tools", ({ agent }) => {
+          // A conversation that does not offer `note_set` (a child agent) must not be told to
+          // use it: the section describes the tools this conversation actually has.
+          const keepsNote = agent.tools.some((tool) => tool.name === "note_set");
+          return [
             `Your default working directory is ${agent.cwd ?? workspace.root}.`,
             "Use list to discover files, read to inspect them, edit for targeted changes, write for whole files, and bash for commands.",
-            "Keep the one line a person sees next to this bot in their sidebar with note_set: it is a status, so rewrite it when the nature of the work changes, not every turn; a plain follow-up leaves it alone.",
-            ...(options.note === undefined
-              ? []
-              : [noteLine(options.note.current(), (options.now ?? Date.now)())]),
+            ...(keepsNote
+              ? [
+                  "Keep the one line a person sees next to this bot in their sidebar with note_set: it is a status, so rewrite it when the nature of the work changes, not every turn; a plain follow-up leaves it alone.",
+                  ...(options.note === undefined
+                    ? []
+                    : [noteLine(options.note.current(), (options.now ?? Date.now)())]),
+                ]
+              : []),
             ...(devices === undefined || options.devices?.remoteCapability?.() !== "unavailable"
               ? []
               : ["The local device protection service is awaiting recovery."]),
-          ].join("\n"),
-        ),
+          ].join("\n");
+        }),
       ],
     }),
   );
