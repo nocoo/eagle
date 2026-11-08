@@ -1,5 +1,14 @@
 # Retrospective
 
+## 2026-11-08 — Check the rebase topology before replay
+
+A PR requested a linear rebase, but the first attempt used `--rebase-merges` and
+scheduled the old merge for reconstruction instead of replaying the work directly
+on the new base. It was aborted before any commit was replayed; the original main
+and stashes stayed intact. The linear rebase restored the merge-only attachment and
+queue-promotion test separately. Inspect the rebase todo and identify merge-only
+changes before starting a rebase that must not retain merge commits.
+
 ## 2026-11-07 — Canonical equality hid a draft edit
 
 The composer used Swift `String` equality to suppress duplicate updates. Canonically
