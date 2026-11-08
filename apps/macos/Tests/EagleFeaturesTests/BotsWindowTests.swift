@@ -245,9 +245,6 @@ struct BotsWindowTests {
   func transcriptPublicationIsolation() async throws {
     let (bots, _, port, _) = try await window()
     await settlePublish(bots)
-    // A loaded runner can deliver the baseline state after the drain; count from a quiet
-    // baseline so the assertion is about draft edits, not about when the socket settled.
-    try await Task.sleep(for: .milliseconds(120))
     var publications = 0
     var shellPublications = 0
     let observer = bots.transcript.$entries.dropFirst().sink { _ in publications += 1 }
@@ -256,6 +253,15 @@ struct BotsWindowTests {
       observer.cancel()
       shellObserver.cancel()
     }
+    // Count from quiescence rather than from a fixed pause: a loaded runner can deliver the
+    // settled baseline after any deadline, and that arrival is not a draft edit.
+    var previous = -1
+    while publications != previous {
+      previous = publications
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    publications = 0
+    shellPublications = 0
     for index in 0..<30 { bots.setDraft("Draft \(index)") }
     try await Task.sleep(nanoseconds: 80_000_000)
     #expect(publications == 0)
