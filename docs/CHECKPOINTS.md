@@ -4645,3 +4645,55 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   `SnapshotRenderer .local/macos-dialogs --dialogs-only` regenerated the ten captures. The
   capture leaves no key behind: its domain reads back empty. Escape/Return in a key window,
   live traffic lights, focus hand-off and Reduce Motion on an enabled machine remain manual.
+
+## 2026-11-08 18:50 +08 — Published macOS 0.22.0, and installed it here
+
+- Release commit `b9fa28d9` (`chore(release): macos 0.22.0`) bumps
+  `apps/macos/Support/Version.json` and adds the `## macOS v0.22.0 — 2026-11-08` changelog
+  section; `aaadef2b` (`feat(macos): ship the super bot service inside the App`) is the
+  commit the annotated tag `macos-v0.22.0` points at, because 0.22.0 is the first release
+  whose App shows the Super Bot and a packaged App has no source checkout to run it from.
+  Root/site 0.15.0, Agent 1.2.0, npm onboarding 1.0.0 and the Bots 0.1.0 figure inside the
+  bundle are unchanged; no npm publication is part of this release.
+- Gates, all with the official Node 26.13.0 distribution (Homebrew Node is rejected by the
+  portable-runtime check): root `npm run check` (unit tests, strict typecheck, Biome 248
+  files, production build) on the release tree and again through the pre-push hook;
+  `npm run test:browser` 191 passed with 11 existing conditional exclusions;
+  `apps/superagent npm run check`; `apps/superagent-macos/Scripts/coverage.sh`;
+  `apps/macos swift test` (442 + 52 + 85 + 38 cases) and `Scripts/coverage.sh` 3070/3321 =
+  92.4% (floor 90); `npm run check:design` and `npm run test:design`. No threshold was
+  weakened and no test was skipped.
+- The bundle reports `CFBundleShortVersionString` 0.22.0, asks
+  `https://eagle-ingest.hexly.ai/api/live` for updates, passes
+  `codesign --verify --deep --strict` (adhoc, hardened runtime) and records
+  `DeviceSigning.json` mode `ad-hoc-release`. `Contents/Resources/DeviceRuntime` now holds
+  four trees: Node 26.13.0 (system libraries only), Agent 1.2.0, Bots 0.1.0 and the Super
+  Bot 0.1.0 with its own lock, all from verified offline caches. The bundled Super Bot was
+  started on its own temporary root and answered `/v1/health` with
+  `service eagle-superagent, protocolVersion 1` before the DMG was built.
+- `Eagle-for-Mac-0.22.0.dmg` is 153,045,652 bytes with sha256
+  `b1e72919b7336030e4d309c5c41ca305ac81082b6b5688d3603bf5a67bc77568`; the uploaded asset
+  re-downloaded to the same digest. The GitHub Release
+  `https://github.com/nocoo/eagle/releases/tag/macos-v0.22.0` (title "Eagle for Mac 0.22.0")
+  carries the DMG and the 91-byte `SHA256SUMS`.
+- Installed on this Mac: `/Applications/Eagle for Mac.app` is 0.22.0, no quarantine
+  attribute was added to a locally built copy. It started its own services — Bots daemon
+  3608 on 43117 over `~/.local/share/eagle-bots` (the catalog kept its 8 Bots) and the Super
+  Bot 3603 on 43128 over `~/.local/share/eagle-superagent`, observing `43117` with the daily
+  observation credential. Starting the same binary a second time exits 0 and leaves one
+  process.
+- The running source run stayed isolated through all of this: daemon 64637 on 43119 over
+  `~/.local/share/eagle-bots-dev` with its config home and secrets key under that root, Super
+  Bot 66556 on 43127 observing `43119`. `eagle-dev bots list` answered from 43119 while
+  `eagle health` answered from 43117 with 8 Bots.
+- `macos.latest` is 0.22.0 with the release URL on `https://eagle-ingest.hexly.ai/api/live`,
+  deployed revision `fee326e2`; site and Worker version remain 0.15.0. The `Deploy`
+  workflow-run job is skipped until Cloudflare secrets exist, so this deployment is the
+  local `npm run deploy` that the release procedure requires.
+- Leftovers cleaned before the release: the old source-run daemon serving the packaged App
+  on 43117 (71169) and two orphaned `scripts/serve.ts` daemons from 07:38 in `/tmp` roots
+  (86418, 86799).
+
+Next broken hop: the device helper needs the person's Login Items approval again after the
+bundle replacement, and nobody has looked at the installed App's rendered Super Bot row,
+inspector or observation section.
