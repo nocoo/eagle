@@ -571,8 +571,15 @@ export class BotRegistry {
       // A bot that never stored a selection has to store one, even when the default happens
       // to match: the catalog, not the daemon's default, is what a later run reads.
       const stored = entry.config.toolGroups;
+      // Compare the row the catalog actually holds: a stored selection that resolves to the
+      // mandatory groups is not the same as a stored selection that already names them, and a
+      // later run reads the row, not this daemon's default.
+      const sameSelection =
+        stored !== undefined &&
+        stored.length === resolved.length &&
+        resolved.every((group) => stored.includes(group));
       try {
-        if (stored === undefined || resolveToolGroups(stored).join(",") !== resolved.join(",")) {
+        if (!sameSelection) {
           const at = (this.#options.now?.() ?? new Date()).toISOString();
           entry.config = await this.#write(trace, entry.config.id, () =>
             this.#options.directory.setToolGroups(entry.config.id, resolved, at),

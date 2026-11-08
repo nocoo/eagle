@@ -8,10 +8,10 @@ import test from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { TranscriptContext } from "@earendil-works/pi-ai";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
-import type { ConversationId, ToolExecutionApi } from "@earendil-works/pi-durable";
+import type { ConversationId, Extension, ToolExecutionApi } from "@earendil-works/pi-durable";
 import type { RuntimeEvent, RuntimeHandle } from "../../src/core/RuntimePort.ts";
 import { fileMemoryHost } from "../../src/memory/fileHost.ts";
-import { createAgentTools } from "../../src/tools/agents/tools.ts";
+import { childSelection, createAgentTools } from "../../src/tools/agents/tools.ts";
 import { assistant, createBench, toolCall, trace, waitFor } from "../support/pi.ts";
 
 const runWithTools = async (handle: {
@@ -209,4 +209,31 @@ test("a child agent runs the delegated turn and its answer comes back", async ()
   } finally {
     await bench.cleanup();
   }
+});
+
+test("a child's callable set is decided by the whitelist, not by what the parent installed", async () => {
+  // Fake installed extensions: the four a child may hold, plus everything it may not.
+  const make = (name: string, toolNames: readonly string[]) =>
+    ({ name, tools: toolNames.map((tool) => ({ name: tool })) }) as unknown as Extension;
+  const installed = [
+    make("bots-persona", ["persona"]),
+    make("bots-machine", ["machine"]),
+    make("bots-tools", ["list", "bash"]),
+    make("bots-coding", ["read", "write", "edit"]),
+    make("bots-core-ui", ["ask_user", "note_set"]),
+    make("bots-memory", ["memory_write"]),
+    make("bots-skills", ["skill_read"]),
+    make("bots-secrets", ["secret_request"]),
+  ];
+  const names = ["bots-persona", "bots-machine", "bots-tools", "bots-coding"];
+  const selection = childSelection(installed, names);
+  assert.deepEqual(
+    selection.extensions.map((extension) => extension.name),
+    names,
+  );
+  assert.deepEqual(
+    selection.tools.map((tool) => tool.name).sort(),
+    ["bash", "edit", "list", "machine", "persona", "read", "write"],
+    "no person-facing, optional, skill or secret tool reaches a child",
+  );
 });

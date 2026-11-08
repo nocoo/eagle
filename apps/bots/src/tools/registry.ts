@@ -323,8 +323,14 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
    * a tool result is persisted into the transcript, so a value must never be one.
    */
   const bash = createBashTool({
-    async prepare(execution) {
+    // The environment a command receives is per conversation: a child agent is configured
+    // without this group, so it must not inherit the parent's secrets through bash.
+    async prepare(execution, api, context) {
       baseEnvironment(execution);
+      const agent = await api.agent(context);
+      const allowsSecrets =
+        agent.extensions?.some((extension) => extension.name === SECRETS_TOOLS_EXTENSION) === true;
+      if (!allowsSecrets) return;
       const secrets = (await options.secrets?.environment()) ?? {};
       for (const [name, value] of Object.entries(secrets)) execution.env[name] = value;
     },

@@ -1658,3 +1658,27 @@ test("a lease granted before its open cannot deadlock a delete", async () => {
     await setup.cleanup();
   }
 });
+
+test("saving a legacy selection writes the mandatory groups into the catalog row", async () => {
+  const setup = await bench({ bots: ["a"] });
+  try {
+    await setup.registry.start();
+    // A row written before core-ui existed: it resolves to the mandatory groups without naming
+    // them, so comparing normalized values would see "no change" and never write.
+    await setup.directory.setToolGroups("b_bot0", ["core", "coding"], new Date().toISOString());
+    await setup.registry.applyToolGroups([], "tr_groups_legacy");
+    assert.deepEqual(
+      (await setup.directory.load())[0]?.toolGroups,
+      ["core", "core-ui", "coding"],
+      "the saved row names the mandatory groups",
+    );
+
+    // The same save on a row that already names them writes nothing new.
+    const written = (await setup.directory.load())[0]?.updatedAt;
+    await setup.registry.applyToolGroups([], "tr_groups_same");
+    assert.equal((await setup.directory.load())[0]?.updatedAt, written, "nothing to write");
+  } finally {
+    await setup.registry.shutdown();
+    await setup.cleanup();
+  }
+});

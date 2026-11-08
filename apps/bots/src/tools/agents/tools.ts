@@ -69,6 +69,31 @@ const entryText = (record: { model?: unknown } | undefined): string => {
   return parts.join("\n").trim();
 };
 
+/** What a child agent may hold, derived from the extensions the Bot actually installed. */
+export type ChildSelection = {
+  readonly extensions: readonly Extension[];
+  readonly tools: readonly ToolRegistration[];
+};
+
+export const childSelection = (
+  installed: readonly Extension[],
+  names: readonly string[],
+): ChildSelection => {
+  const extensions = installed.filter((extension) => names.includes(extension.name));
+  const callable = new Set(
+    extensions.flatMap((extension) => (extension.tools ?? []).map((tool) => tool.name)),
+  );
+  return { extensions, tools: installedTools(extensions, callable) };
+};
+
+const installedTools = (
+  extensions: readonly Extension[],
+  callable: ReadonlySet<string>,
+): readonly ToolRegistration[] =>
+  extensions.flatMap((extension) =>
+    (extension.tools ?? []).filter((tool) => callable.has(tool.name)),
+  );
+
 export const createAgentTools = (
   childExtensions: readonly string[],
 ): readonly ToolRegistration[] => {
@@ -109,13 +134,7 @@ export const createAgentTools = (
         const parent = await api.agent(context);
         // The selection is the limit, not a name denylist: a child never selects the
         // delegation, person-facing or optional groups, so their tools cannot be inherited.
-        const extensions = parent.extensions.filter((extension) =>
-          childExtensions.includes(extension.name),
-        );
-        const callable = new Set(
-          extensions.flatMap((extension) => (extension.tools ?? []).map((tool) => tool.name)),
-        );
-        const tools = parent.tools.filter((tool) => callable.has(tool.name));
+        const { extensions, tools } = childSelection(api.registry.installed(), childExtensions);
         const child = await api.commit(async (tx) => {
           const created = await tx.createConversation({ ownership: { kind: "ownerless" } });
           await configure(tx, created.id, {
@@ -171,6 +190,11 @@ export const createAgentTools = (
           );
           ensureActive();
           if (!managed) return undefined;
+          // A child created before this whitelist existed may still hold optional, skill or
+          // remote extensions. Narrowing before every send means the limit is a property of the
+          // conversation as it runs, not only of the moment it was spawned.
+          const { extensions, tools } = childSelection(api.registry.installed(), childExtensions);
+          await api.commit((tx) => configure(tx, id, { extensions, tools }), admissionContext);
           return child.submit(
             {
               type: "input",
