@@ -7,6 +7,7 @@
 # EAGLE_NODE_BINARY        verified, host-compatible Node 24+ executable
 # EAGLE_AGENT_NPM_CACHE    private cache verified against the root lock
 # EAGLE_BOTS_NPM_CACHE     private cache verified against the Bots lock
+# EAGLE_SUPERAGENT_NPM_CACHE private cache verified against the Superagent lock
 # EAGLE_DEVICE_PROFILE     device-candidate (default) or device-release
 # EAGLE_DEVICE_SERVICE_URL optional HTTPS origin baked into the bundle; a release normally
 #                         ships none, and the person configures the address in Settings
@@ -34,9 +35,10 @@ esac
 NODE_BINARY="${EAGLE_NODE_BINARY:-$(command -v node)}"
 AGENT_CACHE="${EAGLE_AGENT_NPM_CACHE:-${npm_config_cache:-}}"
 BOTS_CACHE="${EAGLE_BOTS_NPM_CACHE:-$AGENT_CACHE}"
+SUPERAGENT_CACHE="${EAGLE_SUPERAGENT_NPM_CACHE:-$AGENT_CACHE}"
 IDENTITY="${EAGLE_CODESIGN_IDENTITY:--}"
-if [ -z "$AGENT_CACHE" ] || [ -z "$BOTS_CACHE" ]; then
-  echo "Set EAGLE_AGENT_NPM_CACHE and EAGLE_BOTS_NPM_CACHE to verified private build caches" >&2
+if [ -z "$AGENT_CACHE" ] || [ -z "$BOTS_CACHE" ] || [ -z "$SUPERAGENT_CACHE" ]; then
+  echo "Set EAGLE_AGENT_NPM_CACHE, EAGLE_BOTS_NPM_CACHE and EAGLE_SUPERAGENT_NPM_CACHE to verified private build caches" >&2
   exit 1
 fi
 if [ "$PROFILE" = device-release ]; then
@@ -76,7 +78,8 @@ fi
   --updates-url "${EAGLE_UPDATES_URL:-}" >/dev/null
 "$NODE_BINARY" Scripts/assemble-device-runtime.ts \
   --destination "$STAGED_APP/Contents/Resources/DeviceRuntime" \
-  --node "$NODE_BINARY" --agent-cache "$AGENT_CACHE" --bots-cache "$BOTS_CACHE" >/dev/null
+  --node "$NODE_BINARY" --agent-cache "$AGENT_CACHE" --bots-cache "$BOTS_CACHE" \
+  --superagent-cache "$SUPERAGENT_CACHE" >/dev/null
 if [ "$IDENTITY" = - ]; then
   if [ "$PROFILE" = device-release ]; then
     echo "Signing: ad-hoc release (un-notarized; downloaders remove quarantine by hand)" >&2

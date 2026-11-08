@@ -48,6 +48,7 @@ type Options = {
   npmCli: string;
   agentCache: string;
   botsCache: string;
+  superagentCache: string;
 };
 const json = <T>(path: string): T => JSON.parse(readFileSync(path, "utf8"));
 const digest = (path: string, algorithm = "sha256") =>
@@ -141,16 +142,23 @@ export function verifyLockedCache(
       !entry.integrity
     )
       throw new Error(`unlocked production dependency: ${path}`);
-    const sri = entry.integrity
+    // The strongest hash the lock carries. Most entries are sha512; a package the
+    // registry still publishes with a legacy sha1 digest is verified with that digest
+    // rather than trusted unverified.
+    const digests = entry.integrity
       .split(/\s+/)
-      .map((value) => value.split("-"))
-      .find(([algorithm]) => algorithm === "sha512");
-    if (!sri) throw new Error(`SHA512 lock integrity required: ${path}`);
-    const expected = Buffer.from(sri[1], "base64");
+      .map((value) => value.split("-"));
+    const sri = ["sha512", "sha384", "sha256", "sha1"]
+      .map((algorithm) => digests.find(([value]) => value === algorithm))
+      .find((value) => value !== undefined);
+    if (!sri) throw new Error(`lock integrity required: ${path}`);
+    const [algorithm, encoded] = sri as [string, string];
+    const expected = Buffer.from(encoded, "base64");
     const hex = expected.toString("hex");
     const body = join(
       cache,
-      "_cacache/content-v2/sha512",
+      "_cacache/content-v2",
+      algorithm,
       hex.slice(0, 2),
       hex.slice(2, 4),
       hex.slice(4),
@@ -158,7 +166,10 @@ export function verifyLockedCache(
     if (!existsSync(body))
       throw new Error(`locked artifact unavailable: ${path}@${entry.version}`);
     if (
-      !createHash("sha512").update(readFileSync(body)).digest().equals(expected)
+      !createHash(algorithm)
+        .update(readFileSync(body))
+        .digest()
+        .equals(expected)
     )
       throw new Error(`locked artifact integrity mismatch: ${path}`);
     const members = execFileSync("/usr/bin/tar", ["-tzf", body], {
@@ -300,7 +311,8 @@ function verifyNode(path: string) {
   return node;
 }
 export function assembleRuntime(options: Options): void {
-  const { sourceRoot, destination, agentCache, botsCache } = options;
+  const { sourceRoot, destination, agentCache, botsCache, superagentCache } =
+    options;
   if (
     !isAbsolute(destination) ||
     lstatSync(destination, { throwIfNoEntry: false })
@@ -319,11 +331,25 @@ export function assembleRuntime(options: Options): void {
   const botsLockPath = join(botsSource, "package-lock.json");
   const botsLock = json<Lock>(botsLockPath);
   equalDependencies(botsManifest, botsLock.packages[""]);
+  // The Super Bot is its own service with its own lock, so it ships as its own tree instead
+  // of borrowing the daemon's dependencies or the developer's checkout.
+  const superagentSource = join(sourceRoot, "apps/superagent");
+  const superagentManifest = json<Manifest>(
+    join(superagentSource, "package.json"),
+  );
+  const superagentLockPath = join(superagentSource, "package-lock.json");
+  const superagentLock = json<Lock>(superagentLockPath);
+  equalDependencies(superagentManifest, superagentLock.packages[""]);
   const verified = {
     agent: verifyLockedCache(dependencies, agentCache),
     bots: verifyLockedCache(botsLock.packages, botsCache),
+    superagent: verifyLockedCache(superagentLock.packages, superagentCache),
   };
-  const originalLocks = [digest(rootLockPath), digest(botsLockPath)];
+  const originalLocks = [
+    digest(rootLockPath),
+    digest(botsLockPath),
+    digest(superagentLockPath),
+  ];
   mkdirSync(dirname(destination), { recursive: true });
   const stage = mkdtempSync(join(dirname(destination), ".device-runtime-"));
   const npm = (cache: string, cwd: string, args: string[]) =>
@@ -407,13 +433,33 @@ export function assembleRuntime(options: Options): void {
     );
     npm(botsCache, bots, ["ci", "--omit=dev", "--no-audit", "--no-fund"]);
     verifyInstalled(bots, botsLock);
+    const superagent = join(stage, "superagent");
+    mkdirSync(join(superagent, "scripts"), { recursive: true });
+    for (const name of ["package.json", "package-lock.json"])
+      copyFileSync(join(superagentSource, name), join(superagent, name));
+    cpSync(join(superagentSource, "src"), join(superagent, "src"), {
+      recursive: true,
+      verbatimSymlinks: true,
+    });
+    copyFileSync(
+      join(superagentSource, "scripts/serve.ts"),
+      join(superagent, "scripts/serve.ts"),
+    );
+    npm(superagentCache, superagent, [
+      "ci",
+      "--omit=dev",
+      "--no-audit",
+      "--no-fund",
+    ]);
+    verifyInstalled(superagent, superagentLock);
     // Every locked manifest has been verified, so the trees can lose what only their own
     // developers need.
     const pruned = pruneDevelopmentFiles(stage);
     verifyRuntimeLinks(stage);
     if (
       originalLocks[0] !== digest(rootLockPath) ||
-      originalLocks[1] !== digest(botsLockPath)
+      originalLocks[1] !== digest(botsLockPath) ||
+      originalLocks[2] !== digest(superagentLockPath)
     )
       throw new Error("source locks changed during runtime assembly");
     save(join(stage, "receipt.json"), {
@@ -432,6 +478,10 @@ export function assembleRuntime(options: Options): void {
         tarSha256: digest(join(agent, "agent.tgz")),
       },
       bots: { version: botsManifest.version, lockSha256: originalLocks[1] },
+      superagent: {
+        version: superagentManifest.version,
+        lockSha256: originalLocks[2],
+      },
       pruned,
       verified,
     });
@@ -462,11 +512,17 @@ if (
         },
         "agent-cache": { type: "string" },
         "bots-cache": { type: "string" },
+        "superagent-cache": { type: "string" },
       },
     });
-    if (!values.destination || !values["agent-cache"] || !values["bots-cache"])
+    if (
+      !values.destination ||
+      !values["agent-cache"] ||
+      !values["bots-cache"] ||
+      !values["superagent-cache"]
+    )
       throw new Error(
-        "--destination, --agent-cache and --bots-cache are required build inputs",
+        "--destination, --agent-cache, --bots-cache and --superagent-cache are required build inputs",
       );
     assembleRuntime({
       sourceRoot: resolve(values["source-root"]),
@@ -475,6 +531,7 @@ if (
       npmCli: resolve(values["npm-cli"]),
       agentCache: resolve(values["agent-cache"]),
       botsCache: resolve(values["bots-cache"]),
+      superagentCache: resolve(values["superagent-cache"]),
     });
     process.stdout.write(`${values.destination}\n`);
   } catch (error) {

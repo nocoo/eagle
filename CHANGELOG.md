@@ -16,6 +16,11 @@
   inspector structure (详情 with sections and placeholders, 模型 with the same ids and level
   names) so the two surfaces are one product. Observation is one read-only 观测 section that
   runs no command; re-selecting the row no longer rebuilds the socket.
+- Ship the Super Bot inside the App. The bundle carries the service with its own locked
+  dependencies beside the bundled Node and Bots, and an installed copy starts it from
+  `Contents/Resources/DeviceRuntime/superagent` instead of looking for a source checkout.
+  The runtime assembly verifies a third lock and accepts the strongest digest a lock carries,
+  because one transitive package is published with a legacy SHA-1 only.
 - Add passive worker observation, read-only by construction. A dedicated 0600 observation
   credential guards `snapshot`, `history` and `changes` on the daemon's own routes; a read
   opens the committed store read-only and never creates, migrates, recovers or opens a

@@ -191,6 +191,14 @@ public final class SuperagentDaemonSupervisor: ObservableObject {
       return FileManager.default.fileExists(
         atPath: url.appendingPathComponent("scripts/serve.ts").path) ? url : nil
     }
+    // A shipped App carries its own copy beside the bundled Node and Bots; it never reads a
+    // checkout under the installer's home directory.
+    if bundle.pathExtension == "app" {
+      let runtime = bundle.appendingPathComponent(
+        "Contents/Resources/DeviceRuntime/superagent", isDirectory: true)
+      return FileManager.default.fileExists(
+        atPath: runtime.appendingPathComponent("scripts/serve.ts").path) ? runtime : nil
+    }
     var ancestor = bundle.deletingLastPathComponent()
     for _ in 0..<10 {
       let candidate = ancestor.appendingPathComponent("apps/superagent", isDirectory: true)

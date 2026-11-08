@@ -26,9 +26,12 @@ function fixture() {
   const source = join(root, "source");
   const agent = join(source, "packages/agent");
   const bots = join(source, "apps/bots");
+  const superagent = join(source, "apps/superagent");
   mkdirSync(agent, { recursive: true });
   mkdirSync(join(bots, "scripts"), { recursive: true });
   mkdirSync(join(bots, "src"));
+  mkdirSync(join(superagent, "scripts"), { recursive: true });
+  mkdirSync(join(superagent, "src"));
   const manifest = {
     name: "@nocoo/eagle-agent",
     version: "9.8.7",
@@ -79,11 +82,38 @@ function fixture() {
   writeFileSync(join(bots, ".env"), "SHOULD_NEVER_SHIP=fixture-secret");
   mkdirSync(join(bots, "test"));
   writeFileSync(join(bots, "test/not-production.ts"), "should never ship");
+  writeFileSync(
+    join(superagent, "package.json"),
+    JSON.stringify({
+      name: "assembly-superagent",
+      version: "0.1.0",
+      private: true,
+      type: "module",
+    }),
+  );
+  writeFileSync(
+    join(superagent, "package-lock.json"),
+    JSON.stringify({
+      name: "assembly-superagent",
+      version: "0.1.0",
+      lockfileVersion: 3,
+      packages: { "": { name: "assembly-superagent", version: "0.1.0" } },
+    }),
+  );
+  writeFileSync(
+    join(superagent, "src/main.ts"),
+    'export const message: string = "中文 bundled Superagent";',
+  );
+  writeFileSync(
+    join(superagent, "scripts/serve.ts"),
+    'import{message}from"../src/main.ts";process.stdout.write(JSON.stringify({message,source:"superagent"})+"\\n");',
+  );
   return {
     root,
     source,
     agent,
     bots,
+    superagent,
     destination: join(root, "DeviceRuntime"),
     cache: join(root, "cache"),
   };
@@ -104,6 +134,8 @@ function assemble(f: ReturnType<typeof fixture>) {
       "--agent-cache",
       f.cache,
       "--bots-cache",
+      f.cache,
+      "--superagent-cache",
       f.cache,
     ],
     { encoding: "utf8", timeout: 30000 },
@@ -149,10 +181,20 @@ test("runtime assembly installs a packed Agent and isolated Bots production file
       message: "中文 bundled Bots",
       source: "bots",
     });
+    const superagent = execFileSync(
+      bundledNode,
+      [join(f.destination, "superagent/scripts/serve.ts")],
+      { env, encoding: "utf8" },
+    );
+    assert.deepEqual(JSON.parse(superagent), {
+      message: "中文 bundled Superagent",
+      source: "superagent",
+    });
     const receipt = JSON.parse(
       readFileSync(join(f.destination, "receipt.json"), "utf8"),
     );
     assert.equal(receipt.agent.version, "9.8.7");
+    assert.equal(receipt.superagent.version, "0.1.0");
     assert.equal(
       receipt.bots.lockSha256,
       createHash("sha256")
