@@ -1,0 +1,83 @@
+{
+  "id": "mac-trigger",
+  "title": "触发器：模型建 webhook、CLI 停用/启用/投递、Bot 收到并回答",
+  "kind": "trigger",
+  "notes": "Creation is a Bot decision (its own tool); a person turns the trigger off, on and fires it from the CLI, which is the only part the App's inspector also does.",
+  "toolGroups": ["core", "trigger"],
+  "timeoutMs": 150000,
+  "model": {
+    "script": [
+      {
+        "toolCall": {
+          "name": "trigger_create",
+          "args": {
+            "kind": "webhook",
+            "name": "mac-hook",
+            "prompt": "收到外部提醒时，简短确认你收到了什么。"
+          }
+        }
+      },
+      { "text": "已建好 webhook 触发器 mac-hook。" },
+      { "text": "收到外部提醒：周五发布。" },
+      { "text": "收到外部提醒：周五发布。" }
+    ],
+    "repeatLast": true
+  },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval mac-trigger",
+        "--text",
+        "给我建一个 webhook 触发器，名字 mac-hook，收到提醒时简短确认",
+        "--wait",
+        "--timeout",
+        "90",
+        "--json"
+      ],
+      "stdoutContains": "mac-hook"
+    },
+    {
+      "kind": "cli",
+      "args": ["triggers", "list", "eval mac-trigger", "--json"],
+      "stdoutContains": "mac-hook"
+    },
+    {
+      "kind": "cli",
+      "args": ["triggers", "disable", "eval mac-trigger", "mac-hook", "--json"],
+      "json": { "trigger": { "name": "mac-hook", "enabled": false } }
+    },
+    {
+      "kind": "cli",
+      "args": ["triggers", "enable", "eval mac-trigger", "mac-hook", "--json"],
+      "json": { "trigger": { "name": "mac-hook", "enabled": true } }
+    },
+    {
+      "kind": "cli",
+      "args": [
+        "triggers",
+        "fire",
+        "eval mac-trigger",
+        "mac-hook",
+        "--body",
+        "周五发布"
+      ],
+      "stdoutContains": "已投递"
+    },
+    {
+      "kind": "waitFor",
+      "role": "assistant",
+      "contains": "收到外部提醒",
+      "count": 1
+    }
+  ],
+  "expect": {
+    "toolsCalled": ["trigger_create"],
+    "messages": [
+      { "role": "assistant", "contains": "收到外部提醒：周五发布。" }
+    ],
+    "noErrors": true
+  }
+}

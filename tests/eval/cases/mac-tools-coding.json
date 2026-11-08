@@ -1,0 +1,112 @@
+{
+  "id": "mac-tools-coding",
+  "title": "CLI 驱动的编码工具组：读、跑、改、再跑",
+  "kind": "coding",
+  "notes": "The same loop the wire case proves, driven through `eagle-dev chat send --wait`: the CLI is what a person and an agent actually use.",
+  "toolGroups": ["core", "coding"],
+  "timeoutMs": 120000,
+  "workspace": {
+    "src/sum.js": "export const sum = (a, b) => a - b;\n",
+    "check.mjs": "import { sum } from \"./src/sum.js\";\nif (sum(2, 3) !== 5) { console.error(`wrong: ${sum(2, 3)}`); process.exit(1); }\nconsole.log(\"ok\");\n"
+  },
+  "model": {
+    "script": [
+      {
+        "toolCall": {
+          "name": "read",
+          "args": {
+            "path": "src/sum.js"
+          }
+        }
+      },
+      {
+        "toolCall": {
+          "name": "bash",
+          "args": {
+            "command": "node check.mjs"
+          }
+        }
+      },
+      {
+        "toolCall": {
+          "name": "edit",
+          "args": {
+            "path": "src/sum.js",
+            "edits": [
+              {
+                "oldText": "a - b",
+                "newText": "a + b"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "toolCall": {
+          "name": "bash",
+          "args": {
+            "command": "node check.mjs"
+          }
+        }
+      },
+      {
+        "text": "修好了：sum 现在做加法，node check.mjs 输出 ok。"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval mac-tools-coding",
+        "--text",
+        "check.mjs 跑不过，修好它",
+        "--wait",
+        "--timeout",
+        "90",
+        "--json"
+      ],
+      "stdoutContains": "修好了",
+      "capture": "reply"
+    }
+  ],
+  "expect": {
+    "messages": [
+      {
+        "role": "user",
+        "origin": "human",
+        "contains": "check.mjs 跑不过"
+      },
+      {
+        "role": "tool",
+        "contains": "a - b"
+      },
+      {
+        "role": "tool",
+        "contains": "wrong: -1"
+      },
+      {
+        "role": "tool",
+        "contains": "Successfully replaced"
+      },
+      {
+        "role": "tool",
+        "contains": "ok"
+      },
+      {
+        "role": "assistant",
+        "contains": "修好了"
+      }
+    ],
+    "toolsCalled": ["read", "bash", "edit"],
+    "files": {
+      "src/sum.js": "a + b"
+    },
+    "noErrors": true,
+    "modelRequests": {
+      "max": 6
+    }
+  }
+}
