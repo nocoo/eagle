@@ -76,9 +76,7 @@ public struct SuperagentConversationContent: View {
         onDismissError: { model.chat.dismissError() },
         onShowSidebar: { layout.toggleSidebar() },
         onToggleInspector: { layout.toggleInspector() },
-        focusRestore: focusRestore,
-        allowsInspector: true,
-        showsComposerAccessories: false
+        focusRestore: focusRestore
       )
     }
   }

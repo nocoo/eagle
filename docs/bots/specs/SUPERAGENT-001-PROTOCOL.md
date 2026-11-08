@@ -234,8 +234,14 @@ and cancellation semantics must implement SG001-R06/R07/R08 exactly.
   boundary change as above; the main transcript remains the authoritative window.
 - Native UI uses source-qualified selection `superagent:main`, distinct from worker
   Bot IDs. The system row cannot be renamed, moved, hidden, unpinned or deleted.
-  Unimplemented attachments, microphone, task promotion and inspector controls
-  are absent, not inert actions. Status/error/model readiness are visible text.
+- The Super Bot's conversation uses the same shell components and the same control
+  set as a Bot's: composer attach/microphone/send, the sidebar and inspector toggles
+  and the transcript controls are identical, not a reduced variant. Rows the service
+  has no data for — tool calls, ask/secret cards, task and trigger sections — stay
+  absent because nothing produces them. Attach, microphone and queued promotion have
+  no Superagent effect yet; the owner chose one control set over hiding what one
+  surface cannot do (2026-11-08), so any remaining difference is a data difference,
+  never a control difference. Status/error/model readiness are visible text.
 
 ## Gates
 

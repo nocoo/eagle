@@ -15,9 +15,6 @@ public struct Composer: View {
   private let onWaveform: () -> Void
   private let autofocus: Bool
   private let focusRequest: Int
-  /// A surface without attachment or voice support draws neither control, instead of a
-  /// button that does nothing.
-  private let showsAccessories: Bool
   @FocusState private var focused: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.isEnabled) private var isEnabled
@@ -32,8 +29,7 @@ public struct Composer: View {
     onMic: @escaping () -> Void = {},
     onWaveform: @escaping () -> Void = {},
     autofocus: Bool = false,
-    focusRequest: Int = 0,
-    showsAccessories: Bool = true
+    focusRequest: Int = 0
   ) {
     self.placeholder = placeholder
     self.hint = hint
@@ -45,7 +41,6 @@ public struct Composer: View {
     self.onWaveform = onWaveform
     self.autofocus = autofocus
     self.focusRequest = focusRequest
-    self.showsAccessories = showsAccessories
   }
 
   var sendTint: Color {
@@ -55,10 +50,8 @@ public struct Composer: View {
 
   public var body: some View {
     HStack(alignment: .bottom, spacing: Theme.Layout.rowGap) {
-      if showsAccessories {
-        IconButton(
-          systemName: "plus", label: "添加附件", size: Theme.Metric.hitTarget, action: onAttach)
-      }
+      IconButton(
+        systemName: "plus", label: "添加附件", size: Theme.Metric.hitTarget, action: onAttach)
 
       ZStack(alignment: .leading) {
         TextField("", text: $text, axis: .vertical)
@@ -80,12 +73,10 @@ public struct Composer: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
 
-      if showsAccessories {
-        IconButton(
-          systemName: "mic", label: "语音输入", size: Theme.Metric.hitTarget,
-          tint: Theme.Palette.textSecondary, action: onMic
-        )
-      }
+      IconButton(
+        systemName: "mic", label: "语音输入", size: Theme.Metric.hitTarget,
+        tint: Theme.Palette.textSecondary, action: onMic
+      )
       IconButton(
         systemName: "waveform",
         label: "发送",

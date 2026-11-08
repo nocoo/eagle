@@ -518,3 +518,32 @@ test("fails closed on malformed Swift and empty input", () => {
   });
   assert.notEqual(result.status, 0);
 });
+
+test("the shared composer has one control set, not one per surface", () => {
+  const path = "EagleDesign/Chat/Composer.swift";
+  for (const source of [
+    "struct Composer {\n  private let showsAccessories = true\n}",
+    "struct Composer {\n  init(showsAccessories: Bool = true) {}\n}",
+    "struct Composer {\n  init(allowsVoice: Bool = true) {}\n}",
+  ])
+    assert(
+      check("", { [path]: source }).some(
+        (item) => item.rule === "composer-control-ownership",
+      ),
+      source,
+    );
+  assert.deepEqual(
+    check("", {
+      [path]:
+        "struct Composer {\n  private let autofocus = true\n  private let focusRequest = 0\n  init(placeholder: String, autofocus: Bool = false) {}\n}",
+    }),
+    [],
+  );
+  assert.deepEqual(
+    check("", {
+      "EagleDesign/Panels/ConversationColumn.swift":
+        "struct ConversationColumn {\n  private let showsSidebar = true\n}",
+    }),
+    [],
+  );
+});

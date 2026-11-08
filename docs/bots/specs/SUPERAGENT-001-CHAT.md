@@ -345,8 +345,9 @@ branches). The App suite passes **428 tests**; design guard and strict format pa
 
 Real-gateway acceptance through the product CLI: two model turns answered, history
 retained across a Superagent restart, idle Stop confirmed. The same conversation
-rendered in the native App, whose system row is permanent and whose composer shows
-no unsupported attachment/voice action. Evidence:
+rendered in the native App, whose system row is permanent and whose composer is the
+same shared component and control set a Bot uses: until 2026-11-08 it hid the
+attach/microphone controls, which the owner then removed as an inconsistency. Evidence:
 `.local/superagent-evidence/cli-acceptance.log`, `app-superbot.png`.
 
 Final independent C review (range `4792c187..5662d494`) returned REQUEST CHANGES:

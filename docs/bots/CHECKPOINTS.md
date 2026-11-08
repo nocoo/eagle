@@ -902,3 +902,25 @@ Verified:
 Next broken hop: no delete or reference GC exists, so `files/` and `trash/` only grow; the
 native composer has no attachment entry yet, and no live-provider or rendered-file journey has
 been run.
+
+## 2026-11-08 16:50 — one control set for the Super Bot and a Bot
+
+Observed: selecting another conversation no longer flashes the product mark in the
+sidebar footer, and the Super Bot's composer shows the same attach, microphone and
+send controls a Bot's composer does.
+
+Verified:
+
+- `EagleIconTests.testTheMarkIsDecodedOncePerProcess` failed three identity
+  assertions before `EagleIcon` cached its decoded marks, and passes after.
+- `composer-control-ownership` in the design guard rejects a per-surface capability
+  switch on the shared composer; it named `Composer.swift:20` and `:36` on the old
+  source and reports nothing now. `npm run test:design` 92 pass,
+  `npm run check:design` green.
+- `apps/macos`: `swift test` exit 0 (436 + 52 + 85 + 37 Swift Testing cases plus 4
+  XCTest cases), strict `swift format lint` clean.
+- The Dev App was rebuilt in the right pane against the usual Bots root.
+
+Next broken hop: attach and microphone have no handler on either surface, so a click
+does nothing yet; Bots' managed-file send and any Superagent attachment contract
+remain unwired.

@@ -390,6 +390,29 @@ final class Ownership: SyntaxVisitor {
     report(node, rule)
   }
 
+  /// The shared composer draws the same controls for every conversation. Hiding a control a
+  /// surface cannot use belongs to that surface's own component; a switch here is how the
+  /// Super Bot ended up with a different input box than a Bot.
+  func checkComposerControl(_ name: String, at node: some SyntaxProtocol) {
+    guard path == "EagleDesign/Chat/Composer.swift" else { return }
+    guard name.hasPrefix("shows") || name.hasPrefix("allows") else { return }
+    report(node, "composer-control-ownership")
+  }
+
+  override func visit(_ node: VariableDeclSyntax) -> SyntaxVisitorContinueKind {
+    for binding in node.bindings {
+      if let identifier = binding.pattern.as(IdentifierPatternSyntax.self) {
+        checkComposerControl(identifier.identifier.text, at: identifier)
+      }
+    }
+    return .visitChildren
+  }
+
+  override func visit(_ node: FunctionParameterSyntax) -> SyntaxVisitorContinueKind {
+    checkComposerControl(node.firstName.text, at: node)
+    return .visitChildren
+  }
+
   func visualContext(_ node: some SyntaxProtocol) -> String? {
     var parent = Syntax(node).parent
     let position = node.positionAfterSkippingLeadingTrivia.utf8Offset
