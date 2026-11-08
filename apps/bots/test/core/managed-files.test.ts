@@ -10,6 +10,7 @@ import {
   rm,
   stat,
   symlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -597,5 +598,68 @@ test("a retry after a failed directory sync re-establishes the barrier before co
     );
   } finally {
     await rm(join(botDir, ".."), { recursive: true, force: true });
+  }
+});
+
+test("a Bot refuses a declaration that would pass its own room, before writing anything", async () => {
+  const { root, botDir } = await open();
+  try {
+    const store = new ManagedFileStore({
+      botDir: () => botDir,
+      maxBytes: 10,
+      maxFiles: 2,
+    });
+    await store.declare({
+      botId,
+      uploadId,
+      name: "one.bin",
+      size: 6,
+      sha256: digest(new Uint8Array()),
+    });
+    await assert.rejects(
+      store.declare({
+        botId,
+        uploadId: "u_second_0123456789",
+        name: "two.bin",
+        size: 6,
+        sha256: digest(new Uint8Array()),
+      }),
+      (error) => error instanceof ManagedFileError && error.reason === "limit_exceeded",
+    );
+    assert.deepEqual(
+      await completedNames(botDir),
+      [],
+      "a refused declaration never becomes a file",
+    );
+    assert.equal(
+      (await readdir(join(botDir, "files"))).filter((n) => n.endsWith(".upload.json")).length,
+      1,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the sweep reclaims abandoned temporaries and keeps fresh ones", async () => {
+  const { root, botDir } = await open();
+  try {
+    const store = new ManagedFileStore({ botDir: () => botDir });
+    const files = join(botDir, "files");
+    await mkdir(files, { recursive: true, mode: 0o700 });
+    const stale = ["f_abc.part", "f_abc.upload.json", "f_abc.json.0000.tmp"];
+    const fresh = ["f_fresh.part", "f_fresh.upload.json"];
+    for (const name of [...stale, ...fresh]) {
+      await writeFile(join(files, name), "{}\n", { mode: 0o600 });
+    }
+    const old = (Date.now() - 48 * 60 * 60 * 1000) / 1000;
+    for (const name of stale) {
+      await utimes(join(files, name), old, old);
+    }
+    const removed = await store.sweep(botId);
+    assert.equal(removed, stale.length, "only the abandoned ones are reclaimed");
+    const left = await readdir(files);
+    for (const name of fresh) assert.ok(left.includes(name), `${name} survives the sweep`);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

@@ -799,13 +799,29 @@ export const startServer = async (options: ServerOptions): Promise<Daemon> => {
             throw new ManagedFileError("storage_failed", "managed file storage is unavailable");
           }
           const downloaded = await options.files.download({ botId, fileId });
-          response.writeHead(200, {
-            "content-type": downloaded.file.mimeType,
-            "content-length": downloaded.file.size,
-            etag: `"${downloaded.file.sha256}"`,
-            "cache-control": "private, no-store",
+          // A client that stops reading is a cancelled download, not a lease holder: the
+          // response gets an idle bound, and a socket that cannot drain aborts the pipeline.
+          const abort = new AbortController();
+          const idle = setTimeout(() => {
+            abort.abort();
+            response.destroy();
+          }, 120_000);
+          const done = () => clearTimeout(idle);
+          response.on("close", () => {
+            done();
+            abort.abort();
           });
-          await pipeline(downloaded.stream, response);
+          try {
+            response.writeHead(200, {
+              "content-type": downloaded.file.mimeType,
+              "content-length": downloaded.file.size,
+              etag: `"${downloaded.file.sha256}"`,
+              "cache-control": "private, no-store",
+            });
+            await pipeline(downloaded.stream, response, { signal: abort.signal });
+          } finally {
+            done();
+          }
         });
         return;
       }

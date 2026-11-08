@@ -4,7 +4,7 @@ import { readdir, readFile, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { join } from "node:path";
 import test from "node:test";
-import { MAX_MANAGED_FILE_BYTES } from "../../src/core/ManagedFileStore.ts";
+import { fileIdFor, MAX_MANAGED_FILE_BYTES } from "../../src/core/ManagedFileStore.ts";
 import { frameQueue, hello, send, startStack } from "../support/server.ts";
 
 const uploadId = "u_0123456789abcdef";
@@ -646,6 +646,34 @@ test("the welcome advertises managed files without sending bytes on the socket",
     assert.equal((welcome.capabilities as Record<string, boolean> | undefined)?.sendFiles, true);
   } finally {
     socket.close();
+    await stack.close();
+  }
+});
+
+test("an abandoned download releases its lease instead of pinning the Bot", async () => {
+  const stack = await startStack({});
+  try {
+    const botId = await stack.createBot("Reader");
+    const body = Buffer.from("hello managed files");
+    const declared = await declare(stack, botId, body, { mimeType: "text/plain" });
+    assert.equal(declared.response.status, 201);
+    assert.equal((await upload(stack, botId, declared.id, body)).status, 201);
+    const fileId = fileIdFor(botId, declared.id);
+
+    const controller = new AbortController();
+    const abandoned = fetch(
+      `http://127.0.0.1:${stack.port}/v1/bots/${botId}/files/${fileId}/content`,
+      { headers: bearer(stack.token), signal: controller.signal },
+    ).catch(() => undefined);
+    controller.abort();
+    await abandoned;
+
+    // A cancelled reader holds nothing: the daemon still serves, and the same file downloads.
+    assert.equal((await fetch(`${base(stack)}/v1/health`)).status, 200);
+    const again = await download(stack, botId, fileId);
+    assert.equal(again.status, 200, "the same file still downloads after an aborted one");
+    assert.equal(await again.text(), body.toString());
+  } finally {
     await stack.close();
   }
 });

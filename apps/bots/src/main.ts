@@ -293,6 +293,11 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
         });
   const directory = new BotDirectory(root, await nodeDirectoryFs());
   const files = new ManagedFileStore({ botDir: directory.botDir.bind(directory) });
+  // A crash can leave half-written temporaries and declarations whose uploader never returned.
+  // Reclaiming them at start keeps the store bounded without a background sweep.
+  for (const bot of await directory.load().catch(() => [])) {
+    await files.sweep(bot.id).catch(() => undefined);
+  }
   // The stored gateway wins over the dotenv; without either, the registry is empty and a
   // run settles `no_model` until a person configures it in the app.
   gateway = (await readGateway(root)) ?? gatewayFromEnv(process.env);

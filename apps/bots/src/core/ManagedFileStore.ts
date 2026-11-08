@@ -1,11 +1,25 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { chmod, type FileHandle, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
+import {
+  chmod,
+  type FileHandle,
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  rename,
+  unlink,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { BOT_ID_PATTERN } from "./domain.ts";
 
 export const MAX_MANAGED_FILE_BYTES = 50 * 1024 * 1024;
+/** A Bot's whole store, so a machine cannot be filled one admitted upload at a time. */
+export const MAX_BOT_FILE_BYTES = 2 * 1024 * 1024 * 1024;
+export const MAX_BOT_FILE_COUNT = 500;
+/** How long an abandoned upload may keep its room before the sweep reclaims it. */
+export const PENDING_UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_MANAGED_FILE_NAME_BYTES = 255;
 export const MAX_MANAGED_FILE_MIME_BYTES = 255;
 
@@ -207,16 +221,49 @@ export class ManagedFileStore {
   readonly #syncDirectory: (path: string) => Promise<void>;
   readonly #queues = new Map<string, Promise<unknown>>();
   readonly #directoryQueues = new Map<string, Promise<unknown>>();
+  readonly #maxBytes: number;
+  readonly #maxFiles: number;
   readonly #syncedDirectories = new Set<string>();
 
   constructor(options: {
     readonly botDir: (botId: string) => string;
     readonly now?: () => Date;
     readonly syncDirectory?: (path: string) => Promise<void>;
+    readonly maxBytes?: number;
+    readonly maxFiles?: number;
   }) {
     this.#botDir = options.botDir;
     this.#now = options.now ?? (() => new Date());
     this.#syncDirectory = options.syncDirectory ?? ((path) => this.#syncDirectoryReal(path));
+    this.#maxBytes = options.maxBytes ?? MAX_BOT_FILE_BYTES;
+    this.#maxFiles = options.maxFiles ?? MAX_BOT_FILE_COUNT;
+  }
+
+  /** Bytes and count already declared for one Bot, complete or still uploading. */
+  async usage(botId: string): Promise<{ readonly bytes: number; readonly files: number }> {
+    return this.#usageIn(await this.#filesDirectory(botId));
+  }
+
+  /**
+   * Reclaims what a crash left behind: half-written temporaries and declarations whose uploader
+   * never came back. Anything newer than the TTL is kept, so an upload in flight survives.
+   */
+  async sweep(botId: string, ttlMs = PENDING_UPLOAD_TTL_MS): Promise<number> {
+    const files = await this.#filesDirectory(botId);
+    const cutoff = this.#now().getTime() - ttlMs;
+    let removed = 0;
+    for (const name of await readdir(files).catch(() => [] as string[])) {
+      const temporary = name.endsWith(".tmp") || name.endsWith(".part");
+      const abandoned = name.endsWith(".upload.json");
+      if (!temporary && !abandoned) continue;
+      const path = join(files, name);
+      const stats = await lstat(path).catch(() => undefined);
+      if (stats === undefined || !stats.isFile() || stats.mtimeMs > cutoff) continue;
+      await unlink(path).catch(() => undefined);
+      removed += 1;
+    }
+    if (removed > 0) await this.#syncDirectory(files);
+    return removed;
   }
 
   async declare(input: ManagedFileDeclaration): Promise<ManagedFile> {
@@ -270,6 +317,14 @@ export class ManagedFileStore {
         status: "uploading",
         createdAt: this.#now().toISOString(),
       };
+      // The room is checked before the record exists, so a refused upload leaves nothing.
+      const used = await this.#usageIn(files);
+      if (used.files + 1 > this.#maxFiles || used.bytes + declaration.size > this.#maxBytes) {
+        throw new ManagedFileError(
+          "limit_exceeded",
+          "this Bot has no room for another file of that size",
+        );
+      }
       await this.#atomicJson(files, pendingPath, record);
       return { file: record, created: true };
     });
@@ -545,6 +600,19 @@ export class ManagedFileStore {
       await close(handle);
       throw error;
     }
+  }
+
+  async #usageIn(files: string): Promise<{ readonly bytes: number; readonly files: number }> {
+    let bytes = 0;
+    let count = 0;
+    for (const name of await readdir(files).catch(() => [] as string[])) {
+      if (!name.endsWith(".json")) continue;
+      const record = await this.#readMetadata(join(files, name));
+      if (record === undefined) continue;
+      bytes += record.size;
+      count += 1;
+    }
+    return { bytes, files: count };
   }
 
   /** A retry's durability barrier: same failure mapping as the write path. */
