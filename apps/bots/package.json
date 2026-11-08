@@ -24,7 +24,8 @@
     "smoke:model": "node --env-file-if-exists=.env --experimental-strip-types scripts/smoke-model.ts",
     "check": "npm run fixtures:check && npm test && npm run typecheck && npm run lint && npm run coverage",
     "eval": "sh scripts/eval-all.sh",
-    "eval:cli": "sh scripts/eval-all.sh --match cli-"
+    "eval:cli": "sh scripts/eval-all.sh --match cli-",
+    "eval:mac": "sh scripts/eval-all.sh --match mac-"
   },
   "dependencies": {
     "@earendil-works/chord": "1.4.0",

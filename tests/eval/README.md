@@ -21,6 +21,32 @@ npm --prefix apps/bots run eval -- --case trigger-webhook --keep
 EVAL_TRACE=1 npm --prefix apps/bots run eval -- --case trigger-cron --verbose
 ```
 
+## macOS surface cases
+
+Cases whose id starts with `mac-` cover what a person reaches through the App but the App's
+own views cannot prove: they drive the same `eagle-dev` binary and, for a `superagent` case,
+a real Superagent process beside the daemon.
+
+```sh
+npm --prefix apps/bots run eval:mac
+npm --prefix apps/bots run eval:mac -- --case mac-superbot-chat --verbose
+```
+
+- `mac-superbot-chat`: configure the Super Bot's model through `superagent config set`, ask
+  it a question, read its history.
+- `mac-superbot-observe`: the read-only observation section — status, snapshot, retained
+  history of a Bot that really answered, and the change cursor.
+- `mac-superbot-auth`: an unconfigured service refuses to answer, and a credential the
+  service does not own exits 3 before anything runs.
+- `mac-tools-coding`: the coding tool group (`read`, `bash`, `edit`) driven by
+  `chat send --wait`.
+- `mac-trigger`: a Bot creates a webhook trigger with its own tool, and the CLI lists,
+  disables, enables and fires it, after which the Bot answers.
+
+A case with `"superagent": true` boots the service on its own root under the case, with the
+case's scripted endpoint as the only model, and hands the CLI `SUPERAGENT_ROOT` and
+`SUPERAGENT_PORT`. Cases never read the machine's real Superagent, Bots root or credential.
+
 ## CLI cases
 
 A case whose steps are `cli` drives the product through the shipped command line

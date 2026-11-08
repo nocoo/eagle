@@ -1,0 +1,62 @@
+{
+  "id": "mac-superbot-observe",
+  "title": "Super Bot 只读观测：状态、快照、历史与增量",
+  "kind": "superagent",
+  "notes": "The App's observation section reads what a Bot holds. The covered history comes from a real turn, so an empty answer would fail rather than look complete.",
+  "superagent": true,
+  "toolGroups": ["core"],
+  "timeoutMs": 120000,
+  "model": {
+    "script": [{ "text": "记下了：周五。" }],
+    "repeatLast": true
+  },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval mac-superbot-observe",
+        "--text",
+        "记住：周五评审",
+        "--wait",
+        "--timeout",
+        "60",
+        "--json"
+      ],
+      "stdoutContains": "记下了"
+    },
+    {
+      "kind": "cli",
+      "args": ["superagent", "observe", "status", "--json"],
+      "json": { "provider": { "state": "ready", "reachable": true } }
+    },
+    {
+      "kind": "cli",
+      "args": ["superagent", "observe", "snapshot", "--json"],
+      "stdoutContains": "{{bot.id}}"
+    },
+    {
+      "kind": "cli",
+      "args": [
+        "superagent",
+        "observe",
+        "history",
+        "--bot",
+        "{{bot.id}}",
+        "--limit",
+        "20",
+        "--json"
+      ],
+      "stdoutContains": "记下了：周五。"
+    },
+    {
+      "kind": "cli",
+      "args": ["superagent", "observe", "changes", "--json"],
+      "json": { "provider": { "state": "ready" } }
+    }
+  ],
+  "expect": {
+    "messages": [{ "role": "assistant", "contains": "记下了" }]
+  }
+}

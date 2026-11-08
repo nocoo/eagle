@@ -57,6 +57,11 @@ type CaseFile = {
   };
   /** `mint` (default) writes a development agent token; `none` leaves it unwritten. */
   readonly devToken?: "mint" | "none";
+  /**
+   * Boots the independent Superagent beside the daemon on a case-private root, observing
+   * this daemon. The CLI steps then reach it through `SUPERAGENT_ROOT`/`SUPERAGENT_PORT`.
+   */
+  readonly superagent?: boolean;
   readonly steps: readonly Step[];
   readonly expect?: {
     readonly messages?: readonly {
@@ -476,6 +481,87 @@ const api = async (
     ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
   });
 
+const freePort = (): Promise<number> =>
+  new Promise((resolve_) => {
+    const probe = createServer();
+    probe.listen(0, "127.0.0.1", () => {
+      const address = probe.address();
+      const port = typeof address === "object" && address !== null ? address.port : 0;
+      probe.close(() => resolve_(port));
+    });
+  });
+
+type SuperagentHandle = {
+  readonly root: string;
+  readonly port: number;
+  readonly stop: () => Promise<void>;
+};
+
+/**
+ * The App's own service, for real: a Superagent process on a case-private root, pointed at
+ * this case's daemon for observation. Its model is the case's scripted endpoint, configured
+ * through the CLI like a person would.
+ */
+const startSuperagent = async (
+  caseRoot: string,
+  daemonPort: number,
+  home: string,
+  verbose: boolean,
+): Promise<SuperagentHandle> => {
+  const root = join(caseRoot, "superagent");
+  const port = await freePort();
+  const script = resolve(import.meta.dirname, "../../superagent/scripts/serve.ts");
+  const output: string[] = [];
+  const child = spawn(
+    process.execPath,
+    ["--experimental-strip-types", script, "--root", root, "--port", String(port)],
+    {
+      env: {
+        ...process.env,
+        HOME: home,
+        XDG_CONFIG_HOME: join(caseRoot, "config"),
+        BOTS_OBSERVATION_ENDPOINT: `http://127.0.0.1:${daemonPort}`,
+        BOTS_OBSERVATION_TOKEN_FILE: join(caseRoot, "observation", "token"),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  const record = (chunk: Buffer): void => {
+    output.push(chunk.toString());
+    if (verbose) process.stdout.write(chunk);
+  };
+  child.stdout.on("data", record);
+  child.stderr.on("data", record);
+  const deadline = Date.now() + 20_000;
+  let healthy = false;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) {
+      failure(`the Superagent exited before readiness: ${output.join("").slice(-800)}`);
+    }
+    const answer = await fetch(`http://127.0.0.1:${port}/v1/health`)
+      .then(async (response) =>
+        response.status === 200 ? ((await response.json()) as { service?: string }) : undefined,
+      )
+      .catch(() => undefined);
+    if (answer?.service === "eagle-superagent") {
+      healthy = true;
+      break;
+    }
+    await new Promise((resolve_) => setTimeout(resolve_, 100));
+  }
+  if (!healthy) failure(`the Superagent never became healthy: ${output.join("").slice(-800)}`);
+  const stop = async (): Promise<void> => {
+    if (child.exitCode !== null) return;
+    child.kill("SIGTERM");
+    const until = Date.now() + 8_000;
+    while (child.exitCode === null && Date.now() < until) {
+      await new Promise((resolve_) => setTimeout(resolve_, 50));
+    }
+    if (child.exitCode === null) child.kill("SIGKILL");
+  };
+  return { root, port, stop };
+};
+
 /** A viewer: one bot subscriber that records messages, tool names and errors. */
 const viewer = async (port: number, token: string, botId: string) => {
   const rows: Row[] = [];
@@ -741,6 +827,7 @@ const runCase = async (
   );
   const modelPort = await listen(model.server);
   let handle: DaemonHandle | undefined;
+  let superagent: SuperagentHandle | undefined;
   let botId = "";
   let report: Report;
   try {
@@ -790,6 +877,16 @@ const runCase = async (
     });
     if (created.status !== 201) failure(`could not create a bot: ${created.status}`);
     botId = ((await created.json()) as { bot: { id: string } }).bot.id;
+    captured.set("bot", { id: botId, title: `eval ${study.id}` });
+
+    if (study.superagent === true) {
+      superagent = await startSuperagent(root, handle.port, home, options.verbose);
+      captured.set("superagent", {
+        root: superagent.root,
+        port: superagent.port,
+        url: `http://127.0.0.1:${superagent.port}`,
+      });
+    }
 
     // Triggers and workspace files exist before the bot opens, so its first store read sees them.
     if (study.triggers !== undefined || study.workspace !== undefined) {
@@ -964,6 +1061,12 @@ const runCase = async (
             HOME: home,
             EAGLE_ROOT: root,
             EAGLE_PORT: String(running.port),
+            ...(superagent === undefined
+              ? {}
+              : {
+                  SUPERAGENT_ROOT: superagent.root,
+                  SUPERAGENT_PORT: String(superagent.port),
+                }),
           };
           for (const [key, value] of Object.entries(step.env ?? {})) {
             if (value === null) delete env[key];
@@ -1062,6 +1165,12 @@ const runCase = async (
             HOME: home,
             EAGLE_ROOT: root,
             EAGLE_PORT: String(running.port),
+            ...(superagent === undefined
+              ? {}
+              : {
+                  SUPERAGENT_ROOT: superagent.root,
+                  SUPERAGENT_PORT: String(superagent.port),
+                }),
           };
           await waitUntil(
             async () => {
@@ -1240,6 +1349,7 @@ const runCase = async (
       detail: error instanceof Error ? error.message : String(error),
     };
   } finally {
+    await superagent?.stop().catch(() => undefined);
     const released =
       handle === undefined || (await handle.close().catch(() => "timeout")) === "closed";
     await new Promise<void>((resolve_) => model.server.close(() => resolve_()));

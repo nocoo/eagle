@@ -1,0 +1,74 @@
+{
+  "id": "mac-superbot-chat",
+  "title": "Super Bot 通过 CLI 配置模型、发问、读历史",
+  "kind": "superagent",
+  "notes": "The App's own service, configured the way a person configures it: no shortcut, no pre-seeded configuration file.",
+  "superagent": true,
+  "toolGroups": ["core"],
+  "timeoutMs": 120000,
+  "model": {
+    "script": [
+      {
+        "text": "收到，我在。"
+      }
+    ],
+    "repeatLast": true
+  },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": ["superagent", "health", "--json"],
+      "json": {
+        "service": "eagle-superagent",
+        "modelReady": false
+      }
+    },
+    {
+      "kind": "cli",
+      "args": ["superagent", "config", "show"],
+      "stdoutContains": "尚未配置"
+    },
+    {
+      "kind": "cli",
+      "args": ["superagent", "config", "set", "--stdin", "--json"],
+      "stdin": "{\"baseUrl\":\"{{model.url}}/v1\",\"model\":\"eval-model\",\"thinkingLevel\":\"low\",\"apiKey\":\"eval-key\"}",
+      "json": {
+        "configuration": {
+          "model": "eval-model",
+          "hasApiKey": true,
+          "thinkingLevel": "low"
+        }
+      },
+      "capture": "configured"
+    },
+    {
+      "kind": "cli",
+      "args": ["superagent", "health"],
+      "stdoutContains": "模型已配置"
+    },
+    {
+      "kind": "cli",
+      "args": [
+        "superagent",
+        "chat",
+        "send",
+        "--text",
+        "你好，Super Bot",
+        "--wait",
+        "--timeout",
+        "60",
+        "--json"
+      ],
+      "stdoutContains": "收到，我在。",
+      "capture": "reply"
+    },
+    {
+      "kind": "cli",
+      "args": ["superagent", "chat", "history", "--limit", "5", "--json"],
+      "stdoutContains": "收到，我在。"
+    }
+  ],
+  "expect": {
+    "modelSaw": ["你好，Super Bot"]
+  }
+}

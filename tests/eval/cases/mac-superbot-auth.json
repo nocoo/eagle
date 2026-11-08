@@ -1,0 +1,49 @@
+{
+  "id": "mac-superbot-auth",
+  "title": "Super Bot 的拒绝面：未配置不发问、错凭据退出 3",
+  "kind": "superagent",
+  "notes": "A service that cannot answer must say so, and a credential it does not own must be refused before any command runs.",
+  "superagent": true,
+  "toolGroups": ["core"],
+  "timeoutMs": 90000,
+  "model": {
+    "script": [{ "text": "不应答。" }],
+    "repeatLast": true
+  },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": [
+        "superagent",
+        "chat",
+        "send",
+        "--text",
+        "你好",
+        "--wait",
+        "--json"
+      ],
+      "expectExit": 1,
+      "stderrContains": "unconfigured"
+    },
+    {
+      "kind": "cli",
+      "args": ["superagent", "health", "--json"],
+      "env": {
+        "SUPERAGENT_TOKEN": "ababababababababababababababababababababababababababababababababab"
+      },
+      "expectExit": 3,
+      "stderrContains": "凭据不可用",
+      "stdoutExcludes": "eagle-superagent"
+    },
+    {
+      "kind": "cli",
+      "args": ["superagent", "config", "show"],
+      "env": {
+        "SUPERAGENT_ROOT": "{{superagent.root}}-not-ours",
+        "SUPERAGENT_TOKEN": null
+      },
+      "expectExit": 3,
+      "stderrContains": "凭据不可用"
+    }
+  ]
+}
