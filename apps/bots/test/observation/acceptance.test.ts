@@ -370,3 +370,56 @@ test("SG002-A07: an abandoned read cancels only itself, and an unknown kind is n
     await store.cleanup();
   }
 });
+
+test("SG002-R06: an attachment turn keeps its text and never leaks a path", async () => {
+  const store = await realStore();
+  const opened = await bench([{ id: "b_real", title: "Real" }]);
+  try {
+    await installStore(opened, "b_real", store.dir);
+    const path = join(opened.botsDir, "b_real", "session.sqlite");
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(path);
+    db.prepare(
+      "INSERT INTO entries (id, conversation_id, head, commit_seq, record) VALUES (?, 1, NULL, 1, ?)",
+    ).run(
+      900200,
+      JSON.stringify({
+        kind: "bots.user.files",
+        model: [
+          { role: "user", content: [{ type: "text", text: "/private/tmp/secret/leak.txt" }] },
+        ],
+        data: {
+          text: "看看这个日志",
+          files: [
+            {
+              id: `f_${"a".repeat(64)}`,
+              name: "build.log",
+              mimeType: "text/plain",
+              size: 12,
+              sha256: "a".repeat(64),
+            },
+          ],
+        },
+      }),
+    );
+    db.close();
+
+    const page = await opened.call("/v1/observe/history?botId=b_real&limit=200");
+    const messages = page.body.messages as {
+      kind: string;
+      blocks: { type: string; text: string }[];
+    }[];
+    const mine = messages.filter((message) => message.kind === "bots.user.files");
+    assert.equal(mine.length, 1, "the attachment turn is projected, not omitted");
+    const text = mine[0]?.blocks.map((block) => block.text).join("\n") ?? "";
+    assert.ok(text.includes("看看这个日志"), "the admitted text survives");
+    assert.ok(text.includes("build.log"), "the attachment is summarized by name");
+    assert.equal(text.includes("/private/tmp"), false, "a stored path never reaches the wire");
+    const coverage = page.body.coverage as { content: string; reasons: string[] };
+    assert.equal(coverage.content, "complete", "a known kind is not an unsupported one");
+    assert.equal(coverage.reasons.includes("unsupported_kind"), false);
+  } finally {
+    await opened.close();
+    await store.cleanup();
+  }
+});

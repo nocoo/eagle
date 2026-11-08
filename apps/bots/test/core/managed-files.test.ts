@@ -27,6 +27,7 @@ import {
 const run = promisify(execFile);
 const botId = "b_0190a1b0-0000-7000-8000-000000000001";
 const uploadId = "u_0123456789abcdef";
+const retryUploadId = "u_retry_0123456789";
 
 const digest = (body: Uint8Array): string => createHash("sha256").update(body).digest("hex");
 
@@ -540,5 +541,61 @@ test("a publish failure and a concurrent winner never expose partial metadata", 
     assert.equal((await completedNames(botDir)).length, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a retry after a failed directory sync re-establishes the barrier before confirming", async () => {
+  const { botDir } = await open();
+  try {
+    let failures = 1;
+    const calls: string[] = [];
+    const flaky = new ManagedFileStore({
+      botDir: () => botDir,
+      syncDirectory: async (path) => {
+        calls.push(path);
+        if (path.endsWith("files") && failures > 0) {
+          failures -= 1;
+          throw new Error("ENOSPC");
+        }
+      },
+    });
+    const declaration = {
+      botId,
+      uploadId: retryUploadId,
+      name: "retry.bin",
+      size: 0,
+      sha256: digest(new Uint8Array()),
+    };
+    await assert.rejects(
+      flaky.declare(declaration),
+      (error) => error instanceof ManagedFileError && error.reason === "storage_failed",
+    );
+    // The manifest is visible even though its directory sync failed.
+    const pending = (await readdir(join(botDir, "files"))).filter((name) =>
+      name.endsWith(".upload.json"),
+    );
+    assert.equal(pending.length, 1, "the renamed manifest outlived its failed sync");
+
+    const before = calls.length;
+    const retried = await flaky.declare(declaration);
+    assert.equal(retried.status, "uploading");
+    assert.ok(
+      calls.length > before,
+      "confirming an existing record syncs the directory again instead of assuming it",
+    );
+
+    // A store whose barrier keeps failing must keep refusing, not report a durable record.
+    const always = new ManagedFileStore({
+      botDir: () => botDir,
+      syncDirectory: async (path) => {
+        if (path.endsWith("files")) throw new Error("ENOSPC");
+      },
+    });
+    await assert.rejects(
+      always.declare(declaration),
+      (error) => error instanceof ManagedFileError && error.reason === "storage_failed",
+    );
+  } finally {
+    await rm(join(botDir, ".."), { recursive: true, force: true });
   }
 });

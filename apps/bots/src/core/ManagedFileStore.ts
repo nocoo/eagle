@@ -240,6 +240,10 @@ export class ManagedFileStore {
             "upload id is already declared differently",
           );
         }
+        // The record is visible but a previous attempt may have failed after its rename and
+        // before the directory sync. Confirming it now without a barrier would let a retry
+        // claim durability the disk never had.
+        await this.#confirmSynced(files);
         return { file: complete, created: false };
       }
       const pendingPath = join(files, `${id}.upload.json`);
@@ -252,6 +256,7 @@ export class ManagedFileStore {
             "upload id is already declared differently",
           );
         }
+        await this.#confirmSynced(files);
         return { file: pending, created: false };
       }
       const record: ManagedFile = {
@@ -353,6 +358,7 @@ export class ManagedFileStore {
 
         if (existing !== undefined) {
           await this.#verifyContent(join(files, `${id}.bin`), existing);
+          await this.#confirmSynced(files);
           return { file: existing, created: false };
         }
 
@@ -529,12 +535,25 @@ export class ManagedFileStore {
 
   async #openRegular(path: string): Promise<FileHandle> {
     const handle = await open(path, OPEN_READ);
-    const stats = await handle.stat();
-    if (!stats.isFile()) {
+    try {
+      const stats = await handle.stat();
+      if (!stats.isFile()) throw storage();
+      return handle;
+    } catch (error) {
+      // Every failure after `open` owns the descriptor: leaking it would let a corrupted
+      // file exhaust the daemon's handles one read at a time.
       await close(handle);
-      throw storage();
+      throw error;
     }
-    return handle;
+  }
+
+  /** A retry's durability barrier: same failure mapping as the write path. */
+  async #confirmSynced(files: string): Promise<void> {
+    try {
+      await this.#syncDirectory(files);
+    } catch (error) {
+      throw storage(error);
+    }
   }
 
   async #syncDirectoryReal(path: string): Promise<void> {

@@ -88,8 +88,11 @@ export type SnapshotFacts = {
 };
 
 /** The kinds the contract maps into messages; everything else is an omission. */
+const USER_FILES_ENTRY = "bots.user.files";
+
 const MAPPED_KINDS = new Set([
   "pi.user",
+  "bots.user.files",
   "pi.assistant",
   "pi.tool-result",
   "pi.compaction",
@@ -111,7 +114,40 @@ type Row = {
   readonly record: string;
 };
 
-type EntryRecord = { readonly kind?: string; readonly model?: readonly Record<string, unknown>[] };
+type EntryRecord = {
+  readonly kind?: string;
+  readonly model?: readonly Record<string, unknown>[];
+  /** The admitted input behind a `bots.user.files` entry: text plus file references. */
+  readonly data?: unknown;
+};
+
+/**
+ * An attachment turn as its own message. The stored `model` content is never used: it carries
+ * paths this contract must not expose. The text and the refusal rules mirror the chat
+ * projection, and the summary names files without their location.
+ */
+const userFilesMessage = (
+  record: EntryRecord,
+): { model: Record<string, unknown>; summary: string } | undefined => {
+  const data = record.data;
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return undefined;
+  const value = data as { text?: unknown; files?: unknown };
+  if (typeof value.text !== "string" || !Array.isArray(value.files)) return undefined;
+  const names: string[] = [];
+  for (const candidate of value.files.slice(0, 16)) {
+    if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) {
+      return undefined;
+    }
+    const name = (candidate as { name?: unknown }).name;
+    if (typeof name !== "string" || name.length === 0 || name.length > 255) return undefined;
+    names.push(name);
+  }
+  if (names.length > Buffer.byteLength(value.text, "utf8") + 4096) return undefined;
+  return {
+    model: { role: "user", content: value.text },
+    summary: names.length === 0 ? "" : `附件 ${names.length} 个：${names.join("、")}`,
+  };
+};
 
 const parseRecord = (row: Row): EntryRecord | undefined => {
   try {
@@ -387,7 +423,11 @@ export const readHistoryPage = async (
       }
       const record = parseRecord(row);
       const kind = record?.kind;
-      const model = record?.model?.[0];
+      const attachment =
+        record === undefined || record.kind !== USER_FILES_ENTRY
+          ? undefined
+          : userFilesMessage(record);
+      const model = attachment === undefined ? record?.model?.[0] : attachment.model;
       if (kind === "pi.compaction") {
         compactions.push({
           entryId: wired(row.id),
@@ -420,7 +460,17 @@ export const readHistoryPage = async (
       hiddenBlocks += hidden.hiddenBlocks;
       const delivery = trimForDelivery(hidden.message);
       if (delivery !== undefined) trimmed += 1;
-      const final = delivery ?? hidden.message;
+      const withSummary =
+        attachment === undefined || attachment.summary.length === 0
+          ? (delivery ?? hidden.message)
+          : {
+              ...(delivery ?? hidden.message),
+              blocks: [
+                ...(delivery ?? hidden.message).blocks,
+                { type: "text" as const, text: attachment.summary },
+              ],
+            };
+      const final = withSummary;
       bytes += messageBytes(final);
       messages.push({
         entryId: final.id,
