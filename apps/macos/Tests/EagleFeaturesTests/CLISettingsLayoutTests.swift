@@ -64,7 +64,10 @@ struct CLISettingsLayoutTests {
     #expect(
       NSPasteboard.general.string(forType: .string) == "eagle-dev --skill",
       "the click copied the command")
-    try await waitUntil("the label comes back so it can be pressed again") {
+    // The revert is a two-second main-actor timer. On a runner running the whole suite in
+    // parallel the main actor is saturated, so this state is waited for far longer than the
+    // timer: the deadline is patience, not a threshold the control has to meet.
+    try await waitUntil("the label comes back so it can be pressed again", timeoutMs: 20_000) {
       entries(host).compactMap(title).contains("复制命令")
     }
   }
@@ -76,7 +79,7 @@ struct CLISettingsLayoutTests {
     let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000)
     while Date() < deadline {
       if condition() { return }
-      try await Task.sleep(for: .milliseconds(20))
+      try await Task.sleep(for: .milliseconds(50))
     }
     Issue.record("timed out waiting for \(what)")
   }
