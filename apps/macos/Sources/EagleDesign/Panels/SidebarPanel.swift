@@ -206,7 +206,10 @@ public struct SidebarPanel: View {
 
   @ViewBuilder
   private func sectionHeader(_ section: SidebarSection, isFirst: Bool) -> some View {
-    if section.role == .ungrouped || section.role == .system {
+    if section.role == .system {
+      // The permanent Super Bot is one row, not a group: no band, no collapse, no gap.
+      EmptyView()
+    } else if section.role == .ungrouped {
       sectionHeaderContent(section, isFirst: isFirst)
     } else {
       sectionHeaderContent(section, isFirst: isFirst)
@@ -246,11 +249,7 @@ public struct SidebarPanel: View {
               }
               .onSubmit { commitSectionRename(section.id) }
           } else {
-            // The Super Bot section is one permanent row: a title band above it would be a
-            // section the person cannot rename, collapse or delete.
-            if section.role != .system {
-              SectionLabel(section.title, unreadCount: section.unreadCount)
-            }
+            SectionLabel(section.title, unreadCount: section.unreadCount)
           }
         }
       }
