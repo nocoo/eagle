@@ -320,7 +320,10 @@ public struct SidebarPanel: View {
   @ViewBuilder
   private func selectableRow(_ item: SidebarItem, role: SidebarSection.Role) -> some View {
     Button {
-      withAnimation(Theme.Motion.selection) { onSelect(item.id) }
+      // The row animates its own highlight and the list animates its own scroll, so selecting a
+      // conversation stays out of the sidebar's other content: an enclosing animation would
+      // redraw the panel's unrelated parts with it.
+      onSelect(item.id)
     } label: {
       if editingItem == item.id {
         TextField("", text: $draftTitle)

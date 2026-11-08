@@ -12,6 +12,15 @@ final class EagleIconTests: XCTestCase {
     XCTAssertGreaterThan(image.size.width, 0)
   }
 
+  /// Every sidebar render asks for the mark again. A fresh `NSImage` each time replaces the
+  /// drawn contents and blanks the mark while it decodes, which is the flash a person sees
+  /// after selecting another conversation.
+  func testTheMarkIsDecodedOncePerProcess() throws {
+    XCTAssertTrue(EagleIcon.image === EagleIcon.image)
+    XCTAssertTrue(EagleIcon.releasedImage === EagleIcon.releasedImage)
+    XCTAssertTrue(EagleIcon.developmentImage === EagleIcon.developmentImage)
+  }
+
   func testASourceRunShowsTheDevelopmentMark() throws {
     XCTAssertEqual(EagleIcon.isDevelopment, Bundle.main.bundleIdentifier == nil)
     guard EagleIcon.isDevelopment else { return }

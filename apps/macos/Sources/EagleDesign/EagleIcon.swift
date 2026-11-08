@@ -9,7 +9,7 @@ public enum EagleIcon {
     // `Bundle.module` only exists in a SwiftPM build: a bare `swiftc` fixture has no resource
     // bundle, and an App comes with its own Info.plist icon instead.
     #if SWIFT_PACKAGE
-      return resource(isDevelopment ? "AppIconDev" : "AppIcon")
+      return isDevelopment ? developmentMark : releasedMark
     #else
       return nil
     #endif
@@ -18,7 +18,7 @@ public enum EagleIcon {
   /// The released mark, whatever this build is: a review of the shipped artwork reads this one.
   public static var releasedImage: NSImage? {
     #if SWIFT_PACKAGE
-      return resource("AppIcon")
+      return releasedMark
     #else
       return nil
     #endif
@@ -27,7 +27,7 @@ public enum EagleIcon {
   /// The development mark, whatever this build is: the Gallery renders it beside the release.
   public static var developmentImage: NSImage? {
     #if SWIFT_PACKAGE
-      return resource("AppIconDev")
+      return developmentMark
     #else
       return nil
     #endif
@@ -39,6 +39,12 @@ public enum EagleIcon {
   }
 
   #if SWIFT_PACKAGE
+    // Each mark is decoded once, for the life of the process. The sidebar asks for it on every
+    // render; handing SwiftUI a new `NSImage` each time replaces the layer's contents and blanks
+    // the mark for a frame while it decodes again.
+    private static let releasedMark = resource("AppIcon")
+    private static let developmentMark = resource("AppIconDev")
+
     private static func resource(_ name: String) -> NSImage? {
       Bundle.module.url(forResource: name, withExtension: "icns")
         .flatMap { NSImage(contentsOf: $0) }
