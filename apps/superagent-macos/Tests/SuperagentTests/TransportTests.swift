@@ -102,6 +102,11 @@ final class ServiceFixture {
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     process.arguments = ["node", "scripts/serve.ts", "--root", root.path, "--port", "0"]
     process.currentDirectoryURL = repository.appendingPathComponent("apps/superagent")
+    // The fixture owns its own provider configuration: an empty endpoint is "unconfigured",
+    // so a developer's running daemon cannot change what this test observes.
+    process.environment = ProcessInfo.processInfo.environment.merging(
+      ["BOTS_OBSERVATION_ENDPOINT": "", "BOTS_OBSERVATION_TOKEN_FILE": ""]
+    ) { _, fixture in fixture }
     let output = Pipe()
     process.standardOutput = output
     process.standardError = FileHandle.nullDevice

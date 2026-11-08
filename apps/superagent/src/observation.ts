@@ -142,6 +142,9 @@ export class ObservationClient {
     | { ok: true; body: Record<string, unknown> }
     | { ok: false; state: ObservationState; detail: string }
   > {
+    if (this.#options.endpoint === "" || this.#options.tokenFile === "") {
+      return { ok: false, state: "unconfigured", detail: "no_provider" };
+    }
     const token = await readObservationToken(this.#options.tokenFile);
     if (token === undefined) return { ok: false, state: "unconfigured", detail: "no_credential" };
     let response: Response;
