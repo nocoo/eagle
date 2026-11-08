@@ -1799,3 +1799,32 @@ presentation states, keep one request identity through uncertainty, serialize th
 outbox across writers, and fence start/stop and late async completions with a
 generation. An authenticated health proof, not public JSON, is what licenses
 adopting an already-running service.
+
+## 2026-11-08 — managed file groundwork review: what the merge left open
+
+The managed-file PR (#135) was merged with its commits preserved after an independent
+read-only review. Six findings; four are now fixed on `main`, and the fifth is narrowed to a
+documented limit:
+
+- Fixed: a retry that confirmed an existing manifest or completion skipped the directory sync
+  barrier, so a failed-then-retried declare could claim durability the disk never had. The
+  confirm paths now re-sync and map a barrier failure to `storage_failed`.
+- Fixed: `#openRegular` leaked its descriptor when `stat` threw after a successful open.
+- Fixed: an attachment turn (`bots.user.files`) was omitted from observation history —
+  including its ordinary text — because the projection only knew the pi kinds. It is now
+  projected from the admitted text and a bounded file-name summary, never from the stored
+  `model.content` that carries local paths.
+- Fixed: the store was unbounded and leaked temporaries. A Bot now refuses a declaration that
+  would pass its own byte/count room before writing, and a boot-time sweep reclaims
+  temporaries and declarations older than a day. The sweep is not a quota on `trash/`, which
+  still grows with deleted Bots.
+- Narrowed: directory operations still resolve paths (Node has no `openat`). The store now
+  opens the files directory with `O_DIRECTORY|O_NOFOLLOW`, tightens it through the handle,
+  and compares the opened inode with the resolved path, which catches a symlinked or swapped
+  directory at use. An ancestor replaced *after* that check is out of reach and requires local
+  write access to the root; that remains a recorded limit rather than a claim.
+
+Lesson: a storage review has to include the read paths of *other* products. The attachment
+omission was not a file-storage bug at all — it was a projection that silently reported
+"unsupported kind" for a kind the same commit introduced, and only a cross-surface check
+found it.

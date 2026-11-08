@@ -880,3 +880,25 @@ source.
 Next broken hop: **A15 needs the owner's eyes** — nobody has looked at the rendered strip,
 so the native half is unverified. Nothing else in the SG-002 matrix is unrun, and no release
 artifact (packaged App, published version) exists for this milestone.
+
+## 2026-11-08 14:10 — managed file groundwork merged, review findings closed on main
+
+Verified:
+
+- PR #135 merged with `--merge` (commit tree preserved), after marking it ready; `main` is at
+  the merge commit plus five fix commits.
+- Independent read-only review (base `d31bc788`, head `3893484a`) returned six findings. Fixed
+  on `main`: the missing directory-sync barrier on confirm-retry paths, the descriptor leak in
+  `#openRegular`, the omitted `bots.user.files` observation projection, unbounded per-Bot
+  storage with no crash cleanup, and a download that could hold the Bot lease forever.
+  Narrowed: directory path resolution (no `openat` in Node) now verifies identity through an
+  opened handle and refuses a symlinked/loose/foreign directory; an ancestor swapped after the
+  check stays a documented limit.
+- Evidence: attachment turns keep their text and never leak a stored path; a declared file that
+  would pass the Bot's room is refused before anything is written; a retry after a failed
+  directory sync re-syncs; an abandoned download leaves the next download serving.
+- `apps/bots`: `npm run check` green, **1177** tests, 95.33 / 88.13 / 90.90.
+
+Next broken hop: no delete or reference GC exists, so `files/` and `trash/` only grow; the
+native composer has no attachment entry yet, and no live-provider or rendered-file journey has
+been run.

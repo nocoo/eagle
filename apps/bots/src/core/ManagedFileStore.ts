@@ -29,6 +29,7 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const MIME = /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$/;
 const CHUNK_BYTES = 64 * 1024;
 const OPEN_READ = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
+const OPEN_DIRECTORY = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
 const OPEN_PART =
   constants.O_WRONLY |
   constants.O_CREAT |
@@ -499,9 +500,7 @@ export class ManagedFileStore {
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
         }
-        const stats = await lstat(files);
-        if (!stats.isDirectory() || stats.isSymbolicLink()) throw storage();
-        await chmod(files, 0o700);
+        await this.#assertPrivateDirectory(files);
         if (!this.#syncedDirectories.has(bot)) {
           await this.#syncDirectory(bot);
           this.#syncedDirectories.add(bot);
@@ -521,6 +520,39 @@ export class ManagedFileStore {
       if (this.#directoryQueues.get(botId) === settled) this.#directoryQueues.delete(botId);
     });
     return work;
+  }
+
+  /**
+   * The directory must be a real directory, owned by this user, with no group or world access.
+   * The identity is read through an open handle and compared with the path, so a directory
+   * swapped between the check and the write is noticed here rather than used silently. Node
+   * exposes no `openat`, so an ancestor replaced by a symlink after this point is out of reach:
+   * that needs local write access to the root and is recorded as a known limit, not claimed as
+   * solved.
+   */
+  async #assertPrivateDirectory(path: string): Promise<void> {
+    const handle = await open(path, OPEN_DIRECTORY).catch(() => undefined);
+    if (handle === undefined) throw storage();
+    try {
+      // Tighten through the handle first: a directory someone loosened is repaired, and a
+      // symlink never reaches `chmod` because the open above already refused it.
+      await handle.chmod(0o700);
+      const opened = await handle.stat();
+      const resolved = await lstat(path).catch(() => undefined);
+      if (
+        !opened.isDirectory() ||
+        resolved === undefined ||
+        !resolved.isDirectory() ||
+        resolved.dev !== opened.dev ||
+        resolved.ino !== opened.ino ||
+        (opened.mode & 0o077) !== 0 ||
+        (typeof process.getuid === "function" && opened.uid !== process.getuid())
+      ) {
+        throw storage();
+      }
+    } finally {
+      await close(handle);
+    }
   }
 
   async #readMetadata(path: string): Promise<ManagedFile | undefined> {

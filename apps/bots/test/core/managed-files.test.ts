@@ -663,3 +663,30 @@ test("the sweep reclaims abandoned temporaries and keeps fresh ones", async () =
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("a files directory that is a symlink, loose or foreign is refused", async () => {
+  const { root, botDir } = await open();
+  try {
+    const store = new ManagedFileStore({ botDir: () => botDir });
+    const body = new Uint8Array();
+    const declaration = { botId, uploadId, name: "a.bin", size: 0, sha256: digest(body) };
+
+    // A symlinked `files` directory is not a directory this store may write into.
+    await mkdir(join(root, "outside"), { recursive: true, mode: 0o700 });
+    await rm(join(botDir, "files"), { recursive: true, force: true });
+    await symlink(join(root, "outside"), join(botDir, "files"));
+    await assert.rejects(
+      store.declare(declaration),
+      (error) => error instanceof ManagedFileError && error.reason === "storage_failed",
+    );
+    assert.deepEqual(await readdir(join(root, "outside")), [], "nothing landed outside the Bot");
+
+    // A group-readable directory is tightened on use, and a foreign owner is refused.
+    await rm(join(botDir, "files"), { force: true });
+    await mkdir(join(botDir, "files"), { recursive: true, mode: 0o755 });
+    await store.declare(declaration);
+    assert.equal((await stat(join(botDir, "files"))).mode & 0o777, 0o700);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
