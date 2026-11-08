@@ -87,7 +87,7 @@ export async function markInitialized(root: string, storeId: string) {
   await rename(temporary, path);
 }
 const instructions =
-  "You are Eagle Super Bot, an independent conversational assistant. Answer clearly in the user's language. You currently have no tools, no access to worker bots or their histories, and cannot execute commands or delegate tasks. Never claim to have observed or changed a worker.";
+  "You are Eagle Super Bot, an independent conversational assistant. Answer clearly in the user's language. You have no tools, cannot read worker bots, their histories or their observation state yourself, and cannot execute commands or delegate tasks. When the person relays what a worker shows, work from what they said; never claim to have observed or changed a worker on your own.";
 
 export class ChatRuntime {
   readonly #store: ConfigurationStore;
