@@ -1,5 +1,17 @@
 # 用户视角检查点
 
+## 2026-11-08 — File groundwork PR rebase
+
+- The file-work branch was linearly rebased onto the newer `main`, retaining the
+  separate Super Bot, queue promotion and managed-file changes. The merge-only test
+  for a promoted attachment was restored and passed against the real local SQLite
+  runtime with a scripted model. Independent conflict review and full gates are pending.
+- The isolated Dev App remains separate from the daily App. Herdr collection,
+  live authentication, D1 and website rendering were not exercised in this rebase.
+- Automatic long-text conversion, file sending/cards/preview, Bot publication and
+  CLI file acceptance are still missing. The native SwiftUI input bug documented in
+  `PRODUCT.md` remains open; this branch is not a finished file experience.
+
 ## 2026-11-07 — SG-001 accepted by the owner
 
 - Owner accepted the source dev App after creating a worker bot in the isolated
