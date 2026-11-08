@@ -115,6 +115,9 @@ public struct Commands: Sendable {
     case "chat":
       try await chat(tokens: Array(tokens.dropFirst()))
       return
+    case "triggers":
+      try await triggers(Array(tokens.dropFirst()))
+      return
     case "usage":
       try await usage(tokens: Array(tokens.dropFirst()))
       return
@@ -134,6 +137,7 @@ public struct Commands: Sendable {
       \(config.binaryName) bots list|show|create|update|move|delete
       \(config.binaryName) groups list|create|rename|order|delete
       \(config.binaryName) chat send|watch|history|answer|secret|abort <bot>
+      \(config.binaryName) triggers list|enable|disable|fire <bot> [name]
       \(config.binaryName) usage [--days N]
 
     Every command takes --json. Destructive commands need --yes.
@@ -727,6 +731,107 @@ public struct Commands: Sendable {
   }
 
   // MARK: - Resolution and formatting
+
+  /// Triggers are created by a Bot's own tools; a person turns them on, off and fires a
+  /// webhook one by hand. Creation is deliberately absent: a trigger is a Bot's decision.
+  private func triggers(_ tokens: [String]) async throws {
+    guard let sub = tokens.first else {
+      throw CLIError.usage("triggers list|enable|disable|fire <bot> [name]")
+    }
+    let rest = Array(tokens.dropFirst())
+    switch sub {
+    case "list": try await triggerList(rest)
+    case "enable": try await triggerSet(rest, enabled: true)
+    case "disable": try await triggerSet(rest, enabled: false)
+    case "fire": try await triggerFire(rest)
+    default: throw CLIError.usage("unknown triggers command \(sub)")
+    }
+  }
+
+  private func triggerList(_ tokens: [String]) async throws {
+    let arguments = try Arguments.parse(tokens, valueFlags: [], switchFlags: ["json"])
+    let bot = try await resolve(arguments.positional(0, "a bot"))
+    let botId = bot["id"] as? String ?? ""
+    let body = try await client.request("GET", "v1/triggers?botId=\(botId)")
+    let triggers = body["triggers"] as? [JSONObject] ?? []
+    if printer.wantsJSON(arguments) {
+      printer.json(body)
+      return
+    }
+    if triggers.isEmpty {
+      printer.text("no triggers")
+      return
+    }
+    for trigger in triggers {
+      let enabled = trigger["enabled"] as? Bool == true ? "on" : "off"
+      let kind = trigger["kind"] as? String ?? "?"
+      let name = trigger["name"] as? String ?? "?"
+      let id = trigger["id"] as? String ?? "?"
+      let last = trigger["lastRunAt"] as? String
+      printer.text("\(name) · \(kind) · \(enabled) · \(id)" + (last.map { " · \($0)" } ?? ""))
+    }
+  }
+
+  /// One trigger of this bot, by id or exact name: a fire must never hit a guessed row.
+  private func trigger(
+    _ name: String, of botId: String
+  ) async throws -> JSONObject {
+    let body = try await client.request("GET", "v1/triggers?botId=\(botId)")
+    let triggers = body["triggers"] as? [JSONObject] ?? []
+    if let byId = triggers.first(where: { $0["id"] as? String == name }) { return byId }
+    let byName = triggers.filter { $0["name"] as? String == name }
+    if byName.count == 1 { return byName[0] }
+    if byName.count > 1 {
+      throw CLIError.usage("several triggers are named \(name): use an id from `triggers list`")
+    }
+    throw CLIError.refused(kind: "unknown_trigger", message: "no trigger matches \(name)")
+  }
+
+  private func triggerSet(_ tokens: [String], enabled: Bool) async throws {
+    let arguments = try Arguments.parse(tokens, valueFlags: [], switchFlags: ["json"])
+    let bot = try await resolve(arguments.positional(0, "a bot"))
+    let botId = bot["id"] as? String ?? ""
+    let trigger = try await trigger(arguments.positional(1, "a trigger"), of: botId)
+    let triggerId = trigger["id"] as? String ?? ""
+    let body = try await client.request(
+      "PATCH", "v1/triggers/\(botId)/\(triggerId)", body: ["enabled": enabled])
+    if printer.wantsJSON(arguments) {
+      printer.json(body)
+      return
+    }
+    printer.text("\(enabled ? "已启用" : "已停用") · \(trigger["name"] as? String ?? triggerId)")
+  }
+
+  private func triggerFire(_ tokens: [String]) async throws {
+    let arguments = try Arguments.parse(
+      tokens, valueFlags: ["body"], switchFlags: ["json", "stdin"])
+    let bot = try await resolve(arguments.positional(0, "a bot"))
+    let botId = bot["id"] as? String ?? ""
+    let trigger = try await trigger(arguments.positional(1, "a trigger"), of: botId)
+    guard trigger["kind"] as? String == "webhook" else {
+      throw CLIError.usage("only a webhook trigger can be fired by hand")
+    }
+    guard let triggerId = trigger["id"] as? String, let token = trigger["token"] as? String else {
+      throw CLIError.refused(kind: "unknown_trigger", message: "this trigger has no webhook")
+    }
+    let text: String
+    if arguments.switches.contains("stdin") {
+      let data = FileHandle.standardInput.readDataToEndOfFile()
+      text = String(decoding: data, as: UTF8.self)
+    } else {
+      text = arguments.value("body") ?? ""
+    }
+    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      text.utf8.count <= 64 * 1024
+    else { throw CLIError.usage("--body or --stdin must carry 1..65536 bytes of text") }
+    let body = try await client.request(
+      "POST", "v1/triggers/\(botId)/\(triggerId)", body: ["text": text], token: token)
+    if printer.wantsJSON(arguments) {
+      printer.json(body)
+      return
+    }
+    printer.text("已投递 · \(trigger["name"] as? String ?? triggerId)")
+  }
 
   /// A bot may be named by its id or by an exact title; ids come from the daemon, never
   /// from guessing.

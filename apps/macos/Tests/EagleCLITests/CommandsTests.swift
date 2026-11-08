@@ -124,6 +124,37 @@ struct CommandsTests {
     ],"groups":[{"id":"g_1","title":"工作"}]}
     """#
 
+  @Test("a hand-fired webhook presents the trigger's own token, never the CLI's")
+  func fireTrigger() async {
+    StubTransport.calls = []
+    StubTransport.answers = [
+      "/v1/bots": (200, Self.catalog),
+      "/v1/triggers": (
+        200,
+        #"{"triggers":[{"id":"t_abcd2ef3gh","kind":"webhook","name":"hook","enabled":true,"token":"trig_secret"}]}"#
+      ),
+      "/v1/triggers/b_1/t_abcd2ef3gh": (202, #"{"delivery":{"id":"d_1"}}"#),
+    ]
+    let fired = await run(["triggers", "fire", "b_1", "hook", "--body", "hello"])
+    #expect(fired.code == 0)
+    let delivery = StubTransport.calls.first { $0.method == "POST" }
+    #expect(
+      delivery?.bearer == "Bearer trig_secret",
+      "the ingress answers to the trigger, not the CLI")
+    #expect(delivery?.body?.contains("hello") == true)
+
+    StubTransport.calls = []
+    let disabled = await run(["triggers", "disable", "b_1", "hook", "--json"])
+    #expect(disabled.code == 0)
+    let patch = StubTransport.calls.first { $0.method == "PATCH" }
+    #expect(patch?.path == "/v1/triggers/b_1/t_abcd2ef3gh")
+    #expect(patch?.body?.contains("false") == true)
+
+    let unknown = await run(["triggers", "fire", "b_1", "nope", "--body", "hello"])
+    #expect(unknown.code == 1)
+    #expect(unknown.err.joined().contains("no trigger matches"))
+  }
+
   @Test("only creation may omit the appearance tint")
   func creationTint() async throws {
     StubTransport.calls = []

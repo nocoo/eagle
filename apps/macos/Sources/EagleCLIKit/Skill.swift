@@ -56,6 +56,9 @@ public enum Skill {
       \(binaryName) chat history <bot> [--limit N] [--before e_12]
       \(binaryName) chat secret <bot> --entry e_12 --key K --stdin|--skip [--call-index N]
       \(binaryName) chat abort <bot>
+      \(binaryName) triggers list <bot>
+      \(binaryName) triggers enable|disable <bot> <trigger>
+      \(binaryName) triggers fire <bot> <trigger> --body T|--stdin
       \(binaryName) usage [--days N]
       ```
 

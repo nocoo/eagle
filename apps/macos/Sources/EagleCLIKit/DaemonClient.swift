@@ -57,8 +57,13 @@ public struct DaemonClient: Sendable {
     _ method: String,
     _ path: String,
     body: JSONObject? = nil,
-    requiresAuth: Bool = true
+    requiresAuth: Bool = true,
+    token: String? = nil
   ) async throws -> JSONObject {
+    // A webhook ingress answers to the trigger's own token, never the CLI's credential.
+    if token != nil {
+      return try await send(method, path, body: body, bearer: token ?? "")
+    }
     if requiresAuth {
       if let failure = Self.credentialFailure(config) { throw failure }
       if (config.token ?? "").isEmpty {
@@ -73,11 +78,22 @@ public struct DaemonClient: Sendable {
       path.contains("?")
       ? URL(string: "\(config.baseURL.absoluteString)/\(path)") ?? config.baseURL
       : config.baseURL.appendingPathComponent(path)
+    return try await send(method, path, body: body, bearer: config.token ?? "", url: url)
+  }
+
+  private func send(
+    _ method: String, _ path: String, body: JSONObject?, bearer: String, url: URL? = nil
+  ) async throws -> JSONObject {
+    let url =
+      url
+      ?? (path.contains("?")
+        ? URL(string: "\(config.baseURL.absoluteString)/\(path)") ?? config.baseURL
+        : config.baseURL.appendingPathComponent(path))
     var request = URLRequest(url: url)
     request.httpMethod = method
     request.timeoutInterval = 15
-    if let token = config.token, !token.isEmpty {
-      request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
+    if !bearer.isEmpty {
+      request.setValue("Bearer \(bearer)", forHTTPHeaderField: "authorization")
     }
     if let body {
       request.setValue("application/json", forHTTPHeaderField: "content-type")

@@ -106,6 +106,9 @@ come from the daemon; a bot may also be named by its exact title when that title
 | `eagle chat answer <bot> --entry e_12 --choose L[,L] \| --skip` | write | Answers an `ask_user` card: the daemon composes the hidden message the bot reads |
 | `eagle chat secret <bot> --entry e_12 --key K --stdin \| --skip [--call-index N]` | write | Answers a password card; the value is read from piped standard input, never from an argument |
 | `eagle chat abort <bot>` | write | Withdraws the running input and the queue |
+| `eagle triggers list <bot>` | read | `GET /v1/triggers?botId=`; name, kind, enabled, id and last run |
+| `eagle triggers enable\|disable <bot> <trigger>` | write | `PATCH /v1/triggers/:bot/:trigger` with `{ "enabled": … }` |
+| `eagle triggers fire <bot> <trigger> --body T \| --stdin` | write | Posts a webhook delivery as JSON `{ "text": … }`; the request carries the **trigger's own** token, never the CLI's credential |
 | `eagle usage [--days N]` | read | Token and call totals over the retention window |
 
 A card from `ask_user` is printed by `chat watch` and `chat send --wait` as one line per
@@ -129,6 +132,12 @@ submission's terminal record. A timeout ends only the CLI's wait: the daemon con
 working, and the CLI never aborts or resends the input. The command exits 1 on timeout.
 For an unanswered submission, it exits 1 and reports the daemon's reason. In JSON mode,
 submission frames, including the terminal failure, are printed before the command exits.
+
+A trigger is created by the Bot's own `trigger_create` tool, never by a person and never by
+this CLI: a trigger is a standing instruction the Bot decided on. `triggers` only lists what
+exists, flips the switch, and fires a webhook delivery by hand. `fire` refuses a schedule
+trigger (only time fires it) and a trigger whose token is absent; its 202 means the delivery
+was accepted, not that the Bot has answered yet.
 
 `--json` shapes follow PROTOCOL.md: `{ "bots": [...] }`, `{ "bot": {...} }`,
 `{ "groups": [...] }`, `{ "usage": {...} }`, and for chat one object per line:
@@ -230,7 +239,9 @@ the file, and the file wins over `~/.config/eagle/eagle-dev.json`.
 
 From the repository root, `npm --prefix apps/bots run eval` builds this CLI and runs every
 scripted case against isolated temporary daemons. `npm --prefix apps/bots run eval:cli`
-runs the CLI cases only. Fix failures and rerun the complete suite; do not use real secrets.
+runs the CLI cases only, and `npm --prefix apps/bots run eval:mac` the macOS surfaces — the
+Super Bot and the tool groups a person reaches through this CLI. Fix failures and rerun the
+complete suite; do not use real secrets.
 The reusable three-round workflow is `.agents/skills/eagle-cli-eval/SKILL.md`.
 ```
 
