@@ -256,7 +256,7 @@ public struct CLISettingsView: View {
     guard let date = formatter.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else {
       return iso
     }
-    return date.formatted(date: .abbreviated, time: .shortened)
+    return RelativeMoment.short(date)
   }
 
   private var skillCard: some View {

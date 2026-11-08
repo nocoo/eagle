@@ -13,7 +13,9 @@ enum SuperagentInspectorPresenter {
         value: summary.state == .ready
           ? "可见 \(summary.botsVisible) · 未知 \(summary.botsUnknown)" : "未知"),
       InspectorUsageRow(
-        id: "last-read", label: "上次读取", value: summary.lastReadAt ?? "尚未读取"),
+        id: "last-read", label: "上次读取",
+        value: summary.lastReadAt.map { RelativeMoment.short(iso: $0) } ?? "尚未读取",
+        hint: summary.lastReadAt.flatMap { RelativeMoment.exact(iso: $0) }),
     ]
     if let detail = summary.detail {
       rows.append(InspectorUsageRow(id: "reason", label: "原因", value: detail))

@@ -88,11 +88,15 @@ public struct InspectorUsageRow: Identifiable, Hashable, Sendable {
   public let id: String
   public let label: String
   public let value: String
+  /// What a hover adds: the exact instant behind a relative value, or nothing when the value
+  /// is already exact.
+  public let hint: String?
 
-  public init(id: String, label: String, value: String) {
+  public init(id: String, label: String, value: String, hint: String? = nil) {
     self.id = id
     self.label = label
     self.value = value
+    self.hint = hint
   }
 }
 

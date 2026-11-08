@@ -113,6 +113,7 @@ public struct InspectorSectionView: View {
             Text(row.value)
               .font(Theme.TypeScale.mono)
               .foregroundStyle(Theme.Palette.textPrimary)
+              .help(row.hint ?? "")
           }
         }
       }

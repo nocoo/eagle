@@ -429,10 +429,7 @@ public final class SettingsViewModel: ObservableObject {
   }
 
   private static func secretMoment(_ date: Date) -> String {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.dateFormat = "yyyy-MM-dd HH:mm"
-    return formatter.string(from: date)
+    RelativeMoment.short(date)
   }
 
   // MARK: - Providers
