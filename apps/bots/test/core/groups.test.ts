@@ -7,11 +7,11 @@ import { DEFAULT_TOOL_GROUPS, resolveToolGroups } from "../../src/core/domain.ts
 test("core, core-ui and coding cannot be turned off and unknown names are dropped", () => {
   const mandatory = ["core", "core-ui", "coding"];
   assert.deepEqual(resolveToolGroups([]), mandatory);
-  assert.deepEqual(resolveToolGroups(["herdr"]), [...mandatory, "herdr"]);
+  assert.deepEqual(resolveToolGroups(["hc"]), [...mandatory, "hc"]);
   assert.deepEqual(resolveToolGroups(["core"]), mandatory);
   assert.deepEqual(resolveToolGroups(["core-ui"]), mandatory);
   assert.deepEqual(resolveToolGroups(["coding"]), mandatory);
-  assert.deepEqual(resolveToolGroups(["herdr", "web"]), [...mandatory, "herdr"]);
+  assert.deepEqual(resolveToolGroups(["hc", "web"]), [...mandatory, "hc"]);
   assert.deepEqual(resolveToolGroups(["agents"]), [...mandatory, "agents"]);
   assert.deepEqual(resolveToolGroups(undefined), mandatory);
   assert.deepEqual(DEFAULT_TOOL_GROUPS, [
@@ -22,10 +22,10 @@ test("core, core-ui and coding cannot be turned off and unknown names are droppe
     "coding",
     "memory",
     "secrets",
-    "herdr",
     "agents",
     "trigger",
   ]);
+
   // Memory is a default because remembering is a habit, and it is still just a group.
   assert.deepEqual(resolveToolGroups(["memory"]), [...mandatory, "memory"]);
   // Secrets are a default because the card is the only way a password reaches a bot.

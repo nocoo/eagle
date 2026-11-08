@@ -58,12 +58,12 @@ test("a warm bot can enable groups it did not initially select", async () => {
       "write",
     ]);
     assert.ok(handle.configureToolGroups);
-    await handle.configureToolGroups(["herdr", "agents"], trace);
+    await handle.configureToolGroups(["hc", "agents"], trace);
     const enabled = await offered(bench, handle, events, "r_groups_2");
     assert.ok(enabled.includes("agent_spawn"));
     assert.ok(enabled.includes("tool_search"));
     assert.equal(
-      enabled.some((name) => name.startsWith("herdr_")),
+      enabled.some((name) => name.startsWith("hc_")),
       false,
       "terminal tools remain deferred",
     );
@@ -76,7 +76,7 @@ test("a warm bot can enable groups it did not initially select", async () => {
 test("disabling optional groups removes their tools and loader but retains both mandatory groups", async () => {
   const bench = await createBench();
   try {
-    const handle = await bench.runtime.open({ ...bench.spec(), toolGroups: ["herdr", "agents"] });
+    const handle = await bench.runtime.open({ ...bench.spec(), toolGroups: ["hc", "agents"] });
     const events: RuntimeEvent[] = [];
     await handle.subscribe(trace, (event) => events.push(event));
     assert.ok(handle.configureToolGroups);

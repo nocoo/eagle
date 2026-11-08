@@ -135,15 +135,18 @@ version, the instance id, the pid and a bot count, never bot content.
 | `POST` | `/v1/clients/:id/rotate` | — | `{ "client": Client, "token" }` — requires `admin` |
 | `POST` | `/v1/clients/:id/revoke` | — | `{ "client": Client }` — requires `admin`, idempotent |
 | `DELETE` | `/v1/clients/:id` | — | `204`, or `409 client_active` while the client is not revoked |
-| `PUT` | `/v1/settings` | `{ "baseUrl"?, "model"?, "apiKey"?, "provider"?, "thinkingLevel"?, "toolGroups"?, "corePrompt"?, "skills"? }` — absent keeps, `"skills": []` clears | `{ "settings": GatewaySettings, "machinePrompt": MachinePrompt \| null, "tools"?: [ToolGroup] }` |
+| `PUT` | `/v1/settings` | `{ "baseUrl"?, "model"?, "apiKey"?, "provider"?, "thinkingLevel"?, "toolGroups"?, "corePrompt"?, "skills"?, "hc"? }` — absent keeps, `"skills": []` clears | `{ "settings": GatewaySettings, "machinePrompt": MachinePrompt \| null, "tools"?: [ToolGroup] }` |
 | `POST` | `/v1/settings/test` | `{ "baseUrl"?, "model"?, "apiKey"?, "provider"? }` | `{ "result": GatewayProbe }` |
 
 ```json
 // GatewaySettings: the key is never returned, only whether one is stored.
 { "configured": true, "provider": "magpie", "baseUrl": "http://127.0.0.1:3425/v1",
   "model": "auto/gpt-6-luna", "hasApiKey": true, "thinkingLevel": "medium",
-  "toolGroups": ["persona", "machine", "core", "core-ui", "coding", "herdr", "agents", "trigger"],
+  "toolGroups": ["persona", "machine", "core", "core-ui", "coding", "agents", "trigger"],
   "corePrompt": "你是一个务实、友好的 agent：先说结论，再给依据。",
+  "hc": { "steering": { "model": "group/steering", "thinkingLevel": "high" },
+    "coding": { "model": "group/coding", "thinkingLevel": "high" },
+    "reviewing": { "model": "group/reviewing", "thinkingLevel": "xhigh" } },
   "skills": [{ "name": "humanizer-zh", "version": "1.0.0",
     "description": "去除文本中的 AI 生成痕迹。",
     "path": "~/.agents/skills/humanizer-zh" }] }
@@ -192,12 +195,20 @@ Gateway rules:
 - **Tool groups are chosen per daemon.** `toolGroups` lists the groups every bot is given:
   `persona` and `machine` (the two core prompts, see below), `core` (the `list` tool),
   `core-ui` (the person-facing `ask_user` card and `note_set` sidebar line), `coding`
-  (pi-durable's `read`, `write`, `edit`, `bash`), `herdr` (the terminal collaborator), and
-  `agents` (child conversations). `core`, `core-ui` and `coding` are mandatory: an empty
-  array selects exactly those three. A child agent (`agent_spawn`) selects `persona`,
-  `machine`, `core` and `coding` and never `core-ui`. An unknown name is a `400` and nothing
-  is written. Saving records the selection on every bot and changes what a live conversation
-  offers in place. There are no aliases for the old tool names.
+  (pi-durable's `read`, `write`, `edit`, `bash`), `hc` (the herdr-core coding agents, off by
+  default) and `agents` (child conversations), plus the optional `memory`, `secrets`,
+  `search`, `decision`, `trigger` and `peers`. `core`, `core-ui` and `coding` are mandatory:
+  an empty array selects exactly those three. A child agent (`agent_spawn`) selects
+  `persona`, `machine`, `core` and `coding` and never `core-ui`. An unknown name is a `400`
+  and nothing is written. Saving records the selection on every bot and changes what a live
+  conversation offers in place. There are no aliases for the old tool names.
+- **The Herdr page's roles travel as one block.** `hc` carries `steering`, `coding` and
+  `reviewing`, each `{ model, thinkingLevel }`; a save that names it replaces the whole block,
+  and a role with an empty model, a model longer than 200 characters or an unknown thinking
+  level is a `400` that writes nothing. The daemon hands the block to the `hc` tools, which
+  read it on every call, so the next `hc_start` runs on the saved model. The `hc` group being
+  off is not the same as the block being absent: the block always has three roles, and its
+  default is `group/steering` · high, `group/coding` · high, `group/reviewing` · xhigh.
 - **The two core prompts lead the system prompt.** `corePrompt` is one standing instruction
   for every bot, trimmed and bounded to 4 000 characters (a longer one is a `400`); an empty
   string stores no section. The machine prompt is never written by the daemon: it is the
@@ -1211,7 +1222,7 @@ Rules:
 - **Pairing is the client's job, by `callId`.** A result whose call is no longer in the
   page (history trimming) is still rendered as a row of its own; the block carries `name`
   for that case. Nothing is silently dropped.
-- **Text is bounded by the tool, not split.** Workspace and herdr tools cap their output
+- **Text is bounded by the tool, not split.** Workspace and hc tools cap their output
   at 64 KiB, below the 96 KiB message budget. A tool that returns more is clamped by the
   daemon with a `[tool output truncated]` tail; it is never turned into the
   "回答超出传输上限" notice, which belongs to assistant answers only.

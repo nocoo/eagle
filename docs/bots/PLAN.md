@@ -204,6 +204,34 @@ candidate 构建期 HTTPS service origin 小片已实现并增量审查通过，
 构建输入。28f4aef 服务现已部署并通过公网 health/匿名鉴权检查；真实 App 注册/WSS
 和物理双 Mac 验收仍待执行。
 
+## Herdr page: the Bot drives `hc`, never the person's `herdr` (2026-11-09)
+
+The `herdr` tool group became the `hc` group and moved off the 工具 page onto its own
+**Herdr** settings page, which is also where the three role models live.
+
+- **Two products, one page.** `hc` is herdr-core, the CLI the Bot drives in terminals it owns;
+  `herdr` is the terminal multiplexer a person uses. The App's Herdr Teams inspector and the
+  web realtime bridge keep reading `herdr` and are untouched; no Bot tool opens, writes or
+  closes a person's `herdr` session.
+- **Off by default.** `hc` is no longer in the default group set, in the daemon or in the App,
+  so an untouched machine gives a Bot no terminal at all. The page switches it on.
+- **Three roles, three models.** The page saves `steering`, `coding` and `reviewing` as one
+  block in `gateway.json` (`group/steering` · high, `group/coding` · high,
+  `group/reviewing` · xhigh by default). `hc_start` reads the block on every call and launches
+  `pi` with that model, that level and the daemon's provider; the model never supplies argv.
+- **Seven tools replace eight.** `hc_start`, `hc_list`, `hc_send`, `hc_wait`, `hc_read`,
+  `hc_keys`, `hc_close`. There is no space object any more: ownership is the `bots=<bot id>`
+  label plus the `bots-<prefix>-` name prefix, checked on every addressed call, and
+  `hc_close` with no target closes everything the Bot owns. The state file, the tombstone list
+  and the adoption rules are gone with the space.
+- **Both tools are visible and installable from the page.** It reports each tool's version or
+  "未安装", and the install button runs the vendor script
+  (`releases.herdr.dev/core/install.sh`, `herdr.dev/install.sh`) once. The `hc` switch is
+  disabled until `hc` is installed, because a Bot with no `hc` cannot start a terminal at all.
+
+Evidence: daemon 1 163 tests and the Herdr-page Swift tests are green; `check:design` passes;
+a real run started `group/steering` through `hc`, read `pong` from its screen and closed it.
+
 ## Where the code lives
 
 ### Development agent token (2026-11-01)

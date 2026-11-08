@@ -1,5 +1,24 @@
 # 用户视角检查点
 
+## 2026-11-09 — Herdr page: the Bot drives hc, not herdr
+
+- A person now sees a **Herdr** settings page with two cards: `hc · herdr-core` (the Bot's
+  hand: install state, the off-by-default switch, and the three role models) and `herdr` (the
+  person's own terminal, read-only for the App). A missing tool says 未安装 and offers one
+  install button; the `hc` switch stays disabled until `hc` exists.
+- Working end to end on this machine: `hc 0.1.18` is installed, and the new `hc_start` started
+  `pi` on `group/steering` in a terminal named `bots-bprobe99-steering`, `hc_wait` ended on
+  `done`, `hc_read` contained the model's `pong`, and `hc_close` killed and removed it. The
+  probe used the real client and the real Herdr page defaults; the fake-client tests cover
+  ownership, refusals and the close retry.
+- Not exercised here: the installer buttons themselves (they would reinstall over the
+  working binaries), a packaged-App run, and the EagleDevicesTests XPC suite, which needs the
+  assembled device helper (`packages/agent/dist/agent/device-service.js`) and fails with
+  `.unavailable` in this checkout without it.
+- Next broken hop: nothing in this slice. The Bot's own terminals and the person's `herdr`
+  sessions are now separate by construction; a future "Bot sees your herdr" capability would
+  be a new, separately authorized contract.
+
 ## 2026-11-08 — File groundwork PR rebase
 
 - The file-work branch was linearly rebased onto the newer `main`, retaining the

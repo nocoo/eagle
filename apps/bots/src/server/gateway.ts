@@ -5,9 +5,12 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  DEFAULT_HC,
   DEFAULT_THINKING_LEVEL,
   DEFAULT_TOOL_GROUPS,
+  type HcConfig,
   isThinkingLevel,
+  normalizeHc,
   resolveToolGroups,
   type ThinkingLevel,
   type ToolGroup,
@@ -26,6 +29,8 @@ export type GatewayConfig = {
   readonly corePrompt: string;
   /** The skills this person ticked for the machine's Bot service (PROTOCOL.md, "Skills"). */
   readonly skills: readonly SelectedSkill[];
+  /** What each hc role runs on; the Bot's `hc_start` reads it on every call. */
+  readonly hc: HcConfig;
 };
 
 export type PublicGateway = {
@@ -38,6 +43,7 @@ export type PublicGateway = {
   readonly toolGroups: readonly ToolGroup[];
   readonly corePrompt: string;
   readonly skills: readonly SelectedSkill[];
+  readonly hc: HcConfig;
 };
 
 /** What the gateway's own health endpoint says, when that origin has one. */
@@ -114,6 +120,8 @@ export type GatewayInput = {
   readonly toolGroups?: readonly string[];
   readonly corePrompt?: string;
   readonly skills?: readonly SelectedSkill[];
+  /** The whole Herdr block; the page saves its three rows together. */
+  readonly hc?: HcConfig;
 };
 
 const FILE = "gateway.json";
@@ -168,6 +176,7 @@ export const readGateway = async (root: string): Promise<GatewayConfig | undefin
       toolGroups: readGroups(raw),
       corePrompt: typeof raw.corePrompt === "string" ? raw.corePrompt : DEFAULT_CORE_PROMPT,
       skills: readSkills(raw.skills),
+      hc: normalizeHc(raw.hc) ?? DEFAULT_HC,
     };
   } catch {
     return undefined;
@@ -258,6 +267,7 @@ export const gatewayFromEnv = (
         : resolveToolGroups(env.BOTS_TOOL_GROUPS.split(",").map((name) => name.trim())),
     corePrompt: DEFAULT_CORE_PROMPT,
     skills: [],
+    hc: DEFAULT_HC,
   };
 };
 
@@ -271,6 +281,7 @@ export const publicGateway = (config: GatewayConfig | undefined): PublicGateway 
   toolGroups: config?.toolGroups ?? DEFAULT_TOOL_GROUPS,
   corePrompt: config?.corePrompt ?? DEFAULT_CORE_PROMPT,
   skills: config?.skills ?? [],
+  hc: config?.hc ?? DEFAULT_HC,
 });
 
 /** A gateway URL is http(s) and has no trailing slash, so `/models` appends cleanly. */
@@ -368,3 +379,11 @@ export type GatewayApi = {
   ) => Promise<{ readonly settings: PublicGateway; readonly error?: string }>;
   readonly test: (input: GatewayInput) => Promise<GatewayTest>;
 };
+
+export {
+  DEFAULT_HC,
+  type HcConfig,
+  type HcRole,
+  MAX_HC_MODEL,
+  normalizeHc,
+} from "../core/domain.ts";

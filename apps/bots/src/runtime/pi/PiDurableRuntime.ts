@@ -40,7 +40,9 @@ import type {
 import {
   ClassifiedFailure,
   createRunNote,
+  DEFAULT_HC,
   deriveBotNote,
+  type HcConfig,
   MAX_SEND_FILE_IDS,
   type RunNote,
   resolveToolGroups,
@@ -60,7 +62,7 @@ import type { Log } from "../../log/log.ts";
 import type { SelectedSkill } from "../../skills/selection.ts";
 import type { DecisionClient } from "../../tools/decision/client.ts";
 import { SocketDevicePort } from "../../tools/devices/port.ts";
-import { createHerdrClient } from "../../tools/herdr/client.ts";
+import { createHcClient } from "../../tools/hc/client.ts";
 import type { MachinePrompt } from "../../tools/machine/tools.ts";
 import {
   createToolRegistry,
@@ -238,6 +240,8 @@ export type PiRuntimeOptions = {
   readonly machinePrompt?: () => MachinePrompt | undefined;
   /** The skills this person ticked for the machine's Bot service, read on every ask. */
   readonly skills?: () => readonly SelectedSkill[];
+  /** The Herdr page's provider and three role models, read on every tool call. */
+  readonly hc?: () => { readonly provider: string; readonly roles: HcConfig } | undefined;
   /** Narrow host for verified managed-file metadata; runtime never imports the store implementation. */
   readonly managedFiles?: ManagedFilesPort;
 };
@@ -325,7 +329,16 @@ export class PiDurableRuntime implements RuntimePort {
                 },
               },
             }),
-        herdr: { client: createHerdrClient(), stateDir: spec.dir, botId: spec.id },
+        // Installed for every bot, used only when its group is selected: the roles are read
+        // on each call, so a save on the Herdr page lands on the next tool call.
+        hc: {
+          client: createHcClient(),
+          botId: spec.id,
+          roles: () => {
+            const current = this.#options.hc?.();
+            return { provider: current?.provider ?? "magpie", roles: current?.roles ?? DEFAULT_HC };
+          },
+        },
         ...(search === undefined
           ? {}
           : {

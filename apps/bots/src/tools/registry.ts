@@ -8,12 +8,14 @@ import {
 import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-search";
 import { CodingTools, createBashTool } from "@earendil-works/pi-durable/tools";
 import {
+  DEFAULT_HC,
   noteLine,
   resolveToolGroups,
   type ToolGroup,
   type ToolGroupCatalog,
 } from "../core/domain.ts";
 import type { Log } from "../log/log.ts";
+
 import { AGENTS_TOOLS_EXTENSION, agentsExtension } from "./agents/tools.ts";
 import { createAskTool } from "./ask.ts";
 import type { DecisionClient } from "./decision/client.ts";
@@ -29,13 +31,8 @@ import {
   guardNativeTool,
   observeDeviceTool,
 } from "./devices/tools.ts";
-import { createHerdrClient } from "./herdr/client.ts";
-import {
-  createHerdrTools,
-  HERDR_TOOLS_EXTENSION,
-  type HerdrToolOptions,
-  herdrSection,
-} from "./herdr/tools.ts";
+import { createHcClient } from "./hc/client.ts";
+import { createHcTools, HC_TOOLS_EXTENSION, type HcToolOptions, hcSection } from "./hc/tools.ts";
 import { createListTool } from "./list.ts";
 import { MACHINE_EXTENSION, type MachinePrompt, machineExtension } from "./machine/tools.ts";
 import { MEMORY_TOOLS_EXTENSION, memoryExtension } from "./memory/tools.ts";
@@ -84,7 +81,7 @@ const GROUP_EXTENSIONS: Record<ToolGroup, readonly string[]> = {
   coding: [CodingTools.name, PULLS_TOOLS_EXTENSION],
   memory: [MEMORY_TOOLS_EXTENSION],
   secrets: [SECRETS_TOOLS_EXTENSION],
-  herdr: [HERDR_TOOLS_EXTENSION, toolSearch.name],
+  hc: [HC_TOOLS_EXTENSION, toolSearch.name],
   agents: [AGENTS_TOOLS_EXTENSION],
   search: [SEARCH_TOOLS_EXTENSION, toolSearch.name],
   decision: [DECISION_TOOLS_EXTENSION, toolSearch.name],
@@ -235,7 +232,11 @@ export const createCatalogRegistry = (
       persona: () => "",
       machine: () => undefined,
       devices: { socketPath: "/nonexistent-catalogue.sock", botId: "catalog" },
-      herdr: { client: createHerdrClient(), stateDir: "/", botId: "catalog" },
+      hc: {
+        client: createHcClient(),
+        botId: "catalog",
+        roles: () => ({ provider: "magpie", roles: DEFAULT_HC }),
+      },
       search: { client: catalogSearch, botId: "catalog" },
       decision: { client: catalogDecision, botId: "catalog" },
       trigger: catalogTrigger,
@@ -276,8 +277,8 @@ export type ToolRegistryOptions = {
     readonly remoteCapability?: () => RemoteCapability;
     readonly setRemoteCapability?: (value: RemoteCapability) => void;
   };
-  /** Herdr tools need the CLI client and this bot's state directory. */
-  readonly herdr?: Omit<HerdrToolOptions, "workspace">;
+  /** Herdr tools need the hc client and this bot's own role models. */
+  readonly hc?: Omit<HcToolOptions, "workspace">;
   /** Web search needs a provider client; absent when no key is configured. */
   readonly search?: Omit<Parameters<typeof searchExtension>[0], "botId"> & {
     readonly botId: string;
@@ -305,7 +306,7 @@ export type ToolRegistryOptions = {
 };
 
 export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistryOptions = {}) => {
-  const herdr = options.herdr;
+  const hc = options.hc;
   const registry = createRegistry();
   const devices =
     options.devices === undefined
@@ -401,7 +402,7 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
   if (options.secrets !== undefined) registry.install(secretsExtension(options.secrets));
   // Deferred tools need their loader; without one the model would never see them.
   if (
-    herdr !== undefined ||
+    hc !== undefined ||
     options.search !== undefined ||
     options.decision !== undefined ||
     options.trigger !== undefined ||
@@ -409,19 +410,18 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
   ) {
     registry.install(toolSearch);
   }
-  if (herdr !== undefined) {
+  if (hc !== undefined) {
     registry.install(
       defineExtension({
-        name: HERDR_TOOLS_EXTENSION,
-        tools: createHerdrTools({ ...herdr, workspace }).filter(
-          (tool) =>
-            devices === undefined || ["herdr_list", "herdr_read", "herdr_wait"].includes(tool.name),
+        name: HC_TOOLS_EXTENSION,
+        tools: createHcTools({ ...hc, workspace }).filter(
+          (tool) => devices === undefined || ["hc_list", "hc_read", "hc_wait"].includes(tool.name),
         ),
         sections: [
-          section("bots-herdr", () =>
+          section("bots-hc", () =>
             devices === undefined
-              ? herdrSection(herdr.botId)
-              : "Herdr inspection reads this bot's space; local commands use bash.",
+              ? hcSection(hc.botId)
+              : "Herdr inspection reads this bot's own terminals; local commands use bash.",
           ),
         ],
       }),

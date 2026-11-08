@@ -555,6 +555,61 @@ export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 
 export const DEFAULT_THINKING_LEVEL: ThinkingLevel = "medium";
 
+/** The three jobs a Bot hands to herdr-core; the Herdr page edits them. */
+export type HcRole = {
+  readonly model: string;
+  readonly thinkingLevel: ThinkingLevel;
+};
+
+export type HcConfig = {
+  readonly steering: HcRole;
+  readonly coding: HcRole;
+  readonly reviewing: HcRole;
+};
+
+export const HC_ROLE_NAMES = ["steering", "coding", "reviewing"] as const;
+
+/** A model id is one line the gateway resolves; the bound keeps a paste from filling a file. */
+export const MAX_HC_MODEL = 200;
+
+/**
+ * What the Herdr page shows before a person decides: the roles my global rules already name,
+ * so an untouched machine dispatches the same models the person's own agents use.
+ */
+export const DEFAULT_HC: HcConfig = {
+  steering: { model: "group/steering", thinkingLevel: "high" },
+  coding: { model: "group/coding", thinkingLevel: "high" },
+  reviewing: { model: "group/reviewing", thinkingLevel: "xhigh" },
+};
+
+/**
+ * The Herdr block as it is stored: three complete roles, each a one-line model and a known
+ * thinking level. A block that breaks a bound is refused rather than silently repaired.
+ */
+export const normalizeHc = (value: unknown): HcConfig | undefined => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const roles: Record<string, HcRole> = {};
+  for (const name of HC_ROLE_NAMES) {
+    const entry = raw[name];
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return undefined;
+    const role = entry as Record<string, unknown>;
+    const model = typeof role.model === "string" ? role.model.trim() : undefined;
+    const level = role.thinkingLevel;
+    if (
+      model === undefined ||
+      model.length === 0 ||
+      model.length > MAX_HC_MODEL ||
+      model.includes("\n") ||
+      !isThinkingLevel(level)
+    ) {
+      return undefined;
+    }
+    roles[name] = { model, thinkingLevel: level };
+  }
+  return roles as HcConfig;
+};
+
 export const isThinkingLevel = (value: unknown): value is ThinkingLevel =>
   typeof value === "string" && (THINKING_LEVELS as readonly string[]).includes(value);
 
@@ -566,7 +621,7 @@ export const TOOL_GROUP_NAMES = [
   "coding",
   "memory",
   "secrets",
-  "herdr",
+  "hc",
   "agents",
   "search",
   "decision",
@@ -587,7 +642,6 @@ export const DEFAULT_TOOL_GROUPS: readonly ToolGroup[] = [
   "coding",
   "memory",
   "secrets",
-  "herdr",
   "agents",
   "trigger",
 ];

@@ -18,7 +18,7 @@ test("every group is described, with the tools it actually contributes", () => {
       "coding",
       "memory",
       "secrets",
-      "herdr",
+      "hc",
       "agents",
       "search",
       "decision",

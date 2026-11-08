@@ -3,11 +3,12 @@
 // without the bearer token.
 import assert from "node:assert/strict";
 import test from "node:test";
-import type {
-  GatewayApi,
-  GatewayConfig,
-  GatewayInput,
-  PublicGateway,
+import {
+  DEFAULT_HC,
+  type GatewayApi,
+  type GatewayConfig,
+  type GatewayInput,
+  type PublicGateway,
 } from "../../src/server/gateway.ts";
 import { createSettingsSaver } from "../../src/server/settings.ts";
 import { startStack } from "../support/server.ts";
@@ -20,9 +21,10 @@ test("the settings endpoints read, validate, save and test behind the bearer", a
     model: "",
     hasApiKey: false,
     thinkingLevel: "medium",
-    toolGroups: ["core", "core-ui", "coding", "herdr"],
+    toolGroups: ["core", "core-ui", "coding", "hc"],
     corePrompt: "你是一个务实、友好的 agent。",
     skills: [],
+    hc: DEFAULT_HC,
   };
   const saves: GatewayInput[] = [];
   const tests: GatewayInput[] = [];
@@ -43,9 +45,10 @@ test("the settings endpoints read, validate, save and test behind the bearer", a
         model: input.model ?? "",
         hasApiKey: true,
         thinkingLevel: "medium",
-        toolGroups: ["core", "core-ui", "coding", "herdr"],
+        toolGroups: ["core", "core-ui", "coding", "hc"],
         corePrompt: input.corePrompt ?? "你是一个务实、友好的 agent。",
         skills: input.skills ?? [],
+        hc: DEFAULT_HC,
       };
       return { settings: stored };
     },
@@ -134,6 +137,7 @@ test("the core prompt is saved with the gateway, and the machine prompt is read-
     toolGroups: ["persona", "machine", "core", "core-ui", "coding"],
     corePrompt: "旧的人格",
     skills: [],
+    hc: DEFAULT_HC,
   };
   const settings: GatewayApi = {
     public: () => stored,
@@ -187,6 +191,7 @@ test("the settings read carries the tool catalogue, and says nothing when it has
       toolGroups: ["core", "core-ui", "coding"],
       corePrompt: "",
       skills: [],
+      hc: DEFAULT_HC,
     }),
     save: async () => ({ settings: settings.public() }),
     test: async () => ({ ok: true, message: "ok", latencyMs: 1 }),
@@ -235,6 +240,7 @@ test("the skills selection is validated on the wire and crosses it additively", 
     toolGroups: ["persona", "machine", "core", "core-ui", "coding"],
     corePrompt: "只说结论。",
     skills: [],
+    hc: DEFAULT_HC,
   };
   const saves: GatewayInput[] = [];
   const settings: GatewayApi = {
@@ -354,20 +360,54 @@ test("a save applies only the fields it carries", async () => {
     model: "auto/gpt-6-astra",
     apiKey: "sk-x",
     thinkingLevel: "high",
-    toolGroups: ["core", "herdr"],
+    toolGroups: ["core", "hc"],
   });
   await save({
     skills: [
       { name: "alpha", version: "1.0.0", description: "Runs alpha.", path: "/skills/alpha" },
     ],
+    hc: DEFAULT_HC,
   });
   assert.deepEqual(applied[0], ["model", "level", "groups"]);
   assert.deepEqual(applied[1], [], "a skills-only save applies nothing");
   assert.equal(stored?.thinkingLevel, "high", "the stored level is untouched");
   assert.deepEqual(
     stored?.toolGroups,
-    ["core", "core-ui", "coding", "herdr"],
+    ["core", "core-ui", "coding", "hc"],
     "the stored groups are untouched",
   );
   assert.equal(stored?.model, "auto/gpt-6-astra", "the stored model is untouched");
+});
+
+test("the Herdr roles are saved as one block and a broken one writes nothing", async () => {
+  let stored: GatewayConfig | undefined;
+  const save = createSettingsSaver({
+    current: () => stored,
+    write: async (config) => {
+      stored = config;
+    },
+    apply: async () => undefined,
+  });
+  const first = await save({
+    baseUrl: "http://127.0.0.1:3425/v1",
+    model: "auto/gpt-6-astra",
+    apiKey: "sk-x",
+    hc: {
+      steering: { model: "group/steering", thinkingLevel: "high" },
+      coding: { model: "group/coding", thinkingLevel: "high" },
+      reviewing: { model: "group/reviewing", thinkingLevel: "xhigh" },
+    },
+  });
+  assert.equal(first.error, undefined);
+  assert.equal(stored?.hc.reviewing.model, "group/reviewing");
+
+  const refused = await save({
+    hc: {
+      steering: { model: "group/steering", thinkingLevel: "high" },
+      coding: { model: "", thinkingLevel: "high" },
+      reviewing: { model: "group/reviewing", thinkingLevel: "xhigh" },
+    },
+  });
+  assert.match(refused.error ?? "", /Herdr 页的模型/);
+  assert.equal(stored?.hc.coding.model, "group/coding", "the refused save changed nothing");
 });

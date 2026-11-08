@@ -7,9 +7,10 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { GatewayConfig } from "../../src/server/gateway.ts";
 import {
   DEFAULT_CORE_PROMPT,
+  DEFAULT_HC,
+  type GatewayConfig,
   gatewayFromEnv,
   gatewayPath,
   listGatewayModels,
@@ -37,7 +38,7 @@ test("settings round-trip, stay 0600 and never expose the key", async () => {
       model: "auto/gpt-6-astra",
       apiKey: "sk-secret-0123456789",
       thinkingLevel: "medium",
-      toolGroups: ["core", "core-ui", "coding", "herdr", "agents", "trigger"],
+      toolGroups: ["core", "core-ui", "coding", "agents", "trigger"],
       corePrompt: "你是一个务实、友好的 agent。",
       skills: [
         {
@@ -47,6 +48,7 @@ test("settings round-trip, stay 0600 and never expose the key", async () => {
           path: "~/.agents/skills/humanizer-zh",
         },
       ],
+      hc: DEFAULT_HC,
     };
     await writeGateway(bench_.root, config);
     assert.deepEqual(await readGateway(bench_.root), config);
@@ -58,7 +60,7 @@ test("settings round-trip, stay 0600 and never expose the key", async () => {
       configured: true,
       provider: "magpie",
       thinkingLevel: "medium",
-      toolGroups: ["core", "core-ui", "coding", "herdr", "agents", "trigger"],
+      toolGroups: ["core", "core-ui", "coding", "agents", "trigger"],
       baseUrl: "http://127.0.0.1:3425/v1",
       model: "auto/gpt-6-astra",
       hasApiKey: true,
@@ -71,6 +73,7 @@ test("settings round-trip, stay 0600 and never expose the key", async () => {
           path: "~/.agents/skills/humanizer-zh",
         },
       ],
+      hc: DEFAULT_HC,
     });
     assert.equal(JSON.stringify(shown).includes("sk-secret"), false);
   } finally {
@@ -100,12 +103,12 @@ test("dotenv values are the fallback, and a broken file is not configured", asyn
         "coding",
         "memory",
         "secrets",
-        "herdr",
         "agents",
         "trigger",
       ],
       corePrompt: DEFAULT_CORE_PROMPT,
       skills: [],
+      hc: DEFAULT_HC,
     },
   );
   const env = { BOTS_BASE_URL: "http://x/v1", BOTS_API_KEY: "k", BOTS_MODEL: "m" };
@@ -226,7 +229,7 @@ test("a version-1 file gains every later group once, a saved choice keeps them o
       model: "auto/gpt-6-astra",
       apiKey: "sk-secret-0123456789",
       thinkingLevel: "medium",
-      toolGroups: ["core", "core-ui", "coding", "herdr"],
+      toolGroups: ["core", "core-ui", "coding", "hc"],
     };
     await writeFile(gatewayPath(bench_.root), JSON.stringify(legacy), "utf8");
     const migrated = await readGateway(bench_.root);
@@ -237,7 +240,7 @@ test("a version-1 file gains every later group once, a saved choice keeps them o
       "core-ui",
       "coding",
       "memory",
-      "herdr",
+      "hc",
     ]);
     assert.equal(migrated?.corePrompt, DEFAULT_CORE_PROMPT, "a file without one gets the default");
 
@@ -245,10 +248,10 @@ test("a version-1 file gains every later group once, a saved choice keeps them o
     assert.ok(migrated !== undefined);
     await writeGateway(bench_.root, {
       ...migrated,
-      toolGroups: ["core", "core-ui", "coding", "herdr"],
+      toolGroups: ["core", "core-ui", "coding", "hc"],
     });
     const stored = await readGateway(bench_.root);
-    assert.deepEqual(stored?.toolGroups, ["core", "core-ui", "coding", "herdr"]);
+    assert.deepEqual(stored?.toolGroups, ["core", "core-ui", "coding", "hc"]);
     const raw = JSON.parse(await readFile(gatewayPath(bench_.root), "utf8")) as { version: number };
     assert.equal(raw.version, 3);
 
@@ -279,6 +282,7 @@ test("the core prompt round-trips and defaults to one editable sentence", async 
       toolGroups: ["core", "core-ui", "coding"],
       corePrompt: "只说结论。",
       skills: [],
+      hc: DEFAULT_HC,
     };
     await writeGateway(bench_.root, config);
     assert.equal((await readGateway(bench_.root))?.corePrompt, "只说结论。");
@@ -312,6 +316,7 @@ test("the selected skills round-trip, and an older file without them reads as no
         { name: "alpha", version: "1.0.0", description: "Runs alpha.", path: "/skills/alpha" },
         { name: "beta", version: "", description: "Runs beta.", path: "~/skills/beta" },
       ],
+      hc: DEFAULT_HC,
     };
     await writeGateway(bench_.root, config);
     assert.deepEqual((await readGateway(bench_.root))?.skills, config.skills);
@@ -352,4 +357,38 @@ test("the standing instruction is trimmed and bounded", () => {
   assert.equal(normalizeCorePrompt("   "), "");
   assert.equal(normalizeCorePrompt("字".repeat(MAX_CORE_PROMPT + 1)), undefined);
   assert.equal(normalizeCorePrompt("字".repeat(MAX_CORE_PROMPT))?.length, MAX_CORE_PROMPT);
+});
+
+test("the Herdr roles round-trip, and a file that breaks a bound reads as the defaults", async () => {
+  const bench_ = await bench();
+  try {
+    assert.deepEqual(publicGateway(undefined).hc, DEFAULT_HC);
+    const config: GatewayConfig = {
+      provider: "magpie",
+      baseUrl: "http://127.0.0.1:3425/v1",
+      model: "auto/gpt-6-astra",
+      apiKey: "sk-secret-0123456789",
+      thinkingLevel: "medium",
+      toolGroups: ["core", "core-ui", "coding", "hc"],
+      corePrompt: DEFAULT_CORE_PROMPT,
+      skills: [],
+      hc: {
+        steering: { model: "custom/lead", thinkingLevel: "max" },
+        coding: { model: "custom/build", thinkingLevel: "medium" },
+        reviewing: { model: "custom/look", thinkingLevel: "low" },
+      },
+    };
+    await writeGateway(bench_.root, config);
+    assert.deepEqual((await readGateway(bench_.root))?.hc, config.hc);
+
+    // A hand-edited block that names no model for one role is not half-honoured.
+    const broken = {
+      ...config,
+      hc: { ...config.hc, coding: { model: "  ", thinkingLevel: "high" } },
+    };
+    await writeFile(gatewayPath(bench_.root), JSON.stringify(broken), "utf8");
+    assert.deepEqual((await readGateway(bench_.root))?.hc, DEFAULT_HC);
+  } finally {
+    await bench_.cleanup();
+  }
 });
