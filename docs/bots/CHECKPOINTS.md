@@ -956,3 +956,41 @@ Next broken hop: the 142 MB catalog now at `~/.local/share/eagle-bots` was creat
 source runs, and the running packaged App has been using it. Which build keeps it is the
 owner's decision (move, copy or leave it to the packaged App); until then a source run
 starts with an empty dev root. No release artifact was rebuilt.
+
+## 2026-11-08 22:20 — macOS acceptance runs through the CLI, and it is stable
+
+Observed: `npm --prefix apps/bots run eval:mac` drives the App's real surfaces through the
+one `eagle-dev` binary that a person and an agent both use — the Super Bot on a real
+service, the coding tool group, and a webhook trigger a Bot created itself. Nothing reads
+the machine's real roots or credentials; every case boots its own.
+
+Verified:
+
+- The runner can now boot a Superagent per case (`"superagent": true`): its own root under
+  the case, this case's scripted endpoint as its only model, the daemon's observation
+  credential, and `SUPERAGENT_ROOT`/`SUPERAGENT_PORT` for the CLI.
+- Five cases: `mac-superbot-chat` (configure the model, ask, read history),
+  `mac-superbot-observe` (status, snapshot, retained history of a Bot that answered,
+  changes), `mac-superbot-auth` (unconfigured refuses to answer; a foreign credential exits
+  3 before anything runs), `mac-tools-coding` (read/bash/edit through `chat send --wait`),
+  `mac-trigger` (the Bot creates a webhook trigger, the CLI lists, disables, enables and
+  fires it, the Bot answers).
+- The CLI gained `triggers list|enable|disable|fire <bot> <trigger>`; creation stays the
+  Bot's own decision. `fire` presents the trigger's token, never the CLI credential.
+- Fixed while authoring, each found by a failing run rather than by reading: a relative
+  `--cli` path produced a broken symlink (ENOENT); `config set --json` prints JSON, not the
+  human line; `chat history` without `--before` answers "no older messages", so the
+  transcript assertion belongs to the case's `expect`; the stub records the full
+  authorization header, not the bare token.
+- Ten consecutive rounds of `--match mac-` (50 case runs) were green after those fixes, and
+  one full run of all 31 cases was green, so the new harness field and CLI group changed
+  nothing else. `apps/macos swift test` (447 + 52 + 85 + 38 + 24 CLI cases), strict format,
+  design guard and `apps/superagent npm run check` passed.
+- The Super Bot's instructions now say what is true of the model: it cannot see worker
+  state itself and works from what the person relays. No section, test or tool is named, so
+  an answer cannot be steered by memorising the prompt.
+
+Next broken hop: three surfaces still have no CLI, so their acceptance stays on the wire —
+managed file send (`chat send --file`), skill selection (`skills list|select`) and peer
+exchange detail. The macOS cases also cannot prove rendering; the installed App's Super Bot
+row and inspector are still a person's look.
