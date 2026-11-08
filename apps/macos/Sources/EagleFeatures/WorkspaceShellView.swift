@@ -414,15 +414,15 @@ public struct WorkspaceShellView: View {
               settings.selection = .machines
               present(.settings)
             }),
-          observation: selectedIsSuperagent
-            ? InspectorObservation(
-              headline: superagent.observation.summary.coverageLine,
-              detail: superagent.observation.summary.lastReadAt,
-              canRefresh: !superagent.observation.isReading)
-            : nil,
-          onRefreshObservation: selectedIsSuperagent
-            ? { Task { await superagent.observation.refresh() } } : nil
+          detailSections: selectedIsSuperagent
+            ? SuperagentInspectorPresenter.detailSections(superagent.observation.summary) : []
         )
+      }
+      // Selecting the Super Bot reads the workers once; the inspector never carries a
+      // surface-specific control that a bot's panel does not have.
+      .task(id: list.selection) {
+        guard selectedIsSuperagent else { return }
+        await superagent.observation.refresh()
       }
       .task {
         bots.onSelect = { id in list.selection = id }

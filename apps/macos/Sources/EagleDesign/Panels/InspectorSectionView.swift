@@ -102,7 +102,7 @@ public struct InspectorSectionView: View {
           }
         }
       }
-    case .usage(let rows):
+    case .usage(let rows), .facts(let rows):
       VStack(alignment: .leading, spacing: Theme.Metric.panelTaskRowGap) {
         ForEach(rows) { row in
           HStack(spacing: Theme.Metric.panelSectionRowGap) {

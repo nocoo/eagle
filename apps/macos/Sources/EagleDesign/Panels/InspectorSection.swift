@@ -161,6 +161,9 @@ public struct InspectorSectionModel: Identifiable, Hashable, Sendable {
     case triggers([InspectorTriggerRow])
     case tasks([InspectorTaskRow])
     case usage([InspectorUsageRow])
+    /// Read-only label/value figures a surface reports about itself (observation coverage,
+    /// and later an analysis summary): the same row shape as 用量, a different subject.
+    case facts([InspectorUsageRow])
     case choices([InspectorChoiceRow])
     /// A section whose whole body is its placeholder.
     case none
@@ -191,7 +194,7 @@ public struct InspectorSectionModel: Identifiable, Hashable, Sendable {
     case .pulls(let rows): return rows.isEmpty
     case .triggers(let rows): return rows.isEmpty
     case .tasks(let rows): return rows.isEmpty
-    case .usage(let rows): return rows.isEmpty
+    case .usage(let rows), .facts(let rows): return rows.isEmpty
     case .choices(let rows): return rows.isEmpty
     case .none: return true
     }
@@ -289,12 +292,22 @@ public enum InspectorSections {
   /// have their own tab, and triggers are a tab of their own rather than a line here.
   public static func detail(
     pulls: [InspectorPullRow],
-    tasks: [InspectorTaskRow]
+    tasks: [InspectorTaskRow],
+    leading: [InspectorSectionModel] = []
   ) -> [InspectorSectionModel] {
-    [
+    leading + [
       codingSection.with(.pulls(pulls)),
       tasksSection.with(.tasks(tasks)),
     ]
+  }
+
+  /// A figure section a surface fills with its own read-only facts.
+  public static func factsSection(
+    id: String, title: String, symbolName: String, rows: [InspectorUsageRow],
+    placeholder: InspectorPlaceholder
+  ) -> InspectorSectionModel {
+    InspectorSectionModel(
+      id: id, title: title, symbolName: symbolName, rows: .facts(rows), placeholder: placeholder)
   }
 
   /// 模型 and 用量: how the open bot thinks and what that has cost so far.
