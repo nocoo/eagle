@@ -479,7 +479,7 @@ doing everything in one context.
 
 | Tool | Behaviour |
 | --- | --- |
-| `agent_spawn` | Creates an ownerless conversation in the same Harness, configured from the caller's agent (model, reasoning level, extensions, tool list, `cwd`, instructions) minus these three tools — one level of delegation, never a tree. Appends a `bots.agent` marker entry (no `model`, so the child never sees it) and answers the child id |
+| `agent_spawn` | Creates an ownerless conversation in the same Harness, configured from the caller's agent (model, reasoning level, `cwd`, instructions) but limited to the mandatory `core` and `coding` groups: the child selects only those extensions, and its tool list is the caller's tools filtered to them, so it has no delegation tools, no optional group (`memory`, `secrets`, `herdr`, `agents`, `search`, `decision`, `trigger`, `peers`), no `tool_search` loader, no `skill_read` and no shared-device tool. One level of delegation, never a tree, and a child never reaches another machine. Appends a `bots.agent` marker entry (no `model`, so the child never sees it) and answers the child id |
 | `agent_send` | Submits to the child with a request id derived from the call, waits for settlement, and answers the child's final text; a run that ends `unanswered` is an error result naming the reason |
 | `agent_stop` | Aborts the child: queued work is withdrawn and the transcript stays readable |
 
@@ -490,10 +490,10 @@ the SDK can inspect the child by conversation id. The generic task graph is sepa
 from a child-conversation UI. The `peers` capability stays false.
 
 `agent_send` requires a `bots.agent` marker naming the caller as direct parent.
-Sends with shared devices serialize each child's idle wait, remote refresh and
-submission, so parallel sends cannot reconfigure active work. `agent_stop` still
-looks up a conversation without checking its parent marker; `agent_list` remains
-planned. Independent catalog Bot communication belongs to planned `peer_*`
+Nothing about a child follows the daemon's remote state: the child's selection is fixed
+at spawn, so no refresh can widen it. `agent_stop` withdraws a send that is still
+validating its marker, and it still looks up a conversation without checking its
+parent marker; `agent_list` remains planned. Independent catalog Bot communication belongs to planned `peer_*`
 tools, not a reinterpretation of these same-Harness `agent_*` operations.
 
 ### Deferred tools

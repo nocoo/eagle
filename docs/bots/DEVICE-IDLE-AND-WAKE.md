@@ -44,7 +44,7 @@ and local-test facts, not claims about the installed App or deployed Workers.
 | Area | Source status | Remaining boundary |
 | --- | --- | --- |
 | Local-first baseline | Implemented: an empty relay starts the helper and local service without a cloud client; native Bot tools read local identity/policy and use admission, approval and the journal. Fresh local policy defaults to `always-ask`. | An enabled but unavailable protection service fails closed. A packaged fresh install and an arbitrary real model's choice of local tools have not been accepted end to end. |
-| Remote tools | Partial: root selection refreshes on open, subscription and new input; app-managed children refresh at spawn/send, preserving local tools and the ban on delegation. Stale loaded calls recheck local configuration. | No configuration push before every already-running model request, no separate remote-disable control, and no complete child/nested restart-recovery proof. The settings toggle stops the local service, not just remote access. |
+| Remote tools | Partial: root selection refreshes on open, subscription and new input; a child agent selects the mandatory `core` and `coding` groups only, so the three remote tools never reach it and no child refresh exists. Stale loaded calls recheck local configuration. | No configuration push before every already-running model request, no separate remote-disable control, and no complete restart-recovery proof for nested work. The settings toggle stops the local service, not just remote access. |
 | Directory and panel | Implemented: discarded source-side `run/get/cancel` directory reads are gone. Bot discovery and fresh approval policy reads remain. Workspace observation reads local health; visible device views share directory observation. | No measured production request or billing reduction. |
 | Remote identity and uncertainty | Implemented: operation, policy and pairing IDs are bound to their target and relay origin. Changing relay keeps local leases; post-forwarding authorization loss withholds output and returns `unknown`. A `sent` operation is not automatically re-executed or retargeted. | Cross-relay, restart and revoke behaviour is tested locally; no physical two-Mac acceptance. Unaccepted `busy`/`denied` runs may still be explicitly retried. |
 | Sessions and renewal | Implemented: Registry stores session hashes and checks a target reference against expiry, device, credential generation and membership. The Worker and Agent renew on the same socket after key proof; in-flight work keeps its connection. | This reference is currently in memory, not a hibernation attachment. Renewal is preparation for hibernation, not hibernation itself. |
@@ -193,16 +193,15 @@ Bots see the correct capability and prompt before their next model request,
 without waiting for a window switch or a daemon restart. Temporary network
 failure alone does not toggle the registered capability. A remote tool already
 loaded in a conversation must not remain callable after remote access is disabled;
-new dispatch also checks the current authorization at invocation, including in
-child conversations that retained older SDK selections. Refresh the root and each
-app-managed child before its next model request: update both its selected remote
-extension and explicit tool filter, adding or removing only the three remote tools.
-Preserve the child's other selections, its ban on further delegation, and the
-reflection conversation's note-only scope; never widen them by copying the whole
-parent tool list. Children created before and after a change see the same current
-remote state. In-flight work is not silently repeated or retargeted when settings
-change: settle it or return unknown and retain the original ID for authorized
-recovery after re-enablement.
+new dispatch also checks the current authorization at invocation. Refresh the root
+before its next model request: update both its selected remote extension and
+explicit tool filter, adding or removing only the three remote tools, and never widen
+the reflection conversation's note-only scope. A child agent gets the mandatory
+`core` and `coding` tools only (RUNTIME.md, "Subagents"), so it never selects the
+remote extension and no child refresh exists; remote work stays with the parent.
+In-flight work is not silently repeated or retargeted when settings change: settle
+it or return unknown and retain the original ID for authorized recovery after
+re-enablement.
 
 ### Idle target, immediate wake
 

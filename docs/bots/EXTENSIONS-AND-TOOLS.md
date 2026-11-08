@@ -277,7 +277,7 @@ than a decision.
 
 | Group / tool | Input | Behavior | Replay |
 | --- | --- | --- | --- |
-| `agents` / `agent_spawn` | `name, instructions?` | Creates an ownerless conversation in this Harness, copies the parent's model/effort/tools/cwd, removes delegation tools, records a `bots.agent` marker, returns `c_<id>` | Default unsafe |
+| `agents` / `agent_spawn` | `name, instructions?` | Creates an ownerless conversation in this Harness with the parent's model/effort/cwd/instructions but only the `core` and `coding` tools (the caller's tools filtered to those two groups), records a `bots.agent` marker, returns `c_<id>`; no delegation tools, optional group, `tool_search`, `skill_read` or shared-device tool reaches a child | Default unsafe |
 | `agents` / `agent_send` | `agentId, message` | Submits with `followUp`, waits for settlement, returns final text or the unanswered reason | Default unsafe |
 | `agents` / `agent_stop` | `agentId` | Aborts work; conversation remains readable | Default unsafe |
 | `herdr` / `herdr_open_space` | `path?` | Creates or reuses this Bot's recorded Space | Safe |
@@ -358,8 +358,9 @@ only when the bot reports it again, which the prompt says explicitly. One journa
 
 Loaded deferred names remain offered on the branch, including after compaction.
 `modelTools` cannot widen the enabled set: a loaded name does not keep a disabled
-extension callable. Existing child conversations retain their stored choices;
-parent group changes are not a permission-revocation system.
+extension callable. Existing child conversations keep the selection they were spawned
+with — the mandatory `core` and `coding` groups — so a parent group change neither
+reaches a child nor revokes anything; parent group changes are not a revocation system.
 
 Registry publication is native `install`/`uninstall`, not source hot loading.
 The host can replace an installed object; no production filesystem watcher or

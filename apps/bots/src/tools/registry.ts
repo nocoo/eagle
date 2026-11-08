@@ -84,6 +84,15 @@ const GROUP_EXTENSIONS: Record<ToolGroup, readonly string[]> = {
   peers: [PEERS_TOOLS_EXTENSION, toolSearch.name],
 };
 
+/**
+ * A child agent gets the mandatory groups and nothing else (docs/bots/RUNTIME.md,
+ * "Subagents"): no delegation, no optional group, no deferred loader, no shared-device tool.
+ */
+const CHILD_GROUPS: readonly ToolGroup[] = ["core", "coding"];
+const CHILD_EXTENSIONS: readonly string[] = CHILD_GROUPS.flatMap(
+  (group) => GROUP_EXTENSIONS[group],
+);
+
 export type RemoteCapability = "configured" | "unconfigured" | "unavailable";
 
 export const selectToolExtensions = (
@@ -352,19 +361,7 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
   registry.install(CodingTools);
   const remote = devices === undefined ? undefined : deviceExtension(devices);
   if (remote !== undefined) registry.install(remote);
-  registry.install(
-    agentsExtension(
-      devices === undefined || remote === undefined
-        ? undefined
-        : {
-            port: devices.port,
-            extension: remote,
-            ...(options.devices?.setRemoteCapability === undefined
-              ? {}
-              : { setCapability: options.devices.setRemoteCapability }),
-          },
-    ),
-  );
+  registry.install(agentsExtension(CHILD_EXTENSIONS));
   if (options.search !== undefined) registry.install(searchExtension(options.search));
   if (options.decision !== undefined) registry.install(decisionExtension(options.decision));
   if (options.trigger !== undefined) registry.install(triggerExtension(options.trigger));
