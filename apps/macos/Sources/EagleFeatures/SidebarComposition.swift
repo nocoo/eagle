@@ -38,7 +38,7 @@ public enum SidebarComposition {
   ) -> SidebarSection {
     SidebarSection(
       id: "superagent.section",
-      title: "SUPER BOT",
+      title: "",
       items: [
         SidebarItem(
           id: "superagent:main", title: title, subtitle: subtitle,

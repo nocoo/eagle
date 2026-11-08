@@ -413,7 +413,15 @@ public struct WorkspaceShellView: View {
             DeviceInspectorView(model: devices) {
               settings.selection = .machines
               present(.settings)
-            })
+            }),
+          observation: selectedIsSuperagent
+            ? InspectorObservation(
+              headline: superagent.observation.summary.coverageLine,
+              detail: superagent.observation.summary.lastReadAt,
+              canRefresh: !superagent.observation.isReading)
+            : nil,
+          onRefreshObservation: selectedIsSuperagent
+            ? { Task { await superagent.observation.refresh() } } : nil
         )
       }
       .task {

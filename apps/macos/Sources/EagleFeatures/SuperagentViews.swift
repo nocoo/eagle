@@ -20,7 +20,6 @@ public struct SuperagentConversationContent: View {
 
   public var body: some View {
     VStack(spacing: 0) {
-      SuperagentObservationStrip(model: model.observation)
       if let failure = model.chat.failure {
         SuperagentNotice(
           text: failureText(failure),
@@ -119,30 +118,6 @@ public struct SuperagentConversationContent: View {
     case .modelAuthentication: return "模型凭据被拒绝，请检查 Super Bot 设置。"
     case .modelError: return "模型未能完成回答。"
     }
-  }
-}
-
-/// One compact, read-only line: what the Super Bot can see of the workers, and nothing
-/// it may do about them. No bot list, no paging, no control that acts on a worker.
-private struct SuperagentObservationStrip: View {
-  @ObservedObject var model: SuperagentObservationViewModel
-
-  var body: some View {
-    VStack(spacing: 0) {
-      HStack(spacing: Theme.Layout.rowGap) {
-        Text(model.summary.coverageLine)
-          .font(Theme.TypeScale.note)
-          .foregroundStyle(Theme.Palette.textSecondary)
-        Spacer(minLength: 0)
-        SettingsActionButton(model.isReading ? "读取中…" : "刷新观测") {
-          Task { await model.refresh() }
-        }
-      }
-      .padding(.horizontal, Theme.Metric.conversationInset)
-      .padding(.vertical, Theme.Layout.rowGap)
-      Divider().overlay(Theme.Palette.line)
-    }
-    .background(Theme.Palette.surface)
   }
 }
 

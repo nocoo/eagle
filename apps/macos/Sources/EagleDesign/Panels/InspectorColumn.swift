@@ -3,6 +3,20 @@ import SwiftUI
 /// Right column: participant summary, text tabs, then the decorated sections of the
 /// selected tab. Every section is a header (glyph, title, hairline) plus rows or an empty
 /// state, so the column keeps one grid whether or not a bot has anything to show.
+/// SG-002 observation as the inspector shows it: one line of coverage or the honest reason
+/// it is unknown, and whether a refresh is worth offering. It carries no worker action.
+public struct InspectorObservation: Equatable, Sendable {
+  public let headline: String
+  public let detail: String?
+  public let canRefresh: Bool
+
+  public init(headline: String, detail: String? = nil, canRefresh: Bool = true) {
+    self.headline = headline
+    self.detail = detail
+    self.canRefresh = canRefresh
+  }
+}
+
 public struct InspectorColumn: View {
   public enum Tab: String, CaseIterable, Hashable, Sendable {
     case detail = "详情"
@@ -37,6 +51,8 @@ public struct InspectorColumn: View {
   private let onCommitName: ((String) -> Void)?
   private let onCommitLabel: ((String) -> Void)?
   private let computerContent: AnyView?
+  private let observation: InspectorObservation?
+  private let onRefreshObservation: (() -> Void)?
 
   public init(
     name: String,
@@ -60,7 +76,9 @@ public struct InspectorColumn: View {
     onEditFace: (() -> Void)? = nil,
     onCommitName: ((String) -> Void)? = nil,
     onCommitLabel: ((String) -> Void)? = nil,
-    computerContent: AnyView? = nil
+    computerContent: AnyView? = nil,
+    observation: InspectorObservation? = nil,
+    onRefreshObservation: (() -> Void)? = nil
   ) {
     self.name = name
     self.subtitle = subtitle
@@ -84,6 +102,8 @@ public struct InspectorColumn: View {
     self.onCommitName = onCommitName
     self.onCommitLabel = onCommitLabel
     self.computerContent = computerContent
+    self.observation = observation
+    self.onRefreshObservation = onRefreshObservation
   }
 
   public var body: some View {
@@ -138,6 +158,30 @@ public struct InspectorColumn: View {
     .background(Theme.Palette.surface)
   }
 
+  /// Reads what the Super Bot can see of the workers. It never offers an action on them.
+  private func observationBlock(_ observation: InspectorObservation) -> some View {
+    VStack(alignment: .leading, spacing: Theme.Metric.panelSectionBodyGap) {
+      PanelSectionHeader(symbolName: "eye", title: "观测")
+      HStack(spacing: Theme.Metric.panelSectionRowGap) {
+        Text(observation.headline)
+          .font(Theme.TypeScale.note)
+          .foregroundStyle(Theme.Palette.textSecondary)
+        Spacer(minLength: 0)
+        if observation.canRefresh {
+          IconButton(
+            systemName: "arrow.clockwise", label: "刷新观测",
+            size: Theme.Metric.headerControlHeight, style: .circled,
+            action: { onRefreshObservation?() })
+        }
+      }
+      if let detail = observation.detail {
+        Text(detail)
+          .font(Theme.TypeScale.note)
+          .foregroundStyle(Theme.Palette.textMuted)
+      }
+    }
+  }
+
   private var sections: [InspectorSectionModel] {
     switch tab {
     case .detail:
@@ -154,6 +198,9 @@ public struct InspectorColumn: View {
   }
 
   @ViewBuilder private var content: some View {
+    if tab == .detail, let observation {
+      observationBlock(observation)
+    }
     if tab == .computer, let computerContent {
       computerContent
     } else {

@@ -246,7 +246,11 @@ public struct SidebarPanel: View {
               }
               .onSubmit { commitSectionRename(section.id) }
           } else {
-            SectionLabel(section.title, unreadCount: section.unreadCount)
+            // The Super Bot section is one permanent row: a title band above it would be a
+            // section the person cannot rename, collapse or delete.
+            if section.role != .system {
+              SectionLabel(section.title, unreadCount: section.unreadCount)
+            }
           }
         }
       }
