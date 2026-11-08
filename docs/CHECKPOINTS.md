@@ -4690,6 +4690,15 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
   deployed revision `fee326e2`; site and Worker version remain 0.15.0. The `Deploy`
   workflow-run job is skipped until Cloudflare secrets exist, so this deployment is the
   local `npm run deploy` that the release procedure requires.
+- The installed App's own CLI (`Contents/Helpers/eagle superagent observe status`) reports
+  `观测 ready · 不可读 0` and lists all eight daily Bots with their retained entry counts
+  (786, 33, 276, 300, 666, …), so the packaged Super Bot reaches the packaged daemon's
+  observation routes over the wire. Its own model is `未配置模型` until the row is selected
+  and adopts the Bot settings.
+- CI on `279926d6`: the `test` job passed on the first attempt; the `macos` job failed once
+  on `CLISettingsLayoutTests`'s copy-button revert (a 2 s timer under a 5 s deadline on a
+  loaded runner, untouched by this release) and passed on `gh run rerun --failed`, so the
+  final Check for the tree is green.
 - Leftovers cleaned before the release: the old source-run daemon serving the packaged App
   on 43117 (71169) and two orphaned `scripts/serve.ts` daemons from 07:38 in `/tmp` roots
   (86418, 86799).
