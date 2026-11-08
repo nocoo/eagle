@@ -373,7 +373,7 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
           // A conversation that filtered the tool away must not be told to use it.
           if (!agent.tools.some((tool) => tool.name === "note_set")) return undefined;
           return [
-            "Keep the one line a person sees next to this bot in their sidebar with note_set: it is a status, so rewrite it when the nature of the work changes, not every turn; a plain follow-up leaves it alone. Keep it to at most 10 characters.",
+            "Keep the one line a person sees next to this bot in their sidebar with note_set: it is a status, so rewrite it when the nature of the work changes, not every turn; a plain follow-up leaves it alone. Aim for about ten Chinese characters, or an equally short line in another language: it has to be readable next to the bot's name, not cut off.",
             ...(options.note === undefined
               ? []
               : [noteLine(options.note.current(), (options.now ?? Date.now)())]),

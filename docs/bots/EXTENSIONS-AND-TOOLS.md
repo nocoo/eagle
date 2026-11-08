@@ -227,7 +227,7 @@ types/source remain authoritative for native argument details and output limits.
 
 | Group / tool | Input | Behavior | Replay |
 | --- | --- | --- | --- |
-| `core-ui` / `note_set` | `text` | The Bot's own line for the sidebar, replacing the answer's first sentence the daemon would otherwise derive for this run; the prompt asks for at most 10 characters, and the hard bound is 120 after trimming and whitespace collapse; an empty string clears it for this run. Idempotent by value | Safe |
+| `core-ui` / `note_set` | `text` | The Bot's own line for the sidebar, replacing the answer's first sentence the daemon would otherwise derive for this run; the prompt asks for about ten Chinese characters (an equally short line in another language) so the sidebar can read it beside the bot's name, and the hard bound is 120 after trimming and whitespace collapse; an empty string clears it for this run. Idempotent by value | Safe |
 | `core` / `list` | `path?, limit?` | Recursive, directory-relative paths; default 2,000 entries, at most 50 KiB; sorted per directory; does not traverse symlinks or common generated/dependency directories | Safe |
 | `coding` / `read` | `path, offset?, limit?` | Native text paging, diagnostics and supported image input; offset is one-based | SDK default unsafe |
 | `coding` / `write` | `path, content` | Native whole-file UTF-8 creation/replacement, including parent directories | SDK default unsafe |

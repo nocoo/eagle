@@ -226,7 +226,7 @@ test("note_set belongs to core-ui and its section tells the model when to write 
     assert.match(text, /note_set/);
     assert.match(text, /sidebar/);
     assert.match(text, /not every turn/);
-    assert.match(text, /at most 10 characters/, "the line is asked to stay short");
+    assert.match(text, /about ten Chinese characters/, "the line is asked to stay short");
     assert.match(text, /在等 PR 审核/, "the model sees its own line");
     assert.match(text, /3 hours ago/, "and how stale it is");
   } finally {
