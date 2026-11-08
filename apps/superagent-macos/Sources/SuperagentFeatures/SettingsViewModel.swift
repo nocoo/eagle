@@ -44,26 +44,40 @@ public final class SuperagentSettingsViewModel: ObservableObject {
     } catch { failure = message(error) }
   }
 
+  /// What this service holds now. A first use reads it to decide what it may inherit.
+  public var configuration: ModelConfiguration {
+    ModelConfiguration(
+      baseUrl: baseUrl, model: model, thinkingLevel: thinkingLevel, hasApiKey: hasApiKey)
+  }
+
   /// Writes the pair a per-Super-Bot model row changes, leaving the stored key alone: the
   /// key belongs to the service, the model and level belong to this conversation.
   public func apply(model: String, thinkingLevel: String) async {
     await apply(baseUrl: baseUrl, model: model, thinkingLevel: thinkingLevel)
   }
 
-  /// First use: adopt the Bot model settings, so a fresh Super Bot starts configured.
-  public func apply(baseUrl: String, model: String, thinkingLevel: String) async {
+  /// First use: adopt the Bot model settings, so a fresh Super Bot starts configured. A `nil`
+  /// key keeps whatever the service already holds.
+  public func apply(
+    baseUrl: String, model: String, thinkingLevel: String, apiKey: String? = nil
+  ) async {
     guard !baseUrl.isEmpty, !model.isEmpty else { return }
-    self.baseUrl = baseUrl
-    self.model = model
-    self.thinkingLevel = thinkingLevel
+    await apply(
+      ConfigurationChange(
+        baseUrl: baseUrl, model: model, thinkingLevel: thinkingLevel, apiKey: apiKey))
+  }
+
+  /// Sends exactly this change and adopts the answer: one write, one published state.
+  public func apply(_ change: ConfigurationChange) async {
+    self.baseUrl = change.baseUrl
+    self.model = change.model
+    self.thinkingLevel = change.thinkingLevel
     saving = true
     defer { saving = false }
     failure = nil
     notice = nil
     do {
-      let saved = try await port.configure(
-        ConfigurationChange(
-          baseUrl: baseUrl, model: model, thinkingLevel: thinkingLevel, apiKey: nil))
+      let saved = try await port.configure(change)
       apply(saved)
     } catch { failure = message(error) }
   }

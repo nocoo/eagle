@@ -38,7 +38,10 @@ public struct SuperagentConversationContent: View {
           perform: { Task { await model.chat.retry() } })
       }
       if !model.chat.modelReady {
-        SuperagentNotice(text: "尚未配置模型。请在设置 → Super Bot 填写地址与模型。", action: nil) {}
+        SuperagentNotice(
+          text: "尚未配置模型。右侧「模型」里可以沿用 Bot 的模型和密钥。",
+          action: "沿用 Bot 的模型设置"
+        ) { Task { await model.inheritBotModel() } }
       }
       if model.chat.canLoadOlder {
         HStack {

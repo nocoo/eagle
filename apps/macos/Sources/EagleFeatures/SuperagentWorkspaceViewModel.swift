@@ -16,14 +16,18 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
   /// SG-002: read-only worker coverage. It has no command surface by construction.
   public let observation: SuperagentObservationViewModel
   private var forwarding: AnyCancellable?
+  /// The Bot service this window's model account is inherited from, once.
+  private let bots: BotsSettings
   private var started = false
   private var windowOpen = true
 
   public init(
     supervisor: SuperagentDaemonSupervisor = .shared,
-    environment: [String: String] = ProcessInfo.processInfo.environment
+    environment: [String: String] = ProcessInfo.processInfo.environment,
+    bots: BotsSettings = BotsSettings()
   ) {
     self.supervisor = supervisor
+    self.bots = bots
     let endpoint = supervisor.endpoint
     let port: SuperagentChatPort
     let settingsPort: SuperagentServicePort
@@ -46,9 +50,10 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
     settings = SuperagentSettingsViewModel(port: settingsPort)
     observation = SuperagentObservationViewModel(
       port: port as? SuperagentObservationPort ?? FailingObservationPort())
-    forwarding = Publishers.Merge(
+    forwarding = Publishers.Merge3(
       chat.objectWillChange.map { _ in () },
-      supervisor.objectWillChange.map { _ in () }
+      supervisor.objectWillChange.map { _ in () },
+      settings.objectWillChange.map { _ in () }
     ).sink { [weak self] _ in self?.objectWillChange.send() }
   }
 
@@ -106,15 +111,37 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
     // Re-selecting the row must not tear the socket down and rebuild it: that is what made
     // the surface flash "正在连接" on every visit.
     if chat.connection != .ready { await chat.connect() }
+    // The service owns its configuration, but the person's model account is one account: a
+    // Super Bot that has none continues the Bot's, now that the socket can be written.
+    await inheritBotModel()
   }
 
-  /// First use continues the Bot model settings: the same address, model and level, so the
-  /// Super Bot starts configured like a Bot does. Later changes are the Super Bot's own.
-  public func adoptModelDefaults(baseUrl: String, model: String, thinkingLevel: String) async {
+  /// First use continues the Bot's model account — the same address, model, level and key — so
+  /// the Super Bot can answer without a person typing the credential twice. Only what the Super
+  /// Bot lacks is copied; a model, a level or a key chosen here is never replaced.
+  ///
+  /// Everything comes from the daemon's private gateway file, read here rather than over its
+  /// API: the API reports only whether a key exists, by design. This is the notice's action and
+  /// the 密钥 row too, so a Super Bot whose own configuration lost its credential can take it
+  /// again.
+  public func inheritBotModel() async {
+    guard let saved = BotsGatewayCredential.read(root: bots.rootURL) else { return }
+    await adopt(saved)
+  }
+
+  public func clearBotKey() async {
+    await settings.clearKey()
+  }
+
+  private func adopt(_ inherited: BotsGatewayCredential) async {
     guard windowOpen else { return }
     await settings.load()
-    guard settings.baseUrl.isEmpty else { return }
-    await settings.apply(baseUrl: baseUrl, model: model, thinkingLevel: thinkingLevel)
+    guard windowOpen, !settings.saving else { return }
+    guard
+      let change = SuperagentModelAdoption.change(
+        current: settings.configuration, inherited: inherited)
+    else { return }
+    await settings.apply(change)
   }
 
   /// One of the inspector's 模型 rows: the menu's id, written to this service's own pair.
@@ -124,6 +151,12 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
       await settings.apply(model: value, thinkingLevel: settings.thinkingLevel)
     case "thinking":
       await settings.apply(model: settings.model, thinkingLevel: value)
+    case "key":
+      switch value {
+      case "inherit-key": await inheritBotModel()
+      case "clear-key": await clearBotKey()
+      default: return
+      }
     default:
       return
     }

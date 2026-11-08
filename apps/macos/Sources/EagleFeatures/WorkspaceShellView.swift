@@ -436,13 +436,9 @@ public struct WorkspaceShellView: View {
       // surface-specific control that a bot's panel does not have.
       .task(id: list.selection) {
         guard selectedIsSuperagent else { return }
-        // A fresh Super Bot continues the Bot model settings; after that the pair below the
-        // 模型 tab is its own.
-        await settings.loadGatewayIfNeeded()
-        if let gateway = settings.gateway {
-          await superagent.adoptModelDefaults(
-            baseUrl: gateway.baseUrl, model: gateway.model, thinkingLevel: gateway.thinkingLevel)
-        }
+        // A fresh Super Bot continues the Bot's model account; after that the rows below the
+        // 模型 tab are its own. The workspace asks again once its socket is connected.
+        await superagent.inheritBotModel()
         await superagent.observation.refresh()
       }
       .task {
@@ -468,6 +464,9 @@ public struct WorkspaceShellView: View {
         await bots.start()
         guard !Task.isCancelled else { return }
         await bots.loadModels()
+        // The daemon owns the model account the Super Bot may continue, and it answers after
+        // the Super Bot was already selected: adopt here as well, never overwriting a choice.
+        if selectedIsSuperagent { await superagent.inheritBotModel() }
       }
       .task {
         guard ProcessInfo.processInfo.environment["EAGLE_DISABLE_WORKERS"] != "1" else { return }

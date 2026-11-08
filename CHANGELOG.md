@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## macOS v0.22.1 — 2026-11-08
+
+- Let the Super Bot continue the Bot's model account instead of asking for it twice. First use
+  copies the Bot gateway's address, model and level **and its key** — the key is read once
+  from the daemon's private gateway file, because the API reports only that a key exists — so
+  the first conversation answers without a second paste. Nothing chosen on the Super Bot's own
+  side is overwritten, and the 模型 tab gained a 密钥 row that takes the Bot's key again or
+  clears it.
+- Run that adoption when the Super Bot's socket is usable and again when the Bot service
+  becomes ready, so a launch, a re-selection and a daemon that starts late all end configured;
+  0.22.0 adopted only if the Bot service happened to answer first, which is why an installed
+  App kept saying it had no model.
+- Point the unconfigured notice at the inspector's 模型 tab, since the Settings page it named
+  was removed when the Super Bot gained a Bot's inspector.
+
 ## macOS v0.22.0 — 2026-11-08
 
 - Add the Super Bot: an independent service the App starts and stops on its own, with its own

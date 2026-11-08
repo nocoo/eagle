@@ -30,6 +30,16 @@ enum SuperagentInspectorPresenter {
         choices: levels.map {
           InspectorChoiceRow.Choice(id: $0, title: BotsPresenter.thinkingLabel($0))
         }),
+      // A Bot's key lives on 模型 settings and never comes back over the API; the Super Bot's
+      // own copy needs a way to be taken from the Bot again, or cleared.
+      InspectorChoiceRow(
+        id: "key", label: "密钥",
+        value: settings.hasApiKey ? "已配置" : "未配置",
+        selected: nil,
+        choices: [
+          InspectorChoiceRow.Choice(id: "inherit-key", title: "沿用 Bot 的密钥"),
+          InspectorChoiceRow.Choice(id: "clear-key", title: "清除密钥"),
+        ]),
     ]
   }
 

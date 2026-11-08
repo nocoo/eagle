@@ -43,10 +43,14 @@ struct SuperagentInspectorPresenterTests {
     settings.thinkingLevel = "high"
     let rows = SuperagentInspectorPresenter.modelChoices(
       settings: settings, models: ["gpt-5", "gpt-5-mini"])
-    #expect(rows.map(\.label) == ["模型", "思考等级"])
+    #expect(rows.map(\.label) == ["模型", "思考等级", "密钥"])
     #expect(rows[0].selected == "gpt-5")
     #expect(rows[0].choices.map(\.id) == ["gpt-5", "gpt-5-mini"])
     #expect(rows[1].value == "高", "the level reads like a bot's level")
     #expect(rows[1].selected == "high")
+    #expect(rows[2].value == "未配置")
+    #expect(
+      rows[2].choices.map(\.id) == ["inherit-key", "clear-key"],
+      "the Super Bot's own credential can be taken from the Bot again, or cleared")
   }
 }
