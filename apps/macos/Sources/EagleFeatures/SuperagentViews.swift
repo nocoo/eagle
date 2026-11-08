@@ -9,13 +9,16 @@ public struct SuperagentConversationContent: View {
   @ObservedObject private var model: SuperagentWorkspaceViewModel
   private let layout: ShellLayoutViewModel
   private let focusRestore: Int
+  private let showsInspector: Bool
 
   public init(
-    model: SuperagentWorkspaceViewModel, layout: ShellLayoutViewModel, focusRestore: Int
+    model: SuperagentWorkspaceViewModel, layout: ShellLayoutViewModel, focusRestore: Int,
+    showsInspector: Bool
   ) {
     self.model = model
     self.layout = layout
     self.focusRestore = focusRestore
+    self.showsInspector = showsInspector
   }
 
   public var body: some View {
@@ -57,7 +60,7 @@ public struct SuperagentConversationContent: View {
           get: { model.chat.draft }, set: { model.chat.draft = $0 }),
         onSend: { Task { await model.chat.send() } },
         showsSidebar: layout.showsSidebar,
-        showsInspector: false,
+        showsInspector: showsInspector,
         participantStatus: ParticipantStatus(
           label: model.statusLine,
           phase: model.chat.isRunning ? .working : (model.isReady ? .idle : .offline),
@@ -74,7 +77,7 @@ public struct SuperagentConversationContent: View {
         onShowSidebar: { layout.toggleSidebar() },
         onToggleInspector: { layout.toggleInspector() },
         focusRestore: focusRestore,
-        allowsInspector: false,
+        allowsInspector: true,
         showsComposerAccessories: false
       )
     }

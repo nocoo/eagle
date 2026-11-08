@@ -138,11 +138,11 @@ public struct WorkspaceShellView: View {
 
   private var selectedIsBot: Bool { bots.owns(list.selection) }
 
-  /// The inspector belongs to an open conversation: with nothing selected there is nothing to
-  /// inspect, so the column (and its drag handle) stay away instead of showing an empty panel.
+  /// The inspector belongs to an open conversation, the Super Bot's included: with nothing
+  /// selected there is nothing to inspect, so the column (and its drag handle) stay away
+  /// instead of showing an empty panel.
   private var showsInspector: Bool {
     layout.showsInspector && list.selection != nil
-      && list.selection != SuperagentWorkspaceViewModel.selectionID
   }
 
   /// The sample transcript carries its own exchanges, so opening one only needs the entry that
@@ -332,7 +332,8 @@ public struct WorkspaceShellView: View {
           }
           if selectedIsSuperagent {
             SuperagentConversationContent(
-              model: superagent, layout: layout, focusRestore: focusRestore)
+              model: superagent, layout: layout, focusRestore: focusRestore,
+              showsInspector: showsInspector)
           } else if selectedIsBot {
             BotsConversationContent(
               bots: bots,
