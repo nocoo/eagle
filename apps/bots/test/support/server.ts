@@ -14,6 +14,7 @@ import {
   type ToolGroupCatalog,
   type TriggerSummary,
 } from "../../src/core/domain.ts";
+import { ManagedFileStore } from "../../src/core/ManagedFileStore.ts";
 import { OriginStore, originPath } from "../../src/core/OriginStore.ts";
 import { PeerExchangeStore } from "../../src/core/PeerExchangeStore.ts";
 import type { RuntimePort } from "../../src/core/RuntimePort.ts";
@@ -118,10 +119,13 @@ export type StackOptions = {
     /** The bound port, known only after the listener exists. */
     readonly port: () => number;
   }) => ObservationRoutes;
+  /** Simulate an older daemon that can serve files but cannot admit fileIds on send. */
+  readonly sendFiles?: boolean;
 };
 
 export const startStack = async (options: StackOptions = {}): Promise<Stack> => {
   const root = options.root ?? (await mkdtemp(join(tmpdir(), "bots-server-")));
+  const files = new ManagedFileStore({ botDir: (botId) => join(root, "bots", botId) });
   const clients = await ClientStore.open(
     root,
     options.now === undefined ? {} : { now: options.now },
@@ -159,6 +163,7 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
     const adapter = new PiDurableRuntime({
       models,
       log,
+      managedFiles: files,
       ...(options.maxMessageBytes === undefined
         ? {}
         : { maxMessageBytes: options.maxMessageBytes }),
@@ -264,6 +269,7 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
       release: (botId) => registry.release(botId),
     },
     origins: { store: async (botId) => OriginStore.open(originPath(directory.botDir(botId))) },
+    files,
     ...(options.secrets === undefined ? {} : { secrets: options.secrets }),
     onRunning: (botId, running) => {
       if (registry.markRunning(botId, running)) broadcast?.();
@@ -335,11 +341,14 @@ export const startStack = async (options: StackOptions = {}): Promise<Stack> => 
       usage: true,
       peers: false,
       triggers: true,
+      files: true,
+      sendFiles: options.sendFiles ?? true,
     },
     ...(options.triggers === undefined ? {} : { triggers: options.triggers }),
     ...(options.secretsApi === undefined ? {} : { secrets: options.secretsApi }),
     peers: peersApi,
     ...(options.ingress === undefined ? {} : { ingress: options.ingress }),
+    files,
     port: 0,
   });
   boundPort = daemon.port;

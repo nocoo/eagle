@@ -270,6 +270,115 @@ test("a bot summary only carries a reason while unavailable", () => {
   });
 });
 
+test("welcome sendFiles capability is independent, defaults false and rejects non-booleans", () => {
+  const welcome = {
+    type: "welcome",
+    protocolVersion: 1,
+    server: { version: "0.1.0", instance: "i_test", pid: 1 },
+    capabilities: {
+      agent: false,
+      tools: false,
+      tasks: false,
+      entries: false,
+      usage: false,
+      peers: false,
+      triggers: false,
+    },
+    bots: [],
+  };
+  const old = decodeServerEvent({
+    ...welcome,
+    capabilities: { ...welcome.capabilities, files: true },
+  });
+  assert.equal(old.type, "welcome");
+  if (old.type === "welcome") {
+    assert.equal(old.capabilities.files, true);
+    assert.equal(old.capabilities.sendFiles, false);
+  }
+
+  const withSendFiles = decodeServerEvent({
+    ...welcome,
+    capabilities: { ...welcome.capabilities, files: true, sendFiles: true },
+  });
+  assert.equal(withSendFiles.type, "welcome");
+  if (withSendFiles.type === "welcome") {
+    assert.equal(withSendFiles.capabilities.sendFiles, true);
+  }
+
+  invalidEvent({
+    ...welcome,
+    capabilities: { ...welcome.capabilities, sendFiles: "yes" },
+  });
+});
+
+test("Message.files is generic and FileRef unknown fields are tolerated", () => {
+  const ref = {
+    id: "f_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    name: "result.txt",
+    mimeType: "text/plain",
+    size: 42,
+    sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    path: "/must-not-cross-wire",
+  };
+  const tool = decodeServerEvent({
+    type: "append",
+    rev: 1,
+    trace,
+    message: {
+      id: "e_11",
+      role: "tool",
+      state: "complete",
+      createdAt: "x",
+      blocks: [{ type: "toolResult", callId: "c1", name: "read", text: "ok", isError: false }],
+      files: [ref],
+    },
+  });
+  assert.equal(tool.type, "append");
+  if (tool.type === "append") {
+    assert.equal(tool.message.files?.[0]?.name, "result.txt");
+    const ref = tool.message.files?.[0];
+    assert.equal(ref === undefined ? true : !("path" in ref), true);
+  }
+});
+
+test("send fileIds are bounded, unique and strict", () => {
+  const fileId = `f_${"a".repeat(64)}`;
+  const decoded = decodeCommand({
+    type: "send",
+    requestId,
+    text: "带附件",
+    fileIds: [fileId],
+    whenBusy: "followUp",
+    trace,
+  });
+  assert.equal(decoded.type, "send");
+  if (decoded.type === "send") {
+    assert.deepEqual((decoded as unknown as { fileIds?: readonly string[] }).fileIds, [fileId]);
+  }
+
+  invalidCommand({
+    type: "send",
+    requestId,
+    text: "带附件",
+    fileIds: [fileId, fileId],
+    trace,
+  });
+  invalidCommand({
+    type: "send",
+    requestId,
+    text: "带附件",
+    fileIds: ["f_bad"],
+    trace,
+  });
+  invalidCommand({
+    type: "send",
+    requestId,
+    text: "带附件",
+    fileIds: Array.from({ length: 17 }, (_, index) => `f_${index.toString(16).padStart(64, "0")}`),
+    trace,
+  });
+});
+
 test("live tasks decode with a status the client can render", () => {
   const task = {
     id: "t_12",

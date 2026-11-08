@@ -15,6 +15,7 @@ import type {
   ConversationSnapshot,
   DeltaChange,
   InboxItem,
+  ManagedFileRef,
   Message,
   Submission,
 } from "../../core/domain.ts";
@@ -39,6 +40,8 @@ export type EventMapperOptions = {
   /** How one admitted input is marked once it appears: hidden answers to ask_user, today. */
   readonly marks?: (requestId: string) => { hidden?: boolean; answersTo?: string } | undefined;
 };
+
+export const BOTS_USER_FILES_ENTRY = "bots.user.files";
 
 const inboxMode = (mode: string): InboxItem["mode"] =>
   mode === "steer" ? "steer" : mode === "followUp" ? "followUp" : "queue";
@@ -384,7 +387,8 @@ export class EventMapper {
     if (
       entry.kind !== "pi.user" &&
       entry.kind !== "pi.assistant" &&
-      entry.kind !== "pi.tool-result"
+      entry.kind !== "pi.tool-result" &&
+      entry.kind !== BOTS_USER_FILES_ENTRY
     ) {
       return [];
     }
@@ -475,7 +479,48 @@ export class EventMapper {
 
   #convertEntry(entry: EntryRecord): Message | undefined {
     let model = entry.model?.[0];
-    if (entry.kind === REFLECTION_TOOL_ENTRY) {
+    let files: readonly ManagedFileRef[] | undefined;
+    if (entry.kind === BOTS_USER_FILES_ENTRY) {
+      const data = entry.data;
+      if (data === null || typeof data !== "object" || Array.isArray(data)) return undefined;
+      const text = data.text;
+      if (typeof text !== "string" || !Array.isArray(data.files) || data.files.length > 16) {
+        return undefined;
+      }
+      const ids = new Set<string>();
+      const parsed: ManagedFileRef[] = [];
+      for (const candidate of data.files) {
+        if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate))
+          return undefined;
+        const id = candidate.id;
+        const name = candidate.name;
+        const mimeType = candidate.mimeType;
+        const size = candidate.size;
+        const sha256 = candidate.sha256;
+        if (
+          typeof id !== "string" ||
+          !/^f_[0-9a-f]{64}$/.test(id) ||
+          ids.has(id) ||
+          typeof name !== "string" ||
+          Buffer.byteLength(name, "utf8") === 0 ||
+          Buffer.byteLength(name, "utf8") > 255 ||
+          typeof mimeType !== "string" ||
+          Buffer.byteLength(mimeType, "utf8") > 255 ||
+          typeof size !== "number" ||
+          !Number.isSafeInteger(size) ||
+          size < 0 ||
+          size > 50 * 1024 * 1024 ||
+          typeof sha256 !== "string" ||
+          !/^[0-9a-f]{64}$/.test(sha256)
+        ) {
+          return undefined;
+        }
+        ids.add(id);
+        parsed.push({ id, name, mimeType, size, sha256 });
+      }
+      files = parsed;
+      if (model?.role === "user") model = { ...model, content: text };
+    } else if (entry.kind === REFLECTION_TOOL_ENTRY) {
       const data = entry.data;
       if (data === null || typeof data !== "object" || Array.isArray(data)) return undefined;
       const value = data.message;
@@ -502,6 +547,7 @@ export class EventMapper {
     const marks = requestId === undefined ? undefined : this.#marks?.(requestId);
     if (message !== undefined && marks !== undefined) message = { ...message, ...marks };
     if (message === undefined) return undefined;
+    if (files !== undefined) message = { ...message, files };
     if (messageBytes(message) > this.#maxMessageBytes) {
       // A tool result is bounded by its own tool, but a hostile or future tool must not
       // turn into an "answer too large" notice: clamp the row instead.

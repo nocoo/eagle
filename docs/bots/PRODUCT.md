@@ -100,6 +100,13 @@ each call's arguments and output.
 
 ## Native composer
 
+An input above the daemon's 8,000 Unicode code-point limit is refused locally before
+it leaves the composer. The original draft remains visible and the person sees the
+reason; no outbox entry or optimistic message is created for that attempt. Shorter
+nonblank inputs retain their original whitespace and newline bytes once they reach the
+conversation model. The native SwiftUI text field can still suppress a canonically
+equivalent edit before it reaches that model; this input-loss bug remains unresolved.
+
 The composer grows upward from one visible text line to three, for both soft wraps
 and explicit newlines. Further text scrolls inside the native field without growing
 the composer. Clearing or sending the draft restores its one-line height. The bottom

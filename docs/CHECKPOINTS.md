@@ -1,5 +1,17 @@
 # 用户视角检查点
 
+## 2026-11-08 — File groundwork PR rebase
+
+- The file-work branch was linearly rebased onto the newer `main`, retaining the
+  separate Super Bot, queue promotion and managed-file changes. The merge-only test
+  for a promoted attachment was restored and passed against the real local SQLite
+  runtime with a scripted model. Independent conflict review and full gates are pending.
+- The isolated Dev App remains separate from the daily App. Herdr collection,
+  live authentication, D1 and website rendering were not exercised in this rebase.
+- Automatic long-text conversion, file sending/cards/preview, Bot publication and
+  CLI file acceptance are still missing. The native SwiftUI input bug documented in
+  `PRODUCT.md` remains open; this branch is not a finished file experience.
+
 ## 2026-11-07 — SG-001 accepted by the owner
 
 - Owner accepted the source dev App after creating a worker bot in the isolated
@@ -67,6 +79,205 @@
   the independent durable conversation and its authenticated client protocol.
 - Worker collection, website authentication and D1 are unchanged/not exercised.
   No installed App, live worker, device credential or remote service was modified.
+
+## 2026-11-07 19:30 +08 — Exact input and recovery follow-up
+
+- An exact-byte regression test exposed Swift's canonical `String` equality ignoring
+  a newly edited draft: the old shorter input could be sent instead. Draft mirroring
+  now compares UTF-8 bytes; the window test verifies the 8,000-code-point boundary and
+  the exact bytes stored and sent for a shorter input. Independent native-control review
+  then reproduced the same loss before the binding setter: the actual SwiftUI text field
+  can suppress a canonically equivalent edit. That native-input bug is not fixed.
+- Previously loaded oversized recovery is retained per Bot in memory while the outbox
+  cannot be read; switching Bots does not reveal another Bot's content, and a successful
+  read refreshes the cache. An unsent composer draft is still not durable across restart.
+- Official Node 26.9 root `check` passed 311 tests. Browser suite passed 191 tests with
+  11 pre-existing platform-specific skips. Both Swift package suites, strict formatting
+  and the design guard passed. One earlier concurrent Swift test failure remains
+  unexplained despite passing focused and serial reruns.
+- The isolated source Dev App and daemon have been used only as a local startup check.
+  Herdr collection, authentication, D1 and website rendering were not exercised.
+  Automatic file conversion, file sending/cards/preview, Bot publishing and the multi-type
+  `eagle-dev` acceptance are still unimplemented; the unfinished publishing stash was
+  examined but not applied. The next broken hop remains a durable client file outbox.
+
+## 2026-11-07 19:15 +08 — Oversized draft and outbox safety
+
+- New oversized drafts remain in the composer with an explicit limit; text within the
+  limit preserves whitespace. Older oversized outbox entries remain on disk, are not
+  resent automatically or by retry, and are shown as labelled local recoveries. A
+  subsequent snapshot, temporary outbox read failure, or peer run no longer hides a
+  known recovery. Replayed normal sends preserve their original `whenBusy`.
+- Both Swift package suites, strict formatting and design checks passed. One concurrent
+  full run missed a send in an existing test; focused and serial full reruns passed,
+  but the intermittent cause remains unknown. Review of the latest recovery fix is
+  in progress.
+- An isolated source Dev App is running with its own local daemon on port 43129; it
+  is not proof of the file journey. Herdr collection, authentication, D1 and website
+  rendering were not exercised. Automatic Markdown conversion, attachment UI and
+  preview, Bot publication, and isolated `eagle-dev` file acceptance remain the next
+  broken hops; none is claimed complete.
+
+## 2026-11-07 — Unsafe client file sending deferred
+
+- The first Swift file-send path passed its initial tests but review found data-loss,
+  replay and ordinary-text regressions. Commit `b3a97e5` removes that unfinished path
+  from the active client while retaining the Bot-scoped daemon file store, additive
+  send protocol, and the earlier rejected-draft fix. Swift package tests and Bots
+  `check` passed after removal; this does not establish a working file journey.
+- Long-input conversion, file cards and preview, Bot file publishing, and `eagle-dev`
+  file acceptance remain unimplemented. Publishing work and an unfinished client
+  barrier test are kept in local stashes for later inspection. No production data was
+  used by tests.
+- Live Herdr collection, authentication, D1 and website rendering were not exercised.
+  The next broken hop is a safe client send and recovery path before any file UI.
+
+## 2026-11-07 — Client replay and staging review
+
+- Several client fixes are committed: staged-source identity, complete-manifest
+  retry, outbox refusal retention and attachment order. A review of the first group
+  still found durability and ordinary-send regressions; those remain unresolved.
+- The current test investigates whether a cancelled upload resumes when its Bot is
+  reselected. The App file card and preview, Bot file publishing and `eagle-dev`
+  file acceptance are still absent. The publishing work remains in stash `0a334c0`.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  Tests have not used the installed production App or its daemon.
+
+## 2026-11-07 — Client send recovery review
+
+- Client review found data-loss and replay risks. Initial storage fixes are committed,
+  but their second review found residual durability and plain-text regressions. The
+  asynchronous staging task is now bound to its Bot in `9fccfa8`; refusal and replay
+  fixes are still being implemented. No complete client gate is claimed for this stage.
+- The user-facing file card and preview, Bot publishing tool, and `eagle-dev` file
+  acceptance remain incomplete. The publishing work remains in local stash `0a334c0`.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  Tests have not used the installed production App or its daemon.
+
+## 2026-11-07 — Client recovery safety tests
+
+- Fixes for completed upload acknowledgements, corrupt staged text, strict outbox
+  schema and source-descriptor identity are committed. The staging durability fix
+  remains in progress; the reviewed client still has unresolved task and refusal
+  recovery issues, so this is not yet a safe file-send journey.
+- Bot publishing work remains in local stash `0a334c0`; the App card, preview and
+  `eagle-dev` file acceptance have not been implemented or verified.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  Tests have not used the installed production App or its daemon.
+
+## 2026-11-07 — Client recovery defects under repair
+
+- Read-only review of client staging and sending found eleven recovery and safety
+  defects. The lost-upload-ACK fix is committed in `3fcf2f6`; corrupted snapshot
+  recovery and the remaining findings are being tested. The client slice is not yet
+  certified and no user-facing file workflow is complete.
+- Work on the Bot publishing tool was paused and its uncommitted changes saved in a
+  local stash. Cards, previews, App wiring and `eagle-dev` file acceptance remain the
+  next broken hops after the recovery fixes.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  Tests have not used the installed production App or its daemon.
+
+## 2026-11-07 — Client staging committed; user interface pending
+
+- Client file staging and upload/send plumbing were committed in `832247c`; its
+  Swift package tests and coverage passed. A read-only review is in progress.
+  This is not yet a usable App journey: the composer does not invoke file selection
+  and the transcript has no file card or preview.
+- The Bot-facing publishing tool is being built with the existing device-policy
+  boundary. `eagle-dev` file acceptance, App UI and end-to-end verification remain
+  unimplemented; their success is not claimed.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  Tests have not used the installed production App or its daemon.
+
+## 2026-11-07 — Client staging and sending in progress
+
+- File admission review fixes landed in `c239707`; Bots check and the independent
+  Swift client tests passed, and the targeted review found no remaining issue.
+- Client-private staging tests cover exact UTF-8, source snapshots and the 50 MiB
+  boundary. The upload/outbox/send path is still under implementation; a user cannot
+  yet send a file from the App or verify a file card or preview.
+- `file_publish` and `eagle-dev` acceptance are not implemented. No live Herdr
+  collection, authentication, D1 or website rendering was exercised, and tests have
+  not used the installed production App or its daemon.
+
+## 2026-11-07 — File admission review fixes
+
+- File admission and history projection are committed in `f1b5e2f`. Review found
+  retry ordering, attachment capability and refusal-disposition defects; coding is
+  fixing these with real socket and SQLite tests. Their combined gate is not yet green.
+- The user-facing composer, file card, preview, Bot publishing tool and `eagle-dev`
+  file acceptance remain unimplemented; no end-to-end file chat is claimed.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  Tests have not used the installed production App or its daemon.
+
+## 2026-11-07 — File admission checks in progress
+
+- The file-admission slice now has focused tests for protocol, a real pi-durable
+  SQLite run, file ownership and history projection. The full Bots and Swift
+  gates are still running; no successful complete run or commit is claimed yet.
+- Users still cannot attach or preview files: the composer, cards, publishing tool
+  and `eagle-dev` acceptance are not implemented. Completing the admission gate and
+  review is the next hop.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  The installed production App and its daemon were not used for tests.
+
+## 2026-11-07 — File admission integration under test
+
+- The send protocol and pi-durable file-entry projection are being implemented with
+  daemon-owned metadata and model-only paths. Their new server/runtime/fixture tests
+  are not green yet; a socket case is being diagnosed. This is not a usable file chat.
+- Upload/download storage and draft restoration are committed. The App composer,
+  file cards and preview, Bot file publishing and `eagle-dev` acceptance are still
+  absent. The next broken hop is completing and verifying file admission.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  The installed production App and its daemon were not used for tests.
+
+## 2026-11-07 — File messages in progress
+
+- Managed file storage and the review's lifecycle, streaming and corruption fixes
+  are committed; the Bots check passed with 1,125 tests. Draft restoration is also
+  committed. These pieces do not yet make files usable from the App.
+- The current slice connects completed file references to the existing send and
+  pi-durable message history. Model-facing paths, live/snapshot/history projection
+  and old-client capability behavior are under implementation, not verified.
+- The composer, card, preview, Bot publishing tool and `eagle-dev` acceptance remain
+  the next broken hops. Live Herdr collection, authentication, D1 and website rendering
+  were not exercised; tests have not used the installed production App or its daemon.
+
+## 2026-11-07 — File transport hardened; conversation link pending
+
+- Managed file upload and download now exist behind Bot-scoped bearer access. Their
+  review exposed lifecycle, streaming and metadata-corruption failures; fixes landed
+  and the Bots `check` gate passed with 1,125 tests. This is transport evidence, not
+  evidence that a person can send or preview a file in chat.
+- The next broken hop is connecting the file reference to pi-durable admission and
+  transcript history. Swift composer conversion, file cards, previews, the Bot-facing
+  publishing tool and `eagle-dev` acceptance are still unimplemented.
+- No live Herdr collection, authentication, D1 or website rendering was exercised.
+  The installed production App and its daemon were not used for tests.
+
+## 2026-11-07 — Managed file store under review
+
+- The first file-store slice, `21f9fb6`, adds Bot-scoped 50 MiB streaming upload
+  and download endpoints; its Bots gate passed. No message can yet carry a file,
+  and neither the long-paste conversion nor the card and preview has shipped.
+- Review found lifecycle, protocol and storage-durability gaps. Fixes are being
+  tested before the message, UI and `eagle-dev` layers are connected; this is not
+  evidence of an end-to-end file transfer through the product.
+- This work has not exercised live Herdr collection, authentication, D1 or website
+  rendering. Tests have not used the installed production App or its daemon.
+
+## 2026-11-07 — Conversation file work in progress
+
+- A repeated rejected send could restore the original draft in the Bots view model
+  without updating the composer. Commit `326949d` makes drafts Bot-scoped and keeps
+  the composer synchronized; its Swift and design checks passed. The file card,
+  long-input conversion and file preview are not yet available to the user.
+- The daemon's 50 MiB file store and authenticated transfer are being built; upload,
+  durable message references, model reads, file publishing, preview and CLI acceptance
+  have not yet been verified end to end. The next broken hop is file transfer.
+- No live Herdr collection, authentication, D1 or website rendering was exercised in
+  this work. The installed production App and its daemon were not used for tests.
 
 ## 2026-11-07 — macOS v0.21.0 published with an explicit CI waiver
 

@@ -13,6 +13,7 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai";
 import type { Storage } from "@earendil-works/pi-durable";
+import { ManagedFileStore } from "../../src/core/ManagedFileStore.ts";
 import type { RuntimeBotSpec } from "../../src/core/RuntimePort.ts";
 import { captureLog, type LogRecord } from "../../src/log/log.ts";
 import {
@@ -57,6 +58,7 @@ export type BenchOptions = {
   readonly memory?: (spec: RuntimeBotSpec) => MemoryToolHost | undefined;
   /** The secrets host, when a test asserts what a run asked the person for. */
   readonly secrets?: (spec: RuntimeBotSpec) => SecretsToolHost | undefined;
+  readonly managedFiles?: ManagedFileStore;
   /** The tool groups the bench bot runs with; absent means the daemon's defaults. */
   readonly toolGroups?: readonly string[];
 };
@@ -71,9 +73,12 @@ export const createBench = async (options: BenchOptions = {}): Promise<Bench> =>
   models.setProvider(faux.provider);
   const dir = await mkdtemp(join(tmpdir(), "bots-runtime-"));
   const { log, records } = captureLog();
+  const managedFiles =
+    options.managedFiles ?? new ManagedFileStore({ botDir: (botId) => join(dir, botId) });
   const runtimeOptions: PiRuntimeOptions = {
     models,
     log,
+    managedFiles,
     ...(options.settings === undefined ? {} : { settings: () => options.settings as PiSettings }),
     ...(options.storage === undefined ? {} : { storage: options.storage }),
     ...(options.windowMessages === undefined ? {} : { windowMessages: options.windowMessages }),

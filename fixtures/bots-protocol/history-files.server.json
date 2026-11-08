@@ -1,0 +1,29 @@
+{
+  "type": "history",
+  "trace": "tr_0190a1b2-3e4f-7a50-8b1c-2d3e4f506172",
+  "hasMore": false,
+  "messages": [
+    {
+      "id": "e_7",
+      "role": "user",
+      "state": "complete",
+      "createdAt": "2026-11-07T00:00:00.000Z",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "请读取这个附件"
+        }
+      ],
+      "requestId": "r_0190a1b4-5061-7c72-8d3e-4f5061728394",
+      "files": [
+        {
+          "id": "f_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "name": "report.pdf",
+          "mimeType": "application/pdf",
+          "size": 12345,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    }
+  ]
+}

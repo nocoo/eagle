@@ -140,6 +140,80 @@ struct BotsWindowTests {
     try await waitUntil { bots.queuedMessages.isEmpty }
   }
 
+  @Test("an oversized message stays visible with a clear error")
+  func oversizedDraft() async throws {
+    let (bots, app, port, outbox) = try await window()
+    let draft = String(repeating: "界", count: 8_001)
+    bots.setDraft(draft)
+    bots.send()
+    try await waitUntil { bots.error?.contains("8,000") == true }
+    #expect(bots.composer.text == draft)
+    #expect(app.conversation.draft == draft)
+    #expect(port.sent.isEmpty)
+    #expect(try outbox.entries(for: "b_1").isEmpty)
+  }
+
+  @Test("canonically equivalent edits preserve exact scalars before the length check")
+  func exactUnicodeDraft() async throws {
+    let (bots, app, port, outbox) = try await window()
+    let composed = String(repeating: "é", count: 4_001)
+    let decomposed = String(repeating: "e\u{301}", count: 4_001)
+    bots.setDraft(composed)
+    bots.setDraft(decomposed)
+    bots.send()
+    try await waitUntil { bots.error != nil || !port.sent.isEmpty }
+    #expect(bots.composer.text.utf8.elementsEqual(decomposed.utf8))
+    #expect(app.conversation.draft.utf8.elementsEqual(decomposed.utf8))
+    #expect(bots.error?.contains("8,000") == true)
+    #expect(port.sent.isEmpty)
+    #expect(try outbox.entries(for: "b_1").isEmpty)
+
+    bots.setDraft("é")
+    bots.setDraft("e\u{301}")
+    bots.send()
+    try await waitUntil { port.sent.count == 1 }
+    #expect(port.sent.first?.text.utf8.elementsEqual("e\u{301}".utf8) == true)
+    #expect(try outbox.entries(for: "b_1").first?.text.utf8.elementsEqual("e\u{301}".utf8) == true)
+  }
+
+  @Test("a repeated refusal republishes the restored draft without losing newer input")
+  func repeatedRefusalRestoresDraft() async throws {
+    let (bots, app, conversationPort, _) = try await window()
+    bots.setDraft("原文")
+    bots.send()
+    try await waitUntil { conversationPort.sent.count == 1 }
+    let firstRequest = try #require(conversationPort.sent.last?.requestId)
+    conversationPort.emit(
+      .error(
+        kind: .invalidCommand,
+        disposition: .notAdmitted,
+        message: "same refusal",
+        failure: "f_1",
+        requestId: firstRequest
+      )
+    )
+    try await waitUntil { bots.composer.text == "原文" }
+
+    bots.send()
+    try await waitUntil { conversationPort.sent.count == 2 }
+    let secondRequest = try #require(conversationPort.sent.last?.requestId)
+    bots.setDraft("新草稿")
+    conversationPort.emit(
+      .error(
+        kind: .invalidCommand,
+        disposition: .notAdmitted,
+        message: "same refusal",
+        failure: "f_2",
+        requestId: secondRequest
+      )
+    )
+    try await waitUntil { bots.composer.text == "新草稿\n\n原文" }
+
+    let next = "新草稿\n\n原文！"
+    bots.setDraft(next)
+    #expect(app.conversation.draft == next, "later typing cannot overwrite the restored text")
+  }
+
   @Test("sidebar previews use the last received chat text rather than lifecycle state")
   func sidebarPreview() async throws {
     let (bots, _, port, _) = try await window()

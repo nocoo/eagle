@@ -30,15 +30,23 @@ import {
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
-import type { ConversationSnapshot, Message, Submission, TaskSummary } from "../../core/domain.ts";
+import type {
+  ConversationSnapshot,
+  ManagedFileRef,
+  Message,
+  Submission,
+  TaskSummary,
+} from "../../core/domain.ts";
 import {
   ClassifiedFailure,
   createRunNote,
   deriveBotNote,
+  MAX_SEND_FILE_IDS,
   type RunNote,
   resolveToolGroups,
 } from "../../core/domain.ts";
 import type {
+  ManagedFilesPort,
   RuntimeBotSpec,
   RuntimeEvent,
   RuntimeHandle,
@@ -153,6 +161,22 @@ const DEFAULT_SETTINGS: PiSettings = {
 /** `t_12` is the wire id; pi knows the task by its number. */
 const taskIdOf = (taskId: string): TaskId => Number(taskId.replace(/^t_/, "")) as TaskId;
 
+export const BOTS_USER_FILES_ENTRY = "bots.user.files";
+
+const safeFileRef = (file: {
+  readonly id: string;
+  readonly name: string;
+  readonly mimeType: string;
+  readonly size: number;
+  readonly sha256: string;
+}): ManagedFileRef => ({
+  id: file.id,
+  name: file.name,
+  mimeType: file.mimeType,
+  size: file.size,
+  sha256: file.sha256,
+});
+
 /** One live task as the inspector sees it; ids carry the kind so a client can parse them. */
 const mapTaskGraph = (value: TaskGraph): readonly TaskSummary[] =>
   Object.values(value.tasks)
@@ -214,6 +238,8 @@ export type PiRuntimeOptions = {
   readonly machinePrompt?: () => MachinePrompt | undefined;
   /** The skills this person ticked for the machine's Bot service, read on every ask. */
   readonly skills?: () => readonly SelectedSkill[];
+  /** Narrow host for verified managed-file metadata; runtime never imports the store implementation. */
+  readonly managedFiles?: ManagedFilesPort;
 };
 
 async function remoteCapability(path: string | undefined): Promise<RemoteCapability> {
@@ -634,6 +660,98 @@ class PiRuntimeHandle implements RuntimeHandle {
     }
   }
 
+  async #managedFileRefs(fileIds: readonly string[] | undefined): Promise<{
+    readonly refs: readonly ManagedFileRef[];
+    readonly modelText: string;
+  }> {
+    if (fileIds === undefined || fileIds.length === 0) return { refs: [], modelText: "" };
+    if (fileIds.length > MAX_SEND_FILE_IDS) {
+      throw new ClassifiedFailure(
+        this.#classifier.classify("submit:fileIds", "invalid_command", "runtime").classification
+          .failure,
+        "not_admitted",
+        `fileIds exceeds ${MAX_SEND_FILE_IDS}`,
+      );
+    }
+    const seen = new Set<string>();
+    for (const fileId of fileIds) {
+      if (!/^f_[0-9a-f]{64}$/.test(fileId)) {
+        throw new ClassifiedFailure(
+          this.#classifier.classify("submit:fileIds", "invalid_command", "runtime").classification
+            .failure,
+          "not_admitted",
+          "a fileId is malformed",
+        );
+      }
+      if (seen.has(fileId)) {
+        throw new ClassifiedFailure(
+          this.#classifier.classify("submit:fileIds", "invalid_command", "runtime").classification
+            .failure,
+          "not_admitted",
+          "fileIds contains duplicate ids",
+        );
+      }
+      seen.add(fileId);
+    }
+
+    if (this.#options.managedFiles === undefined) {
+      throw new ClassifiedFailure(
+        this.#classifier.classify("submit:fileIds", "storage_failed", "runtime").classification
+          .failure,
+        "runtime",
+        "managed file storage is unavailable",
+      );
+    }
+    const store = this.#options.managedFiles;
+    const refs: ManagedFileRef[] = [];
+    const lines: string[] = [];
+    for (const fileId of fileIds) {
+      let file: Awaited<ReturnType<ManagedFilesPort["metadata"]>>;
+      try {
+        file = await store.metadata({ botId: this.#spec.id, fileId });
+        if (file.status !== "complete") {
+          throw new Error("managed file is not complete");
+        }
+      } catch (error) {
+        const reason = (error as { reason?: string }).reason;
+        if (reason === "unknown_file") {
+          throw new ClassifiedFailure(
+            this.#classifier.classify("submit:fileIds", "unknown_bot", "runtime").classification
+              .failure,
+            "not_admitted",
+            "a managed file is not complete or does not belong to this bot",
+            { cause: error },
+          );
+        }
+        if (reason === "invalid_request") {
+          throw new ClassifiedFailure(
+            this.#classifier.classify("submit:fileIds", "invalid_command", "runtime").classification
+              .failure,
+            "not_admitted",
+            "a fileId is malformed",
+            { cause: error },
+          );
+        }
+        throw new ClassifiedFailure(
+          this.#classifier.classify("submit:fileIds", "storage_failed", "runtime").classification
+            .failure,
+          "unknown",
+          "managed file metadata could not be verified",
+          { cause: error },
+        );
+      }
+      const ref = safeFileRef(file);
+      refs.push(ref);
+      const path = join(this.#spec.dir, "files", `${file.id}.bin`);
+      lines.push(`- ${file.name} (${file.mimeType}, ${file.size} bytes)\n  Path: ${path}`);
+    }
+    const modelText =
+      lines.length === 0
+        ? ""
+        : `\n\n[Managed files attached]\n${lines.join("\n")}\nUse the read tool to read a listed path only when you need to inspect the file; do not assume its bytes are included in this message.`;
+    return { refs, modelText };
+  }
+
   async submit(input: SubmitInput): Promise<Submission> {
     const log = this.#options.log;
     const started = performance.now();
@@ -654,14 +772,28 @@ class PiRuntimeHandle implements RuntimeHandle {
       reqId: input.requestId,
     });
     try {
+      const existing = await this.submission({ requestId: input.requestId });
+      if (existing !== undefined) return existing;
       if (this.#options.deviceSocket !== undefined) await this.#syncTools(input.trace, false);
       const root = await this.#harness.root(BACKGROUND_CONTEXT);
+      const attachment = await this.#managedFileRefs(input.fileIds);
       const admitted = await root.submit(
         {
           type: "input",
-          content: input.text,
+          content: `${input.text}${attachment.modelText}`,
           requestId: input.requestId,
           whenBusy: input.whenBusy,
+          ...(attachment.refs.length === 0
+            ? {}
+            : {
+                entry: {
+                  kind: BOTS_USER_FILES_ENTRY,
+                  data: {
+                    text: input.text,
+                    files: attachment.refs.map((file) => ({ ...file })),
+                  },
+                },
+              }),
         },
         BACKGROUND_CONTEXT,
       );

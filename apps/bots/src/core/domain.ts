@@ -81,6 +81,17 @@ export type MessageOrigin =
   | { readonly kind: "unknown"; readonly label?: string };
 export type MessageState = "streaming" | "complete" | "aborted" | "error";
 
+/** Metadata-only attachment reference; paths and bytes never cross the wire. */
+export type ManagedFileRef = {
+  readonly id: string;
+  readonly name: string;
+  readonly mimeType: string;
+  readonly size: number;
+  readonly sha256: string;
+};
+
+export const MAX_SEND_FILE_IDS = 16;
+
 export type Message = {
   readonly id: EntryId;
   readonly role: MessageRole;
@@ -91,6 +102,8 @@ export type Message = {
   readonly requestId?: string;
   /** User messages only: who admitted this input, when the daemon recorded it. */
   readonly origin?: MessageOrigin;
+  /** Completed managed files attached to this user message. */
+  readonly files?: readonly ManagedFileRef[];
   /** A user message the conversation does not show: the person's answer to ask_user. */
   readonly hidden?: boolean;
   /** A hidden message only: the ask_user call it answers, so the card can close. */
@@ -466,6 +479,8 @@ export type Capabilities = {
   readonly usage: boolean;
   readonly peers: boolean;
   readonly triggers: boolean;
+  readonly files: boolean;
+  readonly sendFiles: boolean;
 };
 
 export const ALL_CAPABILITIES_OFF: Capabilities = {
@@ -476,6 +491,8 @@ export const ALL_CAPABILITIES_OFF: Capabilities = {
   usage: true,
   peers: false,
   triggers: false,
+  files: false,
+  sendFiles: false,
 };
 
 /** Every domain failure crosses layers with one identity minted by its classifier. */

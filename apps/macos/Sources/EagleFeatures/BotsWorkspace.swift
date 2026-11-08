@@ -540,7 +540,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
   func setDraft(_ value: String) {
     guard let conversation = app?.conversation else { return }
     conversation.writeDraft(value)
-    if composer.text != value { composer.text = value }
+    if !composer.text.utf8.elementsEqual(value.utf8) { composer.text = value }
   }
 
   func send(inserting: Bool = false) {
@@ -685,6 +685,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
       return
     }
     let conversation = app.conversation
+    mirrorConversationDraftIntoComposer()
     if conversation.hasSnapshot {
       let state = conversation.state
       let source = presenter.previewSource(for: state)
@@ -804,7 +805,7 @@ final class BotsWorkspaceViewModel: ObservableObject {
   private func mirrorConversationDraftIntoComposer() {
     guard let conversation = app?.conversation else { return }
     let next = conversation.draft
-    if composer.text != next { composer.text = next }
+    if !composer.text.utf8.elementsEqual(next.utf8) { composer.text = next }
   }
 
   /// The conversation view model publishes many times per answer (one delta each), so the
@@ -932,7 +933,7 @@ struct BotsPresenter {
           continue
         }
       }
-      if insidePeerRun { continue }
+      if insidePeerRun && !message.isLocalRecovery { continue }
       for row in entries(
         for: message,
         paired: paired,
@@ -1257,6 +1258,9 @@ struct BotsPresenter {
       }
       return rows + [.assistant(id: "\(message.id)-note", blocks: notes)]
     case .notice, .system:
+      if message.isLocalRecovery {
+        return [.user(id: message.id, text: message.text, origin: "本机待确认")]
+      }
       return [.assistant(id: message.id, blocks: [.note(message.text)])]
     }
   }

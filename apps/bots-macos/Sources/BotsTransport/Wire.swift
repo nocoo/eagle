@@ -14,17 +14,21 @@ public enum Wire {
     public let type: String
     /// The absolute catalog a `welcome` or `bots` frame carries.
     public let catalog: BotCatalog?
+    /// Whether this daemon implements managed file attachment send. Missing is false.
+    public let sendFiles: Bool
 
     public init(
       event: ConversationEvent?,
       rev: Int?,
       type: String,
-      catalog: BotCatalog? = nil
+      catalog: BotCatalog? = nil,
+      sendFiles: Bool = false
     ) {
       self.event = event
       self.rev = rev
       self.type = type
       self.catalog = catalog
+      self.sendFiles = sendFiles
     }
   }
 
@@ -39,7 +43,8 @@ public enum Wire {
           "the daemon speaks protocol \(frame.protocolVersion), not \(protocolVersion)")
       }
       return Decoded(
-        event: .connection(.ready), rev: nil, type: "welcome", catalog: frame.catalog)
+        event: .connection(.ready), rev: nil, type: "welcome", catalog: frame.catalog,
+        sendFiles: frame.capabilities?["sendFiles"] ?? false)
     case "snapshot":
       let frame = try decoder.decode(SnapshotFrame.self, from: data)
       return Decoded(event: .snapshot(frame.value), rev: frame.rev, type: "snapshot")
@@ -146,7 +151,8 @@ public enum Wire {
     requestId: String,
     text: String,
     whenBusy: BusyMode,
-    trace: String
+    trace: String,
+    fileIds: [String]? = nil
   ) throws -> Data {
     try JSONEncoder().encode(
       Send(
@@ -154,7 +160,8 @@ public enum Wire {
         requestId: requestId,
         text: text,
         whenBusy: whenBusy.rawValue,
-        trace: trace
+        trace: trace,
+        fileIds: fileIds
       )
     )
   }
@@ -215,6 +222,7 @@ public enum Wire {
   struct Welcome: Decodable {
     let protocolVersion: Int
     let bots: [BotSummary]
+    let capabilities: [String: Bool]?
     /// Absent when the daemon has no groups, so an older client keeps working.
     let groups: [BotGroup]?
 
@@ -324,6 +332,7 @@ public enum Wire {
     let text: String
     let whenBusy: String
     let trace: String
+    let fileIds: [String]?
   }
 
   struct Answer: Encodable {

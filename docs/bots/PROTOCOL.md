@@ -37,14 +37,18 @@ Runtime details live in [RUNTIME.md](RUNTIME.md), layers in
 
 | Limit | Value | Violation |
 | --- | --- | --- |
-| `send.text` | 8 000 characters | `error{invalid_command}` |
+| `send.text` | 8 000 Unicode code points | `error{invalid_command}` with a safe length explanation and the request ID |
+| `send.fileIds` | 0–16 complete managed file IDs; no duplicates | `error{invalid_command}` or `unknown_bot` |
+| `Message.files` metadata | At most 16 refs; each name/MIME at most 255 UTF-8 bytes; no paths or byte content | `error{invalid_command}` or omitted invalid data |
 | `bot.title` (HTTP) | 80 characters | HTTP `400` |
 | `bot.label` (HTTP) | 24 characters, optional | HTTP `400` |
 | `bot.note` (HTTP and `note_set`) | 120 characters after trimming and whitespace collapse, optional | HTTP `400`, or the tool returns an error |
 | `group.title` (HTTP) | 1–40 characters after trimming | HTTP `400` |
 | Groups | 50 per catalog | `POST /v1/groups` answers `limit_exceeded` |
 | `bot.appearance` (HTTP) | valid shape; POST permits an omitted tint, PATCH requires a valid tint | HTTP `400` |
-| Any HTTP body | 256 KiB, measured as received (the shared frame cap) | HTTP `500` before the body is parsed |
+| Any HTTP JSON/body except managed-file content | 256 KiB, measured as received (the shared frame cap) | HTTP `500` before the body is parsed |
+| Managed file content | 50 MiB (52 428 800 bytes), inclusive | HTTP `413`; other HTTP bodies keep the 256 KiB cap |
+| Managed file display name / MIME | 1–255 UTF-8 bytes each | HTTP `400` |
 | `settings.corePrompt` (HTTP) | 4 000 characters after trimming | HTTP `400` |
 | `settings.skills` (HTTP) | ≤ 50 entries; `name` 1–80, `version` ≤ 40, `description` ≤ 500 characters after whitespace collapse; `path` ≤ 1 024 and absolute or `~/…`; one entry per name | HTTP `400` |
 | `skill_read` result | 64 KiB read from the file; 32 000 characters and 4 096 lines kept, then a truncation note naming the budget that bound the returned text | — |
@@ -115,6 +119,10 @@ version, the instance id, the pid and a bot count, never bot content.
 | `POST` | `/v1/providers/:id/test` | — | `{ "result": { "ok", "message", "latencyMs", "results"?, "model"?, "resolvedModel"? } }` |
 | `GET` | `/v1/usage?days=` | — | `{ "usage": UsageReport }` — statistics over the daemon's retained days |
 | `GET` | `/v1/models` | — | `{ "models": [string], "modelDetails"?: [ModelDetail], "discoveryError"?: string }` — the gateway's ids and what the daemon knows about each one |
+| `PUT` | `/v1/bots/:botId/files/:uploadId/manifest` | `{ "name", "mimeType"?, "size", "sha256" }` (small JSON) | `201` first declaration, `200` same declaration retry: `{ "file": ManagedFile }`, status `uploading` |
+| `PUT` | `/v1/bots/:botId/files/:uploadId/content` | Raw bytes, never JSON/Base64 | `201` first completion, `200` identical retry: `{ "file": ManagedFile }`, status `complete` |
+| `GET` | `/v1/bots/:botId/files/:fileId/manifest` | — | `{ "file": ManagedFile }`; metadata only |
+| `GET` | `/v1/bots/:botId/files/:fileId/content` | — | Raw bytes, streamed with `Content-Type`, length and SHA256 ETag |
 | `POST` | `/v1/bots/:botId/answers` | `{ "entryId", "answers"?: [[label]], "skipped"?: true }` | `{ "submission": Submission }` |
 | `POST` | `/v1/bots/:botId/secrets` | `{ "entryId", "callIndex"?, "key", "value", "scope"?, "ttlMinutes"?: number \| null, "skipped"?: true }` | `{ "submission": Submission }` |
 | `GET` | `/v1/secrets` | — | `{ "secrets": [Secret] }` — metadata only, never a value |
@@ -256,8 +264,9 @@ revoke it and delete it again (`CLI.md` owns the CLI itself).
   split on the first `.`, looked up by id, compared in constant time, and refused with the
   same `401 auth_failed` as an unknown token when the credential is missing or revoked
   (no oracle).
-- **Scopes are per route.** `read` covers every `GET`; `write` adds `send`/`answer`/`abort` on a
-  subscribed bot, `POST /v1/bots`, `PATCH /v1/bots/:id`, `POST /v1/groups`,
+- **Scopes are per route.** `read` covers every `GET`, including managed-file download;
+  `write` adds managed-file declaration/upload, `send`/`answer`/`abort` on a subscribed bot,
+  `POST /v1/bots`, `PATCH /v1/bots/:id`, `POST /v1/groups`,
   `PATCH /v1/groups/:id` and `PUT /v1/groups/order`; `admin` adds `DELETE /v1/bots/:id`,
   `DELETE /v1/groups/:id`, every `/v1/settings` write, `/v1/settings/test`,
   `/v1/providers` writes and `/v1/clients`. A missing scope is
@@ -305,6 +314,109 @@ exactly as before.
   file's mtime, so `GET /v1/clients/me` answers that client. It is not a record in
   `<root>/clients.json`: it is not listed by `GET /v1/clients`, and it cannot be
   rotated or revoked there. Replacing the file replaces the credential.
+
+## Managed files
+
+The daemon announces `files:true` when this upload/download surface is enabled.
+`sendFiles` is an independent optional capability: it is absent/false by default and is
+announced true only by a daemon that also implements attachment admission into a send.
+Future model and tool consumers must use the same opaque `fileId` and metadata store rather
+than invent a second byte transport.
+
+```json
+{
+  "id": "f_<64 lowercase hex>",
+  "botId": "b_…",
+  "uploadId": "u_<16-64 URL-safe characters>",
+  "name": "report.pdf",
+  "mimeType": "application/pdf",
+  "size": 12345,
+  "sha256": "<64 lowercase hex>",
+  "status": "complete",
+  "createdAt": "2026-11-07T05:30:00.000Z"
+}
+```
+
+- The declaration is required before content. `uploadId` is a client retry key in the
+  documented alphabet, never a path. `fileId` is an opaque server-derived value;
+  clients may send it only in an exact whole-ID route. `name` is display metadata and
+  never participates in filesystem lookup. A declaration at the same `uploadId` with
+  different `name`, `mimeType`, `size` or `sha256` is a `409 upload_conflict`; the
+  completed file is never overwritten. Missing or unrecognized MIME is stored as
+  `application/octet-stream`.
+- Content is streamed directly from the HTTP request while the server counts bytes and
+  computes SHA256. The declared size and digest must both match before publication.
+  Zero-byte files are valid. A real 50 MiB file is accepted; one byte more is `413
+  limit_exceeded`. JSON, WebSocket and every ordinary HTTP route retain their existing
+  256 KiB limit; raw file content is the sole exception.
+- Files live under the owning bot directory: `<root>/bots/<botId>/files/`, mode 0700;
+  completed content and metadata are regular files mode 0600. The path never uses a
+  display name. Completed metadata is static JSON containing only the fields above;
+  file bytes never enter JSON, logs or WebSocket frames.
+- Upload parts use a random sibling name and are never addressable. The content handle
+  and completed metadata temp file are `fsync`ed, the content is renamed atomically,
+  then the metadata is renamed atomically, and the files directory is `fsync`ed before
+  success. Readers accept only a completed metadata record plus a regular, same-size,
+  same-hash content file. A crash can leave an unreferenced part or content object, but
+  never exposes that part as a completed file. Repeating the original upload ID and
+  manifest re-streams or verifies the same bytes and returns the exact original
+  completed snapshot after an acknowledgement is lost.
+- Completion is not a filesystem/SQLite transaction. The file publish boundary is the
+  completed metadata rename; a later pi-durable entry or `file_publish` operation can
+  still fail separately and must retry by the same `uploadId`/`fileId`.
+- Bearer authentication and required scope are resolved before a request body is read.
+  Upload then requires a current Bot and takes a registry lease for the request's full
+  body/publish duration. Delete first marks the Bot unavailable to new leases and waits
+  for existing file leases, then moves the whole Bot directory to trash. Thus a delete
+  cannot race a move against an in-flight upload. File download also holds the lease
+  until the stream ends. Completed files move with their Bot and are never cleaned by
+  the file subsystem.
+- **Attachment metadata is generic.** `Message.files` is not restricted to `role:user`; it
+  is an additive metadata field on any message kind, including later `role:tool` results
+  that publish a file. The MVP uses it on user sends; `file_publish` may add tool-result
+  refs later without a breaking wire change. Unknown FileRef object fields are ignored.
+  Known fields remain strict: id/name/mimeType/size/sha256, no path or byte content. No
+  block type is added. A decoder that receives only old fields renders the message normally.
+- **Send attachment binding.** A completed file is admitted into a user send only in the
+  same pi-durable submission that places the user's entry. The entry kind is
+  `bots.user.files` (not `pi.*`) and its `data` carries only the display text and
+  daemon-derived `FileRef` metadata, never a path, uploadId or bytes:
+
+  ```json
+  {
+    "text": "请总结这个附件",
+    "files": [{
+      "id": "f_<64 lowercase hex>",
+      "name": "report.pdf",
+      "mimeType": "application/pdf",
+      "size": 12345,
+      "sha256": "<64 lowercase hex>"
+    }]
+  }
+  ```
+
+  The entry's model
+  contribution is a separate field: the original user text plus the actual local managed
+  file paths and a read-by-need instruction. The model receives no file bytes from this
+  path and gets no automatic file-send tool. The model-facing contribution is composed as
+  the original user text, followed by one `Managed file paths` section with each real
+  `<root>/bots/<botId>/files/<fileId>.bin` path and the fixed instruction `Use the read tool
+  on this path only when you need to inspect the file; do not assume its bytes are in this
+  message.` The path is daemon derived and never accepted from `send.fileIds` or a wire
+  `FileRef`; it is not logged or echoed as a wire field. Transcript projection uses `data.text` and
+  `data.files` for live append, snapshot and history; it ignores the synthetic model-only
+  path text in the displayed bubble. A replay or reopen reconstructs the same optional
+  `Message.files` from `entry.data` and never by trusting a client frame.
+- A retry with the same `requestId` returns the original submission record before any
+  attachment validation. It does not create a second entry and does not replace the first
+  entry's files if a later caller sends a different, missing, pending or cross-Bot
+  `fileIds` list. The first admitted file set is authoritative for that requestId, including
+  after a daemon restart.
+- Malformed IDs, traversal forms, symlink directories, symlinks/FIFOs at content or
+  metadata paths, interrupted bodies, size/hash mismatches, and storage failures fail
+  closed. Responses expose only a stable kind/message, never a filesystem path or file
+  content. Concurrent declarations/uploads for one ID are serialized; concurrent
+  different IDs are independent.
 
 ## The bot's own note
 
@@ -711,6 +823,11 @@ creation requires the updated daemon; clients must not retry a refusal with gree
   "createdAt": "2026-10-25T02:11:04.001Z",
   "blocks": [ { "type": "text", "text": "巴黎。" } ],
   "requestId": "r_0190a1b3",             // user messages only; ties the entry to a send
+  "files": [                             // optional; generic message attachment metadata
+    { "id": "f_<64 lowercase hex>", "name": "report.pdf",
+      "mimeType": "application/pdf", "size": 12345,
+      "sha256": "<64 lowercase hex>" }
+  ],
   "hidden": true,                        // optional: the person's answer to ask_user
   "answersTo": "e_12"                    // optional: the card this hidden input closes. A
                                          // secret card is "secret:e_12", and the second card of
@@ -771,7 +888,7 @@ server → { "type": "welcome", "protocolVersion": 1,
            "server": { "version": "0.1.0", "instance": "i_7f3", "pid": 4711 },
            "capabilities": { "agent": false, "tools": true, "tasks": false,
                              "entries": false, "usage": false, "peers": false,
-                             "triggers": true },
+                             "triggers": true, "files": true, "sendFiles": true },
            "bots": [ BotSummary, … ] }
 ```
 
@@ -784,6 +901,12 @@ server → { "type": "error", "kind": "version_mismatch", "message": "…",
 ```
 
 `welcome.bots` equals `GET /v1/bots`, so the sidebar needs no second request.
+A client that predates `fileIds` must not infer send support from managed-file transport:
+it sends file IDs only while `welcome.capabilities.sendFiles === true`. A missing
+`sendFiles` defaults false, even when `welcome.capabilities.files === true`; unknown fields
+remain ignored. An old daemon that ignores unknown fields is not evidence of attachment
+admission; v1 servers validate and reject `fileIds` under `sendFiles:false` before the runtime
+sees the command.
 
 ## Subscription
 
@@ -883,7 +1006,7 @@ is never a gap.
   "failure": "f_7f3a",                     // identity, shared with the daemon log
   "disposition": "runtime",                // not_admitted | unknown | runtime
   "message": "…",                          // redacted, ≤ 200 chars
-  "requestId": "r_…",                      // present when a command caused it
+  "requestId": "r_…",                      // present when a send caused it
   "taskId": "t_3" }                        // reserved
 
 { "type": "bots", "bots": [ BotSummary, … ] }   // absolute catalog state, no rev
@@ -927,7 +1050,8 @@ Every command except `hello` and `ping` carries `trace`.
 ```jsonc
 { "type": "hello",     "protocolVersion": 1, "client": "…" }
 { "type": "subscribe", "botId": "b_…", "trace": "tr_…" }
-{ "type": "send",      "requestId": "r_…", "text": "…", "whenBusy": "followUp", "trace": "tr_…" }
+{ "type": "send",      "requestId": "r_…", "text": "…", "fileIds": ["f_<64 lowercase hex>"],
+  "whenBusy": "followUp", "trace": "tr_…" }
 { "type": "promote",   "requestId": "r_…", "trace": "tr_…" }
 { "type": "answer",    "entryId": "e_12", "answers": [["main"], ["unit","browser"]], "trace": "tr_…" }
 { "type": "answer",    "entryId": "e_12", "skipped": true, "trace": "tr_…" }
@@ -940,8 +1064,17 @@ Every command except `hello` and `ping` carries `trace`.
 ```
 
 - A command rejection is reported twice with one identity: the protocol emits
-  `error{kind, failure, requestId}` and the same `failure` is what the daemon logs.
-  A client that is awaiting a call can match them by `failure`.
+  `error{kind, failure}` and the same `failure` is what the daemon logs.
+  Send errors also carry their `requestId`; promote errors use `trace` to identify the
+  command and never carry the target send's `requestId`. A refused promotion must not
+  be mistaken for refusal of the already admitted send.
+- `send` requires a subscription. `fileIds` is optional and is additive in v1; absent means
+  a text-only send. Every ID must name a complete, verified file owned by the subscribed bot.
+  A bot/mime/name mismatch, a pending upload, a corrupt record, an unknown or malformed ID,
+  a duplicate ID in one send, or more than 16 IDs is refused before `pi-durable` admits the
+  input. The server uses the completed metadata store as the authority: client-supplied name,
+  size and hash are never trusted to replace it. `fileIds` never carries a path, uploadId,
+  botId or file bytes.
 - `send` requires a subscription. The daemon replies with a `submission` frame for
   that `requestId` carrying the record it reads, which may already be `done`
   because admission starts the run. A repeated `send` with the same `requestId`
@@ -999,12 +1132,18 @@ recovery guarantees depend on them.
    0600, since the text is user content). The frame is written after the record
    exists.
 2. **Reconciliation.** On connect, after the first snapshot, the client re-sends
-   every outbox entry with its original `requestId`; pi returns the stored record.
-   Only a **terminal** record (`done` or `unanswered`) removes the entry. Seeing a
+   every outbox entry with its original `requestId` and `whenBusy`; pi returns the stored
+   record. Only a **terminal** record (`done` or `unanswered`) removes the entry. Seeing a
    user message carrying that `requestId` proves placement only — `placed` can still
    become `unanswered` later, so the entry survives until a terminal record arrives.
    Entries are never re-sent with a new id, and no entry is removed before its
-   terminal record has been stored.
+   terminal record has been stored. An older outbox entry whose text exceeds the wire
+   limit remains durable and visible for copying as a labelled local recovery, including
+   after later snapshots, but is not automatically sent again; its admission outcome
+   remains unknown until confirmed. The recovery does not count as a new user turn.
+   If the local outbox cannot be read on a later snapshot, already displayed recovery
+   remains in memory for its Bot across reconnects and Bot switches; no entry is replayed
+   until the outbox can be read again. A successful read replaces that Bot's cache.
 
 3. **Disposition decides the outbox.** Every `error` emitted after `welcome` carries
    `disposition`. The handshake failure (`version_mismatch`), which is sent before a
@@ -1014,9 +1153,17 @@ recovery guarantees depend on them.
 
    | `disposition` | Meaning | Outbox |
    | --- | --- | --- |
-   | `not_admitted` | The daemon refused the command before admission (validation, limits, busy with `reject`, unknown bot). Carries `requestId` when the command was a `send` | Remove that entry and restore its text as a draft; the user decides |
+   | `not_admitted` | The daemon refused the command before admission (validation, limits, busy with `reject`, unknown bot). Carries `requestId` when the command was a `send` | Remove that entry and restore its text to that Bot's draft; the user decides |
    | `unknown` | Admission could not be confirmed (a storage or read failure between `submit()` and reading its record) | Keep the entry; it is reconciled by re-sending the same `requestId` |
    | `runtime` | A run-time failure reported later (parked task, storage failure, watch escalation). May carry `requestId` for correlation | Keep the entry or not; it is about the bot, not that command |
+
+   A restored draft is client state owned by the Bot that sent it. A refusal must
+   retain a newer draft for that same Bot, and repeated errors with identical text
+   must still publish the restored composer value. Switching Bots neither moves the
+   restored text to another composer nor overwrites the other Bot's draft; later
+   typing changes only the selected Bot's draft. `unknown` and connection loss do
+   not restore text: their outbox entry remains pending for reconciliation with the
+   same `requestId`.
 
    Presence of `requestId` never implies non-admission by itself: only
    `disposition:"not_admitted"` clears the outbox.
@@ -1116,14 +1263,15 @@ sides.
 | --- | --- |
 | `hello.client.json`, `welcome.server.json`, `version-mismatch.server.json` | handshake |
 | `subscribe.client.json` | subscription |
-| `snapshot.server.json`, `snapshot.streaming.server.json`, `snapshot.unavailable.server.json` | attach states |
+| `snapshot.server.json`, `snapshot-files.server.json`, `snapshot.streaming.server.json`, `snapshot.unavailable.server.json` | attach states |
 | `append.server.json`, `append.streaming.server.json`, `append.finalize.server.json`, `delta.server.json` | transcript |
 | `append.tool.server.json`, `append.tool-result.server.json`, `snapshot.tools.server.json` | a tool call and its result, live and in a snapshot |
-| `history.client.json`, `history.server.json` | message paging |
+| `history.client.json`, `history.server.json`, `history-files.server.json` | message paging |
 | `agent.server.json` | live agent configuration |
 | `status.server.json`, `submission.server.json`, `submission.connection.server.json` | run state and the connection-scoped duplicate reply |
 | `bots.server.json`, `error.server.json`, `error-rejected.server.json`, `version-mismatch.server.json` | catalog, runtime failure, definite rejection, exempt handshake failure |
-| `send.client.json`, `promote.client.json`, `abort.client.json`, `recover.client.json`, `resync.client.json` | commands |
+| `send.client.json`, `send-files.client.json`, `promote.client.json`, `abort.client.json`, `recover.client.json`, `resync.client.json` | commands |
+| `append-files.server.json`, `history-files.server.json` | generic message/file metadata, live and history |
 | `ping.client.json`, `pong.server.json` | liveness |
 | `entities.json` | `BotSummary`, `Message` (user, assistant with a tool call, tool), `InboxItem` samples |
 

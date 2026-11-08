@@ -12,6 +12,7 @@ import { ConversationService } from "./core/ConversationService.ts";
 import type { TriggerSummary } from "./core/domain.ts";
 import { type SecretsPort, SecretsStorageError } from "./core/domain.ts";
 import { newFailure } from "./core/failures.ts";
+import { ManagedFileStore } from "./core/ManagedFileStore.ts";
 import { OriginStore, originPath } from "./core/OriginStore.ts";
 import { PeerExchangeStore } from "./core/PeerExchangeStore.ts";
 import type { RuntimeEvent } from "./core/RuntimePort.ts";
@@ -291,6 +292,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
           remember: (devToken) => devTokens.add(devToken),
         });
   const directory = new BotDirectory(root, await nodeDirectoryFs());
+  const files = new ManagedFileStore({ botDir: directory.botDir.bind(directory) });
   // The stored gateway wins over the dotenv; without either, the registry is empty and a
   // run settles `no_model` until a person configures it in the app.
   gateway = (await readGateway(root)) ?? gatewayFromEnv(process.env);
@@ -447,6 +449,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     log,
     compaction,
     usage: usageStore,
+    managedFiles: files,
     corePrompt: () => gateway?.corePrompt,
     machinePrompt: () => machinePrompt(),
     // The App's ticks are the only input: the daemon never scans a folder for skills.
@@ -572,6 +575,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     onSessionFailed: (botId, reason, message, dropHandle) => {
       if (registry.markUnavailable(botId, reason, message, { dropHandle })) broadcast?.();
     },
+    files,
     onUsage: (botId, usage) => {
       try {
         usageStore.recordModelUsage(botId, usage);
@@ -664,6 +668,8 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     usage: true,
     peers: false,
     triggers: true,
+    files: true,
+    sendFiles: true,
   };
   // One save at a time: the second one reads what the first stored, so two pages that
   // save at the same moment cannot drop each other's field.
@@ -769,6 +775,7 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     log,
     registry,
     service,
+    files,
     settings,
     machinePrompt,
     // Built once: the tool surface is fixed at start, and describing it never runs a tool.

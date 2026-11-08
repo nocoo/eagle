@@ -33,7 +33,16 @@
         "text": "法国的首都是哪里？"
       }
     ],
-    "requestId": "r_0190a1b4-5061-7c72-8d3e-4f5061728394"
+    "requestId": "r_0190a1b4-5061-7c72-8d3e-4f5061728394",
+    "files": [
+      {
+        "id": "f_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "name": "report.pdf",
+        "mimeType": "application/pdf",
+        "size": 12345,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
   },
   "inboxItem": {
     "id": "s_4",
@@ -66,6 +75,15 @@
     "role": "tool",
     "state": "complete",
     "createdAt": "2026-10-25T02:11:05.141Z",
+    "files": [
+      {
+        "id": "f_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "name": "result.txt",
+        "mimeType": "text/plain",
+        "size": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
     "blocks": [
       {
         "type": "toolResult",

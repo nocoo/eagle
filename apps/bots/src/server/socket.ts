@@ -17,7 +17,7 @@ import {
   parseJson,
   type ServerEvent,
 } from "../protocol/frames.ts";
-import { TRACE_ID } from "../protocol/limits.ts";
+import { MAX_SEND_TEXT, TRACE_ID } from "../protocol/limits.ts";
 import { assertFrameBudget, assertInboundBytes, validateCommand } from "../protocol/validate.ts";
 import { PROTOCOL_VERSION } from "../protocol/version.ts";
 import { serverFailure } from "./failures.ts";
@@ -367,6 +367,13 @@ export const attachConnection = (
       // Wire limits live here, after the handshake: a version mismatch must still reach
       // its own final frame and close code.
       checked = validateCommand(command);
+      if (
+        checked.type === "send" &&
+        checked.fileIds !== undefined &&
+        deps.capabilities.sendFiles !== true
+      ) {
+        throw new FrameError("invalid_command", "this daemon does not support file attachments");
+      }
     } catch (error) {
       const reason = error instanceof FrameError ? error.reason : "invalid_command";
       const kind = reason === "limit_exceeded" ? "limit_exceeded" : "invalid_command";
@@ -389,7 +396,11 @@ export const attachConnection = (
         kind,
         disposition: "not_admitted",
         failure: refusal.id,
-        message: "the command was refused",
+        message:
+          error instanceof FrameError &&
+          error.message === `text exceeds ${MAX_SEND_TEXT} characters`
+            ? error.message
+            : "the command was refused",
         ...(command.type === "send" ? { requestId: command.requestId } : {}),
       });
       return;
@@ -424,9 +435,7 @@ export const attachConnection = (
         disposition: "not_admitted",
         failure: refusal.id,
         message: "the connection has no subscription",
-        ...(command.type === "send" || command.type === "promote"
-          ? { requestId: command.requestId }
-          : {}),
+        ...(command.type === "send" ? { requestId: command.requestId } : {}),
       });
       return;
     }
@@ -456,9 +465,7 @@ export const attachConnection = (
         disposition: "not_admitted",
         failure: refusal.id,
         message: "this credential may not send, promote or abort",
-        ...(command.type === "send" || command.type === "promote"
-          ? { requestId: command.requestId }
-          : {}),
+        ...(command.type === "send" ? { requestId: command.requestId } : {}),
       });
       return;
     }
@@ -511,6 +518,7 @@ export const attachConnection = (
         {
           requestId: command.requestId,
           text: command.text,
+          ...(command.fileIds === undefined ? {} : { fileIds: command.fileIds }),
           whenBusy: command.whenBusy,
           trace,
         },
@@ -604,7 +612,7 @@ export const attachConnection = (
       disposition,
       failure: classified.failure.id,
       message: safeMessage(classified.message),
-      ...(requestId === undefined ? {} : { requestId }),
+      ...(command.type === "send" ? { requestId: command.requestId } : {}),
     });
     if (command.type === "subscribe" && disposition === "runtime") {
       close(CLOSE.internal, "subscription failed");

@@ -80,6 +80,28 @@ final class ConversationTests: XCTestCase {
       fake.busyModes.sorted { "\($0)" < "\($1)" }, [.followUp, .steer].sorted { "\($0)" < "\($1)" })
   }
 
+  func testSteeredSendKeepsItsModeAcrossReconnect() async throws {
+    let (model, fake, outbox) = makeModel()
+    ready(model)
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.hasSnapshot }
+
+    model.draft = "Change direction"
+    model.send(inserting: true)
+    try await waitUntil { fake.sent.count == 1 }
+    let stored = try XCTUnwrap(try outbox.entries(for: "b_1").first)
+    XCTAssertEqual(stored.whenBusy, .steer)
+
+    model.disconnect()
+    model.select(botId: "b_1")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { fake.sent.count == 2 }
+    XCTAssertEqual(fake.sent[1].requestId, stored.requestId)
+    XCTAssertEqual(fake.busyModes, [.steer, .steer])
+  }
+
   func testAnsweringACardSendsTheChosenLabelsAndNeverTheText() async throws {
     let (model, fake, _) = makeModel()
     ready(model)
@@ -126,6 +148,63 @@ final class ConversationTests: XCTestCase {
     try await waitUntil { model.hasSnapshot }
     model.disconnect()
     XCTAssertFalse(model.hasSnapshot)
+  }
+
+  func testOversizedDraftRemainsVisibleAndIsNotSent() async throws {
+    let (model, fake, outbox) = makeModel()
+    ready(model)
+    fake.emit(.connection(.ready))
+    try await waitUntil { model.connection == .ready }
+
+    for draft in [
+      "  \(String(repeating: "界", count: 8_001))\n",
+      String(repeating: "😀", count: 90_000),
+      "\(String(repeating: "x", count: 8_000)) ",
+    ] {
+      model.draft = draft
+      model.send()
+      XCTAssertEqual(model.draft, draft)
+      XCTAssertTrue(model.errorBanner?.contains("8,000") == true)
+      XCTAssertTrue(model.state.messages.isEmpty)
+      XCTAssertTrue(try outbox.entries(for: "b_1").isEmpty)
+      XCTAssertTrue(fake.sent.isEmpty)
+    }
+
+    model.draft = String(repeating: "界", count: 8_000)
+    model.send()
+    try await waitUntil { fake.sent.count == 1 }
+    XCTAssertNil(model.errorBanner, "a valid retry clears the limit warning")
+  }
+
+  func testSendPreservesLeadingTrailingWhitespaceAndNewlines() async throws {
+    let (model, fake, _) = makeModel()
+    ready(model)
+    fake.emit(.connection(.ready))
+    try await waitUntil { model.connection == .ready }
+    let text = "  First line\r\nSecond line  \n"
+    model.draft = text
+    model.send()
+    try await waitUntil { fake.sent.count == 1 }
+    XCTAssertEqual(Array(fake.sent[0].text.utf8), Array(text.utf8))
+  }
+
+  func testTextLimitCountsUnicodeScalarsNotGraphemeClusters() async throws {
+    let (model, fake, _) = makeModel()
+    ready(model)
+    fake.emit(.connection(.ready))
+    try await waitUntil { model.connection == .ready }
+
+    model.draft = String(repeating: "😀", count: 8_000)
+    model.send()
+    try await waitUntil { fake.sent.count == 1 }
+    XCTAssertEqual(fake.sent[0].text.unicodeScalars.count, 8_000)
+
+    let decomposed = String(repeating: "e\u{301}", count: 4_001)
+    model.draft = decomposed
+    model.send()
+    XCTAssertEqual(model.draft, decomposed)
+    XCTAssertTrue(model.errorBanner?.contains("8,000") == true)
+    XCTAssertEqual(fake.sent.count, 1)
   }
 
   func testComposerSendsOptimisticallyAndTheEntryReplacesTheBubble() async throws {
@@ -193,6 +272,34 @@ final class ConversationTests: XCTestCase {
     XCTAssertNotNil(model.errorBanner)
   }
 
+  func testRefusedPromotionKeepsTheQueuedSendAndItsOutboxEntry() async throws {
+    let (model, fake, outbox) = makeModel()
+    ready(model)
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.hasSnapshot }
+    model.draft = "queued input"
+    model.send()
+    let entry = try XCTUnwrap(try outbox.entries(for: "b_1").first)
+    fake.emit(.submission(Submission(id: "s_1", requestId: entry.requestId, status: .queued)))
+    try await waitUntil { model.state.pending.contains { $0.requestId == entry.requestId } }
+    model.promote(entry.requestId)
+    try await waitUntil { fake.promoted == [entry.requestId] }
+    fake.emit(
+      .error(
+        kind: .invalidCommand,
+        disposition: .notAdmitted,
+        message: "promotion was refused",
+        failure: "f_promote",
+        requestId: nil
+      ))
+    try await waitUntil { model.errorBanner == "promotion was refused" }
+    XCTAssertEqual(try outbox.entries(for: "b_1"), [entry])
+    XCTAssertTrue(model.state.pending.contains { $0.requestId == entry.requestId })
+    XCTAssertTrue(model.state.messages.contains { $0.requestId == entry.requestId })
+    XCTAssertTrue(model.draft.isEmpty)
+  }
+
   func testAnUnconfirmedAdmissionKeepsTheOutboxEntry() async throws {
     let (model, fake, outbox) = makeModel()
     ready(model)
@@ -242,6 +349,98 @@ final class ConversationTests: XCTestCase {
     try await waitUntil { fake.recovered == 1 }
   }
 
+  func testOversizedStoredOutboxIsVisibleButNeverReplayed() async throws {
+    let outbox = OutboxStore(directory: outboxDirectory)
+    let text = String(repeating: "界", count: 8_001)
+    let entry = OutboxEntry(botId: "b_1", requestId: "r_stored_long", text: text)
+    try outbox.add(entry)
+    let fake = FakeConversation()
+    let model = ConversationViewModel(conversation: fake, outbox: outbox)
+
+    for _ in 0..<2 {
+      model.select(botId: "b_1")
+      fake.emit(.connection(.ready))
+      fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+      try await waitUntil { model.hasSnapshot }
+      XCTAssertEqual(model.state.messages.map(\.text), [text])
+      XCTAssertEqual(model.state.messages.first?.role, .notice)
+      XCTAssertEqual(model.state.messages.first?.id, "local_recovery_r_stored_long")
+      XCTAssertTrue(model.errorBanner?.contains("8,000") == true)
+      XCTAssertTrue(fake.sent.isEmpty)
+
+      fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+      fake.emit(.status(running: true, inbox: [], streaming: nil))
+      try await waitUntil { model.state.running }
+      XCTAssertEqual(model.state.messages.map(\.text), [text], "a resync retains the recovery")
+      XCTAssertEqual(model.state.messages.first?.role, .notice)
+      XCTAssertTrue(fake.sent.isEmpty)
+
+      model.retry(entry)
+      try await Task.sleep(for: .milliseconds(30))
+      XCTAssertTrue(fake.sent.isEmpty, "manual retry must not bypass the wire limit")
+      XCTAssertEqual(try outbox.entries(for: "b_1"), [entry])
+      model.disconnect()
+    }
+  }
+
+  func testRecoveryRemainsVisibleWhenOutboxCannotBeReadDuringResync() async throws {
+    let outbox = OutboxStore(directory: outboxDirectory)
+    let text = String(repeating: "界", count: 8_001)
+    let entry = OutboxEntry(botId: "b_1", requestId: "r_stored_long", text: text)
+    try outbox.add(entry)
+    let file = outboxDirectory.appendingPathComponent("outbox.json")
+    let saved = try Data(contentsOf: file)
+    let fake = FakeConversation()
+    let model = ConversationViewModel(conversation: fake, outbox: outbox)
+    model.select(botId: "b_1")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.state.messages.first?.isLocalRecovery == true }
+
+    try Data("{".utf8).write(to: file)
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    fake.emit(.status(running: true, inbox: [], streaming: nil))
+    try await waitUntil { model.state.running }
+    XCTAssertTrue(model.state.messages.first?.text.utf8.elementsEqual(text.utf8) == true)
+    XCTAssertTrue(model.state.messages.first?.isLocalRecovery == true)
+    XCTAssertTrue(model.errorBanner?.contains("读不出来") == true)
+    XCTAssertTrue(fake.sent.isEmpty)
+
+    model.select(botId: "b_2")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_2")))
+    try await waitUntil { model.hasSnapshot }
+    XCTAssertTrue(model.state.messages.isEmpty, "another bot must not see the recovery")
+
+    model.select(botId: "b_1")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.hasSnapshot }
+    XCTAssertTrue(model.state.messages.first?.text.utf8.elementsEqual(text.utf8) == true)
+    XCTAssertTrue(model.state.messages.first?.isLocalRecovery == true)
+    XCTAssertTrue(fake.sent.isEmpty)
+
+    try saved.write(to: file)
+    try outbox.remove(requestId: entry.requestId)
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    fake.emit(.status(running: true, inbox: [], streaming: nil))
+    try await waitUntil { model.state.running }
+    XCTAssertTrue(model.state.messages.isEmpty, "a successful read reflects the durable outbox")
+    XCTAssertTrue(fake.sent.isEmpty)
+
+    try Data("{".utf8).write(to: file)
+    model.select(botId: "b_2")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_2")))
+    try await waitUntil { model.hasSnapshot }
+    model.select(botId: "b_1")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await waitUntil { model.hasSnapshot }
+    XCTAssertTrue(model.state.messages.isEmpty, "a cleared recovery must not return")
+    XCTAssertTrue(fake.sent.isEmpty)
+  }
+
   func testTheStoredOutboxIsReplayedAfterTheFirstSnapshot() async throws {
     let outbox = OutboxStore(directory: outboxDirectory)
     let stored = OutboxEntry(botId: "b_1", requestId: "r_stored_1", text: "断网时写的")
@@ -260,6 +459,10 @@ final class ConversationTests: XCTestCase {
       "断网时写的",
       "reconciliation re-sends the stored entry with its original requestId"
     )
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    fake.emit(.status(running: true, inbox: [], streaming: nil))
+    try await waitUntil { model.state.running }
+    XCTAssertEqual(fake.sent.count, 1, "a later snapshot must not replay it again")
   }
 
   private func waitUntil(
@@ -540,6 +743,38 @@ final class ConversationLifecycleTests: XCTestCase {
     try await Task.sleep(nanoseconds: 40_000_000)
     XCTAssertTrue(model.draft.contains("A"), "the refused text is recoverable")
     XCTAssertTrue(model.draft.contains("B"), "and the newer draft is not overwritten")
+  }
+
+  func testARefusedDraftStaysWithTheBotThatSentIt() async throws {
+    let (model, fake) = make()
+    model.select(botId: "b_1")
+    fake.emit(.connection(.ready))
+    fake.emit(.snapshot(ConversationSnapshot(botId: "b_1")))
+    try await Task.sleep(nanoseconds: 40_000_000)
+    model.draft = "原文"
+    model.send()
+    try await Task.sleep(nanoseconds: 40_000_000)
+    let requestId = try XCTUnwrap(fake.sent.last?.requestId)
+    model.draft = "新草稿"
+    fake.emit(
+      .error(
+        kind: .invalidCommand,
+        disposition: .notAdmitted,
+        message: "refused",
+        failure: "f_1",
+        requestId: requestId
+      )
+    )
+    try await Task.sleep(nanoseconds: 40_000_000)
+    XCTAssertEqual(model.draft, "新草稿\n\n原文")
+
+    model.select(botId: "b_2")
+    XCTAssertEqual(model.draft, "", "the refused draft does not move to another bot")
+    model.draft = "另一个 Bot 的草稿"
+    model.select(botId: "b_1")
+    XCTAssertEqual(model.draft, "新草稿\n\n原文")
+    model.select(botId: "b_2")
+    XCTAssertEqual(model.draft, "另一个 Bot 的草稿")
   }
 
   func testAReconnectReconcilesTheOutboxAgain() async throws {

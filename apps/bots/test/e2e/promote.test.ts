@@ -2,6 +2,7 @@
 // waiting (PROTOCOL.md, `promote`). The submission keeps its id; only its place and
 // mode change, so nothing is duplicated and a reconnect still finds it.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import type { Message } from "../../src/core/domain.ts";
 import { text } from "../support/pi.ts";
@@ -14,6 +15,30 @@ test("promote moves a queued input ahead of the follow-ups and keeps its id", as
   try {
     stack.faux?.setResponses([text(`长回答。${"继续。".repeat(80)}`), text("同时回答")]);
     const botId = await stack.createBot("插队");
+    const content = Buffer.from("fictional attachment");
+    const uploadId = "u_promote_file_012345678";
+    const uploadURL = `http://127.0.0.1:${stack.port}/v1/bots/${botId}/files/${uploadId}`;
+    const manifest = await fetch(`${uploadURL}/manifest`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${stack.token}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "payload.txt",
+        mimeType: "text/plain",
+        size: content.length,
+        sha256: createHash("sha256").update(content).digest("hex"),
+      }),
+    });
+    assert.equal(manifest.status, 201);
+    const upload = await fetch(`${uploadURL}/content`, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${stack.token}`,
+        "content-type": "application/octet-stream",
+      },
+      body: content as unknown as never,
+    });
+    assert.equal(upload.status, 201);
+    const { file } = (await upload.json()) as { file: { id: string } };
     const socket = stack.connect();
     const frames = frameQueue(socket);
     await send(socket, hello);
@@ -36,6 +61,7 @@ test("promote moves a queued input ahead of the follow-ups and keeps its id", as
         type: "send",
         requestId,
         text: text_,
+        ...(requestId === "r_promote_3" ? { fileIds: [file.id] } : {}),
         whenBusy: "followUp",
         trace: tr("p3"),
       });
@@ -89,6 +115,15 @@ test("promote moves a queued input ahead of the follow-ups and keeps its id", as
       const second = texts.indexOf("第二条");
       assert.ok(third >= 0 && second >= 0, "both queued inputs were placed");
       assert.ok(third < second, "the promoted input is placed before the older follow-up");
+      const promotedMessage = messages.find(
+        (message) => message.role === "user" && message.requestId === "r_promote_3",
+      );
+      assert.deepEqual(
+        promotedMessage?.files?.map((ref) => ref.id),
+        [file.id],
+      );
+      assert.equal(JSON.stringify(frame).includes("/files/"), false);
+      assert.equal(JSON.stringify(frame).includes(content.toString()), false);
       break;
     }
     socket.close();

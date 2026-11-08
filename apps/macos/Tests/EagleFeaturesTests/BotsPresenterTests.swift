@@ -336,6 +336,21 @@ struct BotsToolRowTests {
     #expect(!presenter.isWaiting(for: state))
   }
 
+  @Test("a local recovery is labelled and does not change the active tool turn")
+  func recoveryDoesNotChangeTheActiveTurn() {
+    let original = "长消息\n  keeps whitespace  "
+    let recovery = message(
+      "local_recovery_r_1", role: .notice, blocks: [.text(original)])
+    let state = ConversationState(botId: "b_1", messages: [call(), recovery], running: true)
+    let entries = presenter.transcript(for: state)
+    #expect(toolRows(entries).first?.isRunning == true)
+    #expect(!presenter.isWaiting(for: state))
+    #expect(
+      entries.contains {
+        if case .user("local_recovery_r_1", original, "本机待确认") = $0 { true } else { false }
+      })
+  }
+
   @Test("the result pairs with its call by id, live and after a snapshot")
   func pairedResult() {
     var state = ConversationState(botId: "b_1", running: false)
@@ -783,6 +798,27 @@ struct BotsPresenterPeerTests {
       bots: []
     )
     #expect(entries.isEmpty, "no row with an invented count, and no leaked answer")
+  }
+
+  @Test("a local recovery remains visible in a peer run without exposing its messages")
+  func recoveryInsidePeerRun() {
+    let peer = MessageOrigin(kind: .peer, label: "A", exchangeId: "x_0123456789ab")
+    let recoveryText = "原文\n  keeps whitespace  "
+    let entries = presenter.transcript(
+      for: state([
+        message("e_1", role: .user, text: "问题", origin: peer),
+        message("e_2", role: .assistant, text: "只给 A 的回答"),
+        message("local_recovery_r_1", role: .notice, text: recoveryText),
+        message("e_3", role: .assistant, text: "仍只给 A 的回答"),
+      ]),
+      exchanges: [],
+      bots: []
+    )
+    #expect(entries.count == 1)
+    #expect(
+      entries.contains {
+        if case .user("local_recovery_r_1", recoveryText, "本机待确认") = $0 { true } else { false }
+      })
   }
 
   @Test("the sender's own chat carries the same entry, without any peer message in it")

@@ -57,9 +57,23 @@ export type RuntimeBotSpec = {
   readonly trace: string;
 };
 
+export type ManagedFilesPort = {
+  metadata(input: { readonly botId: string; readonly fileId: string }): Promise<{
+    readonly id: string;
+    readonly botId: string;
+    readonly name: string;
+    readonly mimeType: string;
+    readonly size: number;
+    readonly sha256: string;
+    readonly status: "uploading" | "complete";
+  }>;
+};
+
 export type SubmitInput = {
   readonly requestId: string;
   readonly text: string;
+  /** Optional completed managed file IDs; the runtime verifies and resolves them. */
+  readonly fileIds?: readonly string[];
   readonly whenBusy: BusyMode;
   readonly trace: string;
   /** The person's answer to ask_user: admitted like any input, never shown as chat. */

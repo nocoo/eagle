@@ -12,6 +12,7 @@ import type {
   ErrorDisposition,
   ErrorKind,
   InboxItem,
+  ManagedFileRef,
   Message,
   MessageOrigin,
   MessageRole,
@@ -34,6 +35,7 @@ export type ClientCommand =
       readonly type: "send";
       readonly requestId: string;
       readonly text: string;
+      readonly fileIds?: readonly string[];
       readonly whenBusy: "followUp" | "steer" | "reject";
       readonly trace: string;
     }
@@ -324,6 +326,13 @@ export function decodeCommand(raw: Record<string, unknown>): ClientCommand {
         type,
         requestId: str(ctx, raw.requestId, "requestId"),
         text: anyStr(ctx, required(ctx, raw, "text"), "text"),
+        ...(raw.fileIds === undefined
+          ? {}
+          : {
+              fileIds: arr(ctx, raw.fileIds, "fileIds").map((id, index) =>
+                str(ctx, id, `fileIds[${index}]`),
+              ),
+            }),
         whenBusy,
         trace: str(ctx, raw.trace, "trace"),
       };
@@ -524,6 +533,32 @@ const decodeMessage = (ctx: Ctx, raw: unknown): Message => {
       ? undefined
       : oneOf(ctx, raw.stopReason, STOP_REASONS, "message.stopReason");
   const origin = raw.origin === undefined ? undefined : decodeOrigin(ctx, raw.origin);
+  let files: readonly ManagedFileRef[] | undefined;
+  if (raw.files !== undefined) {
+    if (!Array.isArray(raw.files) || raw.files.length > 16)
+      fail(ctx, "message.files is bounded to 16");
+    const ids = new Set<string>();
+    files = raw.files.map((file, index) => {
+      if (!isObject(file)) fail(ctx, `message.files[${index}] must be an object`);
+      const id = str(ctx, file.id, `message.files[${index}].id`);
+      if (!/^f_[0-9a-f]{64}$/.test(id)) fail(ctx, `message.files[${index}].id is malformed`);
+      if (ids.has(id)) fail(ctx, "message.files has duplicate ids");
+      ids.add(id);
+      const name = str(ctx, file.name, `message.files[${index}].name`);
+      const mimeType = str(ctx, file.mimeType, `message.files[${index}].mimeType`);
+      const size = int(ctx, file.size, `message.files[${index}].size`);
+      const sha256 = str(ctx, file.sha256, `message.files[${index}].sha256`);
+      if (Buffer.byteLength(name, "utf8") === 0 || Buffer.byteLength(name, "utf8") > 255) {
+        fail(ctx, `message.files[${index}].name is out of bounds`);
+      }
+      if (Buffer.byteLength(mimeType, "utf8") > 255)
+        fail(ctx, `message.files[${index}].mimeType is out of bounds`);
+      if (size < 0 || size > 50 * 1024 * 1024)
+        fail(ctx, `message.files[${index}].size is out of bounds`);
+      if (!/^[0-9a-f]{64}$/.test(sha256)) fail(ctx, `message.files[${index}].sha256 is malformed`);
+      return { id, name, mimeType, size, sha256 };
+    });
+  }
   if (origin !== undefined && role !== "user") {
     fail(ctx, "origin belongs to user messages only");
   }
@@ -543,6 +578,7 @@ const decodeMessage = (ctx: Ctx, raw: unknown): Message => {
     ...(requestId === undefined ? {} : { requestId }),
     ...(stopReason === undefined ? {} : { stopReason }),
     ...(origin === undefined ? {} : { origin }),
+    ...(files === undefined ? {} : { files }),
     ...(hidden === undefined ? {} : { hidden }),
     ...(answersTo === undefined ? {} : { answersTo }),
   };
@@ -853,6 +889,14 @@ export function decodeServerEvent(raw: Record<string, unknown>): ServerEvent {
           `capabilities.${name}`,
         );
       }
+      capabilities.files =
+        capabilitiesRaw.files === undefined
+          ? false
+          : bool(ctx, capabilitiesRaw.files, "capabilities.files");
+      capabilities.sendFiles =
+        capabilitiesRaw.sendFiles === undefined
+          ? false
+          : bool(ctx, capabilitiesRaw.sendFiles, "capabilities.sendFiles");
       return {
         type,
         protocolVersion: int(ctx, required(ctx, raw, "protocolVersion"), "protocolVersion"),

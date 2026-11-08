@@ -8,6 +8,7 @@ files=$(sh scripts/unit-files.sh)
 
 if [ "${1:-}" = "--coverage" ]; then
   exec node --test \
+    --test-concurrency=4 \
     --experimental-test-coverage \
     --test-coverage-include='src/**/*.ts' \
     --test-coverage-exclude='src/testing/**' \
@@ -16,4 +17,4 @@ if [ "${1:-}" = "--coverage" ]; then
     --test-coverage-lines=90 --test-coverage-functions=90 --test-coverage-branches=85 \
     $files
 fi
-exec node --test $files
+exec node --test --test-concurrency=4 $files

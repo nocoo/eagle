@@ -8,6 +8,11 @@ import SwiftUI
 /// (docs/bots/ARCHITECTURE.md, "Layers").
 @MainActor
 public final class ConversationViewModel: ObservableObject {
+  private static let oversizedDraftError = "消息超过 8,000 个 Unicode 字符，原文仍在输入框中。"
+  private static let oversizedOutboxError = "超过 8,000 字符的待确认消息保存在本机，不会自动重发；请复制消息并调整。"
+  private static func isOversized(_ text: String) -> Bool {
+    !text.unicodeScalars.dropFirst(8_000).isEmpty
+  }
   @Published public private(set) var state: ConversationState
   @Published public private(set) var connection: ConnectionState = .connecting
   @Published public private(set) var hasSnapshot = false
@@ -17,6 +22,8 @@ public final class ConversationViewModel: ObservableObject {
   /// A parked task is recoverable: `recover` retries it.
   @Published public private(set) var parked = false
   private var draftStorage = ""
+  private var drafts: [String: String] = [:]
+  private var localRecoveries: [String: [Message]] = [:]
   public var draft: String {
     get { draftStorage }
     set { updateDraft(newValue) }
@@ -24,8 +31,7 @@ public final class ConversationViewModel: ObservableObject {
 
   /// Updates draft storage without `ObservableObject` fan-out (the shell mirrors into `composer`).
   public func writeDraft(_ value: String) {
-    guard draftStorage != value else { return }
-    draftStorage = value
+    updateDraft(value)
   }
 
   private let conversation: ConversationPort
@@ -40,7 +46,7 @@ public final class ConversationViewModel: ObservableObject {
   /// their outbox entry could not be removed (the user decides whether to retry).
   private var refused: Set<String> = []
   /// Sends the user asked for that have not been confirmed yet.
-  private var inFlight: [String: String] = [:]
+  private var inFlight: [String: OutboxEntry] = [:]
   /// The absolute catalog a `bots` frame carries, for the window's sidebar.
   public var onCatalog: ((BotCatalog) -> Void)?
 
@@ -77,6 +83,7 @@ public final class ConversationViewModel: ObservableObject {
     if selectedBotId == botId, eventsTask != nil { return }
     eventsTask?.cancel()
     selectedBotId = botId
+    draftStorage = drafts[botId] ?? ""
     reconciled = false
     hasSnapshot = false
     state = ConversationState(botId: botId)
@@ -108,6 +115,7 @@ public final class ConversationViewModel: ObservableObject {
     eventsTask?.cancel()
     eventsTask = nil
     selectedBotId = nil
+    draftStorage = ""
     conversation.close()
     connection = .stopped
     hasSnapshot = false
@@ -120,18 +128,33 @@ public final class ConversationViewModel: ObservableObject {
   /// `inserting` steers the run that is answering instead of queueing behind it; while the
   /// bot is idle the daemon places it like any other input.
   public func send(inserting: Bool) {
-    let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty, connection == .ready, let botId = selectedBotId else { return }
+    let text = draft
+    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      connection == .ready, let botId = selectedBotId
+    else { return }
+    guard !Self.isOversized(text) else {
+      errorBanner = Self.oversizedDraftError
+      return
+    }
+    if errorBanner == Self.oversizedDraftError { errorBanner = nil }
     let requestId = Identifiers.request()
     draft = ""
-    send(text: text, requestId: requestId, botId: botId, optimistic: true, inserting: inserting)
+    send(
+      text: text, requestId: requestId, botId: botId, optimistic: true,
+      whenBusy: inserting ? .steer : .followUp)
   }
 
   /// Retrying keeps the original requestId, which is how it is recovered, including after a
   /// restart of the app (`OutboxStore`).
   public func retry(_ entry: OutboxEntry) {
+    guard !Self.isOversized(entry.text) else {
+      errorBanner = Self.oversizedOutboxError
+      return
+    }
     refused.remove(entry.requestId)
-    send(text: entry.text, requestId: entry.requestId, botId: entry.botId, optimistic: true)
+    send(
+      text: entry.text, requestId: entry.requestId, botId: entry.botId, optimistic: true,
+      whenBusy: entry.whenBusy)
   }
 
   /// Answers an ask_user card. The daemon composes the hidden message, so this sends labels
@@ -211,8 +234,16 @@ public final class ConversationViewModel: ObservableObject {
   }
 
   private func updateDraft(_ value: String) {
-    guard draftStorage != value else { return }
+    guard !draftStorage.utf8.elementsEqual(value.utf8) else { return }
     draftStorage = value
+    if let selectedBotId { drafts[selectedBotId] = value }
+  }
+
+  private func restoreDraft(_ text: String, for botId: String) {
+    let current = drafts[botId] ?? ""
+    let restored = current.isEmpty ? text : current + "\n\n" + text
+    drafts[botId] = restored
+    if selectedBotId == botId { draftStorage = restored }
   }
 
   // MARK: - Sending
@@ -222,12 +253,13 @@ public final class ConversationViewModel: ObservableObject {
     requestId: String,
     botId: String,
     optimistic: Bool,
-    inserting: Bool = false
+    whenBusy: BusyMode = .followUp
   ) {
     // The entry is stored before the frame is written; if it cannot be stored, nothing is
     // sent and the draft comes back (PROTOCOL.md, client duties 1).
+    let entry = OutboxEntry(botId: botId, requestId: requestId, text: text, whenBusy: whenBusy)
     do {
-      try outbox.add(OutboxEntry(botId: botId, requestId: requestId, text: text))
+      try outbox.add(entry)
     } catch {
       draft = text
       errorBanner = "无法保存待发送的消息，消息没有发出。"
@@ -240,14 +272,14 @@ public final class ConversationViewModel: ObservableObject {
         to: state
       )
     }
-    inFlight[requestId] = text
+    inFlight[requestId] = entry
     let context = CommandContext.send(requestId)
     Task { [weak self] in
       guard let self else { return }
       do {
         try await self.conversation.send(
           text,
-          whenBusy: inserting ? .steer : .followUp,
+          whenBusy: whenBusy,
           context: context,
           botId: botId
         )
@@ -261,8 +293,8 @@ public final class ConversationViewModel: ObservableObject {
 
   /// Replays every stored entry with its own requestId; pi answers with the stored record
   /// (PROTOCOL.md, client duties 2).
-  private func reconcileOutbox() {
-    guard let botId = selectedBotId else { return }
+  private func reconcileOutbox(replay: Bool) -> Bool {
+    guard let botId = selectedBotId else { return false }
     persistPendingRefusals()
     let durableRefusals: Set<String>
     do {
@@ -270,7 +302,7 @@ public final class ConversationViewModel: ObservableObject {
     } catch {
       errorBanner = "本地待发消息暂时读不出来，稍后重试。"
       reconciled = false
-      return
+      return false
     }
     let entries: [OutboxEntry]
     do {
@@ -280,19 +312,35 @@ public final class ConversationViewModel: ObservableObject {
       // snapshot instead of pretending there is nothing to send.
       errorBanner = "本地待发消息暂时读不出来，稍后重试。"
       reconciled = false
-      return
+      return false
     }
+    var recoveries: [Message] = []
     for entry in entries
     where !refused.contains(entry.requestId)
       && !durableRefusals.contains(entry.requestId)
     {
+      if Self.isOversized(entry.text) {
+        let recovery = Message(
+          id: "local_recovery_\(entry.requestId)", role: .notice, state: .complete,
+          createdAt: entry.createdAt, blocks: [.text(entry.text)], requestId: entry.requestId)
+        recoveries.append(recovery)
+        if !state.messages.contains(where: { $0.requestId == entry.requestId }) {
+          state = Reducer.apply(.append(message: recovery, replaces: nil), to: state)
+        }
+        errorBanner = Self.oversizedOutboxError
+        continue
+      }
+      guard replay else { continue }
       send(
         text: entry.text,
         requestId: entry.requestId,
         botId: entry.botId,
-        optimistic: !state.messages.contains { $0.requestId == entry.requestId }
+        optimistic: !state.messages.contains { $0.requestId == entry.requestId },
+        whenBusy: entry.whenBusy
       )
     }
+    localRecoveries[botId] = recoveries
+    return true
   }
 
   /// Refusals whose durable write failed are retried on the next successful read.
@@ -359,12 +407,13 @@ public final class ConversationViewModel: ObservableObject {
       hasSnapshot = true
       parked = state.parked
       hasOlder = value.truncatedBefore != nil
-      // Every snapshot is a chance to make a refusal durable, even when no reconciliation
-      // is due.
-      persistPendingRefusals()
-      if !reconciled {
-        reconciled = true
-        reconcileOutbox()
+      let replay = !reconciled
+      reconciled = true
+      if !reconcileOutbox(replay: replay), selectedBotId == value.botId {
+        for recovery in localRecoveries[value.botId] ?? []
+        where !state.messages.contains(where: { $0.requestId == recovery.requestId }) {
+          state = Reducer.apply(.append(message: recovery, replaces: nil), to: state)
+        }
       }
     case .append(let message, let replaces):
       state = Reducer.apply(.append(message: message, replaces: replaces), to: state)
@@ -407,7 +456,7 @@ public final class ConversationViewModel: ObservableObject {
         // The daemon refused before admission: drop the bubble and the entry, and put the
         // text back so the user can fix or retry it (PROTOCOL.md, client duties 3).
         if let requestId {
-          let text = inFlight.removeValue(forKey: requestId)
+          let entry = inFlight.removeValue(forKey: requestId)
           refused.insert(requestId)
           do {
             try outbox.refuse(requestId: requestId)
@@ -418,10 +467,7 @@ public final class ConversationViewModel: ObservableObject {
             errorBanner = "消息被拒绝，本地待发记录暂时没有删掉。"
           }
           state.messages.removeAll { $0.id == "local_\(requestId)" }
-          if let text {
-            // Neither the refused text nor a newer draft may be lost.
-            draft = draft.isEmpty ? text : draft + "\n\n" + text
-          }
+          if let entry { restoreDraft(entry.text, for: entry.botId) }
         }
       case .unknown:
         // Admission could not be confirmed: keep the bubble and the entry for a retry.

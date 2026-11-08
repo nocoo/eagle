@@ -1,5 +1,89 @@
 # Retrospective
 
+## 2026-11-08 — Superagent root lock failed once in the push gate
+
+The first PR push was blocked because a Superagent test received `root_locked`
+while starting its first service in a fresh temporary directory. The same complete
+Superagent check passed on a diagnostic rerun. The lock maps roots into 1,000 local
+ports, so a collision is possible, but the failing root was removed and the cause was
+not established. The first failure remains evidence; do not claim it was fixed.
+
+## 2026-11-08 — File tests competed for the same machine
+
+After the observation suites joined the Bots gate, two full runs failed the
+one-second oversized-upload test while the isolated file suite passed. A diagnostic
+run showed 16,973,825 bytes had not yet been queued when the deadline fired: with
+18 test processes, unrelated suites competed for CPU and disk during the 50 MiB
+transfer. Run all deterministic files and coverage with four concurrent test files;
+the file size, response deadline and coverage thresholds stay unchanged.
+
+## 2026-11-08 — Check the rebase topology before replay
+
+A PR requested a linear rebase, but the first attempt used `--rebase-merges` and
+scheduled the old merge for reconstruction instead of replaying the work directly
+on the new base. It was aborted before any commit was replayed; the original main
+and stashes stayed intact. The linear rebase restored the merge-only attachment and
+queue-promotion test separately. Inspect the rebase todo and identify merge-only
+changes before starting a rebase that must not retain merge commits.
+
+## 2026-11-07 — Canonical equality hid a draft edit
+
+The composer used Swift `String` equality to suppress duplicate updates. Canonically
+identical but byte-distinct Unicode edits were ignored, so replacing 4,001 composed
+characters with 8,002 decomposed code points sent the old draft instead of rejecting
+and preserving the new one. The model now compares exact UTF-8, but independent native
+control testing found SwiftUI's TextField can suppress the same edit before the binding
+setter runs; the native bug remains unresolved. Test through the actual editor as well
+as the window, outbox and transport before claiming exact input preservation.
+
+## 2026-11-07 — Pending recovery was mistaken for a user turn
+
+An oversized outbox entry was initially restored as an optimistic user message
+only on the first snapshot. Review found that a later snapshot removed the only
+copyable display and that the unsent recovery changed which tool appeared active.
+The disk record was retained, but the presentation misrepresented its outcome.
+
+The first correction also lost recovery when the outbox became unreadable during a
+Bot switch, and hid it inside peer runs. Test recovery across repeated snapshots,
+read failures, Bot switches, peer runs and active tool calls before committing:
+local-only records must stay labelled and copyable without changing conversation
+turn semantics or triggering network replay. A concurrent full Swift run then missed
+one of two sends in `testInsertingSendsASteerAndAPlainSendQueues`; a focused rerun
+and a serial full run passed. The cause was not established; the initial failure
+is not evidence of a clean first run.
+
+## 2026-11-07 — Do not leave an unsafe client send path active
+
+The first client-file implementation passed its local suite, but read-only review
+found loss and replay defects. Follow-up fixes introduced ordinary text-send and
+successful-draft regressions, and the next coding pane stalled while modifying the
+same recovery state machine. The unfinished client path was removed from the current
+product; its commits and the uncommitted Bot-publish and barrier work remain locally
+recoverable. The previously working draft fix and daemon file groundwork remain.
+
+Passing the initial suite was not evidence that the file-send lifecycle was safe.
+Next time start with one end-to-end file send and crash/duplicate tests before adding
+multiple staging and recovery paths, and verify ordinary text remains usable after
+such changes. Do not claim file cards, previews or CLI acceptance until they run.
+
+## 2026-11-07 — Stop a confused coding pane before the wrong fix lands
+
+During the conversation-file work, a coding pane was redirected from client work to
+review fixes, but began writing a test for an earlier storage review instead. No
+out-of-scope change was committed. The unfinished test and client documentation were
+saved as task-private patches, the pane was stopped, and a fresh coding session was
+started with the three current findings and a clean worktree. Give a fresh session a
+bounded task when a long conversation has accumulated several review rounds; inspect
+its first changes before allowing it to commit.
+
+## 2026-11-07 — Verify executable paths during App replacement
+
+The 0.21.0 installation stopped before moving either bundle because the replacement
+command named `/usr/bin/mv`, while this Mac provides `/bin/mv`. The old App remained
+in place and the staged release remained intact. Verify the executable path and both
+bundle locations before retrying an installation step; then continue only after the
+original update-preparation and service-stop checks have succeeded.
+
 ## 2026-11-07 — Preserve failed release gates when publication is explicitly requested
 
 Preparing macOS 0.21.0 exposed two fixture gaps in CI: the native focus fixture still
