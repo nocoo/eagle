@@ -50,6 +50,18 @@ struct EagleApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+  /// Held for the life of the process: it is the one-instance rule for this build.
+  private var instanceLock = AppInstanceLock(surface: AppInstanceLock.current)
+
+  /// Before any window or service exists: a second copy of this build leaves the running one
+  /// in front instead of starting another daemon against the same root.
+  func applicationWillFinishLaunching(_ notification: Notification) {
+    guard instanceLock.acquire() else {
+      AppInstanceLock.focusRunningInstance(AppInstanceLock.current)
+      exit(0)
+    }
+  }
+
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.regular)
     // A source run answers as "Eagle Dev"; an installed bundle keeps its Info.plist name.

@@ -39,8 +39,10 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[
       0
     ]
-    .appendingPathComponent("eagle-superagent", isDirectory: true)
-    chat = SuperagentChatViewModel(port: port, store: FilePendingInputStore(directory: support))
+    chat = SuperagentChatViewModel(
+      port: port,
+      store: FilePendingInputStore(
+        directory: Self.pendingInputDirectory(support)))
     settings = SuperagentSettingsViewModel(port: settingsPort)
     observation = SuperagentObservationViewModel(
       port: port as? SuperagentObservationPort ?? FailingObservationPort())
@@ -48,6 +50,15 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
       chat.objectWillChange.map { _ in () },
       supervisor.objectWillChange.map { _ in () }
     ).sink { [weak self] _ in self?.objectWillChange.send() }
+  }
+
+  /// The local outbox is part of the build, not of the service: an unconfirmed send in a
+  /// development run must never resurface as a prompt in the released App, or the other way.
+  nonisolated static func pendingInputDirectory(
+    _ base: URL, release: Bool = Bundle.main.bundleURL.pathExtension == "app"
+  ) -> URL {
+    base.appendingPathComponent(
+      release ? "eagle-superagent" : "eagle-superagent-dev", isDirectory: true)
   }
 
   /// The settings window composes its own client: it never starts or stops the service.

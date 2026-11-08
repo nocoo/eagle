@@ -114,6 +114,8 @@ public final class BotsDaemonSupervisor: ObservableObject {
       environment: environment,
       isolatedConfigHome: settings.isIsolated
         ? settings.rootURL.appendingPathComponent("config").path : nil,
+      isolatedSecretsKey: settings.isIsolated
+        ? settings.rootURL.appendingPathComponent("config/secrets.key").path : nil,
       deviceSocketPath: deviceSocketPath
     )
     process.environment = childEnvironment
@@ -195,6 +197,7 @@ public final class BotsDaemonSupervisor: ObservableObject {
     packaged: Bool,
     environment: [String: String],
     isolatedConfigHome: String?,
+    isolatedSecretsKey: String? = nil,
     deviceSocketPath: String?
   ) -> [String: String] {
     var childEnvironment =
@@ -204,6 +207,9 @@ public final class BotsDaemonSupervisor: ObservableObject {
         "HOME": NSHomeDirectory(), "TMPDIR": NSTemporaryDirectory(),
       ] : environment
     if let isolatedConfigHome { childEnvironment["XDG_CONFIG_HOME"] = isolatedConfigHome }
+    // macOS keeps the secrets key in Application Support whatever the config home says, so an
+    // isolated run names its own key instead of sharing the released App's.
+    if let isolatedSecretsKey { childEnvironment["BOTS_SECRETS_KEY"] = isolatedSecretsKey }
     if !packaged {
       childEnvironment["BOTS_DEV_AGENT_TOKEN"] = devTokenPath(home: environment["HOME"])
     }

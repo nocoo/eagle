@@ -124,9 +124,25 @@ from `apps/macos`, in a pane split to the right of the main pane, never a new ta
 and never a background process. The product name is what a bundle-less run is
 labelled by in the Dock; `Eagle` is the packaged App's binary and stays a
 separate product. The Command Line Tools alone cannot build the
-SwiftUI macros, so the toolchain is explicit. The App starts the Bots daemon
-itself against `~/.local/share/eagle-bots` on 43117; a `swift run` shell reuses
-whatever daemon that root already answers on.
+SwiftUI macros, so the toolchain is explicit. The packaged App starts the Bots
+daemon itself against `~/.local/share/eagle-bots` on 43117; a `swift run` shell
+is the development build and owns `~/.local/share/eagle-bots-dev` on 43119 with
+its client state and secrets key under that root, so neither build can start,
+adopt or change the other's service. A second copy of either build exits
+instead of starting: one instance per build, enforced by a lock under
+`~/Library/Application Support/ai.hexly.eagle`.
+
+Surface ownership (root, port, listener, state):
+
+| Surface | Bots root | Bots port | Superagent root | Superagent port | Client state | CLI defaults |
+| --- | --- | --- | --- | --- | --- | --- |
+| Packaged App | `~/.local/share/eagle-bots` | 43117 | `~/.local/share/eagle-superagent` | 43128 | `~/Library/Application Support/ai.hexly.bots` | `eagle` |
+| Source run (`Eagle Dev`) | `~/.local/share/eagle-bots-dev` | 43119 | `~/.local/share/eagle-superagent-dev` | 43127 | `<dev root>/client` | `eagle-dev` |
+| Candidate bundle | `<daily root>-device-candidate` | 43118 | as packaged | 43128 | `<candidate root>/client` | `eagle-dev` |
+
+`BOTS_ROOT` / `BOTS_PORT` / `SUPERAGENT_ROOT` / `SUPERAGENT_PORT` / `EAGLE_ROOT` /
+`EAGLE_PORT` still name an explicit service for a test, an acceptance run or a
+second worktree; an explicit value always wins over the profile default.
 
 ## Bots (isolated product)
 

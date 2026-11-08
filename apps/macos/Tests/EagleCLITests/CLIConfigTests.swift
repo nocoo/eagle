@@ -86,6 +86,18 @@ struct CLIConfigTests {
     #expect(env.token == "c_env", "the environment wins over the development token")
   }
 
+  @Test("a development copy defaults to the daemon a source run owns")
+  func developmentDefaults() throws {
+    let home = try makeHome()
+    defer { try? FileManager.default.removeItem(at: home) }
+    let development = CLIConfig.load(argv0: "/x/eagle-dev", environment: [:], home: home.path)
+    #expect(development.root == "~/.local/share/eagle-bots-dev")
+    #expect(development.port == "43119")
+    let release = CLIConfig.load(argv0: "/x/eagle", environment: [:], home: home.path)
+    #expect(release.root == "~/.local/share/eagle-bots")
+    #expect(release.port == "43117")
+  }
+
   @Test("the development token wins over the config file's token")
   func developmentTokenBeatsTheConfigFile() throws {
     let home = try makeHome()

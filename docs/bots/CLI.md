@@ -21,8 +21,8 @@ own and never invents one.
   reports the exact path and stops. The App never edits a shell profile: when
   `~/.local/bin` is not in `PATH`, the page shows the one `export` line to add.
 - **Two builds, two names.** `eagle` and `eagle-dev` never overwrite each other, and each
-  keeps its own config file and its own credential, so a development daemon and the daily
-  App can run side by side.
+  keeps its own config file, its own credential, its own default root and its own port, so a
+  development daemon and the daily App run side by side without reaching each other.
 - **Config file.** `~/.config/eagle/<binary-name>.json`, mode 0600:
 
 ```json
@@ -31,7 +31,10 @@ own and never invents one.
 ```
 
 - **Resolution order.** `EAGLE_TOKEN` and `EAGLE_PORT` / `EAGLE_ROOT` win over the file;
-  the file wins over the defaults (`~/.local/share/eagle-bots`, `43117`). A missing token is
+  the file wins over the defaults. The released `eagle` defaults to
+  `~/.local/share/eagle-bots` on `43117`; a development copy (`eagle-dev`, or a `swift run`
+  shell) defaults to `~/.local/share/eagle-bots-dev` on `43119`, the daemon a source run of
+  the App owns. A missing token is
   an auth failure with a message naming the file, never a silent fallback to the App's own
   `<root>/token`: a CLI credential cannot borrow the App's rights.
 - **No secrets on the command line.** `--token` does not exist. The config file and the

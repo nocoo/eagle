@@ -20,6 +20,8 @@ public final class SuperagentDaemonSupervisor: ObservableObject {
   public let endpointError: String?
   private let release: Bool
   private let environment: [String: String]
+  /// The worker service this Super Bot may observe: its own build's daemon, never the other's.
+  private let bots: BotsSettings
   private let bundledNode: String?
   private var child: Process?
   private var starting: Task<Void, Never>?
@@ -30,9 +32,11 @@ public final class SuperagentDaemonSupervisor: ObservableObject {
   public init(
     environment: [String: String] = ProcessInfo.processInfo.environment,
     bundle: URL = Bundle.main.bundleURL,
-    release: Bool? = nil
+    release: Bool? = nil,
+    bots: BotsSettings = BotsSettings()
   ) {
     self.environment = environment
+    self.bots = bots
     let packaged = bundle.pathExtension == "app"
     self.release = release ?? packaged
     if packaged {
@@ -99,7 +103,7 @@ public final class SuperagentDaemonSupervisor: ObservableObject {
       ]
     }
     process.currentDirectoryURL = directory
-    process.environment = Self.childEnvironment(environment, release: release)
+    process.environment = Self.childEnvironment(environment, release: release, bots: bots)
     let output = Pipe()
     process.standardOutput = output
     process.standardError = FileHandle.nullDevice
@@ -200,7 +204,9 @@ public final class SuperagentDaemonSupervisor: ObservableObject {
     return nil
   }
 
-  static func childEnvironment(_ environment: [String: String], release: Bool) -> [String: String] {
+  nonisolated static func childEnvironment(
+    _ environment: [String: String], release: Bool, bots: BotsSettings
+  ) -> [String: String] {
     var child =
       release
       ? [
@@ -209,6 +215,12 @@ public final class SuperagentDaemonSupervisor: ObservableObject {
       ] : environment
     child.removeValue(forKey: "BOTS_DEV_AGENT_TOKEN")
     child.removeValue(forKey: "BOTS_DEVICE_SOCKET")
+    // Observation reads the daemon this build owns. Without this the service would fall back
+    // to the released App's port and credential, so a source run would observe — and report on
+    // — the daily Bots it must not touch.
+    child["BOTS_OBSERVATION_ENDPOINT"] = "http://127.0.0.1:\(bots.port)"
+    child["BOTS_OBSERVATION_TOKEN_FILE"] =
+      bots.rootURL.appendingPathComponent("observation/token").path
     return child
   }
 }

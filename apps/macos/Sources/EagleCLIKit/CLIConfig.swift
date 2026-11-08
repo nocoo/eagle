@@ -41,6 +41,17 @@ public struct CLIConfig: Sendable {
       .appendingPathComponent("\(binaryName).json")
   }
 
+  /// The daemon each copy talks to when nothing names one. A development copy must never
+  /// default to the released App's service: it has its own root and port, so a command in a
+  /// development shell cannot list, stop or change a Bot the released App is using.
+  public static func defaultRoot(binaryName: String) -> String {
+    binaryName == "eagle" ? "~/.local/share/eagle-bots" : "~/.local/share/eagle-bots-dev"
+  }
+
+  public static func defaultPort(binaryName: String) -> String {
+    binaryName == "eagle" ? "43117" : "43119"
+  }
+
   /// The development credential's own file, kept apart from the released App's.
   public static func devTokenURL(home: String) -> URL {
     URL(fileURLWithPath: home, isDirectory: true)
@@ -153,8 +164,8 @@ public struct CLIConfig: Sendable {
     }
     return CLIConfig(
       binaryName: name,
-      root: env("EAGLE_ROOT") ?? value("root") ?? "~/.local/share/eagle-bots",
-      port: env("EAGLE_PORT") ?? value("port") ?? "43117",
+      root: env("EAGLE_ROOT") ?? value("root") ?? defaultRoot(binaryName: name),
+      port: env("EAGLE_PORT") ?? value("port") ?? defaultPort(binaryName: name),
       token: token,
       clientName: value("client"),
       configPath: url.path,

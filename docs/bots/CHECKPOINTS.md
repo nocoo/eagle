@@ -924,3 +924,35 @@ Verified:
 Next broken hop: attach and microphone have no handler on either surface, so a click
 does nothing yet; Bots' managed-file send and any Superagent attachment contract
 remain unwired.
+
+## 2026-11-08 17:20 — one instance per build, and the two builds cannot reach each other
+
+Observed: the released App and a source run each own their daemon, port, client state,
+secrets key and Super Bot observation target, and a second copy of either build leaves
+the running one in front instead of starting.
+
+Verified:
+
+- `AppProfilesTests` (7 rows) covers the two profiles, an explicit environment override,
+  the instance lock, the Super Bot outbox and the observation target; `apps/macos`
+  `swift test` exit 0 (442 + 52 + 85 + 38 cases), strict `swift format lint` clean,
+  `npm run check:design` green.
+- The lock is a `flock` on `~/Library/Application Support/ai.hexly.eagle/instance-<surface>.lock`;
+  a second open in the same process and a second process both refuse, and the second
+  copy calls `exit(0)` after asking the running App to come forward.
+- Profiles: release `~/.local/share/eagle-bots` / 43117 / `ai.hexly.bots` client state /
+  `eagle`; source run `~/.local/share/eagle-bots-dev` / 43119 / `<root>/client` /
+  `eagle-dev`. Candidate keeps its own `-device-candidate` root on 43118. Superagent
+  stays 43127 (source) and 43128 (packaged).
+- `BOTS_SECRETS_KEY` now points an isolated run at its own key: macOS keeps
+  `secrets.key` in Application Support whatever `XDG_CONFIG_HOME` says, so the config
+  home alone did not isolate secret cards.
+- The Super Bot's observation endpoint and credential file now follow the same profile;
+  before this it fell back to `127.0.0.1:43117` and the daily root, so a source run's
+  Super Bot observed the released App's daemons.
+- `eagle-dev` defaults to the source run's root and port; `eagle` keeps 43117.
+
+Next broken hop: the 142 MB catalog now at `~/.local/share/eagle-bots` was created by
+source runs, and the running packaged App has been using it. Which build keeps it is the
+owner's decision (move, copy or leave it to the packaged App); until then a source run
+starts with an empty dev root. No release artifact was rebuilt.

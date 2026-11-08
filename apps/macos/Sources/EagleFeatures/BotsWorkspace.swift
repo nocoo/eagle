@@ -21,14 +21,28 @@ public struct BotsSettings {
   ) {
     let candidate =
       (try? DeviceHostConfiguration.load(bundle: bundle))?.profile == "device-candidate"
+    // A source run is the development build. It owns a daemon, catalog and client state of
+    // its own, so a cancelled experiment cannot start, adopt or change the released App's
+    // service. An explicit environment root still wins: that is how a test, an acceptance run
+    // or a second worktree names its own service.
     let development = bundle.pathExtension != "app"
     let overrides = development ? environment : [:]
-    isIsolated = candidate || overrides["BOTS_ROOT"] != nil
-    rootPath =
-      overrides["BOTS_ROOT"]
-      ?? (candidate
-        ? TokenStore.defaultRoot.path + "-device-candidate" : TokenStore.defaultRoot.path)
-    port = overrides["BOTS_PORT"] ?? (candidate ? "43118" : "43117")
+    let dailyRoot = TokenStore.defaultRoot.path
+    let profileRoot: String
+    let profilePort: String
+    if candidate {
+      profileRoot = dailyRoot + "-device-candidate"
+      profilePort = "43118"
+    } else if development {
+      profileRoot = dailyRoot + "-dev"
+      profilePort = "43119"
+    } else {
+      profileRoot = dailyRoot
+      profilePort = "43117"
+    }
+    isIsolated = candidate || development || overrides["BOTS_ROOT"] != nil
+    rootPath = overrides["BOTS_ROOT"] ?? profileRoot
+    port = overrides["BOTS_PORT"] ?? profilePort
   }
 
   /// Explicit host/test injection is separate from ambient shell configuration.
