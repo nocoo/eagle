@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+## macOS v0.22.0 — 2026-11-08
+
+- Add the Super Bot: an independent service the App starts and stops on its own, with its own
+  process, root, identity, credential, model configuration and durable conversation, so a
+  worker catalog that is missing, full or failing cannot take the main conversation away.
+  It sits in a permanent system row above the sidebar groups and cannot be renamed, moved,
+  hidden, pinned or deleted. Its model and thinking level are the inspector's 模型 tab,
+  filled from a first-use copy of the Bot settings and then its own; no worker daemon is
+  needed to read or change them.
+- Give the Super Bot the ordinary Bot's shell instead of a reduced variant: the same
+  conversation component, the same composer controls, the same three columns and the same
+  inspector structure (详情 with sections and placeholders, 模型 with the same ids and level
+  names) so the two surfaces are one product. Observation is one read-only 观测 section that
+  runs no command; re-selecting the row no longer rebuilds the socket.
+- Add passive worker observation, read-only by construction. A dedicated 0600 observation
+  credential guards `snapshot`, `history` and `changes` on the daemon's own routes; a read
+  opens the committed store read-only and never creates, migrates, recovers or opens a
+  harness, reports coverage separately for scopes, page and content, and refuses a stale or
+  foreign cursor instead of guessing. The Super Bot consumes it over its own authenticated
+  socket with a baseline committed per result, and `eagle-dev superagent observe
+  status|snapshot|history|changes` pages the same data from a terminal.
+- Attach files to a Bot message: a file is staged, its manifest uploaded and admitted before
+  the message is admitted, a restart recovers what was uploaded, a declared file that would
+  leave the Bot's room is refused before anything is written, per-Bot storage is bounded with
+  crash cleanup, and a stalled download can no longer hold the Bot's lease.
+- Survive refusals and interruptions without losing what a person typed: an oversized draft,
+  a rejected send, a socket read failure, a repeated resync and a queued retry each keep the
+  exact text, the queue mode and the pending recovery with the Bot that owns them.
+- Restrict child agents to the core and coding groups, withhold `ask_user` and `note_set`
+  from them, and make the whitelist a property of the conversation rather than of spawn
+  time, so a child created earlier is narrowed while it runs and no longer inherits the
+  parent's secret environment.
+- Move the person-facing tools into a mandatory Core 交互工具 group and let a sidebar status
+  be any ten-character sentence instead of a hard cap.
+- Fix a flash of the product mark in the sidebar footer on every conversation switch: the
+  1.9 MB icon was decoded into a new `NSImage` on each render, so the layer's contents were
+  replaced; it is now decoded once per process, and selecting a conversation no longer joins
+  the whole panel to one animation transaction.
+- Give every moment one wording and keep the exact instant on hover, in the inspector, the
+  peer timeline, the secret rows and the CLI client list.
+- Run one instance per build, and separate the two builds' services: the packaged App keeps
+  `~/.local/share/eagle-bots` on 43117, `~/Library/Application Support/ai.hexly.bots` and
+  `eagle`; a source run owns `~/.local/share/eagle-bots-dev` on 43119, its own client state,
+  config home, secrets key, Super Bot outbox and observation target, and `eagle-dev`. A
+  second copy of either build asks the running App to come forward and exits instead of
+  starting a second daemon.
+
 ## v0.15.0 — 2026-11-08
 
 - Add the SG-002 passive worker observation boundary, in source. A dedicated observation
