@@ -4706,3 +4706,41 @@ before relay forwarding are under fault-injection tests; Lead owns integration.
 Next broken hop: the device helper needs the person's Login Items approval again after the
 bundle replacement, and nobody has looked at the installed App's rendered Super Bot row,
 inspector or observation section.
+
+## 2026-11-08 20:15 +08 — macOS 0.22.1: the Super Bot continues the Bot's model account
+
+- Release commit `84c4d879` (`fix(macos): let the super bot continue the bot's model account`)
+  bumps the App to 0.22.1; annotated tag `macos-v0.22.1` points at it, and `996b46bf` claims
+  it in the root manifest. Site/Worker 0.15.0 and the Agent and npm versions are unchanged.
+- Why: 0.22.0 copied the address, model and level only when the Bot service happened to answer
+  before the Super Bot was selected, and could never copy the key — the daemon's API reports
+  only that a key exists. An installed App therefore said it had no model, and its notice
+  pointed at a Settings page that the Super Bot's inspector had replaced.
+- Now the workspace adopts from the Bot's private gateway file when its own socket is usable
+  and again when the Bot service becomes ready; a 0600, owner-owned regular file is required
+  and a symlink or a loose file is refused. A pure decision (`SuperagentModelAdoption`) copies
+  only what the Super Bot lacks, so a model, a level or a key chosen on this side survives.
+  The 模型 tab gained a 密钥 row (沿用 Bot 的密钥 / 清除密钥) and the notice carries the same
+  action.
+- Evidence, isolated: a source run on `/tmp/eagle-adopt` (Bots 43195, Super Bot 43196) with a
+  prepared `gateway.json` inherited address, `group/eagle`, level `low` and an 18-character
+  key with no click, and reported `modelReady true`; changing the Super Bot to `group/other` +
+  `high` and relaunching kept that pair, so inheritance never overwrites a choice.
+- Gates: `apps/macos swift test` 447 + 52 + 85 + 38 cases, `npm run check:design`, strict
+  `swift format lint`; the pre-push hook then ran root `npm run check`, `apps/superagent`,
+  `apps/superagent-macos` coverage, the browser suite and the macOS tests on the release tree.
+- Bundle: `CFBundleShortVersionString` 0.22.1, ad-hoc signature verified deep/strict, bundled
+  CLI answers `0.22.1`. `Eagle-for-Mac-0.22.1.dmg` is 149,193,958 bytes with sha256
+  `1469b5e877e5151fba67601f5e0ce1d37b30fe33d3b69857d16da59163cac045`; the release
+  `https://github.com/nocoo/eagle/releases/tag/macos-v0.22.1` carries it plus `SHA256SUMS`.
+  `/api/live` answers `macos.latest` 0.22.1 at revision `996b46bf`.
+- Installed here: `/Applications/Eagle for Mac.app` is 0.22.1. On launch it adopted the real
+  Bot gateway without a click — `~/.local/share/eagle-superagent/configuration.json` now holds
+  address, `group/eagle`, `medium` and the key — and the packaged CLI reports
+  `superagent 0.1.0 · 模型已配置`, observation `ready`, and answered a real turn
+  (`只回复两个字：收到` → `收到`). Both builds keep their own services: release 43117 + 43128,
+  source run 43119 + 43127.
+
+Next broken hop: the source run's Super Bot has no gateway to inherit because its own Bots root
+has none yet, so a development Super Bot still starts unconfigured; nobody has looked at the
+rendered notice, 密钥 row or the adopted state in the installed App.
