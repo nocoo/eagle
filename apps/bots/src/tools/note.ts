@@ -13,7 +13,7 @@ const respond = (outcome: ToolOutcome) => ({
 export const createNoteSetTool = (host: NoteToolHost | undefined) =>
   defineTool({
     name: "note_set",
-    description: `Set the one line a person sees next to this bot in their sidebar. It is a status, so update it when the work changes, not every turn. At most ${MAX_BOT_NOTE_CHARS} characters after trimming and whitespace collapse; an empty text clears it.`,
+    description: `Set the one line a person sees next to this bot in their sidebar. It is a status, so update it when the work changes, not every turn. Aim for about ten Chinese characters, or an equally short line in the language the person reads, so it reads next to the bot's name instead of being cut off; the hard limit is ${MAX_BOT_NOTE_CHARS} characters after trimming and whitespace collapse, and a longer text is refused. An empty text clears it.`,
     parameters: Type.Object({
       text: Type.String({
         description: "The status line to show; an empty string clears it",

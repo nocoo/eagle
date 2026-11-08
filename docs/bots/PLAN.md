@@ -325,7 +325,9 @@ Live paid searches and real-key mutation are not part of these checks.
 ### Native tool consolidation (2026-10-28)
 
 The owner requires separate mandatory `core` and `coding` groups. `coding` is the native
-pi-durable `CodingTools`; `core` adds a native-style `list` tool. The previous custom
+pi-durable `CodingTools`; `core` adds a native-style `list` tool. A third mandatory group,
+`core-ui`, was added on 2026-11-08 to hold `ask_user` and `note_set`: it is registered right
+after `core`, cannot be switched off, and is the one group a child agent never selects. The previous custom
 read/write/command implementations and their aliases are removed, together with their
 obsolete sandbox contract. Native tool integration tests replace implementation-specific
 tests; the existing coverage scope and thresholds are unchanged. Missing-group and
@@ -734,9 +736,13 @@ for.
 
 **Subagents.** `bots-agents` gives a bot `agent_spawn` / `agent_send` / `agent_stop`. A
 child is an ownerless conversation in the same Harness, configured from the caller's agent
-minus these tools, so delegation is one level deep. Its turns are driven inside a tool call
-and its final text returns as the tool result; the transcript keeps only that result. The
-`peers` capability stays false because nothing about children crosses the protocol yet.
+but selecting only `persona`, `machine`, `core` and `coding`: it reads the bot's persona and
+this machine's rules, works in the same workspace, and holds `read`, `write`, `edit`, `bash`,
+`list` plus its pull reports. `core-ui` is never selected — nobody watches a child's
+conversation, so its card could not draw, and the sidebar line belongs to the parent — and
+every other group stays with the parent. Its turns are driven inside a tool call and its final
+text returns as the tool result; the transcript keeps only that result. The `peers`
+capability stays false because nothing about children crosses the protocol yet.
 
 **Deferred tools.** The eight `herdr` tools are declared deferred and `tool_search` is
 installed with them, so a request carries seven tools instead of fifteen. Loading writes the

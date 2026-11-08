@@ -570,7 +570,10 @@ struct SettingsGatewayTests {
     #expect(model.gatewayModel == "typed-model")
     #expect(
       model.gatewayToolGroups
-        == ["persona", "machine", "core", "coding", "memory", "secrets", "agents", "trigger"])
+        == [
+          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "agents",
+          "trigger",
+        ])
     GatewayHTTPStub.handler = nil
   }
 
@@ -637,7 +640,7 @@ struct SettingsGatewayTests {
     let model = SettingsViewModel(botsSettings: settings, urlSession: session)
     await model.loadGateway()
     #expect(model.gateway?.toolGroups == ["core", "coding"])
-    #expect(model.gatewayToolGroups == ["core", "coding"])
+    #expect(model.gatewayToolGroups == ["core", "core-ui", "coding"])
     #expect(model.isToolGroupEnabled("core"))
     #expect(model.isToolGroupEnabled("herdr") == false)
     GatewayHTTPStub.handler = nil
@@ -659,12 +662,14 @@ struct SettingsGatewayTests {
     #expect(
       model.gateway?.toolGroups
         == [
-          "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "trigger",
+          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets",
+          "herdr", "agents", "trigger",
         ])
     #expect(
       model.gatewayToolGroups
         == [
-          "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "trigger",
+          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets",
+          "herdr", "agents", "trigger",
         ])
     GatewayHTTPStub.handler = nil
   }
@@ -683,7 +688,8 @@ struct SettingsGatewayTests {
     #expect(
       model.gatewayToolGroups
         == [
-          "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents", "trigger",
+          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets",
+          "herdr", "agents", "trigger",
         ])
   }
 
@@ -834,8 +840,8 @@ struct SettingsGatewayTests {
       #expect(
         parsed?["toolGroups"] as? [String]
           == [
-            "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents",
-            "trigger",
+            "persona", "machine", "core", "core-ui", "coding", "memory", "secrets",
+            "herdr", "agents", "trigger",
           ])
       return (
         200,
@@ -860,7 +866,10 @@ struct SettingsGatewayTests {
       let parsed = try JSONSerialization.jsonObject(with: try #require(body)) as? [String: Any]
       #expect(
         parsed?["toolGroups"] as? [String]
-          == ["persona", "machine", "core", "coding", "memory", "secrets", "agents", "trigger"])
+          == [
+            "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "agents",
+            "trigger",
+          ])
       return (
         200,
         Data(
@@ -902,8 +911,8 @@ struct SettingsGatewayTests {
     #expect(
       saved
         == [
-          "persona", "machine", "core", "coding", "memory", "secrets", "herdr", "agents",
-          "search", "trigger",
+          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "herdr",
+          "agents", "search", "trigger",
         ])
 
     GatewayHTTPStub.handler = { request in
@@ -929,7 +938,10 @@ struct SettingsGatewayTests {
     #expect(model.isToolGroupEnabled("memory") == false)
     #expect(
       model.gatewayToolGroups
-        == ["persona", "machine", "core", "coding", "secrets", "herdr", "agents", "trigger"])
+        == [
+          "persona", "machine", "core", "core-ui", "coding", "secrets", "herdr", "agents",
+          "trigger",
+        ])
   }
 
   @Test("saveGateway surfaces daemon errors")
@@ -1016,7 +1028,9 @@ struct SettingsGatewayTests {
     await model.savePrompts()
     #expect(
       body?["toolGroups"] as? [String]
-        == ["persona", "core", "coding", "memory", "secrets", "herdr", "agents", "search"],
+        == [
+          "persona", "core", "core-ui", "coding", "memory", "secrets", "herdr", "agents", "search",
+        ],
       "only the two prompt groups changed, and the order is the daemon's")
     GatewayHTTPStub.handler = nil
   }

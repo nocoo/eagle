@@ -587,7 +587,7 @@ test("selecting bots-skills needs no tool group: a tick is the switch", async ()
   try {
     const workspace = await openWorkspace(join(root, "workspace"));
     const withSkills = createToolRegistry(workspace, { skills: () => [] });
-    for (const groups of [[], ["core", "coding", "herdr"]]) {
+    for (const groups of [[], ["core", "core-ui", "coding", "herdr"]]) {
       assert.ok(
         selectToolExtensions(withSkills, groups).some(
           (extension) => extension.name === SKILLS_EXTENSION,

@@ -11,19 +11,42 @@ import type { HerdrClient } from "../../src/tools/herdr/client.ts";
 import { HERDR_TOOLS_EXTENSION } from "../../src/tools/herdr/tools.ts";
 import {
   BOTS_TOOLS_EXTENSION,
+  CORE_UI_EXTENSION,
   createToolRegistry,
   selectToolExtensions,
 } from "../../src/tools/registry.ts";
 import { openWorkspace } from "../../src/tools/workspace.ts";
 
-/** The one section the model reads before it decides what to do with its own line. */
-const botsToolsSection = (registry: ReturnType<typeof createToolRegistry>): string => {
+/** One section as the model would read it, with the tools this conversation offers. */
+const renderSection = (
+  registry: ReturnType<typeof createToolRegistry>,
+  key: string,
+  offered: readonly string[] = ["list", "note_set", "ask_user", "read", "write", "edit", "bash"],
+): string | undefined => {
   const entry = registry
     .snapshot()
     .sections()
-    .find(({ section }) => section.key === "bots-tools");
-  assert.ok(entry, "bots-tools is installed");
-  const text = entry.section.render({ agent: {} } as never, {} as never);
+    .find(({ section }) => section.key === key);
+  assert.ok(entry, `${key} is installed`);
+  const text = entry.section.render(
+    { agent: { tools: offered.map((name) => ({ name })) } } as never,
+    {} as never,
+  );
+  return typeof text === "string" ? text : undefined;
+};
+
+/** The section of the group that holds the bot's own line, as the model reads it. */
+const coreUISection = (
+  registry: ReturnType<typeof createToolRegistry>,
+  offered: readonly string[] = ["list", "note_set", "ask_user"],
+): string => {
+  const text = renderSection(registry, "bots-core-ui", offered);
+  assert.equal(typeof text, "string");
+  return text as string;
+};
+
+const botsToolsSection = (registry: ReturnType<typeof createToolRegistry>): string => {
+  const text = renderSection(registry, "bots-tools");
   assert.equal(typeof text, "string");
   return text as string;
 };
@@ -55,7 +78,7 @@ test("remote tools are selected only for a configured shared device", () => {
       devices: { socketPath: "/tmp/unused-device-test.sock", botId: "existing-bot" },
     },
   );
-  for (const groups of [[], ["core", "coding"], ["herdr", "agents"]]) {
+  for (const groups of [[], ["core", "core-ui", "coding"], ["herdr", "agents"]]) {
     const disabled = selectToolExtensions(registry, groups)
       .flatMap((extension) => extension.tools ?? [])
       .map((tool) => tool.name);
@@ -126,7 +149,16 @@ test("core supplies list and coding installs the original native extension witho
     );
     assert.deepEqual(
       snapshot.extension(BOTS_TOOLS_EXTENSION)?.tools?.map((tool) => tool.name),
-      ["list", "note_set", "ask_user"],
+      ["list"],
+    );
+    assert.deepEqual(
+      selectToolExtensions(registry, [])
+        .filter((extension) => extension.name === CORE_UI_EXTENSION)
+        .flatMap((extension) => extension.tools ?? [])
+        .map((tool) => tool.name)
+        .sort(),
+      ["ask_user", "note_set"],
+      "the person-facing tools are their own mandatory group",
     );
   } finally {
     await rm(daemonRoot, { recursive: true, force: true });
@@ -143,9 +175,9 @@ test("core and coding install seven tools and a working-directory section", asyn
       .flatMap((extension) => (extension.tools ?? []).map((tool) => [extension.name, tool.name]))
       .sort(),
     [
-      [BOTS_TOOLS_EXTENSION, "ask_user"],
+      [CORE_UI_EXTENSION, "ask_user"],
+      [CORE_UI_EXTENSION, "note_set"],
       [BOTS_TOOLS_EXTENSION, "list"],
-      [BOTS_TOOLS_EXTENSION, "note_set"],
       ["coding-tools", "bash"],
       ["coding-tools", "edit"],
       ["coding-tools", "read"],
@@ -161,7 +193,7 @@ test("core and coding install seven tools and a working-directory section", asyn
   await rm(daemonRoot, { recursive: true, force: true });
 });
 
-test("note_set belongs to core and its section tells the model when to write it", async () => {
+test("note_set belongs to core-ui and its section tells the model when to write it", async () => {
   const daemonRoot = await mkdtemp(join(tmpdir(), "bots-note-registry-"));
   try {
     const workspace = await openWorkspace(join(daemonRoot, "workspace"));
@@ -180,20 +212,21 @@ test("note_set belongs to core and its section tells the model when to write it"
     });
     assert.deepEqual(
       selectToolExtensions(registry, ["core"]).map((extension) => extension.name),
-      [BOTS_TOOLS_EXTENSION, "coding-tools"],
-      "core adds bots-tools and nothing beyond the mandatory coding group",
+      [BOTS_TOOLS_EXTENSION, CORE_UI_EXTENSION, "coding-tools"],
+      "the mandatory groups are the whole selection, in install order",
     );
     assert.deepEqual(
       registry
         .snapshot()
-        .extension(BOTS_TOOLS_EXTENSION)
+        .extension(CORE_UI_EXTENSION)
         ?.tools?.map((tool) => tool.name),
-      ["list", "note_set", "ask_user"],
+      ["note_set", "ask_user"],
     );
-    const text = botsToolsSection(registry);
+    const text = coreUISection(registry);
     assert.match(text, /note_set/);
     assert.match(text, /sidebar/);
     assert.match(text, /not every turn/);
+    assert.match(text, /about ten Chinese characters/, "the line is asked to stay short");
     assert.match(text, /在等 PR 审核/, "the model sees its own line");
     assert.match(text, /3 hours ago/, "and how stale it is");
   } finally {
@@ -212,10 +245,37 @@ test("a bot with no note is told the line is empty rather than left guessing", a
         current: () => ({}),
       },
     });
-    const text = botsToolsSection(registry);
+    const text = coreUISection(registry);
     assert.match(text, /sidebar/);
     assert.match(text, /empty/);
     assert.equal(text.includes("ago"), false);
+  } finally {
+    await rm(daemonRoot, { recursive: true, force: true });
+  }
+});
+
+test("a conversation without note_set is not told to write the sidebar line", async () => {
+  const daemonRoot = await mkdtemp(join(tmpdir(), "bots-note-absent-"));
+  try {
+    const workspace = await openWorkspace(join(daemonRoot, "workspace"));
+    const registry = createToolRegistry(workspace, {
+      note: {
+        botId: "b_1",
+        set: async (text) => (text.length === 0 ? {} : { note: text }),
+        current: () => ({ note: "在等 PR 审核", at: "2026-10-25T03:00:00.000Z" }),
+      },
+    });
+    // `bots-tools` never mentions the note; `bots-core-ui` omits its section when the
+    // conversation filtered `note_set` away, so neither text asks for a missing tool.
+    const tools = botsToolsSection(registry);
+    assert.match(tools, /default working directory/);
+    assert.match(tools, /Use list to discover files/);
+    assert.doesNotMatch(tools, /note_set|sidebar/);
+    assert.equal(
+      renderSection(registry, "bots-core-ui", ["list", "read", "write", "edit", "bash"]),
+      undefined,
+      "a conversation without note_set gets no note section",
+    );
   } finally {
     await rm(daemonRoot, { recursive: true, force: true });
   }
@@ -229,7 +289,7 @@ test("a bot's tool groups select from every registered built-in extension", asyn
   const coreOnly = selectToolExtensions(registry, []);
   assert.deepEqual(
     coreOnly.map((extension) => extension.name),
-    [BOTS_TOOLS_EXTENSION, "coding-tools"],
+    [BOTS_TOOLS_EXTENSION, CORE_UI_EXTENSION, "coding-tools"],
   );
   assert.equal(coreOnly.flatMap((extension) => extension.tools ?? []).length, 7);
   const both = selectToolExtensions(registry, ["herdr"]);
@@ -315,9 +375,9 @@ test("a group whose tools are not installed contributes nothing, not even its lo
       )
       .sort();
     assert.deepEqual(selected, [
-      "bots-tools:ask_user",
+      "bots-core-ui:ask_user",
+      "bots-core-ui:note_set",
       "bots-tools:list",
-      "bots-tools:note_set",
       "coding-tools:bash",
       "coding-tools:edit",
       "coding-tools:read",
@@ -345,7 +405,7 @@ test("selection reads native registry replacement and removal rather than a star
     registry.uninstall(replacement);
     assert.deepEqual(
       selectToolExtensions(registry, ["agents"]).map((extension) => extension.name),
-      [BOTS_TOOLS_EXTENSION, "coding-tools"],
+      [BOTS_TOOLS_EXTENSION, CORE_UI_EXTENSION, "coding-tools"],
     );
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -366,10 +426,16 @@ test("the trigger group installs its extension and the shared loader, and nothin
       endpoint: (triggerId: string) => `/v1/triggers/b_1/${triggerId}`,
     };
     const registry = createToolRegistry(workspace, { trigger: host });
-    const names = selectToolExtensions(registry, ["core", "coding", "trigger"]).map(
+    const names = selectToolExtensions(registry, ["core", "core-ui", "coding", "trigger"]).map(
       (extension) => extension.name,
     );
-    assert.deepEqual(names.sort(), ["bots-tools", "bots-trigger", "coding-tools", "tool-search"]);
+    assert.deepEqual(names.sort(), [
+      "bots-core-ui",
+      "bots-tools",
+      "bots-trigger",
+      "coding-tools",
+      "tool-search",
+    ]);
     assert.deepEqual(
       registry
         .snapshot()
@@ -383,8 +449,10 @@ test("the trigger group installs its extension and the shared loader, and nothin
     // loader: a `tool_search` that can load nothing is worse than no group at all.
     const bare = createToolRegistry(workspace);
     assert.deepEqual(
-      selectToolExtensions(bare, ["core", "coding", "trigger"]).map((extension) => extension.name),
-      ["bots-tools", "coding-tools"],
+      selectToolExtensions(bare, ["core", "core-ui", "coding", "trigger"]).map(
+        (extension) => extension.name,
+      ),
+      ["bots-tools", "bots-core-ui", "coding-tools"],
     );
   } finally {
     await rm(daemonRoot, { recursive: true, force: true });

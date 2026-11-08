@@ -381,18 +381,22 @@ test("a gateway tool-group change reaches existing bots and new ones", async () 
     await setup.registry.start();
     await setup.registry.open("b_bot0", "tr_groups_0001");
     await setup.registry.applyToolGroups(["core", "coding"], "tr_groups_0002");
-    assert.deepEqual(setup.groupCalls.at(-1), ["core", "coding"], "the live conversation follows");
+    assert.deepEqual(
+      setup.groupCalls.at(-1),
+      ["core", "core-ui", "coding"],
+      "the live conversation follows",
+    );
     const stored = await setup.directory.load();
     assert.deepEqual(
       stored[0]?.toolGroups,
-      ["core", "coding"],
+      ["core", "core-ui", "coding"],
       "the catalog is the source of truth",
     );
     await setup.registry.create("new", "tr_groups_0003");
     const created = (await setup.directory.load()).find((bot) => bot.title === "new");
     assert.deepEqual(
       created?.toolGroups,
-      ["core", "coding"],
+      ["core", "core-ui", "coding"],
       "a new bot records the settings groups",
     );
   } finally {
@@ -409,7 +413,11 @@ test("a bot that never stored tool groups gets them written on the first save", 
     assert.equal(before?.toolGroups, undefined, "the fixture stores no selection");
     await setup.registry.applyToolGroups(["core", "coding", "herdr"], "tr_groups_0004");
     const after = (await setup.directory.load())[0];
-    assert.deepEqual(after?.toolGroups, ["core", "coding", "herdr"], "the default is now explicit");
+    assert.deepEqual(
+      after?.toolGroups,
+      ["core", "core-ui", "coding", "herdr"],
+      "the default is now explicit",
+    );
   } finally {
     await setup.registry.shutdown();
     await setup.cleanup();
@@ -430,7 +438,7 @@ test("a failed live tool refresh is reported and an identical save retries it", 
       setup.registry.applyToolGroups([], "tr_tools_retry"),
       /tool refresh failed/,
     );
-    assert.deepEqual((await setup.directory.load())[0]?.toolGroups, ["core", "coding"]);
+    assert.deepEqual((await setup.directory.load())[0]?.toolGroups, ["core", "core-ui", "coding"]);
     await setup.registry.applyToolGroups([], "tr_tools_retry");
     assert.equal(attempts, 2);
   } finally {

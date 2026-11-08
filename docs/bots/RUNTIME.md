@@ -357,7 +357,7 @@ Projection, which is also part of the mapping contract:
 | `progress.outputIntervalMs` | 100 | Reserved (tool output) |
 | `afterFailedRun` | `"continue"` | A failed run must not strand queued follow-ups |
 | `restartLimit` | 5 (default) | Parked tasks surface as `task_parked` and are cleared by `recover` |
-| `toolGroups` (per bot) | from stored config, default `["core", "coding", "herdr", "agents", "trigger"]` | `core` and `coding` are mandatory. The former adds `list`; the latter is native `CodingTools`. Herdr and child-agent extensions are optional. See "Tool groups" below |
+| `toolGroups` (per bot) | from stored config, default `["core", "core-ui", "coding", "herdr", "agents", "trigger"]` | `core`, `core-ui` and `coding` are mandatory. `core` adds `list`, `core-ui` adds the person-facing `ask_user` and `note_set`, and `coding` is native `CodingTools`. Herdr and child-agent extensions are optional. See "Tool groups" below |
 | `thinkingLevel` (per bot) | from the stored pair, migrated once to `medium` when a catalog has none | Every bot stores its own level: a catalog written before the field existed gets the daemon's current default written once at startup, so a later change of the default cannot move it. The settings name the level a new bot records; the inspector changes the level of one bot, in one commit (`root.configure`), and the change reaches the next prepared request — a running answer is never interrupted. An explicit metadata set can refuse a level; the ids-only gateway publishes none, so all seven are requests and an upstream refusal is the run's error, never a fallback |
 | Search provider | `<XDG_CONFIG_HOME or ~/.config>/eagle-bots/providers.json` (0600) | Independent DeepSeek/Tavily keys with one selected provider. The `search` tool group is off by default. Its deferred `web_search`/`web_fetch` use a stable routing client that resolves the selected provider/key at invocation, including existing conversations; missing configuration is an error result, and failures never trigger fallback. Successful calls each book one `search` call |
 | Usage statistics | `<root>/usage.sqlite`, 90 days | `usage_daily(bot_id, day, source, tokens, calls, cost_usd)` plus `last_seen(bot_id, total_tokens, cost_usd)` so a cumulative model report becomes a delta. A source is a string (`model`, `search`), so a new spender needs no schema change; the first token-only `daily` table is migrated into the `model` source on open. Kept outside a bot's session, so deleting a bot keeps its history; pruned on boot and on write |
@@ -372,7 +372,10 @@ Each bot owns its settings object so one bot's policy cannot affect another
 
 The mandatory `coding` group installs pi-durable's native `CodingTools` extension.
 The mandatory `core` group installs `bots-tools`, containing the native-style `list` tool.
-There is one implementation per capability and no aliases for the old tool names.
+The mandatory `core-ui` group installs `bots-core-ui`, the tools that act on the person's
+side of the App (`ask_user`, `note_set`), so a child agent can be denied them as a whole
+group instead of by name. There is one implementation per capability and no aliases for the
+old tool names.
 
 | Tool | Behaviour |
 | --- | --- |
@@ -479,7 +482,7 @@ doing everything in one context.
 
 | Tool | Behaviour |
 | --- | --- |
-| `agent_spawn` | Creates an ownerless conversation in the same Harness, configured from the caller's agent (model, reasoning level, extensions, tool list, `cwd`, instructions) minus these three tools — one level of delegation, never a tree. Appends a `bots.agent` marker entry (no `model`, so the child never sees it) and answers the child id |
+| `agent_spawn` | Creates an ownerless conversation in the same Harness, configured from the caller's agent (model, reasoning level, `cwd`, instructions) but selecting only `persona`, `machine`, `core` and `coding`: the child reads the bot's persona and this machine's rules and holds `read`, `write`, `edit`, `bash`, `list`, plus `pr_register`/`pr_list` when the bot reports pull requests. `core-ui` is never selected, so `ask_user` (its card is drawn from the conversation a client watches, and nothing watches a child's) and `note_set` (the sidebar line belongs to the conversation a person is looking at) are absent as a group, not by name. Also absent: the delegation tools (`agent_*` would grow a tree), the optional groups (`memory`, `secrets`, `herdr`, `agents`, `search`, `decision`, `trigger`, `peers`), the `tool_search` loader, `skill_read` and the shared-device tools, so a child never reaches another machine. Appends a `bots.agent` marker entry (no `model`, so the child never sees it) and answers the child id |
 | `agent_send` | Submits to the child with a request id derived from the call, waits for settlement, and answers the child's final text; a run that ends `unanswered` is an error result naming the reason |
 | `agent_stop` | Aborts the child: queued work is withdrawn and the transcript stays readable |
 
@@ -490,10 +493,10 @@ the SDK can inspect the child by conversation id. The generic task graph is sepa
 from a child-conversation UI. The `peers` capability stays false.
 
 `agent_send` requires a `bots.agent` marker naming the caller as direct parent.
-Sends with shared devices serialize each child's idle wait, remote refresh and
-submission, so parallel sends cannot reconfigure active work. `agent_stop` still
-looks up a conversation without checking its parent marker; `agent_list` remains
-planned. Independent catalog Bot communication belongs to planned `peer_*`
+Nothing about a child follows the daemon's remote state: the child's selection is fixed
+at spawn, so no refresh can widen it. `agent_stop` withdraws a send that is still
+validating its marker, and it still looks up a conversation without checking its
+parent marker; `agent_list` remains planned. Independent catalog Bot communication belongs to planned `peer_*`
 tools, not a reinterpretation of these same-Harness `agent_*` operations.
 
 ### Deferred tools

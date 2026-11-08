@@ -1,11 +1,12 @@
 // Subagents (docs/bots/RUNTIME.md, "Subagents"): a bot delegates a self-contained task to a
 // child conversation it owns, driven through this extension rather than a second product.
 // The child is an ordinary ownerless conversation in the same Harness, configured from the
-// caller's agent minus these tools, so a child cannot spawn children of its own.
-import { awaitWithContext, type Context, withAbortSignal } from "@earendil-works/chord/context";
+// caller's agent but limited to the mandatory `core` and `coding` groups: it has no
+// delegation tools, no optional group, no deferred loader and no shared-device tool, so it
+// cannot spawn children or reach another machine.
+import { type Context, withAbortSignal } from "@earendil-works/chord/context";
 import { Type } from "@earendil-works/pi-ai";
 import {
-  AgentDoc,
   type ConversationId,
   configure,
   defineExtension,
@@ -15,40 +16,9 @@ import {
   type ToolRegistration,
   type Tx,
 } from "@earendil-works/pi-durable";
-import type { SharedDevicePort } from "../devices/port.ts";
-import { DEVICE_EXTENSION } from "../devices/tools.ts";
 import { failed, type ToolOutcome } from "../types.ts";
 
 export const AGENTS_TOOLS_EXTENSION = "bots-agents";
-
-/** The tools a child must never get: one level of delegation, never a tree of it. */
-const AGENT_TOOLS = ["agent_spawn", "agent_send", "agent_stop"] as const;
-const REMOTE_TOOLS = ["remote_status", "remote_execute", "remote_operation"] as const;
-type DeviceOptions = {
-  port: SharedDevicePort;
-  extension: Extension;
-  setCapability?: (value: "configured" | "unconfigured" | "unavailable") => void;
-};
-
-async function remoteEnabled(
-  devices: DeviceOptions | undefined,
-  signal?: AbortSignal,
-): Promise<boolean> {
-  if (!devices) return false;
-  try {
-    const status = await devices.port.status(signal);
-    const capability = !status.localReady
-      ? "unavailable"
-      : status.cloudStatus === "unconfigured"
-        ? "unconfigured"
-        : "configured";
-    devices.setCapability?.(capability);
-    return capability === "configured";
-  } catch {
-    devices.setCapability?.("unavailable");
-    return false;
-  }
-}
 
 async function managedChild(tx: Tx, id: ConversationId, parent: ConversationId): Promise<boolean> {
   let cursor: Awaited<ReturnType<Tx["scanEntries"]>>["next"];
@@ -69,43 +39,6 @@ async function managedChild(tx: Tx, id: ConversationId, parent: ConversationId):
     cursor = page.next;
   } while (cursor !== undefined);
   return false;
-}
-
-const withoutRemote = (names: readonly string[]) =>
-  names.filter((name) => !(REMOTE_TOOLS as readonly string[]).includes(name));
-function synchronizeRemote(
-  state: {
-    extensions?: string[] | { add?: string[]; remove?: string[] };
-    tools?: string[] | { remove: string[] };
-    modelTools?: string[] | { add?: string[]; remove?: string[] };
-  },
-  enabled: boolean,
-) {
-  if (Array.isArray(state.extensions)) {
-    const names = state.extensions.filter((name) => name !== DEVICE_EXTENSION);
-    state.extensions = enabled ? [...names, DEVICE_EXTENSION] : names;
-  } else {
-    const add = (state.extensions?.add ?? []).filter((name) => name !== DEVICE_EXTENSION);
-    const remove = (state.extensions?.remove ?? []).filter((name) => name !== DEVICE_EXTENSION);
-    state.extensions = enabled
-      ? { add: [...add, DEVICE_EXTENSION], remove }
-      : { add, remove: [...remove, DEVICE_EXTENSION] };
-  }
-  if (Array.isArray(state.tools)) {
-    const names = withoutRemote(state.tools);
-    state.tools = enabled ? [...names, ...REMOTE_TOOLS] : names;
-  } else if (state.tools) {
-    const remove = withoutRemote(state.tools.remove);
-    state.tools = { remove: enabled ? remove : [...remove, ...REMOTE_TOOLS] };
-  }
-  if (Array.isArray(state.modelTools)) {
-    const names = withoutRemote(state.modelTools);
-    state.modelTools = enabled ? [...names, ...REMOTE_TOOLS] : names;
-  } else if (state.modelTools) {
-    const add = withoutRemote(state.modelTools.add ?? []);
-    const remove = withoutRemote(state.modelTools.remove ?? []);
-    state.modelTools = { add, remove: enabled ? remove : [...remove, ...REMOTE_TOOLS] };
-  }
 }
 
 const result = (outcome: ToolOutcome) => ({
@@ -136,10 +69,11 @@ const entryText = (record: { model?: unknown } | undefined): string => {
   return parts.join("\n").trim();
 };
 
-export const createAgentTools = (devices?: DeviceOptions): readonly ToolRegistration[] => {
-  const queues = new Map<ConversationId, Promise<void>>();
+export const createAgentTools = (
+  childExtensions: readonly string[],
+): readonly ToolRegistration[] => {
   const admissions = new Map<ConversationId, Set<AbortController>>();
-  async function serialize<T>(
+  async function admit<T>(
     id: ConversationId,
     context: Context,
     action: (context: Context) => Promise<T>,
@@ -149,31 +83,20 @@ export const createAgentTools = (devices?: DeviceOptions): readonly ToolRegistra
     const pending = admissions.get(id) ?? new Set<AbortController>();
     pending.add(controller);
     admissions.set(id, pending);
-    const previous = queues.get(id) ?? Promise.resolve();
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const tail = previous.then(() => gate);
-    queues.set(id, tail);
     try {
-      await awaitWithContext(previous, admissionContext);
+      // An admission a person stopped before it submitted must never reach the child.
       if (admissionContext.abortSignal?.aborted) throw new Error("agent_send_cancelled");
       return await action(admissionContext);
     } finally {
       pending.delete(controller);
       if (pending.size === 0) admissions.delete(id);
-      release();
-      void tail.then(() => {
-        if (queues.get(id) === tail) queues.delete(id);
-      });
     }
   }
   return [
     defineTool({
       name: "agent_spawn",
       description:
-        "Start a child agent that works on its own and remembers its own conversation. Returns its id; pass that id to agent_send and agent_stop. The child has the same model, reasoning level and tools as you, except that it cannot start children of its own.",
+        "Start a child agent that works on its own and remembers its own conversation. Returns its id; pass that id to agent_send and agent_stop. The child has the same model and reasoning level as you, and only the coding tools plus list: it cannot start children, ask the person, write the sidebar line, use an optional group, load deferred tools or reach another machine.",
       parameters: Type.Object({
         name: Type.String({
           description: "Short name for the child, for your notes and the run log",
@@ -184,18 +107,15 @@ export const createAgentTools = (devices?: DeviceOptions): readonly ToolRegistra
       }),
       execute: async (args, api, context) => {
         const parent = await api.agent(context);
-        const remote = await remoteEnabled(devices, context.abortSignal);
-        const extensions: Extension[] = parent.extensions.filter(
-          (extension) =>
-            extension.name !== AGENTS_TOOLS_EXTENSION && extension.name !== DEVICE_EXTENSION,
+        // The selection is the limit, not a name denylist: a child never selects the
+        // delegation, person-facing or optional groups, so their tools cannot be inherited.
+        const extensions = parent.extensions.filter((extension) =>
+          childExtensions.includes(extension.name),
         );
-        if (remote && devices) extensions.push(devices.extension);
-        const tools = parent.tools.filter(
-          (tool) =>
-            !(AGENT_TOOLS as readonly string[]).includes(tool.name) &&
-            !(REMOTE_TOOLS as readonly string[]).includes(tool.name),
+        const callable = new Set(
+          extensions.flatMap((extension) => (extension.tools ?? []).map((tool) => tool.name)),
         );
-        if (remote && devices) tools.push(...(devices.extension.tools ?? []));
+        const tools = parent.tools.filter((tool) => callable.has(tool.name));
         const child = await api.commit(async (tx) => {
           const created = await tx.createConversation({ ownership: { kind: "ownerless" } });
           await configure(tx, created.id, {
@@ -238,7 +158,7 @@ export const createAgentTools = (devices?: DeviceOptions): readonly ToolRegistra
       execute: async (args, api, context) => {
         const id = agentId(args.agentId);
         if (id === undefined) return result(failed(`unknown child agent ${args.agentId}`));
-        const admit = async (admissionContext: Context) => {
+        const submit = async (admissionContext: Context) => {
           const ensureActive = () => {
             if (admissionContext.abortSignal?.aborted) throw new Error("agent_send_cancelled");
           };
@@ -251,17 +171,6 @@ export const createAgentTools = (devices?: DeviceOptions): readonly ToolRegistra
           );
           ensureActive();
           if (!managed) return undefined;
-          if (devices) {
-            await child.waitForIdle(admissionContext);
-            ensureActive();
-            const enabled = await remoteEnabled(devices, admissionContext.abortSignal);
-            ensureActive();
-            await api.commit(
-              async (tx) => synchronizeRemote(await tx.doc(AgentDoc, id), enabled),
-              admissionContext,
-            );
-            ensureActive();
-          }
           return child.submit(
             {
               type: "input",
@@ -272,7 +181,7 @@ export const createAgentTools = (devices?: DeviceOptions): readonly ToolRegistra
             admissionContext,
           );
         };
-        const submission = await serialize(id, context, admit);
+        const submission = await admit(id, context, submit);
         if (!submission) return result(failed(`unknown child agent ${args.agentId}`));
         const settled = await submission.wait(context);
         if (settled.status !== "done") {
@@ -311,13 +220,14 @@ export const agentsSection = (): string =>
   [
     "You can delegate a self-contained piece of work to a child agent.",
     "Start one with agent_spawn, give it work with agent_send, and stop it with agent_stop.",
-    "A child has its own conversation, the same model and tools, and cannot start children.",
+    "A child has its own conversation, the same model and your workspace rules, but only the coding tools plus list: it cannot delegate, ask the person, use an optional group or reach another machine.",
     "Prefer doing the work yourself when it is short: a child costs another model request.",
   ].join("\n");
 
-export const agentsExtension = (devices?: DeviceOptions): Extension =>
+/** `childExtensions` are the extension names a child may select: the mandatory groups. */
+export const agentsExtension = (childExtensions: readonly string[]): Extension =>
   defineExtension({
     name: AGENTS_TOOLS_EXTENSION,
-    tools: createAgentTools(devices),
+    tools: createAgentTools(childExtensions),
     sections: [section("bots-agents", () => agentsSection())],
   });

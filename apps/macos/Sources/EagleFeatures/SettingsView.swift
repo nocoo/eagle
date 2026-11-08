@@ -471,8 +471,12 @@ public struct SettingsView: View {
       if model.gatewayBusy { SpinnerArc(size: Theme.Metric.spinnerSize) }
     } body: {
       toolGroupRow(
-        "core", "Core 基础工具", detail: "工作区的文件浏览，和 Bot 在侧栏里的那一行状态",
-        alwaysOn: true)
+        "core", "Core 基础工具", detail: "工作区的文件浏览", alwaysOn: true)
+      Divider().overlay(Theme.Palette.line)
+      toolGroupRow(
+        "core-ui", "Core 交互工具",
+        detail: "向你弹选项卡提问，和 Bot 在侧栏里的那一行状态；子 agent 拿不到这一组",
+        group: SettingsViewModel.coreUIToolGroup, alwaysOn: true)
       Divider().overlay(Theme.Palette.line)
       toolGroupRow(
         "coding", "Coding 编码工具", detail: "读、写、改文件与执行命令；Bot 干活的主力",

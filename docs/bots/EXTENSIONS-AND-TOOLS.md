@@ -83,7 +83,8 @@ because extensions can capture Bot-specific services and directories.
 
 | Group | Native extension names | Selection | Initial model visibility |
 | --- | --- | --- | --- |
-| `core` | `bots-tools` | Mandatory | `list`, `note_set`, `ask_user` |
+| `core` | `bots-tools` | Mandatory | `list` |
+| `core-ui` | `bots-core-ui` | Mandatory | `note_set`, `ask_user`, eager: no loader |
 | `coding` | `coding-tools` (`CodingTools`), `bots-pulls` | Mandatory | `read`, `write`, `edit`, `bash`, `pr_register`, `pr_list` |
 | `memory` | `bots-memory` | Optional, **on by default** | All five memory tools, eager: no loader |
 | `secrets` | `bots-secrets` | Optional, **on by default** | All four secret tools, eager: no loader (§6.5) |
@@ -94,6 +95,8 @@ because extensions can capture Bot-specific services and directories.
 | `trigger` | `bots-trigger`, `tool-search` | Optional, **on by default** | `tool_search` is offered; the five `trigger_*` tools are deferred |
 | — (no group) | `bots-skills` | The person's ticks, not a switch | `skill_read`, eager: no loader |
 
+`ask_user` and `note_set` make up the mandatory `core-ui` group, the tools that act on the
+person's side of the App; a child agent never selects that group (RUNTIME.md, "Subagents").
 `ask_user` is the person-interface tool: it takes one to five questions, each single or
 multiple choice with two to eight options, and returns at once. The questions are the call's
 own arguments, so the conversation renders the card from the transcript and a restart loses
@@ -101,15 +104,18 @@ nothing. The person's choices arrive as one hidden user message (`hidden: true`,
 `answersTo: <entry id>`) that the daemon composes and that the client cannot author: a
 client reports labels, the daemon checks them against the card and writes the text the bot
 reads. Nothing waits on a human: the tool call is already complete when the card appears, and
-a person may ignore the card, which the bot is told in the same message.
+a person may ignore the card, which the bot is told in the same message. A child agent
+never gets `ask_user`: its card is drawn from the conversation a client watches, and no
+client watches a child's, so the tool would claim a screen that does not exist.
 
 `secret_request` is the same card carrying a password field instead of options, and it is the
 only recommended way a person hands sensitive text to a Bot (§6.5). A Bot that cannot ask for
 a password asks for it in the conversation, where the value stays in the transcript and is
 replayed into every later prompt of that conversation.
 
-Current defaults select `persona`, `machine`, `core`, `coding`, `memory`, `secrets`, `herdr`,
-`agents` and `trigger`; `search`, `decision` and `peers` stay off until a person turns them on.
+Current defaults select `persona`, `machine`, `core`, `core-ui`, `coding`, `memory`,
+`secrets`, `herdr`, `agents` and `trigger`; `search`, `decision` and `peers` stay off until a
+person turns them on.
 `search` and `decision` are opt-in for the same reason: each call leaves the machine and spends
 money. `memory` is a default
 because remembering is a habit rather than a discovered capability (§6.1), not because the
@@ -150,7 +156,8 @@ Every tool name the daemon installs in that configuration, one row per extension
 
 | Group | Tool names |
 | --- | --- |
-| `core` | `list`, `note_set`, `ask_user` |
+| `core` | `list` |
+| `core-ui` | `note_set`, `ask_user` |
 | `coding` | `read`, `write`, `edit`, `bash` |
 | `coding` (pull reports) | `pr_register`, `pr_list` |
 | `memory` | `memory_list`, `memory_search`, `memory_read`, `memory_write`, `memory_delete` |
@@ -220,7 +227,7 @@ types/source remain authoritative for native argument details and output limits.
 
 | Group / tool | Input | Behavior | Replay |
 | --- | --- | --- | --- |
-| `core` / `note_set` | `text` | The Bot's own line for the sidebar, replacing the answer's first sentence the daemon would otherwise derive for this run; trimmed, whitespace collapsed, at most 120 characters; an empty string clears it for this run. Idempotent by value | Safe |
+| `core-ui` / `note_set` | `text` | The Bot's own line for the sidebar, replacing the answer's first sentence the daemon would otherwise derive for this run; the prompt asks for about ten Chinese characters (an equally short line in another language) so the sidebar can read it beside the bot's name, and the hard bound is 120 after trimming and whitespace collapse; an empty string clears it for this run. Idempotent by value | Safe |
 | `core` / `list` | `path?, limit?` | Recursive, directory-relative paths; default 2,000 entries, at most 50 KiB; sorted per directory; does not traverse symlinks or common generated/dependency directories | Safe |
 | `coding` / `read` | `path, offset?, limit?` | Native text paging, diagnostics and supported image input; offset is one-based | SDK default unsafe |
 | `coding` / `write` | `path, content` | Native whole-file UTF-8 creation/replacement, including parent directories | SDK default unsafe |
@@ -277,7 +284,7 @@ than a decision.
 
 | Group / tool | Input | Behavior | Replay |
 | --- | --- | --- | --- |
-| `agents` / `agent_spawn` | `name, instructions?` | Creates an ownerless conversation in this Harness, copies the parent's model/effort/tools/cwd, removes delegation tools, records a `bots.agent` marker, returns `c_<id>` | Default unsafe |
+| `agents` / `agent_spawn` | `name, instructions?` | Creates an ownerless conversation in this Harness with the parent's model/effort/cwd/instructions and the `persona`, `machine`, `core` and `coding` groups only, so the child holds `read`, `write`, `edit`, `bash`, `list` (plus `pr_register`/`pr_list` when pull reports exist) and reads the bot's persona and machine rules; records a `bots.agent` marker, returns `c_<id>`. `core-ui`, `agent_*`, every optional group, `tool_search`, `skill_read` and the shared-device tools never reach a child | Default unsafe |
 | `agents` / `agent_send` | `agentId, message` | Submits with `followUp`, waits for settlement, returns final text or the unanswered reason | Default unsafe |
 | `agents` / `agent_stop` | `agentId` | Aborts work; conversation remains readable | Default unsafe |
 | `herdr` / `herdr_open_space` | `path?` | Creates or reuses this Bot's recorded Space | Safe |
@@ -358,8 +365,9 @@ only when the bot reports it again, which the prompt says explicitly. One journa
 
 Loaded deferred names remain offered on the branch, including after compaction.
 `modelTools` cannot widen the enabled set: a loaded name does not keep a disabled
-extension callable. Existing child conversations retain their stored choices;
-parent group changes are not a permission-revocation system.
+extension callable. Existing child conversations keep the selection they were spawned
+with — `persona`, `machine`, `core` and `coding` — so a parent group change neither
+reaches a child nor revokes anything; parent group changes are not a revocation system.
 
 Registry publication is native `install`/`uninstall`, not source hot loading.
 The host can replace an installed object; no production filesystem watcher or

@@ -82,8 +82,8 @@ test("the group offers exactly four tools and no loader", async () => {
     const selected = selectToolExtensions(registry, ["secrets"]);
     assert.deepEqual(
       selected.map((extension) => extension.name),
-      ["bots-tools", "coding-tools", SECRETS_TOOLS_EXTENSION],
-      "the mandatory pair plus secrets, and no tool_search: the group is eager",
+      ["bots-tools", "bots-core-ui", "coding-tools", SECRETS_TOOLS_EXTENSION],
+      "the mandatory groups plus secrets, and no tool_search: the group is eager",
     );
     const names = selected.flatMap((extension) => (extension.tools ?? []).map((tool) => tool.name));
     assert.deepEqual(names.filter((name) => name.startsWith("secret_")).sort(), [
@@ -97,7 +97,7 @@ test("the group offers exactly four tools and no loader", async () => {
     const bare = selectToolExtensions(createToolRegistry(workspace), ["secrets"]);
     assert.deepEqual(
       bare.map((extension) => extension.name),
-      ["bots-tools", "coding-tools"],
+      ["bots-tools", "bots-core-ui", "coding-tools"],
       "a group whose extension is not installed contributes nothing",
     );
   } finally {

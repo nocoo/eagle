@@ -19,7 +19,7 @@ struct SettingsToolsToggleTests {
     let body = try #require(fixture.puts.first)
     #expect(
       body["toolGroups"] as? [String]
-        == ["persona", "machine", "core", "coding", "memory", "search"])
+        == ["persona", "machine", "core", "core-ui", "coding", "memory", "search"])
     #expect(body["baseUrl"] == nil, "a switch never rewrites the gateway")
     #expect(model.toasts.toast?.notice == .success("已开启 搜索"))
   }
@@ -32,7 +32,7 @@ struct SettingsToolsToggleTests {
     model.commitToolGroup(SettingsViewModel.memoryToolGroup, title: "记忆", isOn: false)
     await model.awaitToolSaves()
     let body = try #require(fixture.puts.first)
-    #expect(body["toolGroups"] as? [String] == ["persona", "machine", "core", "coding"])
+    #expect(body["toolGroups"] as? [String] == ["persona", "machine", "core", "core-ui", "coding"])
     #expect(model.toasts.toast?.notice == .success("已关闭 记忆"))
   }
 
@@ -47,7 +47,7 @@ struct SettingsToolsToggleTests {
     #expect(fixture.puts.count == 2, "each switch is its own write")
     #expect(
       fixture.puts.last?["toolGroups"] as? [String]
-        == ["persona", "machine", "core", "coding", "memory", "search", "decision"])
+        == ["persona", "machine", "core", "core-ui", "coding", "memory", "search", "decision"])
     #expect(model.toasts.toast?.notice == .success("已开启 决策"))
   }
 

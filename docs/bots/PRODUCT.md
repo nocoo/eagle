@@ -293,6 +293,8 @@ carry its own persona.
 Tools are trusted, built-in pi-durable extensions, not third-party plugins. The mandatory
 `coding` group uses the native `CodingTools` extension (`read`, `write`, `edit`, `bash`).
 The mandatory `core` group supplies missing native functionality, starting with `list`.
+The mandatory `core-ui` group holds the tools that act on the person's side of the App
+(`ask_user`, `note_set`), so a child agent can be denied them as one group.
 Herdr and child-agent groups remain optional. Tool execution has no approval dialog.
 The bot's workspace is its default working directory, not a security boundary. A plugin
 marketplace, third-party module discovery and an execution sandbox are not product goals.

@@ -808,8 +808,8 @@ test("selecting the group installs it alone, and without a host it contributes n
     const selected = selectToolExtensions(registry, ["memory"]);
     assert.deepEqual(
       selected.map((extension) => extension.name),
-      ["bots-tools", "coding-tools", MEMORY_TOOLS_EXTENSION],
-      "the mandatory pair plus memory, and no tool_search: memory is eager",
+      ["bots-tools", "bots-core-ui", "coding-tools", MEMORY_TOOLS_EXTENSION],
+      "the mandatory groups plus memory, and no tool_search: memory is eager",
     );
     const names = selected.flatMap((extension) => (extension.tools ?? []).map((tool) => tool.name));
     assert.deepEqual(names.filter((name) => name.startsWith("memory_")).sort(), [
@@ -824,7 +824,7 @@ test("selecting the group installs it alone, and without a host it contributes n
     const bare = selectToolExtensions(createToolRegistry(workspace), ["memory"]);
     assert.deepEqual(
       bare.map((extension) => extension.name),
-      ["bots-tools", "coding-tools"],
+      ["bots-tools", "bots-core-ui", "coding-tools"],
       "a group whose extension is not installed contributes nothing",
     );
     assert.equal(
