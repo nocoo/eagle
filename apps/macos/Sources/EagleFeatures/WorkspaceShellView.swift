@@ -138,6 +138,15 @@ public struct WorkspaceShellView: View {
 
   private var selectedIsBot: Bool { bots.owns(list.selection) }
 
+  /// The 模型 tab's rows: a bot's own pair, or the Super Bot's, from the same component.
+  private var inspectorChoices: [InspectorChoiceRow] {
+    if selectedIsSuperagent {
+      return SuperagentInspectorPresenter.modelChoices(
+        settings: superagent.settings, models: bots.knownModels)
+    }
+    return selectedIsBot ? bots.choices : []
+  }
+
   /// The inspector belongs to an open conversation, the Super Bot's included: with nothing
   /// selected there is nothing to inspect, so the column (and its drag handle) stay away
   /// instead of showing an empty panel.
@@ -381,9 +390,13 @@ public struct WorkspaceShellView: View {
           pulls: selectedIsBot ? bots.pullRows : (selectedIsMock ? inspector.pulls : []),
           tasks: selectedIsBot ? bots.tasks : [],
           usage: selectedIsBot ? bots.usage : [],
-          choices: selectedIsBot ? bots.choices : [],
+          choices: inspectorChoices,
           triggers: selectedIsBot ? bots.triggerItems : [],
           onChoose: { row, value in
+            if selectedIsSuperagent {
+              Task { await superagent.chooseModel(id: row, value: value) }
+              return
+            }
             guard selectedIsBot else { return }
             Task { await bots.choose(row, value: value) }
           },
@@ -423,6 +436,13 @@ public struct WorkspaceShellView: View {
       // surface-specific control that a bot's panel does not have.
       .task(id: list.selection) {
         guard selectedIsSuperagent else { return }
+        // A fresh Super Bot continues the Bot model settings; after that the pair below the
+        // 模型 tab is its own.
+        await settings.loadGatewayIfNeeded()
+        if let gateway = settings.gateway {
+          await superagent.adoptModelDefaults(
+            baseUrl: gateway.baseUrl, model: gateway.model, thinkingLevel: gateway.thinkingLevel)
+        }
         await superagent.observation.refresh()
       }
       .task {

@@ -1,9 +1,11 @@
 import EagleDesign
 import SuperagentCore
+import SuperagentFeatures
 import Testing
 
 @testable import EagleFeatures
 
+@MainActor
 @Suite("Super agent inspector")
 struct SuperagentInspectorPresenterTests {
   @Test("a ready read fills the same section shape a bot uses")
@@ -32,5 +34,19 @@ struct SuperagentInspectorPresenterTests {
     #expect(rows.map(\.label) == ["状态", "覆盖", "上次读取", "原因"])
     #expect(rows[1].value == "未知")
     #expect(rows[2].value == "尚未读取")
+  }
+
+  @Test("the model tab offers the same pair a bot does, from this service's own values")
+  func modelChoices() {
+    let settings = SuperagentSettingsViewModel(port: FailingSuperagentPort())
+    settings.model = "gpt-5"
+    settings.thinkingLevel = "high"
+    let rows = SuperagentInspectorPresenter.modelChoices(
+      settings: settings, models: ["gpt-5", "gpt-5-mini"])
+    #expect(rows.map(\.label) == ["模型", "思考等级"])
+    #expect(rows[0].selected == "gpt-5")
+    #expect(rows[0].choices.map(\.id) == ["gpt-5", "gpt-5-mini"])
+    #expect(rows[1].value == "高", "the level reads like a bot's level")
+    #expect(rows[1].selected == "high")
   }
 }

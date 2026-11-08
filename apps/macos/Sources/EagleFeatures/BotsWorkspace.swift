@@ -75,6 +75,9 @@ final class BotsWorkspaceViewModel: ObservableObject {
   @Published private(set) var queuedMessages: [String: QueuedMessage] = [:]
   /// The selected bot's live tasks, already named and nested for the inspector's 任务 section.
   @Published private(set) var tasks: [InspectorTaskRow] = []
+  /// The model ids the daemon knows, so a surface offering the same menu needs no second
+  /// discovery path.
+  var knownModels: [String] { app?.models ?? [] }
   /// The selected bot's spend, already formatted for the inspector's 用量 section.
   @Published private(set) var usage: [InspectorUsageRow] = []
   /// The selected bot's model and reasoning level, as menus.

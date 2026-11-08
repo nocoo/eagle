@@ -44,6 +44,30 @@ public final class SuperagentSettingsViewModel: ObservableObject {
     } catch { failure = message(error) }
   }
 
+  /// Writes the pair a per-Super-Bot model row changes, leaving the stored key alone: the
+  /// key belongs to the service, the model and level belong to this conversation.
+  public func apply(model: String, thinkingLevel: String) async {
+    await apply(baseUrl: baseUrl, model: model, thinkingLevel: thinkingLevel)
+  }
+
+  /// First use: adopt the Bot model settings, so a fresh Super Bot starts configured.
+  public func apply(baseUrl: String, model: String, thinkingLevel: String) async {
+    guard !baseUrl.isEmpty, !model.isEmpty else { return }
+    self.baseUrl = baseUrl
+    self.model = model
+    self.thinkingLevel = thinkingLevel
+    saving = true
+    defer { saving = false }
+    failure = nil
+    notice = nil
+    do {
+      let saved = try await port.configure(
+        ConfigurationChange(
+          baseUrl: baseUrl, model: model, thinkingLevel: thinkingLevel, apiKey: nil))
+      apply(saved)
+    } catch { failure = message(error) }
+  }
+
   public func close() async { await port.close() }
 
   public func clearKey() async {

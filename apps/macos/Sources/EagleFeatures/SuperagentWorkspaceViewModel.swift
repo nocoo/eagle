@@ -92,7 +92,30 @@ public final class SuperagentWorkspaceViewModel: ObservableObject {
       await settings.load()
     }
     guard windowOpen, isReady else { return }
-    await chat.connect()
+    // Re-selecting the row must not tear the socket down and rebuild it: that is what made
+    // the surface flash "正在连接" on every visit.
+    if chat.connection != .ready { await chat.connect() }
+  }
+
+  /// First use continues the Bot model settings: the same address, model and level, so the
+  /// Super Bot starts configured like a Bot does. Later changes are the Super Bot's own.
+  public func adoptModelDefaults(baseUrl: String, model: String, thinkingLevel: String) async {
+    guard windowOpen else { return }
+    await settings.load()
+    guard settings.baseUrl.isEmpty else { return }
+    await settings.apply(baseUrl: baseUrl, model: model, thinkingLevel: thinkingLevel)
+  }
+
+  /// One of the inspector's 模型 rows: the menu's id, written to this service's own pair.
+  public func chooseModel(id: String, value: String) async {
+    switch id {
+    case "model":
+      await settings.apply(model: value, thinkingLevel: settings.thinkingLevel)
+    case "thinking":
+      await settings.apply(model: settings.model, thinkingLevel: value)
+    default:
+      return
+    }
   }
 
   public func reconnect() async {

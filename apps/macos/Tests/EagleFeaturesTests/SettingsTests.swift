@@ -34,10 +34,11 @@ struct SettingsTests {
     #expect(
       SettingsSection.allCases.map(\.rawValue)
         == [
-          "通用", "模型", "Super Bot", "工具", "技能", "提示词", "服务", "密码", "设备", "CLI", "用量",
-          "关于",
+          "通用", "模型", "工具", "技能", "提示词", "服务", "密码", "设备", "CLI", "用量", "关于",
         ])
-    #expect(SettingsSection.superagent.symbol == "person.crop.circle.badge.checkmark")
+    // The Super Bot has no settings tab of its own: its model and level live in the inspector
+    // 模型 tab, exactly where a bot's pair lives.
+    #expect(SettingsSection.allCases.contains(where: { $0.rawValue == "Super Bot" }) == false)
   }
 
   @Test("the skills own a tab of their own, right after 工具")
