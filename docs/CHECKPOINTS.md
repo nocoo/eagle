@@ -4744,3 +4744,22 @@ inspector or observation section.
 Next broken hop: the source run's Super Bot has no gateway to inherit because its own Bots root
 has none yet, so a development Super Bot still starts unconfigured; nobody has looked at the
 rendered notice, 密钥 row or the adopted state in the installed App.
+
+## 2026-11-08 20:35 +08 — macOS 0.22.2: the Super Bot's model tab is a Bot's two rows
+
+- Release commit `4e453abe`, annotated tag `macos-v0.22.2`, claim `885946fe`. The 密钥 row that
+  0.22.1 added is removed, so the 模型 tab again holds only 模型 and 思考等级; inheritance still
+  runs on first use and from the unconfigured notice's action.
+- `Eagle-for-Mac-0.22.2.dmg` is 149,130,504 bytes with sha256
+  `0ed6216ee73826d56822c05f4fc7fd978fce0b1e3d56dd4f7cf7010008001d26`; the release
+  `https://github.com/nocoo/eagle/releases/tag/macos-v0.22.2` carries it plus `SHA256SUMS`.
+  `/api/live` answers `macos.latest` 0.22.2 at revision `885946fe`.
+- Gates: `apps/macos swift test` 447 + 52 + 85 + 38 cases, `npm run check:design`, strict
+  `swift format lint`, plus the pre-push hook's full set on the release tree.
+- Installed here: `/Applications/Eagle for Mac.app` is 0.22.2 and its Super Bot still reports
+  `模型已配置` from the configuration it adopted under 0.22.1; both builds keep their own
+  services (release 43117 + 43128, source run 43119 + 43127).
+
+Next broken hop: the panel no longer offers a way to replace or clear the Super Bot's key, so a
+wrong key has no recovery there and the Bot's own 模型 settings are the only credential input;
+nobody has looked at the rendered two-row tab.
