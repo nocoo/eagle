@@ -26,6 +26,7 @@ if [ -d apps/macos ]; then
   fi
   if command -v swift >/dev/null 2>&1; then
     (cd apps/macos && swift test)
+    (cd apps/bots-macos && swift test)
   else
     echo "pre-push: swift not installed, skipping the macOS package tests" >&2
   fi

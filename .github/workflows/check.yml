@@ -46,4 +46,5 @@ jobs:
       - run: npm run test:focus
       - run: cd apps/macos && swift format lint --strict --recursive Sources Scripts Tests
       - run: cd apps/bots-macos && swift format lint --strict --recursive Sources Tests
+      - run: cd apps/bots-macos && swift test
       - run: apps/macos/Scripts/coverage.sh

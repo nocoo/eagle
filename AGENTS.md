@@ -201,8 +201,8 @@ requirements. Configuration evidence is separate from successful execution.
 
 Hooks live in `.githooks/` and are installed by `npm ci` through the `prepare`
 script (`core.hooksPath`). Pre-commit lints the staged snapshot with Biome and
-swift-format; pre-push runs `npm run check`, the browser suite and the macOS
-package tests. `.github/workflows/check.yml` runs the same gates in CI and
+swift-format; pre-push runs `npm run check`, the browser suite and both Swift
+package suites (`apps/macos`, `apps/bots-macos`). `.github/workflows/check.yml` runs the same gates in CI and
 `deploy.yml` deploys main after a green Check, skipping with a notice until
 `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets exist. Never lower
 thresholds, skip/focus tests, bypass hooks or suppress failures.
