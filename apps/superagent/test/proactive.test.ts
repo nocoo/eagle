@@ -771,7 +771,7 @@ test("items raise in place, reopen after the window, and are acknowledged once",
     // Unknown ids are not errors.
     assert.equal(await store.ack("a_unknown", "2026-11-09T21:02:00.000Z"), undefined);
     await store.markReportedItem("a_unknown", "2026-11-09T21:02:00.000Z");
-    await store.markActed("a_unknown", "2026-11-09T21:02:00.000Z");
+    await store.markActed("a_unknown", "2026-11-09T21:02:00.000Z", "nudge");
     await store.setActivity(
       "b_1",
       { activity: "running", since: "2026-11-09T21:00:00.000Z" },
@@ -1030,6 +1030,71 @@ test("a run that ends badly is a fact only after it settles", async () => {
     assert.equal(items.length, 1);
     assert.equal(items[0]?.kind, "worker_error");
     assert.equal(items[0]?.evidence, "answer:error");
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("SG004-A11: a stall that outlives its own window twice is withdrawn, not nudged again", async () => {
+  const activity = "running";
+  const bench_ = await bench(() => ({
+    changes: change({ kind: "activity_changed", botId: "b_70", activity }),
+  }));
+  try {
+    bench_.scope.mode = "act";
+    await bench_.watcher.tick();
+    bench_.advance(11 * 60_000);
+    await bench_.watcher.tick();
+    assert.equal(bench_.nudges.length, 1);
+    assert.equal(bench_.nudges[0]?.verb, "nudge");
+    // The same item, still stuck past twice its stall window: the second write ends the run.
+    bench_.advance(21 * 60_000);
+    await bench_.watcher.tick();
+    const aborted = bench_.nudges.filter((call) => call.verb === "abort");
+    assert.equal(aborted.length, 1);
+    assert.equal(aborted[0]?.text, "");
+    const rows = (await bench_.store.snapshot()).audit.filter(
+      (row) => row.botId === "b_70" && row.verb !== "report",
+    );
+    assert.deepEqual(
+      rows.map((row) => row.verb),
+      ["nudge", "abort"],
+    );
+    // A third tick inside the same stall writes nothing more.
+    bench_.advance(60_000);
+    await bench_.watcher.tick();
+    assert.equal(bench_.nudges.length, 2);
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("SG004-A12: a withdrawn run that the CLI refuses is an audit row, and it is not retried", async () => {
+  const activity = "running";
+  const bench_ = await bench(() => ({
+    changes: change({ kind: "activity_changed", botId: "b_72", activity }),
+  }));
+  try {
+    bench_.scope.mode = "act";
+    await bench_.watcher.tick();
+    bench_.advance(11 * 60_000);
+    await bench_.watcher.tick();
+    bench_.scope.manageResult = { result: "refused" as never };
+    bench_.advance(21 * 60_000);
+    await bench_.watcher.tick();
+    const rows = (await bench_.store.snapshot()).audit.filter(
+      (row) => row.botId === "b_72" && row.verb === "abort",
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.result, "refused");
+    assert.equal("text" in (rows[0] ?? {}), false, "an abort carries no text");
+    bench_.advance(60_000);
+    await bench_.watcher.tick();
+    assert.equal(
+      (await bench_.store.snapshot()).audit.filter((row) => row.verb === "abort").length,
+      1,
+      "a refused withdrawal is not retried inside the same stall",
+    );
   } finally {
     await bench_.cleanup();
   }

@@ -59,4 +59,37 @@ export const command = z.discriminatedUnion("type", [
       mode: z.enum(["off", "notify", "act"]).optional(),
     })
     .strict(),
+  // SG-003: bounded suggestions, the person's immutable decision, and one explicit ask.
+  z
+    .object({
+      type: z.literal("suggestion-list"),
+      id,
+      botId: z.string().min(1).max(128).optional(),
+      limit: z.number().int().min(1).max(200).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("suggestion-ack"),
+      id,
+      suggestionId: id,
+      verdict: z.enum(["accepted", "rejected", "deferred"]),
+      reason: z.string().max(500).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("decision-list"),
+      id,
+      botId: z.string().min(1).max(128).optional(),
+      limit: z.number().int().min(1).max(200).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("analyze"),
+      id,
+      botId: z.string().min(1).max(128).optional(),
+    })
+    .strict(),
 ]);

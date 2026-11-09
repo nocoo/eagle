@@ -106,3 +106,75 @@ extension ObservationSummary {
       isEmpty: reply.snapshot == nil)
   }
 }
+
+/// SG-004: one thing the watcher noticed, as the service reports it.
+public struct AttentionItemReply: Decodable, Sendable, Equatable {
+  public let id: String
+  public let botId: String
+  public let kind: String
+  public let severity: String
+  public let evidence: String
+  public let count: Int
+  public let firstSeenAt: String
+  public let lastSeenAt: String
+  public let closedAt: String?
+  public let reportedAt: String?
+  public let actedAt: String?
+}
+
+public struct AttentionReply: Decodable, Sendable, Equatable {
+  public let provider: AttentionProvider
+  public let items: [AttentionItemReply]
+
+  public struct AttentionProvider: Decodable, Sendable, Equatable {
+    public let state: String
+    public let lastTickAt: String?
+  }
+}
+
+public struct AttentionAckReply: Decodable, Sendable, Equatable {
+  public let item: AttentionItemReply
+}
+
+public struct ManageModeReply: Decodable, Sendable, Equatable {
+  public let mode: String
+}
+
+/// SG-003: one bounded suggestion and the evidence it quotes.
+public struct SuggestionReply: Decodable, Sendable, Equatable {
+  public let id: String
+  public let botId: String
+  public let text: String
+  public let evidence: [String]
+  public let createdAt: String
+  public let closedAt: String?
+  public let stale: Bool?
+}
+
+public struct SuggestionListReply: Decodable, Sendable, Equatable {
+  public let suggestions: [SuggestionReply]
+}
+
+public struct DecisionReply: Decodable, Sendable, Equatable {
+  public let id: String
+  public let suggestionId: String
+  public let botId: String
+  public let verdict: String
+  public let reason: String?
+  public let at: String
+}
+
+public struct DecisionListReply: Decodable, Sendable, Equatable {
+  public let decisions: [DecisionReply]
+}
+
+public struct SuggestionAckReply: Decodable, Sendable, Equatable {
+  public let suggestion: SuggestionReply
+  public let decision: DecisionReply
+}
+
+public struct AnalyzeReply: Decodable, Sendable, Equatable {
+  public let suggestion: SuggestionReply?
+  public let refused: String?
+  public let suggestions: [SuggestionReply]?
+}

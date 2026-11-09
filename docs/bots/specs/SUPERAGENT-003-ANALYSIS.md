@@ -1,6 +1,8 @@
 # SG-003 analysis and native decisions
 
-Status: **specified; not implemented.** Requirements from
+Status: **delivered in source 2026-11-10** and verified through `eagle-dev superagent`
+against the dev stack. The native dashboard (section 3.3) is the remaining App-side surface;
+the service, storage, bounds, protocol and CLI are in. Requirements from
 [SUPERAGENT-ARCHITECTURE.md](../SUPERAGENT-ARCHITECTURE.md) and the owner's
 2026-11-07 decision that the decision dashboard is native and MVVM. Evidence comes from
 [SG-002](SUPERAGENT-002-OBSERVATION.md); what the watcher already noticed comes from
@@ -96,4 +98,22 @@ file is read as empty, like the attention store; a write that fails leaves the p
 | SG003-A4 | An accepted decision is durable, immutable, and a second ack is `409 decision_exists` |
 | SG003-A5 | A suggestion whose Bot disappears reads as stale, never as open and fresh |
 | SG003-A6 | The dashboard lists newest first and shows the provider's own state for unconfigured, refused and unreachable |
-| SG003-A7 | `/api/health` and the conversation are unaffected by analysis storage failures |
+| SG003-A7 | `/api/health` and the conversation are unaffected by analysis storage failures. **Verified 2026-11-10** with `test/analysis.test.ts` |
+
+## 6. Dev acceptance — 2026-11-10
+
+Driven entirely through `eagle-dev superagent` against a source Superagent on the dev
+ports, with two real dev Bots:
+
+- Both Bots were aborted mid-answer; the watcher raised `worker_error`, reported to the Super
+  Bot and nudged the Bot (SG-004), and the analyzer produced one suggestion per Bot citing
+  `a_…` and entry ids (`e_7`, `e_11`, `e_12`).
+- `eagle-dev superagent suggest` listed both; `suggest now --bot` refused with the cooldown;
+  `suggest ack --verdict accepted --reason …` recorded the decision; a second ack answered
+  `decision_exists` and exited 1; `decisions` listed the accepted one.
+- `attention ack --item …` closed an item, and the suggestion behind it then read
+  `"stale": true` instead of disappearing.
+- `manage` read `act`, set `notify`, read it back, and set `act` again.
+
+Not exercised in dev: a suggestion produced on an explicit `suggest now` (the automatic pass
+had already spent each Bot's cooldown), and the native dashboard.

@@ -44,6 +44,8 @@ export type WatchPorts = {
   readonly mode: WatchMode;
   /** One proactive model turn in the Super Bot's own conversation, when a mode allows it. */
   readonly report?: (prompt: string) => Promise<void>;
+  /** SG-003: asked after a pass, so analysis follows evidence instead of a second timer. */
+  readonly afterTick?: () => Promise<void>;
   /** One management write toward a worker, through the person's own surface. */
   readonly manage?: (input: {
     readonly botId: string;
@@ -243,6 +245,8 @@ export class Watcher {
     // must still be reported later, and a nudge must survive a tick that found nothing new.
     await this.#handle(raised, at);
     await this.#ports.store.finishTick(at);
+    // SG-003 runs after the evidence is stored: one suggestion per pass at most.
+    await this.#ports.afterTick?.().catch(() => undefined);
     return { provider: read.provider, raised };
   }
 
@@ -294,7 +298,7 @@ export class Watcher {
     for (const item of openNow) {
       if (budget <= 0) break;
       if (item.kind === "worker_unavailable") continue;
-      if (item.actedAt !== undefined) continue;
+      if (item.actedVerb === "abort") continue;
       // One bot is not written to twice inside the cooldown, whatever the kinds say.
       const pestered = fresh.audit.some(
         (record) =>
@@ -304,19 +308,29 @@ export class Watcher {
           Date.parse(at) - Date.parse(record.at) < ports.actionCooldownMs,
       );
       if (pestered) continue;
-      const text = NUDGE[item.kind === "worker_error" ? "worker_error" : "worker_stalled"];
+      // A stall that outlives its own window twice is not a nudge anymore: the run is stuck,
+      // and the honest management write is to withdraw it. `abort` carries no text.
+      const stalledTooLong =
+        item.kind === "worker_stalled" &&
+        Date.parse(at) - Date.parse(item.firstSeenAt) >= 2 * ports.stallAfterMs;
+      // One nudge, then only the withdrawal: a stalled run gets a second write that ends it.
+      if (item.actedAt !== undefined && !(stalledTooLong && item.actedVerb === "nudge")) continue;
+      const verb = stalledTooLong ? "abort" : "nudge";
+      const text = stalledTooLong
+        ? ""
+        : NUDGE[item.kind === "worker_error" ? "worker_error" : "worker_stalled"];
       try {
-        const outcome = await ports.manage({ botId: item.botId, verb: "nudge", text });
+        const outcome = await ports.manage({ botId: item.botId, verb, text });
         await ports.store.record({
           at,
           itemId: item.id,
           botId: item.botId,
-          verb: "nudge",
+          verb,
           result: outcome.result,
-          text,
+          ...(verb === "nudge" ? { text } : {}),
           ...(outcome.detail === undefined ? {} : { detail: outcome.detail }),
         });
-        await ports.store.markActed(item.id, at);
+        await ports.store.markActed(item.id, at, verb);
         if (outcome.result === "sent") {
           await ports.store.markAction(at);
           budget -= 1;
@@ -326,11 +340,11 @@ export class Watcher {
           at,
           itemId: item.id,
           botId: item.botId,
-          verb: "nudge",
+          verb,
           result: "failed",
-          text,
+          ...(verb === "nudge" ? { text } : {}),
         });
-        await ports.store.markActed(item.id, at);
+        await ports.store.markActed(item.id, at, verb);
       }
     }
   }

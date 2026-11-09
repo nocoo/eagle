@@ -36,6 +36,44 @@ final class TransportTests: XCTestCase {
         SuperagentEndpoint(root: root, port: 43127, tokenOverride: "bad")))
   }
 
+  /// SG-003/004: the watcher's commands on a service that runs them, and the refusals when a
+  /// suggestion or item is not there. The provider stays unconfigured, so nothing is fetched.
+  func testProactiveCommandsAnswerValuesAndRefusals() async throws {
+    let fixture = try ServiceFixture(environment: ["SUPERAGENT_MANAGE": "notify"])
+    defer { fixture.stop() }
+    let client = SuperagentClient(endpoint: fixture.endpoint)
+    do {
+      let attention = try await client.attention(limit: 5)
+      XCTAssertTrue(attention.items.isEmpty)
+      // Before the first tick the watcher has no error to report; after it, the honest
+      // "unconfigured" this fixture's provider answers.
+      XCTAssertTrue(["ready", "unconfigured"].contains(attention.provider.state))
+      let mode = try await client.manageMode()
+      XCTAssertEqual(mode.mode, "notify")
+      let changed = try await client.manageMode("act")
+      XCTAssertEqual(changed.mode, "act")
+      let suggestions = try await client.suggestionList(limit: 5)
+      XCTAssertTrue(suggestions.suggestions.isEmpty)
+      let decisions = try await client.decisionList()
+      XCTAssertTrue(decisions.decisions.isEmpty)
+      let asked = try await client.analyze(botId: "b_none")
+      XCTAssertNil(asked.suggestion)
+      do {
+        _ = try await client.suggestionAck(
+          suggestionId: "s_00000000-0000-4000-8000-0000000000ff", verdict: "accepted")
+        XCTFail("an unknown suggestion must be refused")
+      } catch { XCTAssertEqual(error as? SuperagentError, .service(.invalidCommand)) }
+      do {
+        _ = try await client.attentionAck(itemId: "a_00000000-0000-4000-8000-0000000000ff")
+        XCTFail("an unknown item must be refused")
+      } catch { XCTAssertEqual(error as? SuperagentError, .service(.invalidCommand)) }
+      await client.close()
+    } catch {
+      await client.close()
+      throw error
+    }
+  }
+
   func testRealServiceConnectionVerifiesIdentityAndRefusesUnconfiguredChat() async throws {
     let fixture = try ServiceFixture()
     defer { fixture.stop() }
@@ -93,7 +131,7 @@ final class ServiceFixture {
   let root: URL
   let endpoint: SuperagentEndpoint
   let process: Process
-  init() throws {
+  init(environment extra: [String: String] = [:]) throws {
     root = try temporaryRoot()
     process = Process()
     let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -107,6 +145,9 @@ final class ServiceFixture {
     process.environment = ProcessInfo.processInfo.environment.merging(
       ["BOTS_OBSERVATION_ENDPOINT": "", "BOTS_OBSERVATION_TOKEN_FILE": ""]
     ) { _, fixture in fixture }
+    if !extra.isEmpty {
+      process.environment = (process.environment ?? [:]).merging(extra) { _, given in given }
+    }
     let output = Pipe()
     process.standardOutput = output
     process.standardError = FileHandle.nullDevice

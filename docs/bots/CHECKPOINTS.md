@@ -1156,3 +1156,33 @@ Verified:
 
 Next broken hop: the dashboard itself. A person still reads attention items through the
 socket or `attention.json`, and no suggestion or decision exists yet.
+
+## 2026-11-10 07:05 +08 — SG-003 delivered, and the whole SG series driven by `eagle-dev`
+
+Observed: a person can now ask the Super Bot what it thinks and record a decision, from the
+dev CLI: `eagle-dev superagent attention | manage | suggest | decisions`. The service only
+stores a suggestion that quotes an id it offered, a decision is written once, and a
+suggestion whose evidence closed reads as stale instead of disappearing.
+
+Verified (source Superagent on 43210, dev daemon 43119, two real dev Bots, all commands are
+`eagle-dev superagent …`):
+
+- `attention` listed a `worker_error` item per Bot, marked 已处理 after the report and nudge;
+  `attention ack --item …` closed one, and the suggestion behind it then reported
+  `"stale": true`.
+- `suggest` listed one suggestion per Bot with `证据: a_…, e_7, e_11, e_12`;
+  `suggest now --bot …` refused with 冷却期 because the automatic pass had already run;
+  `suggest ack --verdict accepted --reason …` recorded the decision; a second ack answered
+  `decision_exists` and exited 1; `decisions` listed the accepted one with its reason.
+- `manage` read `act`, set `notify`, read it back, set `act` again.
+- Analysis is evidence-gated: `test/analysis.test.ts` refuses `{"text","evidence":["e_404"]}`
+  (an id the service did not offer), a 241-character text, nine citations, and an empty
+  evidence array; a model call is never spent without evidence.
+- SG-004's management verbs are now `nudge` and — past twice the stall window — `abort`,
+  covered by `test/proactive.test.ts` (a refused abort is one audit row and is not retried).
+- Superagent 130 tests, coverage 98.92 lines / 95.06 branches / 97.24 functions; Swift
+  transport 91.5% lines on the new client methods; `apps/macos` 455 + 52 + 85 + 41 tests pass.
+
+Next broken hop: the native dashboard. A person reads attention items and suggestions through
+the CLI or the JSON files; nothing renders them in the App yet, and the App still starts its
+service in `notify`, so management is a CLI/启动期 decision.

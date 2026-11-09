@@ -1,4 +1,6 @@
 import { createServer } from "node:http";
+import { AnalysisStore } from "./analysis.ts";
+import { Analyzer } from "./analyze.ts";
 import { AttentionStore } from "./attention.ts";
 import { closeServer, listen, ownRoot, serverProof } from "./identity.ts";
 import { createManage, type ManageOptions } from "./manage.ts";
@@ -10,6 +12,8 @@ import { Watcher, type WatchMode } from "./watch.ts";
 export type ProactiveOptions = {
   readonly mode: WatchMode;
   readonly intervalMs: number;
+  /** SG-003: how long one Bot waits between suggestions. */
+  readonly analysisCooldownMs?: number;
   /** The watcher keeps its own baseline; the App's `observe-changes` keeps another. */
   readonly observation?: ObservationClient;
   readonly manage?: ManageOptions;
@@ -40,6 +44,23 @@ export async function startService(options: {
     options.observation ?? new ObservationClient({ root: owner.root, endpoint: "", tokenFile: "" });
   const mode: { current: WatchMode } = { current: options.proactive?.mode ?? "off" };
   const store = options.proactive === undefined ? undefined : new AttentionStore(owner.root);
+  const analysis =
+    options.proactive === undefined ||
+    store === undefined ||
+    options.proactive.observation === undefined
+      ? undefined
+      : new Analyzer({
+          store: new AnalysisStore(owner.root),
+          attention: store,
+          history: async (botId) => {
+            const read = await options.proactive?.observation?.history({ botId, limit: 10 });
+            return read?.history ?? null;
+          },
+          generate: (prompt) => runtime.generateText(prompt),
+          now: () => new Date(),
+          cooldownMs: options.proactive.analysisCooldownMs ?? 900_000,
+        });
+
   const watcher =
     options.proactive === undefined ||
     store === undefined ||
@@ -59,6 +80,10 @@ export async function startService(options: {
             return mode.current;
           },
           report: (prompt) => runtime.report(prompt),
+          afterTick: async () => {
+            if (mode.current === "off") return;
+            await analysis?.analyzeOne();
+          },
           ...(options.proactive.manage === undefined
             ? {}
             : { manage: createManage(options.proactive.manage) }),
@@ -127,6 +152,7 @@ export async function startService(options: {
             },
           },
         }),
+    ...(analysis === undefined ? {} : { analysis }),
   });
   watcher?.start();
   let closing: Promise<void> | undefined;

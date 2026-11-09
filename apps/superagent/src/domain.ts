@@ -64,7 +64,9 @@ export type ErrorCode =
   | "storage_failed"
   | "internal"
   | "shutting_down"
-  | "cancellation_unconfirmed";
+  | "cancellation_unconfirmed"
+  /** SG-003: this suggestion already has its one decision. */
+  | "decision_exists";
 
 export class ServiceError extends Error {
   readonly code: ErrorCode;

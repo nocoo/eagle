@@ -23,8 +23,9 @@ export type AttentionItem = {
   closedAt?: string;
   /** When this item was last included in a proactive report. */
   reportedAt?: string;
-  /** When this item last drew a management write. */
+  /** When this item last drew a management write, and which one. */
   actedAt?: string;
+  actedVerb?: "nudge" | "abort";
 };
 
 export type AuditRecord = {
@@ -231,11 +232,12 @@ export class AttentionStore {
     await this.save();
   }
 
-  async markActed(itemId: string, at: string): Promise<void> {
+  async markActed(itemId: string, at: string, verb: "nudge" | "abort"): Promise<void> {
     const state = await this.load();
     const item = state.items.find((entry) => entry.id === itemId);
     if (item === undefined) return;
     item.actedAt = at;
+    item.actedVerb = verb;
     await this.save();
   }
 

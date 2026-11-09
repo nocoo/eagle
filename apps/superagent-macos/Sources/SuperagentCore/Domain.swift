@@ -243,6 +243,8 @@ public enum ServiceCode: String, Codable, Sendable {
   case `internal`
   case shuttingDown = "shutting_down"
   case cancellationUnconfirmed = "cancellation_unconfirmed"
+  /// SG-003: this suggestion already has its one decision.
+  case decisionExists = "decision_exists"
 }
 
 public enum SuperagentError: Error, Equatable, Sendable, LocalizedError {
@@ -267,6 +269,7 @@ public enum SuperagentError: Error, Equatable, Sendable, LocalizedError {
       case .storageFailed: return "Super Bot 存储不可用，请检查服务状态。"
       case .shuttingDown: return "Super Bot 服务正在关闭。"
       case .cancellationUnconfirmed: return "停止尚未确认，请核对后续状态。"
+      case .decisionExists: return "这条建议已经决定过了，决定不能覆盖。"
       case .internal: return "Super Bot 服务未能完成请求。"
       }
     }

@@ -87,12 +87,33 @@ export async function markInitialized(root: string, storeId: string) {
   await rename(temporary, path);
 }
 const instructions =
-  "You are Eagle Super Bot, an independent conversational assistant. Answer clearly in the user's language. You have no tools, cannot read worker bots, their histories or their observation state yourself, and cannot execute commands or delegate tasks. When the person relays what a worker shows, work from what they said; never claim to have observed or changed a worker on your own.";
+  "You are Eagle Super Bot, an independent conversational assistant and the person's supervisor of the other Bots. Answer clearly in the user's language. Your service watches those Bots and reports what it found: when a message begins with 内部巡检 it is your own service reporting evidence, and you may rely on exactly that evidence. You have no tools of your own and cannot execute commands; a management action your service performs (a nudge to a Bot) is reported to you as a fact, never invented. Never claim an observation or an action that the evidence or the report does not contain.";
 
 export class ChatRuntime {
   /** One prompt the service itself writes, for a proactive report (SG-004). */
   async report(text: string): Promise<void> {
     await this.submit(randomUUID(), text);
+  }
+
+  /**
+   * One model turn that is not part of the conversation (SG-003 analysis): the same provider
+   * and key the chat uses, no entry written, so a suggestion cannot masquerade as dialogue.
+   */
+  async generateText(prompt: string): Promise<string> {
+    const config = this.#store.value;
+    if (config?.apiKey === undefined || config.apiKey === "") throw new Error("model_unconfigured");
+    const model = this.#models.getModel("superagent", config.model);
+    if (model === undefined) throw new Error("model_unavailable");
+    const answer = await this.#models.completeSimple(model, {
+      messages: [
+        { role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() },
+      ],
+    });
+    if (answer.stopReason === "error") throw new Error("model_error");
+    return answer.content
+      .flatMap((block) => (block.type === "text" ? [block.text] : []))
+      .join("\n")
+      .trim();
   }
 
   readonly #store: ConfigurationStore;

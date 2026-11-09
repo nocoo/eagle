@@ -24,12 +24,18 @@ private struct Command: Encodable, Sendable {
   var botId: String?
   var scope: String?
   var beforeEntry: String?
+  var mode: String?
+  var itemId: String?
+  var suggestionId: String?
+  var verdict: String?
+  var reason: String?
 
   init(
     type: String, id: String? = nil, nonce: String? = nil, proof: String? = nil,
     configuration: ConfigurationChange? = nil, requestId: String? = nil, text: String? = nil,
     before: Int? = nil, limit: Int? = nil, botId: String? = nil, scope: String? = nil,
-    beforeEntry: String? = nil
+    beforeEntry: String? = nil, mode: String? = nil, itemId: String? = nil,
+    suggestionId: String? = nil, verdict: String? = nil, reason: String? = nil
   ) {
     self.type = type
     self.id = id
@@ -43,6 +49,11 @@ private struct Command: Encodable, Sendable {
     self.botId = botId
     self.scope = scope
     self.beforeEntry = beforeEntry
+    self.mode = mode
+    self.itemId = itemId
+    self.suggestionId = suggestionId
+    self.verdict = verdict
+    self.reason = reason
   }
 }
 private struct Header: Decodable {
@@ -158,6 +169,43 @@ public actor SuperagentClient: SuperagentServicePort, SuperagentObservationPort 
     try await request(
       Command(type: "observe-changes", limit: limit), as: ObservationReply.self)
   }
+  /// SG-004: what the watcher noticed, and the switch that lets it act.
+  public func attention(limit: Int? = nil) async throws -> AttentionReply {
+    try await request(Command(type: "attention", limit: limit), as: AttentionReply.self)
+  }
+  public func attentionAck(itemId: String) async throws -> AttentionAckReply {
+    try await request(
+      Command(type: "attention-ack", itemId: itemId), as: AttentionAckReply.self)
+  }
+  public func manageMode(_ mode: String? = nil) async throws -> ManageModeReply {
+    try await request(Command(type: "manage-mode", mode: mode), as: ManageModeReply.self)
+  }
+
+  /// SG-003: suggestions, the person's decision, and one explicit analysis ask.
+  public func suggestionList(botId: String? = nil, limit: Int? = nil) async throws
+    -> SuggestionListReply
+  {
+    try await request(
+      Command(type: "suggestion-list", limit: limit, botId: botId), as: SuggestionListReply.self)
+  }
+  public func suggestionAck(suggestionId: String, verdict: String, reason: String? = nil)
+    async throws -> SuggestionAckReply
+  {
+    try await request(
+      Command(
+        type: "suggestion-ack", suggestionId: suggestionId, verdict: verdict, reason: reason),
+      as: SuggestionAckReply.self)
+  }
+  public func decisionList(botId: String? = nil, limit: Int? = nil) async throws
+    -> DecisionListReply
+  {
+    try await request(
+      Command(type: "decision-list", limit: limit, botId: botId), as: DecisionListReply.self)
+  }
+  public func analyze(botId: String? = nil) async throws -> AnalyzeReply {
+    try await request(Command(type: "analyze", botId: botId), as: AnalyzeReply.self)
+  }
+
   /// SG-002: one read, mapped by the transport's own pure decode.
   public func observation() async throws -> ObservationSummary {
     try ObservationSummary(reply: await observeSnapshot())

@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
+import type { Analyzer } from "./analyze.ts";
 import type { AttentionItem, AttentionStore } from "./attention.ts";
 import { MAX_FRAME, ServiceError } from "./domain.ts";
 import { type Identity, serverProof } from "./identity.ts";
@@ -28,6 +29,8 @@ export function attachSockets(
       readonly mode: () => WatchMode;
       readonly setMode: (mode: WatchMode) => void;
     };
+    /** SG-003: suggestions and the person's immutable decisions. */
+    analysis?: Analyzer;
   },
 ) {
   const { runtime, identity, token, port } = options;
@@ -239,6 +242,58 @@ export function attachSockets(
               if (proactive === undefined) throw new ServiceError("invalid_command");
               if (input.mode !== undefined) proactive.setMode(input.mode);
               value = { mode: proactive.mode() };
+              break;
+            }
+            case "suggestion-list": {
+              const analysis = options.analysis;
+              if (analysis === undefined) throw new ServiceError("invalid_command");
+              value = {
+                suggestions: await analysis.list({
+                  ...(input.botId === undefined ? {} : { botId: input.botId }),
+                  ...(input.limit === undefined ? {} : { limit: input.limit }),
+                }),
+              };
+              break;
+            }
+            case "suggestion-ack": {
+              const analysis = options.analysis;
+              if (analysis === undefined) throw new ServiceError("invalid_command");
+              const decided = await analysis.decide({
+                suggestionId: input.suggestionId,
+                verdict: input.verdict,
+                ...(input.reason === undefined ? {} : { reason: input.reason }),
+              });
+              if ("refused" in decided) {
+                throw new ServiceError(
+                  decided.refused === "decision_exists" ? "decision_exists" : "invalid_command",
+                );
+              }
+              value = decided;
+              break;
+            }
+            case "decision-list": {
+              const analysis = options.analysis;
+              if (analysis === undefined) throw new ServiceError("invalid_command");
+              value = {
+                decisions: await analysis.decisions({
+                  ...(input.botId === undefined ? {} : { botId: input.botId }),
+                  ...(input.limit === undefined ? {} : { limit: input.limit }),
+                }),
+              };
+              break;
+            }
+            case "analyze": {
+              const analysis = options.analysis;
+              if (analysis === undefined) throw new ServiceError("invalid_command");
+              value =
+                input.botId === undefined
+                  ? {
+                      suggestions:
+                        (await analysis.analyzeOne()) === undefined
+                          ? []
+                          : [await analysis.analyzeOne()],
+                    }
+                  : await analysis.analyzeFor(input.botId);
               break;
             }
           }
