@@ -1041,3 +1041,37 @@ because that is a Bot's own tool call and needs two scripted bots.
 Next broken hop: the installed App's own Super Bot row and inspector are still unrendered
 evidence for a person's eye; and `peers` has no case that starts an exchange, because that
 needs two scripted Bots.
+
+## 2026-11-09 18:55 +08 — macOS 0.24.0: the Bot's terminal is `hc`, and it is on by default
+
+Observed: the Herdr settings page is a release, not a branch. A person who downloads
+0.24.0 gets the `hc` page, the Bot's own terminals, three saved role models, and `hc` back in
+the default tool groups where `herdr` used to sit; an older settings file gains the group on
+its next read and the removed `herdr` name is filtered out.
+
+Verified:
+
+- Release commit `0d0a480d` (`chore(release): macos 0.24.0`), annotated tag
+  `macos-v0.24.0`; the claim is `8eedb3be` (`chore(release): publish macos 0.24.0`). CI Check
+  was green on `0d0a480d` for both jobs before publishing; both pushes ran the full pre-push
+  set (root suite, superagent, browser, `apps/macos` and `apps/bots-macos`).
+- `Eagle-for-Mac-0.24.0.dmg` is 156,051,034 bytes with sha256
+  `df9344e41e12c0a4d1422b50cbebb1845c077b7bd0a3dad79f3725a4e077fab3`; the release
+  `https://github.com/nocoo/eagle/releases/tag/macos-v0.24.0` carries it plus `SHA256SUMS`.
+  The asset answers a range request, and the mounted image carries `Applications` and the
+  App at 0.24.0 with a valid ad-hoc `codesign --verify --strict --deep`.
+- Bundle contents: `CFBundleShortVersionString` and `CFBundleVersion` are both 0.24.0, mode
+  `ad-hoc-release`, bundled Node 26.13.0 with its sha preserved, `EagleUpdatesURL`
+  `https://eagle-ingest.hexly.ai/api/live`, `EagleReleaseURL` `macos-v0.24.0`,
+  `Contents/Helpers/eagle --version` = `eagle 0.24.0 · daemon 0.1.0`, and
+  `Contents/Resources/DeviceRuntime/bots/src/tools/hc/tools.ts` is in the shipped runtime.
+- Deployed from this machine with `npm run deploy` (the Deploy workflow skips without the
+  Cloudflare secrets): no D1 migration was pending, Worker version `370e9dcb`, and
+  `/api/live` answers `macos.latest` 0.24.0 with the release URL at revision `8eedb3be` on
+  both `eagle-ingest.hexly.ai` and `eagle.hexly.ai`. The dashboard root still redirects to
+  Access, so nothing was opened to anonymous readers.
+
+Next broken hop: `/Applications/Eagle for Mac.app` here is still 0.23.0 — replacing it needs
+`--prepare-device-update`, the whole bundle swapped and the quarantine removed by hand, so the
+upgrade itself is unverified. The install buttons on the page have still never been pressed,
+and a packaged-App run of the Herdr page is not evidence this repository holds.
