@@ -224,7 +224,34 @@ export class Watcher {
 
     const now = ports.now().getTime();
     const state = await ports.store.snapshot();
-    for (const [botId, mark] of Object.entries(state.activities)) {
+    // A mark that outlives the stall window is checked against the provider before it is
+    // believed: a missed `activity_changed` must not turn an idle Bot into a stuck one, and
+    // in `act` mode that difference is a nudge or an abort.
+    const overdue = Object.entries(state.activities).filter(
+      ([, mark]) =>
+        ACTIVITIES.has(mark.activity) && now - Date.parse(mark.since) >= this.#ports.stallAfterMs,
+    );
+    if (overdue.length > 0) {
+      const current = await ports.observation.snapshot();
+      const live = new Map<string, string>();
+      const bots = (current.snapshot as { bots?: unknown } | null)?.bots;
+      if (Array.isArray(bots)) {
+        for (const bot of bots) {
+          if (bot === null || typeof bot !== "object") continue;
+          const entry = bot as { botId?: unknown; activity?: unknown };
+          if (typeof entry.botId === "string" && typeof entry.activity === "string") {
+            live.set(entry.botId, entry.activity);
+          }
+        }
+      }
+      for (const [botId] of overdue) {
+        const activity = live.get(botId);
+        if (activity !== undefined && ACTIVITIES.has(activity)) continue;
+        await ports.store.setActivity(botId, undefined, at);
+        healed.add(`${botId}\u0000worker_stalled`);
+      }
+    }
+    for (const [botId, mark] of Object.entries((await ports.store.snapshot()).activities)) {
       if (!ACTIVITIES.has(mark.activity)) continue;
       if (now - Date.parse(mark.since) < this.#ports.stallAfterMs) continue;
       candidates.push({

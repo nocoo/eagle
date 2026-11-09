@@ -37,10 +37,24 @@ const bench = async (initial: () => Script) => {
     manageResult: { result: "sent" as const },
   };
   const observation = {
-    snapshot: async () => ({
-      provider: PROVIDER,
-      snapshot: { kind: "snapshot", bots: [], cursor: "c_1" },
-    }),
+    snapshot: async () => {
+      const scripted = (scope as unknown as { snapshotBots?: unknown[] }).snapshotBots;
+      // A fake provider that agrees with itself: unless the test says otherwise, its snapshot
+      // reports the activity its script just described.
+      const bots =
+        scripted ??
+        (
+          (script().changes as { changes?: { kind?: string; botId?: string; activity?: string }[] })
+            ?.changes ?? []
+        ).flatMap((entry) =>
+          entry.kind === "activity_changed" &&
+          entry.botId !== undefined &&
+          entry.activity !== undefined
+            ? [{ botId: entry.botId, activity: entry.activity, store: { state: "available" } }]
+            : [],
+        );
+      return { provider: PROVIDER, snapshot: { kind: "snapshot", cursor: "c_1", bots } };
+    },
     changes: async () => {
       const current = script();
       if (current.providerState !== undefined) {
@@ -947,7 +961,13 @@ test("a stalled bot is nudged, and a second item on the same bot waits for the c
 
     // The same bot raises a second kind inside the cooldown: stored, not written to again.
     bench_.setScript(() => ({
-      changes: change({ kind: "history_appended", botId: "b_40", scopeId: "c_1" }),
+      // The provider still reports the Bot as running; a second kind appears on top.
+      changes: {
+        changes: [
+          { kind: "activity_changed", botId: "b_40", activity: "running" },
+          { kind: "history_appended", botId: "b_40", scopeId: "c_1" },
+        ],
+      },
       history: { b_40: { messages: [{ role: "assistant", state: "error" }] } },
     }));
     bench_.advance(60_000);
@@ -1095,6 +1115,30 @@ test("SG004-A12: a withdrawn run that the CLI refuses is an audit row, and it is
       1,
       "a refused withdrawal is not retried inside the same stall",
     );
+  } finally {
+    await bench_.cleanup();
+  }
+});
+
+test("SG004-A13: a stale activity mark is checked against the provider before it stalls", async () => {
+  const bench_ = await bench(() => ({
+    changes: change({ kind: "activity_changed", botId: "b_80", activity: "running" }),
+  }));
+  try {
+    bench_.scope.mode = "act";
+    await bench_.watcher.tick();
+    // The provider says the Bot is idle now; a missed change must not turn it into a stall.
+    bench_.setScript(() => ({
+      changes: { kind: "changes", changes: [] },
+    }));
+    (bench_.scope as unknown as { snapshotBots?: unknown[] }).snapshotBots = [
+      { botId: "b_80", activity: "idle", store: { state: "available" } },
+    ];
+    bench_.advance(11 * 60_000);
+    await bench_.watcher.tick();
+    assert.deepEqual(await bench_.store.list(), [], "an idle Bot is not a stalled one");
+    assert.deepEqual((await bench_.store.snapshot()).activities, {});
+    assert.deepEqual(bench_.nudges, []);
   } finally {
     await bench_.cleanup();
   }
