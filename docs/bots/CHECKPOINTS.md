@@ -994,3 +994,28 @@ Next broken hop: three surfaces still have no CLI, so their acceptance stays on 
 managed file send (`chat send --file`), skill selection (`skills list|select`) and peer
 exchange detail. The macOS cases also cannot prove rendering; the installed App's Super Bot
 row and inspector are still a person's look.
+
+## 2026-11-08 23:40 — the three remaining CLI surfaces, and their cases
+
+Observed: the CLI can now send a managed file, install a skill selection and read peer
+exchanges, so the last three surfaces that only had a wire contract are reachable from `eagle-dev`
+and covered by the macOS acceptance suite.
+
+Verified:
+
+- `chat send --file PATH` declares the file (`size`, `sha256`), uploads its raw bytes and sends
+  the complete id with the message; `skills list` reads the selection a Bot is told about and
+  `skills set --stdin` installs a whole array at most 64 entries; `peers list|show` reads
+  exchanges and starts nothing.
+- CLI tests: 41 cases green, including a webhook that must present the trigger's token and a
+  peer refusal; `apps/macos swift test` and strict format green.
+- New cases: `mac-file` (history carries `report.txt`), `mac-skills` (`skill_read` returns the
+  body of a file the case placed under the Bot's home), `mac-peers` (empty list plus an unknown
+  exchange refusing). Three consecutive rounds of the eight `mac-*` cases were green (24 case
+  runs); the earlier five cases were already green for ten rounds.
+- The released 0.23.0 was built and installed before these three surfaces landed, so its bundled
+  CLI has `triggers` but not `skills`, `peers` or `--file`; those ship with the next release.
+
+Next broken hop: `skills set` trusts the caller's entries — it does not scan folders or verify a
+`SKILL.md` exists, which stays the App's job; and `peers` has no case that starts an exchange,
+because that is a Bot's own tool call and needs two scripted bots.
