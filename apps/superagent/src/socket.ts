@@ -1,11 +1,13 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
+import type { AttentionItem, AttentionStore } from "./attention.ts";
 import { MAX_FRAME, ServiceError } from "./domain.ts";
 import { type Identity, serverProof } from "./identity.ts";
 import type { ObservationClient } from "./observation.ts";
 import { authentication, command, hello } from "./protocol.ts";
 import type { ChatRuntime } from "./runtime.ts";
+import type { WatchMode } from "./watch.ts";
 
 export const allowedRequest = (request: IncomingMessage) =>
   request.headers.origin === undefined &&
@@ -20,6 +22,12 @@ export function attachSockets(
     runtime: ChatRuntime;
     /** SG-002 observation; the service always supplies one, configured or not. */
     observation: ObservationClient;
+    /** SG-004: what the watcher noticed, and the switch that lets it act. */
+    proactive?: {
+      readonly store: AttentionStore;
+      readonly mode: () => WatchMode;
+      readonly setMode: (mode: WatchMode) => void;
+    };
   },
 ) {
   const { runtime, identity, token, port } = options;
@@ -203,6 +211,36 @@ export function attachSockets(
             case "observe-changes":
               value = await options.observation.changes(input.limit);
               break;
+            case "attention": {
+              const proactive = options.proactive;
+              if (proactive === undefined) throw new ServiceError("invalid_command");
+              const state = await proactive.store.snapshot();
+              value = {
+                items: (await proactive.store.list(
+                  input.limit === undefined ? {} : { limit: input.limit },
+                )) as AttentionItem[],
+                provider: {
+                  state: state.lastError === undefined ? "ready" : state.lastError,
+                  lastTickAt: state.lastTickAt ?? null,
+                },
+              };
+              break;
+            }
+            case "attention-ack": {
+              const proactive = options.proactive;
+              if (proactive === undefined) throw new ServiceError("invalid_command");
+              const item = await proactive.store.ack(input.itemId, new Date().toISOString());
+              if (item === undefined) throw new ServiceError("invalid_command");
+              value = { item };
+              break;
+            }
+            case "manage-mode": {
+              const proactive = options.proactive;
+              if (proactive === undefined) throw new ServiceError("invalid_command");
+              if (input.mode !== undefined) proactive.setMode(input.mode);
+              value = { mode: proactive.mode() };
+              break;
+            }
           }
           send({ type: "result", id: input.id, value });
         } catch (error) {

@@ -15,8 +15,11 @@ discovery. Those additions are not implemented or enabled by this plan update.
 ## Independent Superagent (chat-first, spec-driven; SG-001 delivered)
 
 [Superagent architecture](SUPERAGENT-ARCHITECTURE.md) owns the independence boundary
-(delivered with SG-001), strict interfaces, read-only worker access, native MVVM
-and TDD. The owner changed the execution order to **start the independent process,
+(delivered with SG-001), strict interfaces, worker access, native MVVM and TDD.
+On 2026-11-09 the owner restored the prototype's proactivity: the Super Bot watches
+the other Bots on its own schedule and may manage them inside a named, audited action
+set ([SG-004](specs/SUPERAGENT-004-PROACTIVE.md)). Read-only stops being the invariant;
+"the worker stays unaware and every action is attributable" replaces it. The owner changed the execution order to **start the independent process,
 then converse with the Super Bot in the App**, before adding worker observation or a
 full decision dashboard. Separate processes/stores and App-scoped lifetime remain
 fixed. Workers are unaware; SG-001 neither connects to them nor needs their
@@ -28,8 +31,8 @@ own read infrastructure instead of being re-implemented (2026-11-08).
 | [SG-001: native chat](specs/SUPERAGENT-001-CHAT.md) | A: executable/root/readiness -> B: own durable chat/protocol -> C: App launcher/native conversation -> D: acceptance | **Delivered and owner-accepted 2026-11-07** for the source dev App: A/B/C implemented, two review rounds plus targeted replay PASS, real-gateway CLI turns/restart, native conversation. Residual: packaged App, forced-quit/crash matrix, two-window manual run |
 | SG-002: passive worker evidence | Exact snapshot/history/changes contract, inert cold reads and complete retained worker history | **In progress.** Spike measured ([evidence](specs/OBSERVATION-SPIKE.md)) and the contract frozen ([spec](specs/SUPERAGENT-002-OBSERVATION.md), [protocol](specs/SUPERAGENT-002-PROTOCOL.md), [fixtures](../../fixtures/bots-observation)) after three review rounds plus a 26-check self-audit. Provider slice delivered: read-only store, guarded schema, credentials and the three routes are green (1126 daemon tests). Consumer commands answer `snapshot`/`history`/`changes` over the existing socket with their own baseline (59 superagent tests, coverage 98.98/95.35). **Delivered (source) 2026-11-08; awaiting the owner's visual check.** Provider routes, consumer commands, CLI paging and the native read-only strip are green (daemon 1135 tests, superagent 61, client 46). Every acceptance row has a deterministic test except A15, which needs a human to look at the strip; no release artifact |
 | SG-003: analysis and native decisions | Bounded evidence-backed suggestions and the native decision dashboard | Planned; reuses SG-002 evidence |
-| SG-004: proactive observation | Change-driven rechecks, notifications, recovery and richer observability | Planned |
-| Future management | Separately authorized worker command contract | Outside these read-only milestones |
+| [SG-004: proactive observation and management](specs/SUPERAGENT-004-PROACTIVE.md) | Change-driven rechecks, attention items, proactive reports and bounded management writes | **Delivered (source) 2026-11-09.** Watcher with its own baseline and attention store, rules for `worker_unavailable` / `worker_error` / `worker_stalled`, `off`/`notify`/`act` modes, audit trail and budgets; `attention`, `attention-ack` and `manage-mode` on the existing socket. Dev acceptance: five Bots created, a real aborted run noticed, a report written into the Super Bot's conversation, and a nudge delivered to the worker that answered it. Native dashboard and notifications panel remain (SG-003) |
+| SG-003: analysis and native decisions | Bounded evidence-backed suggestions and the native decision dashboard | Planned; reuses SG-002 evidence and SG-004's attention items |
 
 Spec-driven progress: SG-001 moved through one active spec plus its protocol
 contract, two independent review rounds and a targeted replay, four runnable

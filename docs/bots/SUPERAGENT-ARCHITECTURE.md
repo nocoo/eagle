@@ -20,16 +20,17 @@ privileged worker and does not become an owner of worker runtime internals.
 | Workers run alone | Starting, chatting, tools, recovery and shutdown require no Superagent, its storage or acknowledgement |
 | Superagent runs alone | SG-001 starts and chats without workers; later dashboards mark unavailable sources and stale retained facts honestly |
 | Worker unawareness | No Superagent persona, tools, report hooks, task wrappers, new prompts, required acknowledgements or model-visible messages in workers |
-| Read-only toward workers | No send, steer, promote, abort, recover, retry, configure, trigger mutation or delegation, including indirect calls |
+| Management toward workers | **Changed by the owner on 2026-11-09**: the Superagent may write to a worker through the person's own client surface, and only in the named action set of [SG-004](specs/SUPERAGENT-004-PROACTIVE.md) — one `chat send` nudge per attention item, inside a policy (`off`/`notify`/`act`), a per-item cooldown and an hourly budget, recorded in an audit the person can read. Still refused: steer, promote, recover, retry, configure, trigger mutation, delegation, storage writes and any use of a worker runtime object |
 | Full-history visibility | SG-002 will expose all Bots' complete retained conversation history; SG-001 has no worker history access or observation credential |
 | Conversational role | SG-001 answers the owner; evidence-backed analysis follows in SG-003; no general shell/coding execution role |
 | App-scoped lifetime | First version runs while the App runs; no new login/background service after App quit |
 | Human decisions | Native decision dashboard remains required in SG-003; SG-001 needs chat and basic health/errors, not a complete dashboard |
 | Engineering | MVVM presentation; backend behavior developed with failing tests first |
 
-Read-only is a relationship, not inactivity: SG-001 calls its own model and writes
-its own conversation. Later specs add analysis/decision history and bounded
-notifications. None of those operations writes into a worker. The App-to-Superagent
+SG-001 calls its own model and writes its own conversation. Later specs add
+analysis/decision history and bounded notifications. Since the 2026-11-09 decision, a
+management write is allowed inside the SG-004 action set and looks to the worker
+exactly like the person typing; every other worker boundary above stays closed. The App-to-Superagent
 chat protocol is separate from the later worker-to-Superagent observation contract.
 
 Independent hosts may use the same pi-durable library. That is not another bespoke

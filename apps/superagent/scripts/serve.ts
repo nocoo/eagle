@@ -21,7 +21,37 @@ try {
       process.env.BOTS_OBSERVATION_TOKEN_FILE ??
       `${homedir()}/.local/share/eagle-bots/observation/token`,
   });
-  const service = await startService({ root, port, observation });
+  // SG-004: the watcher keeps a baseline and an attention store of its own, and acts only in
+  // the mode this process was started with. `SUPERAGENT_MANAGE=act` is the explicit opt-in
+  // for writing to a worker.
+  const watchObservation = new ObservationClient({
+    ...(process.env.BOTS_OBSERVATION_ENDPOINT === undefined
+      ? {}
+      : { endpoint: process.env.BOTS_OBSERVATION_ENDPOINT }),
+    root,
+    stateFile: "watch-state.json",
+    endpoint: process.env.BOTS_OBSERVATION_ENDPOINT ?? "http://127.0.0.1:43117",
+    tokenFile:
+      process.env.BOTS_OBSERVATION_TOKEN_FILE ??
+      `${homedir()}/.local/share/eagle-bots/observation/token`,
+  });
+  const rawMode = process.env.SUPERAGENT_MANAGE ?? "notify";
+  const mode = rawMode === "act" || rawMode === "off" || rawMode === "notify" ? rawMode : "notify";
+  const service = await startService({
+    root,
+    port,
+    observation,
+    proactive: {
+      mode: process.env.SUPERAGENT_WATCH === "off" ? "off" : mode,
+      intervalMs: Number(process.env.SUPERAGENT_WATCH_INTERVAL_MS ?? "60000"),
+      observation: watchObservation,
+      manage: {
+        bin: process.env.SUPERAGENT_EAGLE_BIN ?? "eagle",
+        port: process.env.SUPERAGENT_EAGLE_PORT ?? "43117",
+        tokenFile: process.env.SUPERAGENT_WRITE_TOKEN_FILE ?? `${resolve(root)}/worker-token`,
+      },
+    },
+  });
   process.stdout.write(
     `${JSON.stringify({ type: "ready", port: service.port, ...service.identity })}\n`,
   );

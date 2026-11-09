@@ -305,3 +305,30 @@ test("observation commands answer a provider value, never a socket error, when u
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("a binary frame is refused and a burst past the queue limit closes the socket", async () => {
+  const root = await mkdtemp(join(tmpdir(), "superagent-limits-"));
+  const service = await startService({ root, port: 0 });
+  const token = (await readFile(join(root, "token"), "utf8")).trim();
+  let peer: Awaited<ReturnType<typeof client>> | undefined;
+  try {
+    peer = await client(service.port);
+    await peer.authenticate(token);
+    const closed = once(peer.socket, "close");
+    peer.socket.send(Buffer.from("binary"));
+    assert.equal((await closed)[0], 1008);
+    peer = await client(service.port);
+    await peer.authenticate(token);
+    const burst = once(peer.socket, "close");
+    for (let index = 0; index < 40; index += 1) {
+      peer.socket.send(
+        JSON.stringify({ type: "state", id: `cmd_burst_${String(index).padStart(4, "0")}` }),
+      );
+    }
+    assert.equal((await burst)[0], 1008);
+  } finally {
+    peer?.socket.close();
+    await service.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

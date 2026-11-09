@@ -34,6 +34,11 @@ export type ObservationOptions = {
   readonly root: string;
   readonly endpoint: string;
   readonly tokenFile: string;
+  /**
+   * This consumer's own baseline. The App's `observe-changes` and the SG-004 watcher must not
+   * advance each other's cursor, so each keeps its own file.
+   */
+  readonly stateFile?: string;
 };
 
 const STATE_FILE = "observation-state.json";
@@ -77,15 +82,16 @@ export class ObservationClient {
     this.#options = options;
   }
 
-  #path(): string {
-    return join(this.#options.root, STATE_FILE);
+  /** This instance's baseline file; two consumers of one daemon need two of them. */
+  path(): string {
+    return join(this.#options.root, this.#options.stateFile ?? STATE_FILE);
   }
 
   async #load(): Promise<StoredState> {
     if (this.#loaded) return this.#state;
     this.#loaded = true;
     try {
-      const value = JSON.parse(await readFile(this.#path(), "utf8")) as unknown;
+      const value = JSON.parse(await readFile(this.path(), "utf8")) as unknown;
       if (value !== null && typeof value === "object") {
         const candidate = value as Partial<StoredState>;
         this.#state = {
@@ -103,10 +109,10 @@ export class ObservationClient {
 
   /** Writes only after the reader has the value; a failure never advances the baseline. */
   async #save(next: StoredState): Promise<boolean> {
-    const temporary = `${this.#path()}.tmp`;
+    const temporary = `${this.path()}.tmp`;
     try {
       await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
-      await rename(temporary, this.#path());
+      await rename(temporary, this.path());
     } catch {
       await rm(temporary, { force: true }).catch(() => undefined);
       return false;

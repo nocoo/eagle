@@ -90,6 +90,11 @@ const instructions =
   "You are Eagle Super Bot, an independent conversational assistant. Answer clearly in the user's language. You have no tools, cannot read worker bots, their histories or their observation state yourself, and cannot execute commands or delegate tasks. When the person relays what a worker shows, work from what they said; never claim to have observed or changed a worker on your own.";
 
 export class ChatRuntime {
+  /** One prompt the service itself writes, for a proactive report (SG-004). */
+  async report(text: string): Promise<void> {
+    await this.submit(randomUUID(), text);
+  }
+
   readonly #store: ConfigurationStore;
   readonly #models: Models;
   readonly #mutable: MutableModels | undefined;

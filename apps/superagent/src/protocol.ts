@@ -43,4 +43,20 @@ export const command = z.discriminatedUnion("type", [
       limit: z.number().int().min(1).max(500).optional(),
     })
     .strict(),
+  // SG-004: what the watcher noticed, and the one switch that lets it act.
+  z
+    .object({
+      type: z.literal("attention"),
+      id,
+      limit: z.number().int().min(1).max(200).optional(),
+    })
+    .strict(),
+  z.object({ type: z.literal("attention-ack"), id, itemId: id }).strict(),
+  z
+    .object({
+      type: z.literal("manage-mode"),
+      id,
+      mode: z.enum(["off", "notify", "act"]).optional(),
+    })
+    .strict(),
 ]);

@@ -1108,3 +1108,31 @@ Verified:
 Next broken hop: in the App a Bot cannot start, write into or close a terminal, because those
 tools are not part of the device admission that gates every other write; the 0.24.1 switch
 label still promises them, and the source on `main` now states what the daemon reports.
+
+## 2026-11-09 21:30 +08 — SG-004: the Super Bot watches and, inside a policy, acts
+
+Observed: the Superagent now runs its own watch loop. It reads the daemon's observation
+changes with a baseline of its own, turns what it sees into attention items, reports them
+into the Super Bot's conversation, and — when the service was started with `act` — nudges the
+Bot through the same `eagle chat send` a person uses. Every write is one audit row.
+
+Verified (real dev stack: the source dev App on 43119/43127, a source Superagent on 43202
+with `SUPERAGENT_MANAGE=act` and a 15 s interval):
+
+- Five Bots were created on the dev daemon for the run; A ran with an unknown model and
+  ended `model_error`, and E was aborted mid-answer, so its settled tail was `aborted`.
+- Bot A: one `worker_error` item, `count` 2 after the second failure, `report` and `nudge`
+  both `sent`; its observation history shows the nudge as a user entry followed by a failed
+  answer (its model was still broken).
+- Bot E: one `worker_error` item after the abort settled; `report` sent, `nudge` sent, and
+  the Bot answered it for real — its history shows the 内部巡检 message and a `complete`
+  assistant reply.
+- The Super Bot's own conversation holds the report turn: the inspection prompt and an
+  assistant answer naming the Bot and its evidence.
+- `apps/superagent`: 106 tests, coverage above the four 95% floors; typecheck and lint clean.
+
+Next broken hop: the person still reads attention items through the socket and the
+`attention.json` file, not a native panel; the dashboard and a notification surface are
+SG-003. A worker's own answer state after a *successful* re-run only heals the item on the
+next settled run, and the report prompt is visible in the Super Bot's transcript as the
+person's message rather than a system turn.

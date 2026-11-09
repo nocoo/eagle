@@ -1,8 +1,19 @@
 import { createServer } from "node:http";
+import { AttentionStore } from "./attention.ts";
 import { closeServer, listen, ownRoot, serverProof } from "./identity.ts";
+import { createManage, type ManageOptions } from "./manage.ts";
 import { ObservationClient } from "./observation.ts";
 import { ChatRuntime, markInitialized } from "./runtime.ts";
 import { allowedRequest, attachSockets } from "./socket.ts";
+import { Watcher, type WatchMode } from "./watch.ts";
+
+export type ProactiveOptions = {
+  readonly mode: WatchMode;
+  readonly intervalMs: number;
+  /** The watcher keeps its own baseline; the App's `observe-changes` keeps another. */
+  readonly observation?: ObservationClient;
+  readonly manage?: ManageOptions;
+};
 
 export async function startService(options: {
   root: string;
@@ -10,6 +21,8 @@ export async function startService(options: {
   openRuntime?: (root: string) => Promise<ChatRuntime>;
   /** SG-002: the daemon observation client; absent leaves the commands unconfigured. */
   observation?: ObservationClient;
+  /** SG-004: the proactive watcher; absent leaves the attention commands unconfigured. */
+  proactive?: ProactiveOptions;
 }) {
   const owner = await ownRoot(options.root);
   let runtime: ChatRuntime | undefined;
@@ -25,6 +38,31 @@ export async function startService(options: {
   // SG-002: an unconfigured consumer answers "unconfigured" without touching the network.
   const observation =
     options.observation ?? new ObservationClient({ root: owner.root, endpoint: "", tokenFile: "" });
+  const mode: { current: WatchMode } = { current: options.proactive?.mode ?? "off" };
+  const store = options.proactive === undefined ? undefined : new AttentionStore(owner.root);
+  const watcher =
+    options.proactive === undefined ||
+    store === undefined ||
+    options.proactive.observation === undefined
+      ? undefined
+      : new Watcher({
+          observation: options.proactive.observation,
+          store,
+          now: () => new Date(),
+          intervalMs: Math.max(options.proactive.intervalMs, 15_000),
+          stallAfterMs: 600_000,
+          reopenAfterMs: 900_000,
+          reportBudgetMs: 1_800_000,
+          actionCooldownMs: 900_000,
+          maxActionsPerHour: 6,
+          get mode() {
+            return mode.current;
+          },
+          report: (prompt) => runtime.report(prompt),
+          ...(options.proactive.manage === undefined
+            ? {}
+            : { manage: createManage(options.proactive.manage) }),
+        });
   let port = 0;
   const server = createServer((request, response) => {
     response.setHeader("content-type", "application/json");
@@ -78,13 +116,28 @@ export async function startService(options: {
     port,
     runtime,
     observation,
+    ...(store === undefined
+      ? {}
+      : {
+          proactive: {
+            store,
+            mode: () => mode.current,
+            setMode: (next: WatchMode) => {
+              mode.current = next;
+            },
+          },
+        }),
   });
+  watcher?.start();
   let closing: Promise<void> | undefined;
   return {
     port,
     identity: owner.identity,
+    /** SG-004: exposed so a test or an operator can drive one pass without waiting. */
+    watcher,
     close() {
       closing ??= (async () => {
+        watcher?.stop();
         const httpClosed = closeServer(server);
         server.closeAllConnections();
         await closeSockets();
