@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## macOS v0.23.1 — 2026-11-08
+
+- Reach the last three surfaces that only had a wire contract from the shipped CLI:
+  `chat send --file` declares a file, uploads its raw bytes and sends the complete id with
+  the message; `skills list` and `skills set --stdin` read and install the selection a Bot is
+  told about, while the App keeps owning the folders and the scan; `peers list|show` reads
+  what two Bots said to each other and starts nothing. `--skill` documents all three.
+- Make the Super Bot's root lock exact. The owner now names its own ephemeral loopback port
+  in `<root>/lock.json`, so two different roots can never collide and refuse each other, and
+  a lock left by a crash is replaced. A lock file another account can read is refused.
+- Give the CLI settings copy button's feedback one home: its duration is a motion token, and
+  the control takes it as a parameter, so its timing is stated once instead of twice.
+
 ## macOS v0.23.0 — 2026-11-08
 
 - Give the shipped CLI a trigger surface: `triggers list`, `triggers enable|disable` and
