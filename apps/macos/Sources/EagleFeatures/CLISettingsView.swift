@@ -10,9 +10,15 @@ public struct CLISettingsView: View {
   @State private var showsIssueRow = false
   @State private var copiedToken = false
   @State private var copiedCommand = false
+  /// How long the button says so. A test shortens it; a person always sees the same moment.
+  private let feedbackDuration: Duration
 
-  public init(model: CLISettingsViewModel = CLISettingsViewModel()) {
+  public init(
+    model: CLISettingsViewModel = CLISettingsViewModel(),
+    feedbackDuration: Duration = Theme.Motion.copyFeedbackDuration
+  ) {
     self.model = model
+    self.feedbackDuration = feedbackDuration
   }
 
   public var body: some View {
@@ -84,8 +90,9 @@ public struct CLISettingsView: View {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(text, forType: .string)
     feedback.wrappedValue = true
+    let duration = feedbackDuration
     Task { @MainActor in
-      try? await Task.sleep(for: .seconds(2))
+      try? await Task.sleep(for: duration)
       feedback.wrappedValue = false
     }
   }

@@ -34,7 +34,10 @@ struct CLISettingsLayoutTests {
     NSApplication.shared.perform(
       NSSelectorFromString("accessibilitySetValue:forAttribute:"),
       with: NSNumber(value: true), with: "AXEnhancedUserInterface")
-    let host = NSHostingView(rootView: CLISettingsView(model: model))
+    // The revert is a timer, so the test shortens the timer instead of racing it: the run
+    // then proves the label comes back, whatever the runner's load.
+    let host = NSHostingView(
+      rootView: CLISettingsView(model: model, feedbackDuration: .milliseconds(20)))
     host.frame = NSRect(x: 0, y: 0, width: 900, height: 900)
     let window = NSWindow(
       contentRect: NSRect(x: -10000, y: -10000, width: 900, height: 900),
@@ -64,9 +67,6 @@ struct CLISettingsLayoutTests {
     #expect(
       NSPasteboard.general.string(forType: .string) == "eagle-dev --skill",
       "the click copied the command")
-    // The revert is a two-second main-actor timer. On a runner running the whole suite in
-    // parallel the main actor is saturated, so this state is waited for far longer than the
-    // timer: the deadline is patience, not a threshold the control has to meet.
     try await waitUntil("the label comes back so it can be pressed again", timeoutMs: 20_000) {
       entries(host).compactMap(title).contains("复制命令")
     }

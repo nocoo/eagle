@@ -401,6 +401,8 @@ public enum Theme {
     public static let columns = Animation.snappy(duration: Metric.collapseDuration)
     public static let waiting = Animation.easeOut(duration: 0.18)
     public static let copyFeedback = Animation.easeOut(duration: 0.15)
+    /// How long a copy button says it copied before it asks to be pressed again.
+    public static let copyFeedbackDuration: Duration = .seconds(2)
     public static let placeholderReduced = Animation.easeInOut(duration: 0.16)
     public static let placeholder = Animation.easeInOut(duration: 0.26)
     public static let caretInterval: TimeInterval = 0.62
