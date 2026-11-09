@@ -208,6 +208,12 @@ Gateway rules:
   the group it named no longer exists. A client that still sends `herdr` in `toolGroups` is
   refused as an unknown name (`400`); the daemon and the App are one installation and travel
   together, so there is no release that speaks the old name against the new daemon.
+- **A stored per-bot selection is read through today's names.** The catalog keeps each bot's
+  own `toolGroups`; a name this daemon does not know is dropped instead of making the whole
+  catalog unreadable, and `herdr` reads as `hc`, the group that replaced it. The next write to
+  that bot records the migrated list, so the translation happens once. A *save* that names an
+  unknown group is still a `400`: the tolerance is for data an older daemon wrote, never for
+  what a client sends now.
 - **The Herdr page's roles travel as one block.** `hc` carries `steering`, `coding` and
   `reviewing`, each `{ model, thinkingLevel }`; a save that names it replaces the whole block,
   and a role with an empty model, a model longer than 200 characters or an unknown thinking
@@ -468,7 +474,8 @@ it is doing without opening the conversation (which costs a socket and a restore
 
 - **Groups live beside the catalog.** The catalog file holds `groups: [{ id, title }]` in
   display order; a bot's `groupId` is its membership. A membership that points at a missing
-  group reads as ungrouped instead of failing the catalog.
+  group reads as ungrouped instead of failing the catalog. A stored `toolGroups` name that no
+  longer exists is dropped for the same reason, and `herdr` is read as `hc`.
 - **A group that still holds a bot cannot be deleted.** `DELETE` answers `409` with
   `invalid_command` and a message; the client shows it rather than emptying the group.
   Emptying a group is the person's job (`PATCH /v1/bots/:id` with `groupId: null`).

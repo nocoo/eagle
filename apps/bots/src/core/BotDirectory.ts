@@ -6,11 +6,11 @@ import { randomUUID } from "node:crypto";
 import type { BotAppearance, BotGroup, BotRecord, ToolGroup } from "./domain.ts";
 import {
   BOT_ID_PATTERN,
-  isToolGroup,
   MAX_BOT_GROUPS,
   MAX_BOT_NOTE_CHARS,
   MAX_GROUP_TITLE_CHARS,
   normalizeBotNote,
+  readStoredGroups,
 } from "./domain.ts";
 
 export type DirEntry = { readonly name: string; isDirectory(): boolean };
@@ -77,6 +77,10 @@ const withGroup = (bot: BotConfig, groupId: string | undefined): BotConfig => {
   return groupId === undefined ? rest : { ...rest, groupId };
 };
 
+/** A stored selection read through today's group names (see `readStoredGroups`). */
+const withReadableGroups = (bot: BotConfig): BotConfig =>
+  bot.toolGroups === undefined ? bot : { ...bot, toolGroups: readStoredGroups(bot.toolGroups) };
+
 export type ReconcileResult = {
   readonly finishedDeletes: readonly string[];
   readonly orphanedTrash: readonly string[];
@@ -142,7 +146,8 @@ const isBotRecord = (value: unknown): value is BotConfig => {
   const grouped = value as { toolGroups?: unknown };
   if (
     grouped.toolGroups !== undefined &&
-    (!Array.isArray(grouped.toolGroups) || grouped.toolGroups.some((name) => !isToolGroup(name)))
+    (!Array.isArray(grouped.toolGroups) ||
+      grouped.toolGroups.some((name) => typeof name !== "string"))
   ) {
     return false;
   }
@@ -242,7 +247,7 @@ export class BotDirectory {
         bot.groupId === undefined || ids.has(bot.groupId) ? bot : withGroup(bot, undefined),
       );
     }
-    return { bots: kept, groups: groups as readonly BotGroup[] };
+    return { bots: kept.map(withReadableGroups), groups: groups as readonly BotGroup[] };
   }
 
   async #writeAll(bots: readonly BotConfig[]): Promise<void> {

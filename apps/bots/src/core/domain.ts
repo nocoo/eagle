@@ -668,3 +668,11 @@ export const resolveToolGroups = (names: readonly string[] | undefined): readonl
   for (const name of names ?? []) if (isToolGroup(name)) chosen.add(name);
   return TOOL_GROUP_NAMES.filter((name) => chosen.has(name));
 };
+
+/**
+ * A selection an older daemon stored. A group this daemon does not know is dropped instead of
+ * making the whole catalog unreadable, and `herdr` reads as the group that replaced it: a Bot
+ * keeps the collaborator it had when the name changed under it.
+ */
+export const readStoredGroups = (names: readonly string[] | undefined): readonly ToolGroup[] =>
+  resolveToolGroups((names ?? []).map((name) => (name === "herdr" ? "hc" : name)));

@@ -518,3 +518,43 @@ test("an over-long note is refused and the stored note is untouched", async () =
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("a stored selection that names the removed herdr group still loads and keeps hc", async () => {
+  const { root, dir } = await workspace();
+  try {
+    await dir.create(record("b_1"));
+    // A catalog an older daemon wrote: `herdr` was a group then, and the group it named is
+    // `hc` now. Refusing the whole file would leave a person with a daemon that cannot start.
+    const catalog = JSON.parse(await readFile(join(root, "catalog.json"), "utf8")) as {
+      bots: { toolGroups?: string[] }[];
+    };
+    const bot = catalog.bots[0];
+    assert.ok(bot !== undefined);
+    bot.toolGroups = ["persona", "core", "core-ui", "coding", "herdr", "agents"];
+    await writeFile(join(root, "catalog.json"), JSON.stringify(catalog), "utf8");
+
+    const [loaded] = await dir.load();
+    assert.deepEqual(loaded?.toolGroups, ["persona", "core", "core-ui", "coding", "hc", "agents"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an unknown group name in a stored selection is dropped, not fatal", async () => {
+  const { root, dir } = await workspace();
+  try {
+    await dir.create(record("b_1"));
+    const catalog = JSON.parse(await readFile(join(root, "catalog.json"), "utf8")) as {
+      bots: { toolGroups?: string[] }[];
+    };
+    const bot = catalog.bots[0];
+    assert.ok(bot !== undefined);
+    bot.toolGroups = ["core", "web"];
+    await writeFile(join(root, "catalog.json"), JSON.stringify(catalog), "utf8");
+
+    const [loaded] = await dir.load();
+    assert.deepEqual(loaded?.toolGroups, ["core", "core-ui", "coding"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
