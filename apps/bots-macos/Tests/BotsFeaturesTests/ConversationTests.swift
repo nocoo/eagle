@@ -465,11 +465,9 @@ final class ConversationTests: XCTestCase {
     XCTAssertEqual(fake.sent.count, 1, "a later snapshot must not replay it again")
   }
 
-  /// Ten seconds, not two: the gate runs this suite beside the other Swift packages, and a
-  /// loaded machine made a two-second poll report a failure the code never had.
   private func waitUntil(
     _ condition: () -> Bool,
-    timeout: TimeInterval = 10
+    timeout: TimeInterval = 2
   ) async throws {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
@@ -480,7 +478,11 @@ final class ConversationTests: XCTestCase {
   }
 }
 
-final class FakeConversation: ConversationPort {
+/// `@MainActor` because the view model calls this port from a main-actor task: a nonisolated
+/// implementation would append on a background thread while a test reads from the main one,
+/// which loses entries and made the two-send test fail one run in three.
+@MainActor
+final class FakeConversation: @preconcurrency ConversationPort {
   struct Sent {
     let text: String
     let requestId: String
