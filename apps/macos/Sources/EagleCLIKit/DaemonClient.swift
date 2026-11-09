@@ -128,6 +128,42 @@ public struct DaemonClient: Sendable {
     return .refused(kind: kind, message: message)
   }
 
+  /// `PUT` raw bytes: a managed file's content is never JSON or Base64 (PROTOCOL.md
+  /// "Managed files").
+  public func upload(
+    _ path: String, bytes: Data, contentType: String = "application/octet-stream"
+  ) async throws -> JSONObject {
+    if let failure = Self.credentialFailure(config) { throw failure }
+    guard let token = config.token, !token.isEmpty else {
+      throw CLIError.auth(
+        "no CLI credential: run the App's Settings → CLI switch, or set EAGLE_TOKEN (looked in \(config.configPath))"
+      )
+    }
+    var request = URLRequest(url: config.baseURL.appendingPathComponent(path))
+    request.httpMethod = "PUT"
+    request.timeoutInterval = 120
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
+    request.setValue(contentType, forHTTPHeaderField: "content-type")
+    request.httpBody = bytes
+    let data: Data
+    let response: URLResponse
+    do {
+      (data, response) = try await session.data(for: request)
+    } catch {
+      throw CLIError.unreachable(
+        "cannot reach the daemon at \(config.baseURL.absoluteString): \(error.localizedDescription)"
+      )
+    }
+    guard let http = response as? HTTPURLResponse else {
+      throw CLIError.unreachable("the daemon did not answer HTTP")
+    }
+    let object = (try? JSONSerialization.jsonObject(with: data)) as? JSONObject ?? [:]
+    guard (200..<300).contains(http.statusCode) else {
+      throw Self.failure(status: http.statusCode, object: object)
+    }
+    return object
+  }
+
   /// Opens the one socket this process uses and completes the handshake.
   public func connect(clientName: String) async throws -> SocketSession {
     if let failure = Self.credentialFailure(config) { throw failure }
@@ -198,11 +234,15 @@ public final class SocketSession: @unchecked Sendable {
     frame["value"] as? JSONObject ?? frame
   }
 
-  public func send(text: String, requestId: String, whenBusy: String = "followUp") async throws {
-    try await write([
+  public func send(
+    text: String, requestId: String, whenBusy: String = "followUp", fileIds: [String] = []
+  ) async throws {
+    var command: JSONObject = [
       "type": "send", "requestId": requestId, "text": text, "whenBusy": whenBusy,
       "trace": Self.trace(),
-    ])
+    ]
+    if !fileIds.isEmpty { command["fileIds"] = fileIds }
+    try await write(command)
   }
 
   /// Answers an ask_user card: the daemon reads the questions out of that entry and composes

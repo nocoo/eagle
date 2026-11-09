@@ -124,6 +124,42 @@ struct CommandsTests {
     ],"groups":[{"id":"g_1","title":"工作"}]}
     """#
 
+  @Test("skills are read as the selection a Bot is told about")
+  func skills() async {
+    StubTransport.calls = []
+    StubTransport.answers = [
+      "/v1/bots": (200, Self.catalog),
+      "/v1/settings": (
+        200,
+        #"{"settings":{"skills":[{"name":"weather-lookup","version":"1.4.0","description":"d","path":"~/.agents/skills/weather-lookup"}]}}"#
+      ),
+    ]
+    let listed = await run(["skills", "list"])
+    #expect(listed.code == 0)
+    #expect(listed.out.joined().contains("weather-lookup · 1.4.0"))
+
+    let withoutStdin = await run(["skills", "set"])
+    #expect(withoutStdin.code == 2, "the selection is read from stdin, never an argument")
+  }
+
+  @Test("peers are read, and an unknown exchange is a refusal")
+  func peers() async {
+    StubTransport.calls = []
+    StubTransport.answers = [
+      "/v1/bots": (200, Self.catalog),
+      "/v1/bots/b_1/exchanges": (200, #"{"exchanges":[]}"#),
+      "/v1/bots/b_1/exchanges/x_000000000000": (
+        404, #"{"error":{"kind":"unknown_bot","message":"no such exchange"}}"#
+      ),
+    ]
+    let listed = await run(["peers", "list", "b_1"])
+    #expect(listed.code == 0)
+    #expect(listed.out.joined().contains("no exchanges"))
+    let missing = await run(["peers", "show", "b_1", "x_000000000000"])
+    #expect(missing.code == 1)
+    #expect(missing.err.joined().contains("no such exchange"))
+  }
+
   @Test("a hand-fired webhook presents the trigger's own token, never the CLI's")
   func fireTrigger() async {
     StubTransport.calls = []

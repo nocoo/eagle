@@ -51,7 +51,7 @@ public enum Skill {
       \(binaryName) bots move <bot> --group G|-
       \(binaryName) bots delete <bot> --yes
       \(binaryName) groups list|create <title>|rename <id> <title>|order <id,id,…>|delete <id> --yes
-      \(binaryName) chat send <bot> --text T [--wait] [--timeout 120] [--when-busy followUp|steer]
+      \(binaryName) chat send <bot> --text T [--file PATH] [--wait] [--timeout 120] [--when-busy followUp|steer]
       \(binaryName) chat watch <bot>
       \(binaryName) chat history <bot> [--limit N] [--before e_12]
       \(binaryName) chat secret <bot> --entry e_12 --key K --stdin|--skip [--call-index N]
@@ -59,6 +59,8 @@ public enum Skill {
       \(binaryName) triggers list <bot>
       \(binaryName) triggers enable|disable <bot> <trigger>
       \(binaryName) triggers fire <bot> <trigger> --body T|--stdin
+      \(binaryName) skills list|set --stdin
+      \(binaryName) peers list <bot> | peers show <bot> <exchange>
       \(binaryName) usage [--days N]
       ```
 

@@ -100,7 +100,7 @@ come from the daemon; a bot may also be named by its exact title when that title
 | `eagle groups rename <id> <title>` | write | `PATCH /v1/groups/:id` |
 | `eagle groups order <id,id,…>` | write | `PUT /v1/groups/order`, every group once |
 | `eagle groups delete <id> --yes` | admin | `DELETE /v1/groups/:id` |
-| `eagle chat send <bot> --text T [--wait] [--timeout 120]` | write | Subscribes, sends, and with `--wait` prints the answer once the run settles |
+| `eagle chat send <bot> --text T [--file PATH] [--wait] [--timeout 120]` | write | Subscribes, sends, and with `--wait` prints the answer once the run settles. `--file` declares the file, uploads its raw bytes and sends the complete id with the message; a failed upload sends nothing |
 | `eagle chat watch <bot>` | read | Streams every append and delta until interrupted; another client's messages appear too |
 | `eagle chat history <bot> [--limit N] [--before e_12]` | read | Older messages, oldest first; without `--before` it pages from the oldest message the CLI just saw |
 | `eagle chat answer <bot> --entry e_12 --choose L[,L] \| --skip` | write | Answers an `ask_user` card: the daemon composes the hidden message the bot reads |
@@ -109,6 +109,10 @@ come from the daemon; a bot may also be named by its exact title when that title
 | `eagle triggers list <bot>` | read | `GET /v1/triggers?botId=`; name, kind, enabled, id and last run |
 | `eagle triggers enable\|disable <bot> <trigger>` | write | `PATCH /v1/triggers/:bot/:trigger` with `{ "enabled": … }` |
 | `eagle triggers fire <bot> <trigger> --body T \| --stdin` | write | Posts a webhook delivery as JSON `{ "text": … }`; the request carries the **trigger's own** token, never the CLI's credential |
+| `eagle skills list` | read | The skills a Bot is told about: name and version |
+| `eagle skills set --stdin` | admin | Installs a whole selection: a JSON array of `{ name, version, description, path }`, at most 64. The App owns the folders and the scan; this writes a selection a caller already knows |
+| `eagle peers list <bot>` | read | `GET /v1/bots/:id/exchanges`: read-only, ids and states, never a way to start one |
+| `eagle peers show <bot> <exchange>` | read | One exchange `x_…` |
 | `eagle usage [--days N]` | read | Token and call totals over the retention window |
 
 A card from `ask_user` is printed by `chat watch` and `chat send --wait` as one line per

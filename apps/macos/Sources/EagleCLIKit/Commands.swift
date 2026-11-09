@@ -1,3 +1,4 @@
+import CryptoKit
 import Darwin
 import Foundation
 
@@ -118,6 +119,12 @@ public struct Commands: Sendable {
     case "triggers":
       try await triggers(Array(tokens.dropFirst()))
       return
+    case "skills":
+      try await skills(Array(tokens.dropFirst()))
+      return
+    case "peers":
+      try await peers(Array(tokens.dropFirst()))
+      return
     case "usage":
       try await usage(tokens: Array(tokens.dropFirst()))
       return
@@ -136,8 +143,10 @@ public struct Commands: Sendable {
       \(config.binaryName) whoami                  the credential and its scopes
       \(config.binaryName) bots list|show|create|update|move|delete
       \(config.binaryName) groups list|create|rename|order|delete
-      \(config.binaryName) chat send|watch|history|answer|secret|abort <bot>
+      \(config.binaryName) chat send [--file PATH]|watch|history|answer|secret|abort <bot>
       \(config.binaryName) triggers list|enable|disable|fire <bot> [name]
+      \(config.binaryName) skills list|set --stdin
+      \(config.binaryName) peers list|show <bot> [exchange]
       \(config.binaryName) usage [--days N]
 
     Every command takes --json. Destructive commands need --yes.
@@ -444,7 +453,8 @@ public struct Commands: Sendable {
 
   private func send(_ tokens: [String]) async throws {
     let arguments = try Arguments.parse(
-      tokens, valueFlags: ["text", "timeout", "when-busy"], switchFlags: ["json", "wait"])
+      tokens, valueFlags: ["text", "timeout", "when-busy", "file"],
+      switchFlags: ["json", "wait"])
     let name = try arguments.positional(0, "<bot>")
     let text = try arguments.required("text")
     let timeout: Double
@@ -460,11 +470,14 @@ public struct Commands: Sendable {
     let bot = try await resolve(name)
     let botId = bot["id"] as? String ?? name
 
+    let fileIds = try await uploadFile(arguments.value("file"), botId: botId, printer: printer)
+
     let socket = try await client.connect(clientName: "eagle-cli/\(EagleCLIKit.version)")
     defer { socket.close() }
     _ = try await socket.subscribe(botId: botId)
     let requestId = "r_cli_" + UUID().uuidString.prefix(8).lowercased()
-    try await socket.send(text: text, requestId: requestId, whenBusy: whenBusy)
+    try await socket.send(
+      text: text, requestId: requestId, whenBusy: whenBusy, fileIds: fileIds)
     guard arguments.switches.contains("wait") else {
       if printer.wantsJSON(arguments) {
         printer.json(["sent": requestId])
@@ -732,6 +745,97 @@ public struct Commands: Sendable {
 
   // MARK: - Resolution and formatting
 
+  /// The skills a Bot is told about. The App owns the folders and the scan; a caller that
+  /// already knows the entries (an agent, a script) installs them here in one write.
+  private func skills(_ tokens: [String]) async throws {
+    guard let sub = tokens.first else {
+      throw CLIError.usage("skills list|set --stdin")
+    }
+    let arguments = try Arguments.parse(
+      Array(tokens.dropFirst()), valueFlags: [], switchFlags: ["json", "stdin"])
+    switch sub {
+    case "list":
+      let body = try await client.request("GET", "v1/settings")
+      let settings = body["settings"] as? JSONObject ?? [:]
+      let skills = settings["skills"] as? [JSONObject] ?? []
+      if printer.wantsJSON(arguments) {
+        printer.json(["skills": skills])
+        return
+      }
+      if skills.isEmpty {
+        printer.text("no skills selected")
+        return
+      }
+      for skill in skills {
+        let name = skill["name"] as? String ?? "?"
+        let version = skill["version"] as? String
+        printer.text(name + (version.map { " · \($0)" } ?? ""))
+      }
+    case "set":
+      guard arguments.switches.contains("stdin") else {
+        throw CLIError.usage("skills set reads a JSON array on --stdin")
+      }
+      let data = FileHandle.standardInput.readDataToEndOfFile()
+      guard !data.isEmpty, data.count <= 256 * 1024 else {
+        throw CLIError.usage("skills JSON must be 1..262144 bytes on stdin")
+      }
+      guard let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [JSONObject],
+        parsed.count <= 64
+      else { throw CLIError.usage("skills JSON must be an array of at most 64 entries") }
+      let body = try await client.request("PUT", "v1/settings", body: ["skills": parsed])
+      if printer.wantsJSON(arguments) {
+        let settings = body["settings"] as? JSONObject
+        printer.json(["skills": settings?["skills"] ?? parsed])
+        return
+      }
+      printer.text("已保存 \(parsed.count) 个技能")
+    default:
+      throw CLIError.usage("unknown skills command \(sub)")
+    }
+  }
+
+  /// Read-only: what two Bots said to each other, by entry, never a way to start one.
+  private func peers(_ tokens: [String]) async throws {
+    guard let sub = tokens.first else {
+      throw CLIError.usage("peers list|show <bot> [exchange]")
+    }
+    let arguments = try Arguments.parse(
+      Array(tokens.dropFirst()), valueFlags: [], switchFlags: ["json"])
+    let bot = try await resolve(arguments.positional(0, "<bot>"))
+    let botId = bot["id"] as? String ?? ""
+    switch sub {
+    case "list":
+      let body = try await client.request("GET", "v1/bots/\(botId)/exchanges")
+      let exchanges = body["exchanges"] as? [JSONObject] ?? []
+      if printer.wantsJSON(arguments) {
+        printer.json(body)
+        return
+      }
+      if exchanges.isEmpty {
+        printer.text("no exchanges")
+        return
+      }
+      for exchange in exchanges {
+        let id = exchange["id"] as? String ?? "?"
+        let peer = exchange["peerTitle"] as? String ?? exchange["peerId"] as? String ?? "?"
+        let state = exchange["state"] as? String ?? "?"
+        printer.text("\(id) · \(peer) · \(state)")
+      }
+    case "show":
+      let exchangeId = try arguments.positional(1, "an exchange id")
+      let body = try await client.request("GET", "v1/bots/\(botId)/exchanges/\(exchangeId)")
+      if printer.wantsJSON(arguments) {
+        printer.json(body)
+        return
+      }
+      let exchange = body["exchange"] as? JSONObject ?? [:]
+      printer.text(
+        "\(exchange["id"] as? String ?? "?") · \(exchange["state"] as? String ?? "?")")
+    default:
+      throw CLIError.usage("unknown peers command \(sub)")
+    }
+  }
+
   /// Triggers are created by a Bot's own tools; a person turns them on, off and fires a
   /// webhook one by hand. Creation is deliberately absent: a trigger is a Bot's decision.
   private func triggers(_ tokens: [String]) async throws {
@@ -746,6 +850,37 @@ public struct Commands: Sendable {
     case "fire": try await triggerFire(rest)
     default: throw CLIError.usage("unknown triggers command \(sub)")
     }
+  }
+
+  /// Declares the file, uploads its bytes and returns the complete id the send may carry.
+  /// The daemon owns the size, hash and step-up checks; this only names what is on disk.
+  private func uploadFile(_ path: String?, botId: String, printer: Printer) async throws -> [String]
+  {
+    guard let path, !path.isEmpty else { return [] }
+    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    let bytes: Data
+    do {
+      bytes = try Data(contentsOf: url)
+    } catch {
+      throw CLIError.usage("--file cannot be read: \(url.path)")
+    }
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+      !isDirectory.boolValue
+    else { throw CLIError.usage("--file is not a regular file: \(url.path)") }
+    let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    let uploadId = "u_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+    let manifest: JSONObject = [
+      "name": url.lastPathComponent, "size": bytes.count, "sha256": digest,
+    ]
+    _ = try await client.request(
+      "PUT", "v1/bots/\(botId)/files/\(uploadId)/manifest", body: manifest)
+    let uploaded = try await client.upload(
+      "v1/bots/\(botId)/files/\(uploadId)/content", bytes: bytes)
+    guard let file = uploaded["file"] as? JSONObject, let id = file["id"] as? String else {
+      throw CLIError.refused(kind: "protocol", message: "the upload answered no file")
+    }
+    return [id]
   }
 
   private func triggerList(_ tokens: [String]) async throws {
