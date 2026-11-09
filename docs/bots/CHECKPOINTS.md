@@ -1075,3 +1075,36 @@ Next broken hop: `/Applications/Eagle for Mac.app` here is still 0.23.0 — repl
 `--prepare-device-update`, the whole bundle swapped and the quarantine removed by hand, so the
 upgrade itself is unverified. The install buttons on the page have still never been pressed,
 and a packaged-App run of the Herdr page is not evidence this repository holds.
+
+## 2026-11-09 19:40 +08 — macOS 0.24.1: an upgrade that starts, and one that inspects
+
+Observed: 0.24.0 is a broken upgrade and 0.24.1 replaces it. On this machine the 0.24.0 build's
+daemon exited with `core.catalog.load.fail`, because the catalog still names the removed
+`herdr` group for every Bot; 0.24.1 reads a stored selection through today's names and starts.
+The Bot's terminal tools are inspection only inside the App, which has always been true and is
+now stated instead of implied.
+
+Verified:
+
+- Reproduction: the 0.24.0 `DeviceRuntime` on a copy of this root printed
+  `bots: the catalog could not be loaded`; `BotDirectory.load()` on the same copy said
+  `corrupt_catalog: catalog entry 0 is malformed`. The 0.24.1 runtime on a fresh copy printed
+  `daemon.start`, and all eight bots read back with `hc` where `herdr` was.
+- Release commit `b40c75bf` (`chore(release): macos 0.24.1`), annotated tag `macos-v0.24.1`,
+  CI Check green on that commit before publishing. `Eagle-for-Mac-0.24.1.dmg` is 153,145,934
+  bytes with sha256 `ea200c6161296efdc0a8a515d1ac466e484a02472f5b5d41bed7353844389965`; the
+  release carries it plus `SHA256SUMS`, and `0.24.0` now opens with a warning that it cannot
+  start the Bot service after an upgrade.
+- Claim `2a27e6d2`, deployed from this machine (Worker `7c36e934`): `/api/live` on both hosts
+  answers `macos.latest` 0.24.1 with the release URL at revision `2a27e6d2`.
+- Installed here: `--prepare-device-update`, whole bundle replaced, no quarantine xattr,
+  `codesign --verify --strict --deep` passes. The App's daemon listens on 43117, the Super Bot
+  on 43128, the device service registered again, and `/v1/settings` reports `hc` in the group
+  set, the three default roles and `hc_list` / `hc_wait` / `hc_read` as the `hc` surface.
+- The catalog on disk keeps `herdr` until the next write; the read is what migrates it, which
+  is why the fixture in `test/core/directory.test.ts` covers a stored selection written by an
+  older daemon.
+
+Next broken hop: in the App a Bot cannot start, write into or close a terminal, because those
+tools are not part of the device admission that gates every other write; the 0.24.1 switch
+label still promises them, and the source on `main` now states what the daemon reports.

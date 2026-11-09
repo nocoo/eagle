@@ -1,5 +1,27 @@
 # Retrospective
 
+## 2026-11-09 — Removing a stored group name broke every upgrade
+
+The `herdr` → `hc` slice removed a name from `TOOL_GROUP_NAMES` and shipped 0.24.0 after I
+checked only the gateway settings file: I read this machine's real `gateway.json` copy and
+saw the version-4 migration turn `herdr` into `hc`, and treated that as the migration proof.
+The catalog keeps a *second* stored selection — each bot's own `toolGroups` — and its reader
+validated every name strictly, so the first real upgrade exited with
+`core.catalog.load.fail` and no Bot service at all. The suite never noticed because no test
+loaded a catalog written by an older daemon.
+
+Rules: when a value is removed from something persisted, enumerate every reader of stored
+data before shipping, not just the file you happened to open. Prove the migration by booting
+the shipped runtime against a copy of the real, pre-upgrade data — that took one copy of a
+catalog to reproduce and one test to prevent. A tolerant reader must map the removed name to
+whatever replaced it, because dropping it silently changes what the person had.
+
+The same release also promised something the App cannot do: its Herdr page said the Bot
+starts terminals while the App injects the device service, which reduces `hc` to inspection.
+An inherited, documented restriction was invisible to me because I read the group's tool list
+from a daemon that had no device socket. Check the surface the shipped product actually
+reports, not the surface the source describes.
+
 ## 2026-11-08 — Superagent root lock failed once in the push gate
 
 The first PR push was blocked because a Superagent test received `root_locked`

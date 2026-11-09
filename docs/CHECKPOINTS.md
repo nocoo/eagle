@@ -1,5 +1,20 @@
 # 用户视角检查点
 
+## 2026-11-09 — 0.24.1 装在本机，Bot 服务终于能起来
+
+- 本机 `/Applications/Eagle for Mac.app` 从 0.23.1 换成了 0.24.1（先
+  `--prepare-device-update` 注销后台服务、再整包替换、无 quarantine）：App 起来后
+  Bot 守护进程在 43117 监听，Super 在 43128，设备助手重新注册，`Helpers/eagle --version`
+  是 `eagle 0.24.1 · daemon 0.1.0`。
+- 第一次装 0.24.0 时 Bot 服务起不来：真实 catalog 里每个 Bot 自己那份 `toolGroups` 还写着
+  `herdr`，读取端把整份 catalog 判成损坏（`core.catalog.load.fail`），0.24.1 改成按今天的
+  名字读——未知组丢弃、`herdr` 读成 `hc`，下一次写入才落盘。
+- 现在 `/v1/settings` 报的组里有 `hc`，8 个 Bot 全部能读出来，页面报的 `hc` 工具是
+  `hc_list` / `hc_wait` / `hc_read`。
+- 下一个断点：受设备服务限制，App 里 Bot 只能查看自己的终端，`hc_start` / `hc_send` /
+  `hc_close` 还不进设备准入；这条是继承下来的策略（RUNTIME.md 有记），但 0.24.1 的页面文案
+  还写着"能开终端、派活"，main 上已改成按守护进程上报的工具说话，随下一次发版生效。
+
 ## 2026-11-09 — hc 接替 herdr 进入默认组，Herdr 页成为独立页面
 
 - 合并 #137 后，Bot 的终端协作不再叫 `herdr`：它是 `hc`（herdr-core），在自己的终端
