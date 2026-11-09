@@ -106,6 +106,26 @@ public final class SettingsViewModel: ObservableObject {
   public static let memoryToolGroup = "memory"
   public static let secretsToolGroup = "secrets"
   public static let hcToolGroup = "hc"
+
+  /// The tools the daemon says the `hc` group gives a Bot right now, or `nil` when it did not
+  /// report them. With a device service injected (the App always injects one) the daemon hands
+  /// out inspection only, so the switch must not promise a terminal it cannot open.
+  public var hcReportedTools: [String]? {
+    toolCatalog.first { $0.group == SettingsViewModel.hcToolGroup }?.tools.map(\.name)
+  }
+
+  /// The switch's one line: what this machine will actually let a Bot do with its terminals.
+  public func hcSwitchDetail(installed: Bool) -> String {
+    guard installed else {
+      return isToolGroupEnabled(SettingsViewModel.hcToolGroup)
+        ? "已开启，但没安装 hc：装上之前 Bot 派不出活"
+        : "先安装 hc 才能打开"
+    }
+    if hcReportedTools?.contains("hc_start") == false {
+      return "开：Bot 只能列、等、读它自己的终端；这个 App 里它开不了新终端"
+    }
+    return "开：Bot 能开终端、派活、读回；关：一个终端也开不了"
+  }
   public static let agentsToolGroup = "agents"
   public static let searchToolGroup = "search"
   public static let decisionToolGroup = "decision"

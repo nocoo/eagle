@@ -545,13 +545,7 @@ public struct SettingsView: View {
     } body: {
       herdrToolRow(.hc)
       Divider().overlay(Theme.Palette.line)
-      SettingsSectionRow(
-        "交给 Bot 使用",
-        detail: installed
-          ? "开：Bot 能开终端、派活、读回；关：一个终端也开不了"
-          : (model.isToolGroupEnabled(SettingsViewModel.hcToolGroup)
-            ? "已开启，但没安装 hc：装上之前 Bot 派不出活" : "先安装 hc 才能打开")
-      ) {
+      SettingsSectionRow("交给 Bot 使用", detail: model.hcSwitchDetail(installed: installed)) {
         SwitchToggle(
           isOn: toolGroupBinding(SettingsViewModel.hcToolGroup), label: "Herdr 终端协作"
         )

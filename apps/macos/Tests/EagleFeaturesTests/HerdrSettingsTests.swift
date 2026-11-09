@@ -194,3 +194,49 @@ final class LockedBox<Value>: @unchecked Sendable {
     body(&stored)
   }
 }
+
+@Suite("Herdr page copy", .serialized)
+@MainActor
+struct HerdrCopyTests {
+  private static func payload(tools: String?) -> String {
+    let reported = tools.map { #","tools":\#($0)"# } ?? ""
+    return #"""
+      {"settings":{"configured":true,"provider":"magpie","baseUrl":"http://gw/v1","model":"m1","hasApiKey":true,
+       "toolGroups":["persona","machine","core","core-ui","coding","hc"]}\#(reported)}
+      """#
+  }
+
+  @Test("the switch says what the daemon will actually let the Bot do")
+  func switchDetailFollowsTheReportedTools() async throws {
+    let (settings, session) = try herdrSettingsFixture()
+    // The App injects a device service, and the daemon then hands out inspection only: the
+    // switch must not promise a terminal it cannot open.
+    // The body is built on this actor: the stub answers on a URL-loading thread.
+    let body = Self.payload(
+      tools:
+        #"[{"group":"hc","tools":[{"name":"hc_list","description":"list"},{"name":"hc_read","description":"read"}]}]"#
+    )
+    HerdrHTTPStub.handler = { _ in (200, Data(body.utf8)) }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    await model.loadGateway()
+    #expect(model.hcReportedTools == ["hc_list", "hc_read"])
+    #expect(model.hcSwitchDetail(installed: true).contains("只能列、等、读"))
+    HerdrHTTPStub.handler = nil
+  }
+
+  @Test("without a reported surface the switch keeps the full promise, and names what is missing")
+  func switchDetailWithoutReports() async throws {
+    let (settings, session) = try herdrSettingsFixture()
+    let body = Self.payload(tools: nil)
+    HerdrHTTPStub.handler = { _ in (200, Data(body.utf8)) }
+    let model = SettingsViewModel(botsSettings: settings, urlSession: session)
+    await model.loadGateway()
+    #expect(model.hcReportedTools == nil)
+    #expect(model.hcSwitchDetail(installed: true).contains("开终端、派活、读回"))
+    // The group is a default, so a machine without hc must say so instead of asking to switch on.
+    #expect(model.hcSwitchDetail(installed: false).contains("已开启，但没安装"))
+    model.setToolGroup(SettingsViewModel.hcToolGroup, isOn: false)
+    #expect(model.hcSwitchDetail(installed: false).contains("先安装 hc"))
+    HerdrHTTPStub.handler = nil
+  }
+}

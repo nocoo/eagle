@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- State what the Bot's terminal collaboration really is inside the App. The App injects the
+device service, so a Bot's `hc` group is `hc_list`, `hc_wait` and `hc_read`; starting,
+writing into and closing a terminal stay unavailable until those tools join the device
+admission that gates every other write, and a daemon without a device socket (the CLI, a
+test) still gets all seven. The Herdr page's switch now says which surface the daemon
+reports instead of promising one it cannot give.
+
 ## macOS v0.24.1 — 2026-11-09
 
 - Fix the upgrade 0.24.0 broke. A Bot's own tool-group selection lives in the catalog, and

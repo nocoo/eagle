@@ -535,6 +535,13 @@ it the task); `coding` and `reviewing` are for one simple change or one read-onl
 
 Rules:
 
+- **In the App, a Bot inspects.** The App always injects the device service, and a Bot's `hc`
+  group is then `hc_list`, `hc_wait` and `hc_read`: starting a terminal, sending into one and
+  closing one stay unavailable until those tools participate in the device admission that
+  gates every other write. A daemon started without a device socket — the CLI, a test, an
+  acceptance run — gets all seven. The Herdr page's switch states which surface the daemon
+  reports, so it never promises a terminal this App cannot open.
+
 - **Ownership is a label and a name prefix.** Every terminal the bot starts carries
   `--label bots=<bot id>` and a name beginning `bots-<bot id prefix>-`. Every tool filters
   `hc ls` by that label and refuses a target whose name or label does not match, so a
