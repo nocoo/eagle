@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Find `hc` where a person's shell finds it. A daemon the App spawns inherits launchd's PATH,
+  which has no user bin, so every `hc_start` failed with `hc could not start: hc` on a machine
+  where the Herdr page said it was installed. The client now looks in `~/.local/bin`, the
+  inherited PATH, then the usual install roots — the order the page already uses — and
+  `BOTS_HC_BIN` names one explicitly.
+
 - Make `hc` the Bot's `bash` for a terminal. The four tools that start, write into or end one
 (`hc_start`, `hc_send`, `hc_keys`, `hc_close`) are native device operations now: with the
 App's device service injected they pass the same policy (`paused` refuses, `always-ask` raises

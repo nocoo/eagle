@@ -2,6 +2,8 @@
 // one argv, no shell, a deadline and a bounded answer. Everything the tools know about
 // terminals and their state comes from these JSON answers, never from guessing.
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 
 const MAX_STDOUT_BYTES = 4 * 1024 * 1024;
@@ -144,8 +146,33 @@ const errorOf = (body: string): HcCommandError | undefined => {
 const labelArgs = (labels: Readonly<Record<string, string>>): string[] =>
   Object.entries(labels).flatMap(([key, value]) => ["--label", `${key}=${value}`]);
 
+/**
+ * Where the CLI is, in the order the Herdr page looks: the user's own bin first, then the
+ * inherited PATH, then the usual install roots. A daemon the App spawns inherits launchd's
+ * PATH, which has no user bin, so a bare `hc` would report a missing CLI that a shell finds.
+ */
+export const resolveHcBinary = (
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (path: string) => boolean = existsSync,
+): string => {
+  const explicit = env.BOTS_HC_BIN?.trim();
+  if (explicit !== undefined && explicit !== "") return explicit;
+  const home = env.HOME;
+  const candidates = [
+    ...(home === undefined ? [] : [join(home, ".local", "bin", "hc")]),
+    ...(env.PATH ?? "")
+      .split(":")
+      .filter((entry) => entry !== "")
+      .map((entry) => join(entry, "hc")),
+    "/opt/homebrew/bin/hc",
+    "/usr/local/bin/hc",
+    "/usr/bin/hc",
+  ];
+  return candidates.find(exists) ?? "hc";
+};
+
 export const createHcClient = (options: HcCliOptions = {}): HcClient => {
-  const binary = options.binary ?? "hc";
+  const binary = options.binary ?? resolveHcBinary();
 
   const run = async (
     args: readonly string[],

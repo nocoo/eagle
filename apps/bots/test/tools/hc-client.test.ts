@@ -6,7 +6,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createHcClient, HcCommandError } from "../../src/tools/hc/client.ts";
+import { createHcClient, HcCommandError, resolveHcBinary } from "../../src/tools/hc/client.ts";
 
 const FAKE = `#!/usr/bin/env node
 const { appendFileSync, writeFileSync } = require("node:fs");
@@ -262,5 +262,36 @@ test("a binary that cannot start says so", async () => {
   await assert.rejects(
     () => client.list({ bots: "b_a" }),
     (error: unknown) => error instanceof HcCommandError && error.code === "spawn_failed",
+  );
+});
+
+test("the CLI is found where an App-spawned daemon can still see it", () => {
+  const env = { HOME: "/home/person", PATH: "/usr/bin:/bin" };
+  // launchd's PATH has no user bin, so a bare `hc` finds nothing while the person's shell
+  // does: the same candidate order the Herdr page uses.
+  assert.equal(
+    resolveHcBinary(env, (path) => path === "/home/person/.local/bin/hc"),
+    "/home/person/.local/bin/hc",
+  );
+  assert.equal(
+    resolveHcBinary(
+      { HOME: "/home/person", PATH: "/home/person/bin:/usr/bin" },
+      (path) => path === "/home/person/bin/hc",
+    ),
+    "/home/person/bin/hc",
+  );
+  assert.equal(
+    resolveHcBinary(env, (path) => path === "/opt/homebrew/bin/hc"),
+    "/opt/homebrew/bin/hc",
+  );
+  // Nothing installed yet: the vendor's own name, so the failure reads as a missing CLI.
+  assert.equal(
+    resolveHcBinary(env, () => false),
+    "hc",
+  );
+  // An explicit choice wins even before it exists, so a test can point at a stub.
+  assert.equal(
+    resolveHcBinary({ ...env, BOTS_HC_BIN: "/tmp/stub-hc" }, () => false),
+    "/tmp/stub-hc",
   );
 });
