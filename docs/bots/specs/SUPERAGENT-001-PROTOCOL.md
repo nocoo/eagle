@@ -25,9 +25,13 @@ No worker protocol, credential or storage is used.
   exclusive creation. Existing unsafe/nonregular/symlink credentials are refused;
   never repaired or logged. Later clients read their explicit Superagent credential,
   never a worker token. There is no `--token` argument.
-- Kernel listener lock: TCP `127.0.0.1:(47000 + first32(SHA256(canonicalRoot)) % 1000)`.
-  It is acquired before identity/storage access, independent of service port.
-  A collision refuses startup; no stale lock file or takeover. SIGKILL releases it.
+- Kernel listener lock: the owner listens on an ephemeral loopback port and names it in
+  `<root>/lock.json` (0600). It is acquired before identity/storage access and is
+  independent of the service port. A second start of the same root connects to that port
+  and refuses (`root_locked`); a lock whose port nobody answers is a crash and is replaced;
+  a lock file another account can read is refused. Two different roots can never collide,
+  because the kernel chose the port. SIGKILL releases the listener with the process, and a
+  clean close removes the file.
 - HTTP binds only 127.0.0.1. Reject browser `Origin`, non-loopback Host and unknown
   routes. Public health is bodyless: Content-Length above zero and all chunked
   bodies are refused with 413. No credential appears in a URL.

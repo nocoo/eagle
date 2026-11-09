@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { mkdir, open, readdir, realpath, stat, writeFile } from "node:fs/promises";
-import { createServer, type Server } from "node:net";
+import { mkdir, open, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { connect, createServer, type Server } from "node:net";
 import { isAbsolute, join } from "node:path";
 
 export const SERVICE = "eagle-superagent";
@@ -50,6 +50,64 @@ export type Identity = {
   rootBinding: string;
 };
 
+/**
+ * A kernel lock nobody can reuse: the owner listens on an ephemeral loopback port and names
+ * it in `<root>/lock.json`. A second owner of the same root connects, succeeds and refuses;
+ * a lock whose port nobody answers is a crash and is replaced. Two different roots can never
+ * collide, because the kernel, not a hash, chose the port. SIGKILL releases it with the
+ * process, and the file is removed on a clean close.
+ */
+const LOCK_FILE = "lock.json";
+
+const lockAlive = (port: number): Promise<boolean> =>
+  new Promise((resolve) => {
+    const socket = connect({ host: "127.0.0.1", port });
+    const done = (value: boolean): void => {
+      socket.destroy();
+      resolve(value);
+    };
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
+    socket.setTimeout(500, () => done(false));
+  });
+
+async function acquireRootLock(root: string): Promise<{ release: () => Promise<void> }> {
+  const path = join(root, LOCK_FILE);
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    let holder: { port?: unknown } | undefined;
+    try {
+      holder = JSON.parse(await readPrivate(path)) as { port?: unknown };
+    } catch (error) {
+      if (!missing(error) && !(error instanceof SyntaxError)) throw error;
+    }
+    if (holder !== undefined) {
+      const port = typeof holder.port === "number" ? holder.port : undefined;
+      if (port !== undefined && (await lockAlive(port))) throw new Error("root_locked");
+      await rm(path, { force: true });
+      continue;
+    }
+    const server = createServer((socket) => socket.destroy());
+    const port = await listen(server, 0);
+    try {
+      await writeFile(path, JSON.stringify({ port, pid: process.pid }), {
+        flag: "wx",
+        mode: 0o600,
+      });
+    } catch (error) {
+      await closeServer(server);
+      if ((error as NodeJS.ErrnoException)?.code === "EEXIST") continue;
+      throw error;
+    }
+    return {
+      release: async () => {
+        await closeServer(server);
+        await rm(path, { force: true });
+      },
+    };
+  }
+  throw new Error("root_locked");
+}
+
 export async function ownRoot(input: string) {
   if (!isAbsolute(input)) throw new Error("absolute_root_required");
   await mkdir(input, { recursive: true, mode: 0o700 });
@@ -58,12 +116,7 @@ export async function ownRoot(input: string) {
   if (directory.uid !== process.getuid?.() || (directory.mode & 0o777) !== 0o700)
     throw new Error("unsafe_root");
   const digest = createHash("sha256").update(root).digest();
-  const lock = createServer((socket) => socket.destroy());
-  try {
-    await listen(lock, 47000 + (digest.readUInt32BE(0) % 1000));
-  } catch {
-    throw new Error("root_locked");
-  }
+  const lock = await acquireRootLock(root);
   try {
     const identityPath = join(root, "identity.json");
     let storeId: string;
@@ -84,7 +137,7 @@ export async function ownRoot(input: string) {
       storeId = stored.storeId;
     } catch (error) {
       if (!missing(error)) throw new Error("invalid_identity");
-      if ((await readdir(root)).length !== 0) throw new Error("foreign_root");
+      if ((await readdir(root)).some((name) => name !== LOCK_FILE)) throw new Error("foreign_root");
       storeId = randomUUID();
       await writeFile(identityPath, JSON.stringify({ service: SERVICE, storeId }), {
         mode: 0o600,
@@ -110,9 +163,9 @@ export async function ownRoot(input: string) {
       storeId,
       rootBinding: digest.toString("hex"),
     };
-    return { root, token, identity, release: () => closeServer(lock) };
+    return { root, token, identity, release: () => lock.release() };
   } catch (error) {
-    await closeServer(lock);
+    await lock.release();
     throw error;
   }
 }

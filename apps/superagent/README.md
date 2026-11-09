@@ -11,7 +11,8 @@ npm run check
 npm start -- --root /absolute/private/root --port 43127
 ```
 
-Node 24+. Bind is loopback-only. A canonical-root kernel lock prevents two owners.
+Node 24+. Bind is loopback-only. A canonical-root kernel lock (`<root>/lock.json`, an
+epphemeral listener only its owner answers) prevents two owners of one root.
 `GET /v1/health` reports service identity and readiness without exposing credentials.
 All tests allocate private temporary roots; they do not start an installed worker.
 

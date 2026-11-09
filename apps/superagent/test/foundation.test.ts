@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type TestContext, test } from "node:test";
 import type { Identity } from "../src/identity.ts";
+import { closeServer, listen } from "../src/identity.ts";
 import { startService as startServer } from "../src/server.ts";
 
 const owned = new Map<string, Awaited<ReturnType<typeof startServer>>[]>();
@@ -92,12 +94,68 @@ test("health proves possession of this root credential without disclosing it", a
   assert.equal(body.includes(root), false);
 });
 
+test("two different roots are never refused for sharing a port", async (t) => {
+  // The lock names the owner's port, so the kernel decides: two roots cannot collide.
+  const roots = await Promise.all([
+    mkdtemp(join(tmpdir(), "superagent-a-")),
+    mkdtemp(join(tmpdir(), "superagent-b-")),
+  ]);
+  t.after(async () => {
+    for (const root of roots) await rm(root, { recursive: true, force: true });
+  });
+  const services = await Promise.all(roots.map((root) => startService({ root, port: 0 })));
+  t.after(async () => {
+    for (const service of services) await service.close();
+  });
+  assert.deepEqual(
+    services.map((service) => service.port > 0),
+    [true, true],
+  );
+});
+
+test("two concurrent owners of one root: exactly one keeps it", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "superagent-race-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const results = await Promise.allSettled([
+    startServer({ root, port: 0 }),
+    startServer({ root, port: 0 }),
+  ]);
+  const owned = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+  t.after(async () => {
+    for (const service of owned) await service.close();
+  });
+  assert.equal(owned.length, 1, "one start owns the root");
+  const refused = results.find((result) => result.status === "rejected");
+  assert.match(String(refused?.status === "rejected" ? refused.reason : ""), /root_locked/);
+});
+
+test("a lock file another account can read is refused, never trusted", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "superagent-loose-lock-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, "lock.json"), JSON.stringify({ port: 1, pid: 1 }), { mode: 0o644 });
+  await assert.rejects(() => startServer({ root, port: 0 }), /unsafe_private_file/);
+});
+
+test("a lock left by a crashed owner is replaced", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "superagent-stale-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  // Bind and release a port so the file names one that nobody answers any more.
+  const probe = createServer((socket) => socket.destroy());
+  const port = await listen(probe, 0);
+  await closeServer(probe);
+  await writeFile(join(root, "lock.json"), JSON.stringify({ port, pid: 1 }), { mode: 0o600 });
+  const service = await startService({ root, port: 0 });
+  t.after(() => service.close());
+  assert.ok(service.port > 0);
+});
+
 test("foreign or corrupt storage is refused without replacing its files", async (t) => {
   const root = await temporary(t);
   await writeFile(join(root, "catalog.json"), "foreign");
   await assert.rejects(async () => {
     await (await startService({ root, port: 0 })).close();
   }, /foreign_root/);
+  // The rejected start released its own lock: nothing but the foreign file is left.
   assert.deepEqual(await readdir(root), ["catalog.json"]);
   await rm(join(root, "catalog.json"));
   await writeFile(join(root, "identity.json"), "broken", { mode: 0o600 });
