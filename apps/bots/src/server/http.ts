@@ -21,6 +21,7 @@ import {
   type SecretMeta,
   type SecretScope,
   SecretsStorageError,
+  type ThinkingLevel,
   type ToolGroupCatalog,
 } from "../core/domain.ts";
 import {
@@ -44,7 +45,7 @@ import {
 } from "./clients.ts";
 import { type DevCredential, type DevTokenReader, devAgentClient } from "./devToken.ts";
 import { serverFailure } from "./failures.ts";
-import type { GatewayApi, GatewayInput } from "./gateway.ts";
+import type { GatewayApi, GatewayInput, HcConfig } from "./gateway.ts";
 import type { ProviderApi } from "./providers.ts";
 import { attachConnection, CLOSE, MAX_CONNECTIONS, refuseUpgrade } from "./socket.ts";
 
@@ -207,6 +208,7 @@ const gatewayInput = (body: unknown): GatewayInput | undefined => {
     toolGroups?: readonly string[];
     corePrompt?: string;
     skills?: readonly SelectedSkill[];
+    hc?: HcConfig;
   } = {};
   for (const key of [
     "baseUrl",
@@ -228,6 +230,21 @@ const gatewayInput = (body: unknown): GatewayInput | undefined => {
   }
   // The ticks have a shape of their own: four strings per skill, or the request is malformed.
   // Count and size are bounded where the settings are stored, so their answer can say which.
+  // The Herdr page's three role rows travel together; each is two strings or the request
+  // is malformed, and the bounds are judged where the settings are stored.
+  const hc = raw.hc;
+  if (hc !== undefined) {
+    if (typeof hc !== "object" || hc === null) return undefined;
+    const parsed: Record<string, { model: string; thinkingLevel: ThinkingLevel }> = {};
+    for (const role of ["steering", "coding", "reviewing"] as const) {
+      const entry = (hc as Record<string, unknown>)[role];
+      if (typeof entry !== "object" || entry === null) return undefined;
+      const { model, thinkingLevel } = entry as Record<string, unknown>;
+      if (typeof model !== "string" || !isThinkingLevel(thinkingLevel)) return undefined;
+      parsed[role] = { model, thinkingLevel };
+    }
+    input.hc = parsed as HcConfig;
+  }
   const skills = raw.skills;
   if (skills !== undefined) {
     if (!Array.isArray(skills)) return undefined;

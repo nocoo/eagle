@@ -89,7 +89,7 @@ because extensions can capture Bot-specific services and directories.
 | `memory` | `bots-memory` | Optional, **on by default** | All five memory tools, eager: no loader |
 | `secrets` | `bots-secrets` | Optional, **on by default** | All four secret tools, eager: no loader (§6.5) |
 | `agents` | `bots-agents` | Optional | All three child-agent tools when selected |
-| `herdr` | `bots-herdr`, `tool-search` | Optional | `tool_search`; the eight Herdr tools are deferred |
+| `hc` | `bots-hc`, `tool-search` | Optional, **off by default** | `tool_search`; the seven Herdr tools are deferred |
 | `search` | `bots-search`, `tool-search` | Optional, **off by default** | `tool_search` is offered; `web_search` and `web_fetch` are deferred |
 | `decision` | `bots-decision`, `tool-search` | Optional, **off by default** | `tool_search` is offered; `decide`, `classify`, `assess`, `rate` and `judge` are deferred |
 | `trigger` | `bots-trigger`, `tool-search` | Optional, **on by default** | `tool_search` is offered; the five `trigger_*` tools are deferred |
@@ -114,7 +114,7 @@ a password asks for it in the conversation, where the value stays in the transcr
 replayed into every later prompt of that conversation.
 
 Current defaults select `persona`, `machine`, `core`, `core-ui`, `coding`, `memory`,
-`secrets`, `herdr`, `agents` and `trigger`; `search`, `decision` and `peers` stay off until a
+`secrets`, `agents` and `trigger`; `hc`, `search`, `decision` and `peers` stay off until a
 person turns them on.
 `search` and `decision` are opt-in for the same reason: each call leaves the machine and spends
 money. `memory` is a default
@@ -146,8 +146,8 @@ conversation selects those three eagerly only when local status says remote is c
 local coding tools remain available under local policy. With the default selection (no
 `search`, no `decision`, no `peers`) eager selected tools are offered at once. Herdr,
 decision and trigger tools wait behind `tool_search`. Without a device socket the shared
-device extension is absent and `bots-herdr` keeps all eight of its tools instead of the
-three `herdr_list`, `herdr_wait` and `herdr_read` it is reduced to under the shared device
+device extension is absent and `bots-hc` keeps all seven of its tools instead of the
+three `hc_list`, `hc_wait` and `hc_read` it is reduced to under the shared device
 policy.
 
 ### Tool names
@@ -163,7 +163,7 @@ Every tool name the daemon installs in that configuration, one row per extension
 | `memory` | `memory_list`, `memory_search`, `memory_read`, `memory_write`, `memory_delete` |
 | `secrets` | `secret_request`, `secret_list`, `secret_read`, `secret_delete` |
 | `agents` | `agent_spawn`, `agent_send`, `agent_stop` |
-| `herdr` | `herdr_list`, `herdr_wait`, `herdr_read` |
+| `hc` | `hc_list`, `hc_wait`, `hc_read` |
 | `search` | `web_search`, `web_fetch` |
 | `decision` | `decide`, `classify`, `assess`, `rate`, `judge` |
 | `trigger` | `trigger_create`, `trigger_list`, `trigger_update`, `trigger_enable`, `trigger_delete` |
@@ -287,20 +287,19 @@ than a decision.
 | `agents` / `agent_spawn` | `name, instructions?` | Creates an ownerless conversation in this Harness with the parent's model/effort/cwd/instructions and the `persona`, `machine`, `core` and `coding` groups only, so the child holds `read`, `write`, `edit`, `bash`, `list` (plus `pr_register`/`pr_list` when pull reports exist) and reads the bot's persona and machine rules; records a `bots.agent` marker, returns `c_<id>`. `core-ui`, `agent_*`, every optional group, `tool_search`, `skill_read` and the shared-device tools never reach a child | Default unsafe |
 | `agents` / `agent_send` | `agentId, message` | Submits with `followUp`, waits for settlement, returns final text or the unanswered reason | Default unsafe |
 | `agents` / `agent_stop` | `agentId` | Aborts work; conversation remains readable | Default unsafe |
-| `herdr` / `herdr_open_space` | `path?` | Creates or reuses this Bot's recorded Space | Safe |
-| `herdr` / `herdr_start_controller` | `kind, name?, args?` | Starts one controller in the recorded root pane with native CLI arguments | Default unsafe |
-| `herdr` / `herdr_list` | none | Lists agents and panes in the recorded Space | Safe |
-| `herdr` / `herdr_send` | `target?, text, wait?, timeoutMs?` | Sends to a target in that Space; defaults to the controller and waiting for settlement | Default unsafe |
-| `herdr` / `herdr_wait` | `target?, until?, timeoutMs?` | Waits for requested/settled states; does not certify work completion | Safe |
-| `herdr` / `herdr_read` | `target?, lines?, source?` | Reads bounded terminal text, retaining the newest content | Safe |
-| `herdr` / `herdr_keys` | `target?, keys` | Sends logical keys to a target in that Space | Default unsafe |
-| `herdr` / `herdr_close_space` | none | Closes the recorded Space and clears its active record | Default unsafe |
+| `hc` / `hc_start` | `role, task, name?, cwd?` | Starts `pi` in a terminal the Bot owns, on the role's model and thinking level | Default unsafe |
+| `hc` / `hc_list` | none | Lists the terminals the Bot owns, with each agent's status | Safe |
+| `hc` / `hc_send` | `target?, text, wait?, timeoutSeconds?` | Sends to an owned terminal; defaults to the steering agent and to waiting | Default unsafe |
+| `hc` / `hc_wait` | `target?, timeoutSeconds?` | Waits for a turn to settle, a state or an exit; does not certify work completion | Safe |
+| `hc` / `hc_read` | `target?, lines?` | Reads bounded screen and history, retaining the newest content | Safe |
+| `hc` / `hc_keys` | `target?, keys` | Presses named keys in an owned terminal | Default unsafe |
+| `hc` / `hc_close` | `target?` | Kills and removes one owned terminal, or all of them | Default unsafe |
 | SDK loader / `tool_search` | `query, limit?` | Searches enabled deferred tool metadata and offers matches on the next model request | Safe |
 
-`agent_*` is same-Harness delegation, `herdr_*` controls terminal collaborators,
+`agent_*` is same-Harness delegation, `hc_*` drives herdr-core coding agents,
 and planned `peer_*` addresses independent catalog Bots. These identities and
-lifecycles are not interchangeable. `herdr_send` is not a screen read;
-`herdr_wait` is not a verdict that a task succeeded.
+lifecycles are not interchangeable. `hc_send` is not a screen read;
+`hc_wait` is not a verdict that a task succeeded.
 
 `agent_send` verifies the `bots.agent` marker names its caller as direct parent;
 `agent_stop` still only parses an ID and looks up the conversation. The send request
@@ -318,12 +317,12 @@ Paths in this table are relative to `apps/bots/`.
 | Native reuse and names | `test/tools/registry.test.ts` | Original `CodingTools` object; exact five mandatory tools; no legacy aliases; group selection, deferred loader, Registry replacement/removal |
 | `list` and working directories | `test/tools/list.test.ts`, `test/tools/workspace.test.ts` | Ordering, absolute paths, traversal exclusions, empty/error/cancel paths, byte/count truncation; retained Herdr-specific path checks |
 | Native execution | `test/runtime/tools.test.ts` | Real file effects; edit ambiguity leaves file unchanged; absolute read outside cwd; paging; bash timeout, abort, split UTF-8, both streams, exit/spill diagnostics, secret-inheritance prevention and reopen configuration |
-| Herdr tools | `test/tools/herdr.test.ts` | All eight operations with a fake client; resource targeting, state loss, replacement/refusal, failed rollback and cancellation |
-| Herdr CLI adapter | `test/tools/herdr-client.test.ts` | Executable fixture responses, argv/result handling, deadlines, cancellation, large/split output; not acceptance of every installed live agent kind |
+| Herdr tools | `test/tools/hc.test.ts` | All seven operations with a fake client; role models, ownership by label and name prefix, target resolution, refusals and the close retry |
+| Herdr CLI adapter | `test/tools/hc-client.test.ts` | Executable fixture responses, argv/result handling, deadlines, cancellation, large/split output; not acceptance of every installed live agent kind |
 | Child agents | `test/tools/agents.test.ts` | Real Harness/SQLite spawn -> send -> answer with a deterministic model; dedicated stop, invalid-target, interrupted-send and one-level negative tests are still needed |
 | Search | `test/tools/search.test.ts`, `test/runtime/search-tools.test.ts`, `test/server/providers.test.ts`, `test/main.test.ts` | Documented request/response shape, refused key, deferred flags, one booked call per search, blank query refused; provider store is 0600, write-only and never returned; HTTP round trip behind the bearer |
 | Decision | `test/tools/decision.test.ts`, `test/tools/decision-transport.test.ts`, `test/server/provider-selection.test.ts`, `test/tools/catalog.test.ts`, `tests/eval/cases/decision-*.json` | One request per call (including `classify multi` and `judge`), options and levels mapped to the wire, malformed arguments refused before any request, a refused or malformed reply becoming a readable error, `input_tokens` booked under `decision`, the selection read per call and never fallen back from, and the group listed in the catalogue |
-| Deferred discovery | `test/runtime/deferred-tools.test.ts` | Model calls `tool_search`, then the discovered `herdr_list`; persistence across compaction is an SDK-source fact, not a separate regression established here |
+| Deferred discovery | `test/runtime/deferred-tools.test.ts` | Model calls `tool_search`, then the discovered `hc_list`; persistence across compaction is an SDK-source fact, not a separate regression established here |
 | Hot refresh | `test/runtime/tool-groups.test.ts`, `test/core/registry.test.ts`, `test/core/service.test.ts` | Warm enable/disable, cached switching, no interrupted answer, same-value retry, failed refresh and single failure identity |
 | Secrets | `test/secrets/*.test.ts` (container, keyfile, store, audit), `test/tools/secrets.test.ts`, `test/server/secrets.test.ts` | Container round trip, a wrong key or a corrupt body refusing every operation without rewriting the file, the keyfile created 0600 on first write only, scope shadowing, expiry on read/list plus the startup sweep, the card answer (key mismatch refused, value never echoed into the hidden message or any response), the four tools' own refusals, the audit file's shape and retention |
 | Wire round trip | `test/e2e/tools.test.ts` | Real socket tool rows and later snapshot, encoded-size clamp, A -> B -> A refresh without extra model calls/watches, `1011` reconnect recovery |
@@ -422,7 +421,7 @@ opens with.
 Each deferred group selects the same native `tool-search` extension. Install it
 once per Registry, select it once when any selected group needs it, and remove
 it from selection only when none does. Do not tie future discovery exclusively
-to `herdr`, create a loader per group, or duplicate BM25/`modelTools` logic.
+to `hc`, create a loader per group, or duplicate BM25/`modelTools` logic.
 Each selected extension needs a short prompt section naming its use and how to
 discover it. Discovery metadata must contain enough domain vocabulary to match.
 

@@ -18,6 +18,71 @@ public struct SelectedSkill: Codable, Sendable, Equatable {
   }
 }
 
+/// One Herdr role's launch: the model the child runs on and how hard it thinks.
+public struct HcRoleSettings: Codable, Sendable, Equatable {
+  public var model: String
+  public var thinkingLevel: String
+
+  public init(model: String, thinkingLevel: String) {
+    self.model = model
+    self.thinkingLevel = thinkingLevel
+  }
+}
+
+/// The three jobs a Bot hands to herdr-core (docs/bots/PROTOCOL.md, "Gateway settings").
+public struct HcRoles: Codable, Sendable, Equatable {
+  public var steering: HcRoleSettings
+  public var coding: HcRoleSettings
+  public var reviewing: HcRoleSettings
+
+  /// What an untouched machine dispatches: the roles and levels the owner's own rules name.
+  public static let fallback = HcRoles(
+    steering: HcRoleSettings(model: "group/steering", thinkingLevel: "high"),
+    coding: HcRoleSettings(model: "group/coding", thinkingLevel: "high"),
+    reviewing: HcRoleSettings(model: "group/reviewing", thinkingLevel: "xhigh"))
+
+  public init(steering: HcRoleSettings, coding: HcRoleSettings, reviewing: HcRoleSettings) {
+    self.steering = steering
+    self.coding = coding
+    self.reviewing = reviewing
+  }
+
+  /// One role by its wire name, for the page's three rows.
+  public subscript(role: HcRole) -> HcRoleSettings {
+    get {
+      switch role {
+      case .steering: return steering
+      case .coding: return coding
+      case .reviewing: return reviewing
+      }
+    }
+    set {
+      switch role {
+      case .steering: steering = newValue
+      case .coding: coding = newValue
+      case .reviewing: reviewing = newValue
+      }
+    }
+  }
+}
+
+/// The roles in the order the Herdr page lists them.
+public enum HcRole: String, CaseIterable, Identifiable, Sendable {
+  case steering
+  case coding
+  case reviewing
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .steering: return "主控"
+    case .coding: return "实现"
+    case .reviewing: return "审查"
+    }
+  }
+}
+
 /// The model gateway settings the daemon stores (docs/bots/PROTOCOL.md, "Gateway
 /// settings"). The key never comes back: a client only learns whether one is set.
 public struct GatewaySettings: Decodable, Sendable, Equatable {
@@ -34,10 +99,12 @@ public struct GatewaySettings: Decodable, Sendable, Equatable {
   public var corePrompt: String
   /// The skills this person ticked for the machine's Bot service.
   public var skills: [SelectedSkill]
+  /// What each Herdr role runs on; the Bot's `hc_start` reads it on every call.
+  public var hc: HcRoles
 
   private enum CodingKeys: String, CodingKey {
     case configured, provider, baseUrl, model, hasApiKey, thinkingLevel, toolGroups, corePrompt,
-      skills
+      skills, hc
   }
 
   public init(from decoder: any Decoder) throws {
@@ -51,11 +118,12 @@ public struct GatewaySettings: Decodable, Sendable, Equatable {
     toolGroups =
       try container.decodeIfPresent([String].self, forKey: .toolGroups)
       ?? [
-        "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "herdr", "agents",
+        "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "agents",
         "trigger",
       ]
     corePrompt = try container.decodeIfPresent(String.self, forKey: .corePrompt) ?? ""
     skills = try container.decodeIfPresent([SelectedSkill].self, forKey: .skills) ?? []
+    hc = try container.decodeIfPresent(HcRoles.self, forKey: .hc) ?? .fallback
   }
 }
 
@@ -355,6 +423,27 @@ public final class CatalogHTTPClient: CatalogPort, SecretPort, QuestionPort, Sen
     toolGroups: [String]
   ) async throws -> BotSettingsSnapshot {
     try await saveSettings(body: ["corePrompt": corePrompt, "toolGroups": toolGroups])
+  }
+
+  /// The Herdr page's one write: the hc switch travels with the group set, and the three role
+  /// rows replace the stored block together.
+  public func saveHerdrSettings(
+    roles: HcRoles,
+    toolGroups: [String]
+  ) async throws -> BotSettingsSnapshot {
+    try await saveSettings(
+      body: [
+        "hc": [
+          "steering": [
+            "model": roles.steering.model, "thinkingLevel": roles.steering.thinkingLevel,
+          ],
+          "coding": ["model": roles.coding.model, "thinkingLevel": roles.coding.thinkingLevel],
+          "reviewing": [
+            "model": roles.reviewing.model, "thinkingLevel": roles.reviewing.thinkingLevel,
+          ],
+        ],
+        "toolGroups": toolGroups,
+      ])
   }
 
   /// The 技能 page's one write: this list replaces what the daemon stored, and an empty list

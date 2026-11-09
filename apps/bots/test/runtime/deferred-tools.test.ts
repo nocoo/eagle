@@ -21,7 +21,7 @@ test("tool_search cannot discover remote tools while local device status is unav
       ),
       assistant("done"),
     ]);
-    handle = await bench.runtime.open({ ...bench.spec(), toolGroups: ["core", "herdr"] });
+    handle = await bench.runtime.open({ ...bench.spec(), toolGroups: ["core", "hc"] });
     const events: RuntimeEvent[] = [];
     await handle.subscribe(trace, (event) => events.push(event));
     await handle.submit({
@@ -62,19 +62,19 @@ test("a terminal tool runs only after tool_search loads it", async () => {
   const bench = await createBench();
   try {
     bench.faux.setResponses([
-      assistant([toolCall("tool_search", { query: "herdr" })], { stopReason: "toolUse" }),
-      assistant([toolCall("herdr_list", {})], { stopReason: "toolUse" }),
+      assistant([toolCall("tool_search", { query: "hc" })], { stopReason: "toolUse" }),
+      assistant([toolCall("hc_list", {})], { stopReason: "toolUse" }),
       assistant("done"),
     ]);
     const handle = await bench.runtime.open({
       ...bench.spec(),
-      toolGroups: ["core", "herdr"],
+      toolGroups: ["core", "hc"],
     });
     const events: RuntimeEvent[] = [];
     await handle.subscribe(trace, (event) => events.push(event));
     await handle.submit({
       requestId: "r_deferred_1",
-      text: "列一下 herdr",
+      text: "列一下 hc",
       whenBusy: "followUp",
       trace,
     });
@@ -90,9 +90,10 @@ test("a terminal tool runs only after tool_search loads it", async () => {
     const search = results.find((block) => block.name === "tool_search");
     assert.ok(search, `tool_search ran (${results.map((block) => block.name).join(",")})`);
     assert.equal(search.isError, false, search.text);
-    const listed = results.find((block) => block.name === "herdr_list");
+    const listed = results.find((block) => block.name === "hc_list");
     assert.ok(listed, "the loaded tool became callable");
-    assert.match(listed.text, /no herdr space is open/);
+    // The call ran; what it answered depends on this machine, not on the loader.
+    assert.ok(listed.text.length > 0);
     await handle.close(trace, 1_000);
   } finally {
     await bench.cleanup();

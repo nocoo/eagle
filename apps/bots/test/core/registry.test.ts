@@ -411,11 +411,11 @@ test("a bot that never stored tool groups gets them written on the first save", 
     await setup.registry.start();
     const before = (await setup.directory.load())[0];
     assert.equal(before?.toolGroups, undefined, "the fixture stores no selection");
-    await setup.registry.applyToolGroups(["core", "coding", "herdr"], "tr_groups_0004");
+    await setup.registry.applyToolGroups(["core", "coding", "hc"], "tr_groups_0004");
     const after = (await setup.directory.load())[0];
     assert.deepEqual(
       after?.toolGroups,
-      ["core", "core-ui", "coding", "herdr"],
+      ["core", "core-ui", "coding", "hc"],
       "the default is now explicit",
     );
   } finally {

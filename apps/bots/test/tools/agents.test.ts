@@ -77,7 +77,7 @@ test("a child gets the coding tools and list, and nothing that belongs to a pers
     ]);
     handle = await bench.runtime.open({
       ...bench.spec(),
-      toolGroups: ["persona", "machine", "core", "coding", "agents", "memory", "herdr"],
+      toolGroups: ["persona", "machine", "core", "coding", "agents", "memory", "hc"],
     });
     const results = await runWithTools(handle);
     const send = results.find((item) => item.name === "agent_send");

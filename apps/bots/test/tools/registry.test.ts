@@ -5,10 +5,11 @@ import { join } from "node:path";
 import test from "node:test";
 import { defineExtension } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
+import { DEFAULT_HC } from "../../src/server/gateway.ts";
 import type { SharedDevicePort } from "../../src/tools/devices/port.ts";
 import { DEVICE_EXTENSION, deviceExtension } from "../../src/tools/devices/tools.ts";
-import type { HerdrClient } from "../../src/tools/herdr/client.ts";
-import { HERDR_TOOLS_EXTENSION } from "../../src/tools/herdr/tools.ts";
+import type { HcClient } from "../../src/tools/hc/client.ts";
+import { HC_TOOLS_EXTENSION } from "../../src/tools/hc/tools.ts";
 import {
   BOTS_TOOLS_EXTENSION,
   CORE_UI_EXTENSION,
@@ -56,17 +57,21 @@ test("a shared device registry exposes no Herdr writes outside device policy", (
     { root: "/tmp" },
     {
       devices: { socketPath: "/tmp/unused.sock", botId: "test" },
-      herdr: { client: {} as HerdrClient, stateDir: "/tmp", botId: "test" },
+      hc: {
+        client: {} as HcClient,
+        botId: "test",
+        roles: () => ({ provider: "magpie", roles: DEFAULT_HC }),
+      },
     },
   );
   const names = registry
     .snapshot()
     .tools()
     .map(({ tool }) => tool.name);
-  assert.deepEqual(names.filter((name) => name.startsWith("herdr_")).sort(), [
-    "herdr_list",
-    "herdr_read",
-    "herdr_wait",
+  assert.deepEqual(names.filter((name) => name.startsWith("hc_")).sort(), [
+    "hc_list",
+    "hc_read",
+    "hc_wait",
   ]);
 });
 
@@ -78,7 +83,7 @@ test("remote tools are selected only for a configured shared device", () => {
       devices: { socketPath: "/tmp/unused-device-test.sock", botId: "existing-bot" },
     },
   );
-  for (const groups of [[], ["core", "core-ui", "coding"], ["herdr", "agents"]]) {
+  for (const groups of [[], ["core", "core-ui", "coding"], ["hc", "agents"]]) {
     const disabled = selectToolExtensions(registry, groups)
       .flatMap((extension) => extension.tools ?? [])
       .map((tool) => tool.name);
@@ -284,61 +289,68 @@ test("a conversation without note_set is not told to write the sidebar line", as
 test("a bot's tool groups select from every registered built-in extension", async () => {
   const daemonRoot = await mkdtemp(join(tmpdir(), "bots-registry-"));
   const workspace = await openWorkspace(join(daemonRoot, "bots", "a", "workspace"));
-  const herdr = { client: {} as HerdrClient, stateDir: join(daemonRoot, "bots", "a"), botId: "a" };
-  const registry = createToolRegistry(workspace, { herdr });
+  const hc = {
+    client: {} as HcClient,
+    botId: "a",
+    roles: () => ({ provider: "magpie", roles: DEFAULT_HC }),
+  };
+  const registry = createToolRegistry(workspace, { hc });
   const coreOnly = selectToolExtensions(registry, []);
   assert.deepEqual(
     coreOnly.map((extension) => extension.name),
     [BOTS_TOOLS_EXTENSION, CORE_UI_EXTENSION, "coding-tools"],
   );
   assert.equal(coreOnly.flatMap((extension) => extension.tools ?? []).length, 7);
-  const both = selectToolExtensions(registry, ["herdr"]);
-  assert.ok(both.some((extension) => extension.name === HERDR_TOOLS_EXTENSION));
+  const both = selectToolExtensions(registry, ["hc"]);
+  assert.ok(both.some((extension) => extension.name === HC_TOOLS_EXTENSION));
   assert.ok(both.some((extension) => extension.name === "tool-search"));
   assert.ok(registry.snapshot().extension("bots-agents"), "unselected built-ins remain registered");
   await rm(daemonRoot, { recursive: true, force: true });
 });
 
-test("the herdr extension is installed only when a client is given", async () => {
+test("the hc extension is installed only when a client is given", async () => {
   const daemonRoot = await mkdtemp(join(tmpdir(), "bots-registry-"));
   const workspace = await openWorkspace(join(daemonRoot, "bots", "a", "workspace"));
   const without = createToolRegistry(workspace).snapshot();
-  assert.equal(without.extension(HERDR_TOOLS_EXTENSION), undefined);
+  assert.equal(without.extension(HC_TOOLS_EXTENSION), undefined);
 
   // The tools are registered even though the fake client is never called here: this is
   // the wiring contract the runtime depends on.
-  const client = {} as HerdrClient;
+  const client = {} as HcClient;
   const withHerdr = createToolRegistry(workspace, {
-    herdr: { client, stateDir: join(daemonRoot, "bots", "a"), botId: "a" },
+    hc: { client, botId: "a", roles: () => ({ provider: "magpie", roles: DEFAULT_HC }) },
   }).snapshot();
   const names = withHerdr
     .tools()
-    .filter(({ extension }) => extension.name === HERDR_TOOLS_EXTENSION)
+    .filter(({ extension }) => extension.name === HC_TOOLS_EXTENSION)
     .map(({ tool }) => tool.name)
     .sort();
   assert.deepEqual(names, [
-    "herdr_close_space",
-    "herdr_keys",
-    "herdr_list",
-    "herdr_open_space",
-    "herdr_read",
-    "herdr_send",
-    "herdr_start_controller",
-    "herdr_wait",
+    "hc_close",
+    "hc_keys",
+    "hc_list",
+    "hc_read",
+    "hc_send",
+    "hc_start",
+    "hc_wait",
   ]);
-  assert.equal(withHerdr.extension(HERDR_TOOLS_EXTENSION)?.hooks, undefined);
-  assert.ok(withHerdr.sections().some(({ section }) => section.key === "bots-herdr"));
+  assert.equal(withHerdr.extension(HC_TOOLS_EXTENSION)?.hooks, undefined);
+  assert.ok(withHerdr.sections().some(({ section }) => section.key === "bots-hc"));
   await rm(daemonRoot, { recursive: true, force: true });
 });
 
-test("herdr tools are deferred and the loader is installed with them", async () => {
+test("hc tools are deferred and the loader is installed with them", async () => {
   const daemonRoot = await mkdtemp(join(tmpdir(), "bots-registry-"));
   const workspace = await openWorkspace(join(daemonRoot, "bots", "a", "workspace"));
-  const herdr = { client: {} as HerdrClient, stateDir: join(daemonRoot, "bots", "a"), botId: "a" };
-  const snapshot = createToolRegistry(workspace, { herdr }).snapshot();
+  const hc = {
+    client: {} as HcClient,
+    botId: "a",
+    roles: () => ({ provider: "magpie", roles: DEFAULT_HC }),
+  };
+  const snapshot = createToolRegistry(workspace, { hc }).snapshot();
   const tools = snapshot.tools().map(({ tool }) => tool);
-  const herdrTools = tools.filter((tool) => tool.name.startsWith("herdr_"));
-  assert.equal(herdrTools.length, 8, "every terminal tool is registered");
+  const herdrTools = tools.filter((tool) => tool.name.startsWith("hc_"));
+  assert.equal(herdrTools.length, 7, "every terminal tool is registered");
   assert.deepEqual(
     herdrTools.filter((tool) => tool.deferred !== true).map((tool) => tool.name),
     [],
@@ -363,12 +375,12 @@ test("a group whose tools are not installed contributes nothing, not even its lo
     const workspace = await openWorkspace(join(daemonRoot, "bots", "a", "workspace"));
     // Herdr is installed but no search client is, so selecting `search` must not offer the
     // loader: a tool_search that can load nothing is a lie to the model.
-    const herdr = {
-      client: {} as HerdrClient,
-      stateDir: join(daemonRoot, "bots", "a"),
+    const hc = {
+      client: {} as HcClient,
       botId: "a",
+      roles: () => ({ provider: "magpie", roles: DEFAULT_HC }),
     };
-    const bare = createToolRegistry(workspace, { herdr });
+    const bare = createToolRegistry(workspace, { hc });
     const selected = selectToolExtensions(bare, ["search"])
       .flatMap((extension) =>
         (extension.tools ?? []).map((tool) => `${extension.name}:${tool.name}`),

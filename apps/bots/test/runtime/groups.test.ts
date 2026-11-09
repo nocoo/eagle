@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { RuntimeEvent } from "../../src/core/RuntimePort.ts";
-import { HERDR_TOOLS_EXTENSION } from "../../src/tools/herdr/tools.ts";
+import { HC_TOOLS_EXTENSION } from "../../src/tools/hc/tools.ts";
 import { BOTS_TOOLS_EXTENSION } from "../../src/tools/registry.ts";
 import { assistant, createBench, requestId, trace, waitFor } from "../support/pi.ts";
 
@@ -44,7 +44,7 @@ const agentRecord = (bench: { dir: string }): string => {
   }
 };
 
-test("a bot given only the core group does not select the herdr extension", async () => {
+test("a bot given only the core group does not select the hc extension", async () => {
   const bench = await createBench();
   try {
     bench.faux.setResponses([assistant("ok")]);
@@ -53,7 +53,7 @@ test("a bot given only the core group does not select the herdr extension", asyn
     const record = agentRecord(bench);
     assert.match(record, new RegExp(BOTS_TOOLS_EXTENSION));
     assert.equal(
-      record.includes(HERDR_TOOLS_EXTENSION),
+      record.includes(HC_TOOLS_EXTENSION),
       false,
       `the stored agent keeps only the core extension (${record.slice(0, 200)})`,
     );
@@ -63,15 +63,15 @@ test("a bot given only the core group does not select the herdr extension", asyn
   }
 });
 
-test("a bot with the herdr group selects both extensions", async () => {
+test("a bot with the hc group selects both extensions", async () => {
   const bench = await createBench();
   try {
     bench.faux.setResponses([assistant("ok")]);
-    const handle = await bench.runtime.open({ ...bench.spec(), toolGroups: ["core", "herdr"] });
+    const handle = await bench.runtime.open({ ...bench.spec(), toolGroups: ["core", "hc"] });
     await runOnce(handle);
     const record = agentRecord(bench);
     assert.match(record, new RegExp(BOTS_TOOLS_EXTENSION));
-    assert.match(record, new RegExp(HERDR_TOOLS_EXTENSION));
+    assert.match(record, new RegExp(HC_TOOLS_EXTENSION));
     await handle.close("tr_groups_close", 1_000);
   } finally {
     await bench.cleanup();

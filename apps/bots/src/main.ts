@@ -459,6 +459,8 @@ export const startDaemon = async (config: DaemonConfig): Promise<DaemonHandle> =
     machinePrompt: () => machinePrompt(),
     // The App's ticks are the only input: the daemon never scans a folder for skills.
     skills: () => gateway?.skills ?? [],
+    hc: () =>
+      gateway === undefined ? undefined : { provider: gateway.provider, roles: gateway.hc },
     search: () => providers.client,
     decision: () => providers.decision,
     trigger: async (spec) =>

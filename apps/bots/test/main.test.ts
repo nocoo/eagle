@@ -12,7 +12,12 @@ import { readConfig } from "../src/config.ts";
 import { BotDirectory } from "../src/core/BotDirectory.ts";
 import { startDaemon } from "../src/main.ts";
 import { PiDurableRuntime } from "../src/runtime/pi/PiDurableRuntime.ts";
-import { DEFAULT_CORE_PROMPT, readGateway, writeGateway } from "../src/server/gateway.ts";
+import {
+  DEFAULT_CORE_PROMPT,
+  DEFAULT_HC,
+  readGateway,
+  writeGateway,
+} from "../src/server/gateway.ts";
 import { acquireLock, LockError } from "../src/server/singleton.ts";
 import {
   daemonRoot,
@@ -72,9 +77,10 @@ test("saved gateway credentials authorize model requests on every daemon boot", 
       baseUrl: `http://127.0.0.1:${address.port}/v1`,
       apiKey: key,
       thinkingLevel: "medium",
-      toolGroups: ["core", "herdr"],
+      toolGroups: ["core", "hc"],
       corePrompt: "你是一个务实、友好的 agent。",
       skills: [],
+      hc: DEFAULT_HC,
     });
     let botId: string | undefined;
     for (const boot of [1, 2]) {
@@ -633,20 +639,15 @@ test("settings store tool groups, reject unknown names and keep core and coding 
       assert.equal(refused.status, 400, "an unknown group is refused");
       assert.equal(await readGateway(root), undefined, "a refused save writes nothing");
 
-      const saved = await put({ ...settings, toolGroups: ["herdr"] });
+      const saved = await put({ ...settings, toolGroups: ["hc"] });
       assert.equal(saved.status, 200);
       const shown = (await saved.json()) as { settings: { toolGroups: string[] } };
       assert.deepEqual(
         shown.settings.toolGroups,
-        ["core", "core-ui", "coding", "herdr"],
+        ["core", "core-ui", "coding", "hc"],
         "both required groups are implied",
       );
-      assert.deepEqual((await readGateway(root))?.toolGroups, [
-        "core",
-        "core-ui",
-        "coding",
-        "herdr",
-      ]);
+      assert.deepEqual((await readGateway(root))?.toolGroups, ["core", "core-ui", "coding", "hc"]);
 
       const trimmed = await put({ ...settings, toolGroups: [] });
       assert.equal(trimmed.status, 200);
@@ -995,7 +996,7 @@ test("a skills-only save leaves the model, the thinking level and the tool group
           model: "auto/gpt-6-luna",
           apiKey: "sk-main-skills-000000000",
           thinkingLevel: "medium",
-          toolGroups: ["core", "herdr"],
+          toolGroups: ["core", "hc"],
         }),
       });
       assert.equal(gateway.status, 200);
@@ -1023,6 +1024,7 @@ test("a skills-only save leaves the model, the thinking level and the tool group
               path: "~/.agents/skills/alpha",
             },
           ],
+          hc: DEFAULT_HC,
         }),
       });
       assert.equal(saved.status, 200);
@@ -1037,7 +1039,7 @@ test("a skills-only save leaves the model, the thinking level and the tool group
       assert.equal(stored?.thinkingLevel, "medium", "the stored level is untouched");
       assert.deepEqual(
         stored?.toolGroups,
-        ["core", "core-ui", "coding", "herdr"],
+        ["core", "core-ui", "coding", "hc"],
         "the stored groups are untouched",
       );
       assert.equal(stored?.model, "auto/gpt-6-luna", "the stored model is untouched");

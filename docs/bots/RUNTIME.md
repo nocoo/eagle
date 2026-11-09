@@ -357,7 +357,7 @@ Projection, which is also part of the mapping contract:
 | `progress.outputIntervalMs` | 100 | Reserved (tool output) |
 | `afterFailedRun` | `"continue"` | A failed run must not strand queued follow-ups |
 | `restartLimit` | 5 (default) | Parked tasks surface as `task_parked` and are cleared by `recover` |
-| `toolGroups` (per bot) | from stored config, default `["core", "core-ui", "coding", "herdr", "agents", "trigger"]` | `core`, `core-ui` and `coding` are mandatory. `core` adds `list`, `core-ui` adds the person-facing `ask_user` and `note_set`, and `coding` is native `CodingTools`. Herdr and child-agent extensions are optional. See "Tool groups" below |
+| `toolGroups` (per bot) | from stored config, default `["core", "core-ui", "coding", "agents", "trigger"]` | `core`, `core-ui` and `coding` are mandatory. `core` adds `list`, `core-ui` adds the person-facing `ask_user` and `note_set`, and `coding` is native `CodingTools`. The Herdr (`hc`), search, decision, peers, memory and secrets extensions are optional. See "Tool groups" below |
 | `thinkingLevel` (per bot) | from the stored pair, migrated once to `medium` when a catalog has none | Every bot stores its own level: a catalog written before the field existed gets the daemon's current default written once at startup, so a later change of the default cannot move it. The settings name the level a new bot records; the inspector changes the level of one bot, in one commit (`root.configure`), and the change reaches the next prepared request — a running answer is never interrupted. An explicit metadata set can refuse a level; the ids-only gateway publishes none, so all seven are requests and an upstream refusal is the run's error, never a fallback |
 | Search provider | `<XDG_CONFIG_HOME or ~/.config>/eagle-bots/providers.json` (0600) | Independent DeepSeek/Tavily keys with one selected provider. The `search` tool group is off by default. Its deferred `web_search`/`web_fetch` use a stable routing client that resolves the selected provider/key at invocation, including existing conversations; missing configuration is an error result, and failures never trigger fallback. Successful calls each book one `search` call |
 | Usage statistics | `<root>/usage.sqlite`, 90 days | `usage_daily(bot_id, day, source, tokens, calls, cost_usd)` plus `last_seen(bot_id, total_tokens, cost_usd)` so a cumulative model report becomes a delta. A source is a string (`model`, `search`), so a new spender needs no schema change; the first token-only `daily` table is migrated into the `model` source on open. Kept outside a bot's session, so deleting a bot keeps its history; pruned on boot and on write |
@@ -441,10 +441,10 @@ contradictory one.
 
 ### Tool groups
 
-`core/domain.ts` owns the product vocabulary: `core`, `coding`, `herdr`, `agents`,
+`core/domain.ts` owns the product vocabulary: `core`, `coding`, `hc`, `agents`,
 `search`, `trigger`.
 `core` and `coding` are always selected, including when settings request an empty list.
-`core` maps to `bots-tools`, `coding` to native `coding-tools`, `herdr` to `bots-herdr`
+`core` maps to `bots-tools`, `coding` to native `coding-tools`, `hc` to `bots-hc`
 and the native `tool-search` loader, `agents` to `bots-agents`, `search` to `bots-search`,
 and `trigger` to `bots-trigger`. Both required groups
 are shown enabled and disabled for editing in the settings UI.
@@ -482,7 +482,7 @@ doing everything in one context.
 
 | Tool | Behaviour |
 | --- | --- |
-| `agent_spawn` | Creates an ownerless conversation in the same Harness, configured from the caller's agent (model, reasoning level, `cwd`, instructions) but selecting only `persona`, `machine`, `core` and `coding`, and only from the extensions this Bot actually installed: a child keeps the persona and machine rules when the Bot has those groups, and holds `read`, `write`, `edit`, `bash`, `list`, plus `pr_register`/`pr_list` when the bot reports pull requests. `core-ui` is never selected, so `ask_user` (its card is drawn from the conversation a client watches, and nothing watches a child's) and `note_set` (the sidebar line belongs to the conversation a person is looking at) are absent as a group, not by name. Also absent: the delegation tools (`agent_*` would grow a tree), the optional groups (`memory`, `secrets`, `herdr`, `agents`, `search`, `decision`, `trigger`, `peers`), the `tool_search` loader, `skill_read` and the shared-device tools, so a child never reaches another machine. Appends a `bots.agent` marker entry (no `model`, so the child never sees it) and answers the child id |
+| `agent_spawn` | Creates an ownerless conversation in the same Harness, configured from the caller's agent (model, reasoning level, `cwd`, instructions) but selecting only `persona`, `machine`, `core` and `coding`, and only from the extensions this Bot actually installed: a child keeps the persona and machine rules when the Bot has those groups, and holds `read`, `write`, `edit`, `bash`, `list`, plus `pr_register`/`pr_list` when the bot reports pull requests. `core-ui` is never selected, so `ask_user` (its card is drawn from the conversation a client watches, and nothing watches a child's) and `note_set` (the sidebar line belongs to the conversation a person is looking at) are absent as a group, not by name. Also absent: the delegation tools (`agent_*` would grow a tree), the optional groups (`memory`, `secrets`, `hc`, `agents`, `search`, `decision`, `trigger`, `peers`), the `tool_search` loader, `skill_read` and the shared-device tools, so a child never reaches another machine. Appends a `bots.agent` marker entry (no `model`, so the child never sees it) and answers the child id |
 | `agent_send` | Re-asserts the same selection on the child before every submit — a child created before this whitelist existed is narrowed as it runs, not grandfathered — then submits with a request id derived from the call, waits for settlement, and answers the child's final text; a run that ends `unanswered` is an error result naming the reason |
 | `agent_stop` | Aborts the child: queued work is withdrawn and the transcript stays readable |
 
@@ -501,86 +501,60 @@ tools, not a reinterpretation of these same-Harness `agent_*` operations.
 
 ### Deferred tools
 
-The eight `herdr` tools are declared `deferred: true`, so they are installed and callable
+The seven `hc` tools are declared `deferred: true`, so they are installed and callable
 but **not offered** in each request; `createToolSearchExtension()` is installed with them
 and `tool_search` loads the matches into the conversation's `modelTools`, after which they
 stay offered (also across a compaction). The core tools and the subagent tools are always
-offered: they are what every turn needs. The herdr prompt section says the tools are loaded
+offered: they are what every turn needs. The hc prompt section says the tools are loaded
 on demand, because a model that never searches would never see them.
 `test/runtime/deferred-tools.test.ts` proves the fallback works: the model searches, then
-calls `herdr_list`, and the call runs.
+calls `hc_list`, and the call runs.
 
-## Herdr tools (phase 2, slice 2)
+## Herdr tools (hc)
 
-A second extension, `bots-herdr`, gives a bot a terminal collaborator. It talks to the
-installed `herdr` CLI over the running session; the bot owns exactly one space and every
-target is resolved inside it.
+The `hc` group gives a bot its own coding agents in herdr-core, the CLI whose command is
+`hc`. It is not `herdr`, the terminal multiplexer the person uses: the bot drives `hc` in
+terminals it owns, never the person's `herdr` sessions, and the App's own Herdr surfaces keep
+reading `herdr`. The group is **off by default**; the Herdr settings page switches it on and
+holds the three role models.
 
 | Tool | Behaviour |
 | --- | --- |
-| `herdr_open_space` | Opens this bot's space (a workspace labelled `bots-<bot id prefix>-<nonce>` with one shell pane) and returns its ids; calling it again reuses the live space |
-| `herdr_start_controller` | Starts one controller agent in that space's root pane with a herdr kind (`pi`, `codex`, `grok`, ...) and native arguments after `--`; idempotent while the controller lives |
-| `herdr_list` | Lists the panes and agents of that space only |
-| `herdr_send` | Submits a prompt to an agent in the space (default the controller) and by default waits for a settled state |
-| `herdr_wait` | Waits for a named state (`idle`, `working`, `blocked`, `done`, `unknown`) or a settled one |
-| `herdr_read` | Reads that agent's screen text (`visible`, `recent`, `recent-unwrapped`, `detection`), keeping the newest 64 KiB |
-| `herdr_keys` | Sends logical keys (`esc`, `enter`, `ctrl+c`, `1`, ...), for a dialog the controller is blocked on |
-| `herdr_close_space` | Closes this bot's own space and forgets it |
+| `hc_start` | Starts one agent in a terminal this bot owns, with a role (`steering`, `coding`, `reviewing`), the role's model and the task as the first message; the same name again reuses a live terminal instead of spending a second model |
+| `hc_list` | Lists the terminals this bot owns, each with its agent and reported status |
+| `hc_send` | Sends a message to one of them (default the steering agent) and by default waits for the turn to settle |
+| `hc_wait` | Waits until an agent stops working, reports a state or exits; a timeout is a check-in, not a failure |
+| `hc_read` | Reads an agent's screen and history, keeping the newest 64 KiB |
+| `hc_keys` | Presses named keys, for a dialog the agent is blocked on |
+| `hc_close` | Kills and removes one owned terminal, or every one of them when no target is named |
+
+The section teaches the workflow those roles exist for: `steering` takes a whole requirement
+and dispatches its own coding and reviewing agents from its own instructions (hc only hands
+it the task); `coding` and `reviewing` are for one simple change or one read-only review.
 
 Rules:
 
-- **The prompt does not advertise the scope.** The `bots-herdr` section names the space and
-  how to use the tools; the scope is enforced by the tools (and their refusals), not stated
-  as a prohibition in the prompt, because the shell a bot may also use can reach the
-  machine. A model that asks the tools for another space still gets a refusal.
-- **One space, and only its contents.** The space id, its full label (prefix plus a
-  per-instance nonce) and its root pane live in `<bot dir>/herdr.json` (0600, outside the
-  model's workspace). Every call re-reads the space from herdr and requires **both** the
-  recorded label and the recorded root pane in that space, so neither a different space
-  nor a same-id replacement is ever touched; a space that disappeared is replaced by a
-  fresh instance, and the refused id stays tombstoned across that replacement and a later
-  close. With no usable state (missing or corrupt file), exactly one space with
-  this bot's prefix is adopted, and several are refused rather than guessed; a recorded
-  space that fails verification is revoked in place, and its id is also written to
-  `herdr.revoked.json` beside the record, so replacing the space and closing the new one
-  cannot make a later open adopt it. If that tombstone cannot be written, the replacement
-  does not happen at all ("nothing was changed"); tombstones are pruned (before the size
-  ceiling is judged) only for spaces herdr no longer reports, never evicted while live, and
-  a list that is still full of live entries fails safely rather than forgetting one. Only a
-  missing file means "no refusals": a tombstone that cannot be read, parsed or attributed
-  to this bot disables adoption and is never overwritten — a refusal that cannot be
-  recorded fails with nothing changed. A record whose owner is another bot, or whose label
-  carries another bot's prefix, is foreign and is never obeyed. A space that could not be recorded
-  is closed again; when even that close fails, the result names the leftover space so a
-  person can close it.
-  `herdr_list`, `herdr_send`, `herdr_wait`, `herdr_read` and `herdr_keys` resolve their
-  target against the agents herdr reports **in that space**, and then address it by its
-  workspace-qualified pane id — never by a name that can be reassigned or moved.
-- **argv, not a shell.** Each call is one `herdr` argv with a deadline (30 s default,
-  120 s for talk, at most 600 s) and a bounded answer. The run's abort signal kills the
-  CLI process group, a call that is already queued behind another is cancelled before it
-  starts, and a deadline settles at once instead of waiting for an inherited pipe to
-  close. The CLI's own output keeps its newest 4 MiB (a screen is only useful at its end)
-  and is decoded across chunk boundaries. A herdr JSON error becomes the tool result with
-  its own code and message (`agent_blocked: ...`); a non-zero exit without JSON keeps the
-  exit and the detail.
-- **The CLI is a host tool, not a sandboxed process.** `herdr` needs the session socket;
-  these tools constrain their targets by the Space rule above. There is no workspace
-  sandbox or filesystem profile, and native coding tools retain normal local access.
-- **A label is not an ownership credential.** The nonce makes a collision with a user
-  workspace implausible, but a user who copies the exact label of a bot's space can be
-  adopted when that bot has lost both its state file and its tombstone list. That trade-off
-  keeps a lost state from leaking a second space; several candidates are refused instead of
-  guessed, and a state file that is present but fails verification is never adopted. Both
-  files live in the bot's own directory, outside its default workspace. That location
-  is not a security boundary: native coding tools can access it. Removing both records
-  discards the targeting evidence, and adoption then resumes as described above.
-- **Reading is evidence, not proof.** `idle`/`done` mean herdr saw a settled agent, not
-  that its work finished; `blocked` is a dialog the controller raised, and the bot may
-  inspect it with `herdr_read` and answer it with `herdr_keys`.
-- **Replay and state.** `herdr_open_space`, `herdr_list`, `herdr_wait` and `herdr_read`
-  are `replay: "safe"`; prompting, keying, starting and closing are not, so a restart does
-  not repeat them. The tools share one state file and run one call at a time.
+- **Ownership is a label and a name prefix.** Every terminal the bot starts carries
+  `--label bots=<bot id>` and a name beginning `bots-<bot id prefix>-`. Every tool filters
+  `hc ls` by that label and refuses a target whose name or label does not match, so a
+  person's terminal and another bot's are never listed, read, typed into or closed.
+- **argv, not a shell.** Each call is one `hc` argv with a deadline (30 s default, 120 s for
+  a wait, at most 600 s) and a bounded answer. The run's abort signal kills the CLI process
+  group, and a call still queued behind another is cancelled before it starts. The CLI's own
+  output keeps its newest 4 MiB, decoded across chunk boundaries. An hc error is JSON with a
+  `kind` and a `message` and becomes the tool result with that kind (`blocked: ...`); a
+  non-zero exit without JSON keeps the exit and the detail.
+- **The role models are settings, not tool arguments.** The Herdr page stores `{ provider,
+  steering, coding, reviewing }` in `gateway.json`, and the tools read it on every call, so a
+  save lands on the next call without reopening a conversation. A role with no model is
+  refused instead of launched with a guess.
+- **A launch is bounded.** At most eight owned terminals, a task of at most 16 KiB and an
+  agent name of at most 32 characters. The child is always `pi` with the role's `--model`,
+  `--thinking` and the daemon's own provider: the model never supplies the child's argv.
+- **Reading is evidence, not proof.** `idle` and `done` are the program's own OSC 7501
+  reports; `blocked` is a dialog, to be inspected with `hc_read` and answered with `hc_keys`.
+- **Replay.** `hc_list`, `hc_wait` and `hc_read` are `replay: "safe"`; starting, sending,
+  keying and closing are not, so a restart does not repeat them.
 
 ## Reserved capability enable paths
 

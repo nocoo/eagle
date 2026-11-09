@@ -13,11 +13,14 @@ import {
 import { normalizeSelectedSkills } from "../skills/selection.ts";
 import {
   DEFAULT_CORE_PROMPT,
+  DEFAULT_HC,
   type GatewayConfig,
   type GatewayInput,
   MAX_CORE_PROMPT,
+  MAX_HC_MODEL,
   normalizeBaseUrl,
   normalizeCorePrompt,
+  normalizeHc,
   type PublicGateway,
   publicGateway,
 } from "./gateway.ts";
@@ -28,6 +31,7 @@ export type CarriedSettings = {
   readonly model: boolean;
   readonly thinkingLevel: boolean;
   readonly toolGroups: boolean;
+  readonly hc: boolean;
 };
 
 export type SettingsStore = {
@@ -52,6 +56,7 @@ export const carriedSettings = (input: GatewayInput): CarriedSettings => ({
     input.provider !== undefined,
   thinkingLevel: input.thinkingLevel !== undefined,
   toolGroups: input.toolGroups !== undefined,
+  hc: input.hc !== undefined,
 });
 
 /**
@@ -129,6 +134,19 @@ export const createSettingsSaver = (store: SettingsStore) => {
     if ("error" in selection) {
       return { settings: publicGateway(gateway), error: selection.error };
     }
+    // The Herdr page saves its three role rows together, so a named block replaces the
+    // stored one; a block that breaks a bound is refused instead of half-applied.
+    let hc = gateway?.hc ?? DEFAULT_HC;
+    if (input.hc !== undefined) {
+      const normalized = normalizeHc(input.hc);
+      if (normalized === undefined) {
+        return {
+          settings: publicGateway(gateway),
+          error: `Herdr 页的模型每行必填、不超过 ${MAX_HC_MODEL} 个字符，思考等级必须是已知值`,
+        };
+      }
+      hc = normalized;
+    }
     const next: GatewayConfig = {
       provider,
       baseUrl,
@@ -138,6 +156,7 @@ export const createSettingsSaver = (store: SettingsStore) => {
       toolGroups,
       corePrompt,
       skills: selection.skills,
+      hc,
     };
     const refused = store.refuse?.(next, gateway);
     if (refused !== undefined) return { settings: publicGateway(gateway), error: refused };

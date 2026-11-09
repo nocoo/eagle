@@ -1022,7 +1022,7 @@ final class SnapshotHTTPStub: URLProtocol {
   private static let gateway = """
     {"configured":true,"provider":"magpie","baseUrl":"http://127.0.0.1:3425/v1",
      "model":"auto/gpt-6-luna","hasApiKey":true,"thinkingLevel":"medium",
-     "toolGroups":["core","coding","herdr","agents"]}
+     "toolGroups":["core","coding","hc","agents"]}
     """
 
   /// The same five providers the page lists, decoded for a render that needs no run loop.
