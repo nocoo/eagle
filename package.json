@@ -3,8 +3,8 @@
   "version": "0.15.0",
   "config": {
     "publishedAgentVersion": "1.0.0",
-    "publishedMacosVersion": "0.24.0",
-    "macosReleaseUrl": "https://github.com/nocoo/eagle/releases/tag/macos-v0.24.0",
+    "publishedMacosVersion": "0.24.1",
+    "macosReleaseUrl": "https://github.com/nocoo/eagle/releases/tag/macos-v0.24.1",
     "repositoryUrl": "https://github.com/nocoo/eagle"
   },
   "private": true,
