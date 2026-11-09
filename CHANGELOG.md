@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## macOS v0.24.0 — 2026-11-09
+
+- Give the Bot a terminal collaborator that is not yours. A new **Herdr** settings page holds
+  two cards: `hc · herdr-core`, the CLI the Bot drives in terminals it owns, and `herdr`, the
+  terminal you use, which stays read-only for the App. Seven tools replace the old eight:
+  `hc_start` (a role, a task), `hc_list`, `hc_send`, `hc_wait`, `hc_read`, `hc_keys`,
+  `hc_close`. Ownership is a `bots=<bot id>` label plus a `bots-<prefix>-` name prefix,
+  checked on every addressed call, so your sessions and another Bot's are never listed, read,
+  typed into or closed; the space object, its state file and the adoption rules are gone.
+- Three roles, three models, saved as one block. The page stores `steering` / `coding` /
+  `reviewing` (`group/steering` · high, `group/coding` · high, `group/reviewing` · xhigh by
+  default) and `hc_start` reads it on every call, so a save lands on the next tool call
+  without reopening a conversation; the model never supplies the child's argv.
+- `hc` takes the slot the removed `herdr` group held in the default tool groups, in the
+  daemon and in the App. An older settings file gains the group on its next read (file
+  version 4) and a stored `herdr` name is filtered out as unknown, so an upgrade keeps the
+  collaborator instead of silently losing it.
+- The page reports and installs both tools: each shows its version or 未安装 with one install
+  button, and the `hc` switch stays disabled until `hc` exists.
+- Prove the wires that shipped unproven: the Bots client suite is now a CI and pre-push gate,
+  the `hc` settings block has decode, fallback and save assertions, and the two-send race test
+  waits long enough not to report a missing steer on a loaded machine.
+
 ## macOS v0.23.1 — 2026-11-08
 
 - Reach the last three surfaces that only had a wire contract from the shipped CLI:
