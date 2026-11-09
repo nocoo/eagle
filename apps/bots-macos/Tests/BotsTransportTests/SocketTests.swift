@@ -188,6 +188,12 @@ extension SocketTests {
       if case .connection(.ready) = event { return true }
       return false
     }
+    // `ready` is the handshake, not the subscription: a send before the first snapshot is
+    // refused with "the connection has no subscription" on a run where the two race.
+    _ = try await collector.waitFor { event in
+      if case .snapshot = event { return true }
+      return false
+    }
     try first.send(
       text: "第一轮",
       requestId: Identifiers.request(),
