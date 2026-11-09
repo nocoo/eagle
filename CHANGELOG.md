@@ -10,6 +10,15 @@ without a device socket still gets them unguarded. `hc_list`, `hc_wait` and `hc_
 observation. The Herdr page's switch states the surface the daemon reports, so it no longer
 claims less, or more, than the Bot really has.
 
+## macOS v0.25.0 — 2026-11-09
+
+- Let a Bot in the App start, write into and close its own terminals. `hc` is the Bot's `bash`
+  for a terminal: `hc_start`, `hc_send`, `hc_keys` and `hc_close` are native device operations
+  that pass this Mac's policy (`paused` refuses, `always-ask` raises one approval) and return
+  the device receipt, while `hc_list`, `hc_wait` and `hc_read` stay observation. The Herdr
+  page's switch reports exactly that surface, so the App can finally run the workflow the page
+  teaches: hand a requirement to `steering`, wait, read, close.
+
 ## macOS v0.24.1 — 2026-11-09
 
 - Fix the upgrade 0.24.0 broke. A Bot's own tool-group selection lives in the catalog, and
