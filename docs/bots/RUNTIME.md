@@ -535,12 +535,13 @@ it the task); `coding` and `reviewing` are for one simple change or one read-onl
 
 Rules:
 
-- **In the App, a Bot inspects.** The App always injects the device service, and a Bot's `hc`
-  group is then `hc_list`, `hc_wait` and `hc_read`: starting a terminal, sending into one and
-  closing one stay unavailable until those tools participate in the device admission that
-  gates every other write. A daemon started without a device socket — the CLI, a test, an
-  acceptance run — gets all seven. The Herdr page's switch states which surface the daemon
-  reports, so it never promises a terminal this App cannot open.
+- **`hc` is the Bot's `bash` for a terminal.** With the App's device service injected, the
+  four tools that start, write into or end a terminal — `hc_start`, `hc_send`, `hc_keys`,
+  `hc_close` — are one device operation each: they need the service, follow this Mac's policy
+  (`paused` refuses, `always-ask` raises one approval), carry a durable operation id and
+  return the device receipt instead of raw output. `hc_list`, `hc_wait` and `hc_read` stay
+  observation: they only log their crossing. A daemon started without a device socket — the
+  CLI, a test, an acceptance run — gets all seven unguarded.
 
 - **Ownership is a label and a name prefix.** Every terminal the bot starts carries
   `--label bots=<bot id>` and a name beginning `bots-<bot id prefix>-`. Every tool filters
@@ -627,8 +628,8 @@ exit code and original target/operation ID. Native image blocks are explicitly
 omitted at this textual device boundary. Recovery returns that same receipt.
 Only payload text is shortened to fit the 64 KiB encoded receipt; metadata and
 valid JSON remain intact and truncation is explicit. With a device port injected,
-Herdr currently exposes inspection only; write/control tools stay unavailable
-until they participate in shared admission.
+the Herdr terminal writes are native device operations like `bash`: they pass the
+same policy, admission and receipt, and refuse when the service is paused or absent.
 If native output or its metadata was truncated before the trusted sanitizer,
 the incomplete segment is omitted in full. This includes native SDK truncation;
 an appended marker must never hide a partial credential's original boundary.

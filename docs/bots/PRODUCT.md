@@ -93,10 +93,10 @@ Anything not in this list is phase 2.
 
 A bot runs code and shell commands in its own workspace without asking (slice 1), and can
 start herdr-core agents (`hc`) in terminals of its own, exchange messages with them,
-wait for them, read their screens and close them (slice 2). Inside the App that slice is
-inspection: the App injects the device service, so a Bot lists, waits and reads its own
-terminals but does not start, write into or close one until those tools join the device
-admission that gates every other write. Tool calls are bot-side
+wait for them, read their screens and close them (slice 2). Inside the App those
+writes are device operations like `bash`: the App injects the device service, so starting,
+writing into and closing a terminal follows the same policy, approval and receipt, and the
+three read tools only observe. Tool calls are bot-side
 activity: they stay on the left at the answer card's width, show what is running while it
 runs, collapse into one line when the run's calls settle, and open a detail dialog with
 each call's arguments and output.

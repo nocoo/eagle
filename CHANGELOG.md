@@ -2,12 +2,13 @@
 
 ## Unreleased
 
-- State what the Bot's terminal collaboration really is inside the App. The App injects the
-device service, so a Bot's `hc` group is `hc_list`, `hc_wait` and `hc_read`; starting,
-writing into and closing a terminal stay unavailable until those tools join the device
-admission that gates every other write, and a daemon without a device socket (the CLI, a
-test) still gets all seven. The Herdr page's switch now says which surface the daemon
-reports instead of promising one it cannot give.
+- Make `hc` the Bot's `bash` for a terminal. The four tools that start, write into or end one
+(`hc_start`, `hc_send`, `hc_keys`, `hc_close`) are native device operations now: with the
+App's device service injected they pass the same policy (`paused` refuses, `always-ask` raises
+one approval), carry a durable operation id and return the device receipt, and a daemon
+without a device socket still gets them unguarded. `hc_list`, `hc_wait` and `hc_read` stay
+observation. The Herdr page's switch states the surface the daemon reports, so it no longer
+claims less, or more, than the Bot really has.
 
 ## macOS v0.24.1 — 2026-11-09
 

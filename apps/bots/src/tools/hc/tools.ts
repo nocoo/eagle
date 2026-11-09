@@ -11,6 +11,17 @@ import { type HcClient, HcCommandError, type HcTerminal } from "./client.ts";
 /** The extension's name; a conversation stores it, so it is part of the runtime contract. */
 export const HC_TOOLS_EXTENSION = "bots-hc";
 
+/**
+ * The tools that start, write into or end a terminal. They are the Bot's `bash` for a coding
+ * agent, so a device service gates them the same way: policy, admission, receipt.
+ */
+export const HC_TERMINAL_WRITE_TOOLS: ReadonlySet<string> = new Set([
+  "hc_start",
+  "hc_send",
+  "hc_keys",
+  "hc_close",
+]);
+
 /** The three jobs a bot hands out, and the only roles this extension starts. */
 export const HC_ROLES = ["steering", "coding", "reviewing"] as const;
 export type HcRole = (typeof HC_ROLES)[number];

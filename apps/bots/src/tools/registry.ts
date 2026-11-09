@@ -32,7 +32,13 @@ import {
   observeDeviceTool,
 } from "./devices/tools.ts";
 import { createHcClient } from "./hc/client.ts";
-import { createHcTools, HC_TOOLS_EXTENSION, type HcToolOptions, hcSection } from "./hc/tools.ts";
+import {
+  createHcTools,
+  HC_TERMINAL_WRITE_TOOLS,
+  HC_TOOLS_EXTENSION,
+  type HcToolOptions,
+  hcSection,
+} from "./hc/tools.ts";
 import { createListTool } from "./list.ts";
 import { MACHINE_EXTENSION, type MachinePrompt, machineExtension } from "./machine/tools.ts";
 import { MEMORY_TOOLS_EXTENSION, memoryExtension } from "./memory/tools.ts";
@@ -411,19 +417,21 @@ export const createToolRegistry = (workspace: BotWorkspace, options: ToolRegistr
     registry.install(toolSearch);
   }
   if (hc !== undefined) {
+    // `hc` is the Bot's hand on a terminal, which is what `bash` is for a shell: a write or a
+    // close is one device operation that follows this Mac's policy, while listing, waiting and
+    // reading stay observation that only logs its crossing.
+    const terminalTools = createHcTools({ ...hc, workspace }).map((tool) => {
+      if (devices === undefined) return tool;
+      const guarded = HC_TERMINAL_WRITE_TOOLS.has(tool.name)
+        ? guardNativeTool(tool, devices)
+        : tool;
+      return observeDeviceTool(guarded, devices);
+    });
     registry.install(
       defineExtension({
         name: HC_TOOLS_EXTENSION,
-        tools: createHcTools({ ...hc, workspace }).filter(
-          (tool) => devices === undefined || ["hc_list", "hc_read", "hc_wait"].includes(tool.name),
-        ),
-        sections: [
-          section("bots-hc", () =>
-            devices === undefined
-              ? hcSection(hc.botId)
-              : "Herdr inspection reads this bot's own terminals; local commands use bash.",
-          ),
-        ],
+        tools: terminalTools,
+        sections: [section("bots-hc", () => hcSection(hc.botId))],
       }),
     );
   }

@@ -15,6 +15,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { createBashTool } from "@earendil-works/pi-durable/tools";
+import { DEFAULT_HC } from "../../src/core/domain.ts";
 import { Log, type LogRecord } from "../../src/log/log.ts";
 import { captureNativeOutput } from "../../src/tools/devices/output.ts";
 import {
@@ -26,6 +27,7 @@ import {
   type SharedDevicePort,
 } from "../../src/tools/devices/port.ts";
 import { deviceExtension, guardNativeTool } from "../../src/tools/devices/tools.ts";
+import { createHcTools } from "../../src/tools/hc/tools.ts";
 
 const ids = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
 const directory = (): DeviceDirectory => ({
@@ -499,6 +501,36 @@ test("local always-ask policy still requires a bound approval", async () => {
   assert.equal(bench.approvals.length, 1);
   assert.equal(bench.approvals[0]?.targetDeviceId, bench.view.localDeviceId);
   assert.equal(bench.calls[0]?.approval?.policyVersion, 3);
+});
+
+test("hc_start is one device operation that asks before it opens a terminal", async () => {
+  const bench = fixture();
+  required(bench.view.devices[0]).policy = { mode: "always-ask", version: 5 };
+  const started: string[] = [];
+  const tools = createHcTools({
+    client: {
+      list: async () => [],
+      run: async (request: { argv: readonly string[] }) => {
+        started.push(request.argv[request.argv.length - 1] ?? "");
+        return "t1";
+      },
+    } as never,
+    botId: "b_test",
+    roles: () => ({ provider: "magpie", roles: DEFAULT_HC }),
+    workspace: { root: "/tmp" } as never,
+  });
+  const start = tools.find((tool) => tool.name === "hc_start");
+  assert.ok(start !== undefined);
+  const result = await guardNativeTool(start, { botId: "local-bot", port: bench.port }).execute(
+    { role: "coding", task: "one thing" },
+    memoApi().api,
+    BACKGROUND_CONTEXT,
+  );
+  assert.equal(body(result).status, "completed");
+  assert.equal(bench.approvals.length, 1, "the policy asked before any terminal was opened");
+  assert.equal(bench.calls[0]?.operation?.kind, "native");
+  assert.equal(bench.calls[0]?.operation?.tool, "hc_start");
+  assert.deepEqual(started, ["one thing"]);
 });
 
 test("a refused local approval never begins the native tool", async () => {

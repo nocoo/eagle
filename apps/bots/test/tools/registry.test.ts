@@ -52,27 +52,63 @@ const botsToolsSection = (registry: ReturnType<typeof createToolRegistry>): stri
   return text as string;
 };
 
-test("a shared device registry exposes no Herdr writes outside device policy", () => {
-  const registry = createToolRegistry(
-    { root: "/tmp" },
-    {
-      devices: { socketPath: "/tmp/unused.sock", botId: "test" },
-      hc: {
-        client: {} as HcClient,
-        botId: "test",
-        roles: () => ({ provider: "magpie", roles: DEFAULT_HC }),
-      },
-    },
-  );
-  const names = registry
+test("a shared device registry offers every hc tool and gates the terminal writes", async () => {
+  const calls: string[] = [];
+  const record = (name: string) => async () => {
+    calls.push(name);
+    throw new Error("the CLI must not be reached");
+  };
+  const client = {
+    list: record("list"),
+    start: record("start"),
+    send: record("send"),
+    wait: record("wait"),
+    read: record("read"),
+    keys: record("keys"),
+    remove: record("remove"),
+  } as unknown as HcClient;
+  const workspace = await openWorkspace(await mkdtemp(join(tmpdir(), "bots-hc-gate-")));
+  const registry = createToolRegistry(workspace, {
+    devices: { socketPath: "/tmp/unused.sock", botId: "test" },
+    hc: { client, botId: "test", roles: () => ({ provider: "magpie", roles: DEFAULT_HC }) },
+  });
+  const tools = registry
     .snapshot()
     .tools()
-    .map(({ tool }) => tool.name);
-  assert.deepEqual(names.filter((name) => name.startsWith("hc_")).sort(), [
+    .map(({ tool }) => tool)
+    .filter((tool) => tool.name.startsWith("hc_"));
+  assert.deepEqual(tools.map((tool) => tool.name).sort(), [
+    "hc_close",
+    "hc_keys",
     "hc_list",
     "hc_read",
+    "hc_send",
+    "hc_start",
     "hc_wait",
   ]);
+
+  // The four tools that start, write into or end a terminal are one device operation each:
+  // the same gate `bash` takes, with a durable receipt instead of raw output.
+  const writes = new Set(["hc_start", "hc_send", "hc_keys", "hc_close"]);
+  for (const tool of tools) {
+    assert.equal(
+      tool.structuredOutputSchema !== undefined,
+      writes.has(tool.name),
+      `${tool.name} is ${writes.has(tool.name) ? "gated" : "observation only"}`,
+    );
+  }
+
+  // With the device service unreachable the write fails closed and never reaches hc.
+  const start = tools.find((tool) => tool.name === "hc_start");
+  assert.ok(start !== undefined);
+  const outcome = await start.execute(
+    { role: "coding", task: "one thing" },
+    {} as never,
+    { abortSignal: new AbortController().signal } as never,
+  );
+  assert.equal(outcome.isError, true);
+  assert.match(JSON.stringify(outcome.output), /device_unavailable/);
+  assert.deepEqual(calls, []);
 });
 
 test("remote tools are selected only for a configured shared device", () => {

@@ -141,16 +141,16 @@ loader. The normal daemon installs search even before configuration: its tools
 can explain a missing selection without making an external request. A test/host
 that supplies no search client installs no search extension or loader for it.
 
-There are **44 tool names** with all current groups registered, the shared-device socket
+There are **48 tool names** with all current groups registered, the shared-device socket
 installed and the person's ticks read: the table below is that list, and a test derives it
 from the registry so the numbers cannot drift. A root
 conversation selects those three eagerly only when local status says remote is configured;
 local coding tools remain available under local policy. With the default selection (no
 `search`, no `decision`, no `peers`) eager selected tools are offered at once. Herdr,
-decision and trigger tools wait behind `tool_search`. Without a device socket the shared
-device extension is absent and `bots-hc` keeps all seven of its tools instead of the
-three `hc_list`, `hc_wait` and `hc_read` it is reduced to under the shared device
-policy.
+decision and trigger tools wait behind `tool_search`. A Bot's terminal writes — `hc_start`,
+`hc_send`, `hc_keys`, `hc_close` — are device operations exactly like `bash`: with the
+shared-device socket they follow this Mac's policy, admission and receipt, and without the
+socket they run directly. The three read tools only log their crossing.
 
 ### Tool names
 
@@ -165,7 +165,7 @@ Every tool name the daemon installs in that configuration, one row per extension
 | `memory` | `memory_list`, `memory_search`, `memory_read`, `memory_write`, `memory_delete` |
 | `secrets` | `secret_request`, `secret_list`, `secret_read`, `secret_delete` |
 | `agents` | `agent_spawn`, `agent_send`, `agent_stop` |
-| `hc` | `hc_list`, `hc_wait`, `hc_read` |
+| `hc` | `hc_start`, `hc_list`, `hc_send`, `hc_wait`, `hc_read`, `hc_keys`, `hc_close` |
 | `search` | `web_search`, `web_fetch` |
 | `decision` | `decide`, `classify`, `assess`, `rate`, `judge` |
 | `trigger` | `trigger_create`, `trigger_list`, `trigger_update`, `trigger_enable`, `trigger_delete` |
