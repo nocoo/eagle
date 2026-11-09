@@ -1019,3 +1019,25 @@ Verified:
 Next broken hop: `skills set` trusts the caller's entries — it does not scan folders or verify a
 `SKILL.md` exists, which stays the App's job; and `peers` has no case that starts an exchange,
 because that is a Bot's own tool call and needs two scripted bots.
+
+## 2026-11-09 13:20 +08 — macOS 0.23.1: the CLI the App ships matches the CLI on disk
+
+- Release commit `1434338a` (`chore(release): macos 0.23.1`), annotated tag
+  `macos-v0.23.1`, claim `67bbbc89`. 0.23.0 shipped `triggers`; 0.23.1 adds `skills`,
+  `peers` and `chat send --file`, the exact root lock and one motion token for copy feedback.
+- `Eagle-for-Mac-0.23.1.dmg` is 154,546,581 bytes with sha256
+  `d5a183cb6e3af179bc25205badfb0509033736931c122692559ebf89250b9a3d`; the release
+  `https://github.com/nocoo/eagle/releases/tag/macos-v0.23.1` carries it plus `SHA256SUMS`;
+  `/api/live` answers `macos.latest` 0.23.1 at revision `67bbbc89`.
+- Gates: version-bump and claim pushes ran the full pre-push set; CI green on `631218de` (the
+  commit before the bump) and the bump changed only the manifest and the changelog.
+- Installed here: `/Applications/Eagle for Mac.app` is 0.23.1 (PID 57893), its Super Bot
+  answers `模型已配置` and holds the new lock — `<root>/lock.json` (0600) names port 50261,
+  which `lsof` shows owned by that service's pid 57939, and a second start on the same root
+  exits 1 with `superagent.start.failed` instead of taking it over. The bundled
+  `Helpers/eagle --skill` lists `--file`, `skills` and `peers`.
+- Release daemons 43117 + 43128 and source-run daemons 43119 + 43127 keep their own roots.
+
+Next broken hop: the installed App's own Super Bot row and inspector are still unrendered
+evidence for a person's eye; and `peers` has no case that starts an exchange, because that
+needs two scripted Bots.
