@@ -1136,3 +1136,23 @@ Next broken hop: the person still reads attention items through the socket and t
 SG-003. A worker's own answer state after a *successful* re-run only heals the item on the
 next settled run, and the report prompt is visible in the Super Bot's transcript as the
 person's message rather than a system turn.
+
+## 2026-11-09 21:45 +08 — the Super Bot documentation plan is complete
+
+Observed: every milestone the product promised now has one spec. SG-001 (chat) and SG-002
+(observation) were already delivered; SG-004 (proactivity and management) shipped tonight;
+SG-003 (analysis and the native decision dashboard) is specified with its evidence rules,
+immutable decisions, bounds and acceptance rows.
+
+Verified:
+
+- `docs/bots/PLAN.md` lists four milestones, each pointing at one spec, with the implemented
+  ones marked as source-delivered and SG-003 marked specified-only.
+- `docs/bots/SUPERAGENT-ARCHITECTURE.md` carries the owner's 2026-11-09 decision: management
+  replaces "read-only" as the named-action boundary, and everything outside SG-004's action
+  set stays refused.
+- SG-004's acceptance table records the real dev run; SG-003's seven rows are the contract for
+  the next slice, none of them claimed as passing.
+
+Next broken hop: the dashboard itself. A person still reads attention items through the
+socket or `attention.json`, and no suggestion or decision exists yet.
