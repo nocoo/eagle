@@ -26,7 +26,7 @@ const assertNoLinks = async (root: string, path: string): Promise<void> => {
 };
 
 /**
- * Resolves the working directory of a bot-owned Herdr space, not native coding-tool paths.
+ * Resolves a path inside the bot's own directory, not a native coding-tool path.
  */
 export const resolveInside = async (root: string, path: string): Promise<string> => {
   if (path.length === 0) throw new ToolError("a path is required");

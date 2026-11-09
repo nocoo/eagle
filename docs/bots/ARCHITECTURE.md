@@ -137,12 +137,12 @@ src/
     version.ts  limits.ts     PROTOCOL_VERSION, frame and page budgets
     events.ts   commands.ts   encode/decode domain ⇄ frames, validation
   tools/                      the bot's tools, inside the adapter boundary
-    registry.ts               native CodingTools, core list, Herdr and child-agent extensions
+    registry.ts               native CodingTools, core list, hc and child-agent extensions
     list.ts                   native-style bounded directory listing through ExecutionEnv
-    workspace.ts              default directory creation and Herdr-owned cwd resolution
-    types.ts                  the Herdr workspace and business-tool outcome shapes
-    herdr/client.ts           the herdr CLI as typed calls (argv, JSON, deadline, abort)
-    herdr/tools.ts            the eight herdr tools and the one-space-per-bot rule
+    workspace.ts              default directory creation and bot-owned cwd resolution
+    types.ts                  the workspace and business-tool outcome shapes
+    hc/client.ts              the herdr-core CLI as typed calls (argv, JSON, deadline, abort)
+    hc/tools.ts               the seven hc tools and the per-bot ownership rules
   runtime/pi/
     mapEvents.ts              pi AgentEvent / reports / watch end → RuntimeEvent
     PiDurableRuntime.ts       Harness ownership, submission ledger, close, recover

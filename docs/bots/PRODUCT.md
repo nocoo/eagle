@@ -92,8 +92,8 @@ Anything not in this list is phase 2.
 ## Delegation (phase 2)
 
 A bot runs code and shell commands in its own workspace without asking (slice 1), and can
-open a herdr space of its own, start a controller agent there, exchange messages with it,
-wait for it, read its screen and close the space (slice 2). Tool calls are bot-side
+start herdr-core agents (`hc`) in terminals of its own, exchange messages with them,
+wait for them, read their screens and close them (slice 2). Tool calls are bot-side
 activity: they stay on the left at the answer card's width, show what is running while it
 runs, collapse into one line when the run's calls settle, and open a detail dialog with
 each call's arguments and output.
@@ -259,7 +259,7 @@ what is enabled, so later phases flip flags instead of rebuilding screens.
 
 | Capability | Phase 1 | What actually exists in phase 1 | Reserved for |
 | --- | --- | --- | --- |
-| `tools` | `true` (phase 2) | Tool calls and results render as transcript rows: name, arguments, status and output, live and after a snapshot; the workspace and herdr tools produce them. Settings → `通用` → `隐藏工具调用` drops those rows from the transcript without changing the stored conversation (off by default) | Approvals (none: tools execute without asking) |
+| `tools` | `true` (phase 2) | Tool calls and results render as transcript rows: name, arguments, status and output, live and after a snapshot; the workspace and hc tools produce them. Settings → `通用` → `隐藏工具调用` drops those rows from the transcript without changing the stored conversation (off by default) | Approvals (none: tools execute without asking) |
 | `tasks` | `false` | An `error` kind for parked tasks and a `recover` command | Task panel, per-task retry, compaction control |
 | `entries` | `false` | Nothing beyond the transcript itself | Raw entry inspector |
 | `usage` | `false` | A `usage` field in snapshots, populated from `pi.usage` (the data is live; only the panel is missing) | Token and cost panel |
@@ -295,7 +295,9 @@ Tools are trusted, built-in pi-durable extensions, not third-party plugins. The 
 The mandatory `core` group supplies missing native functionality, starting with `list`.
 The mandatory `core-ui` group holds the tools that act on the person's side of the App
 (`ask_user`, `note_set`), so a child agent can be denied them as one group.
-Herdr and child-agent groups remain optional. Tool execution has no approval dialog.
+the `hc` group gives a Bot its own herdr-core agents in terminals of its own; that is what
+replaced the old `herdr` group. Child-agent groups remain optional. Tool execution has no
+approval dialog.
 The bot's workspace is its default working directory, not a security boundary. A plugin
 marketplace, third-party module discovery and an execution sandbox are not product goals.
 Argument validation, cancellation, bounded output and keeping credentials out of logs and
