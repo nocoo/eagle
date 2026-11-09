@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## macOS v0.24.1 — 2026-11-09
+
+- Fix the upgrade 0.24.0 broke. A Bot's own tool-group selection lives in the catalog, and
+  the reader refused the `herdr` name that 0.24.0 removed: the daemon exited on start with
+  `core.catalog.load.fail`, so an existing installation came up with no Bot service at all.
+  A stored selection is now read through today's names — an unknown group is dropped and
+  `herdr` reads as `hc` — and the next write records the migrated list. A save that names an
+  unknown group is still refused; only data an older daemon wrote is translated.
+
 ## macOS v0.24.0 — 2026-11-09
 
 - Give the Bot a terminal collaborator that is not yours. A new **Herdr** settings page holds
