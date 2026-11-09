@@ -42,6 +42,11 @@ npm --prefix apps/bots run eval:mac -- --case mac-superbot-chat --verbose
   `chat send --wait`.
 - `mac-trigger`: a Bot creates a webhook trigger with its own tool, and the CLI lists,
   disables, enables and fires it, after which the Bot answers.
+- `mac-file`: `chat send --file` declares the file, uploads its raw bytes and sends the
+  complete id with the message; the history then carries the name.
+- `mac-skills`: a caller installs a skill selection through `skills set --stdin`, and the
+  Bot reads the file with its own `skill_read`.
+- `mac-peers`: `peers list` answers read-only, and an unknown exchange is a refusal.
 
 A case with `"superagent": true` boots the service on its own root under the case, with the
 case's scripted endpoint as the only model, and hands the CLI `SUPERAGENT_ROOT` and

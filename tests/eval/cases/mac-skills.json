@@ -1,0 +1,69 @@
+{
+  "id": "mac-skills",
+  "title": "CLI 安装技能选择，Bot 用它自己的 skill_read 读到",
+  "kind": "skills",
+  "notes": "The App scans folders and ticks skills; a caller that already knows the entries installs the same selection here, and the Bot reads the file through its own tool.",
+  "toolGroups": ["core", "coding"],
+  "timeoutMs": 120000,
+  "model": {
+    "script": [
+      {
+        "toolCall": {
+          "name": "skill_read",
+          "args": {
+            "name": "weather-lookup"
+          }
+        }
+      },
+      {
+        "text": "技能说：查天气先问城市，再报温度。"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "file",
+      "path": "home/.agents/skills/weather-lookup/SKILL.md",
+      "content": "---\nname: weather-lookup\ndescription: Looks up the weather.\nversion: 1.4.0\n---\n\n# Weather lookup\n\n先问城市，再报温度：eval-skill-sentence-9f2c。\n"
+    },
+    {
+      "kind": "cli",
+      "args": ["skills", "set", "--stdin"],
+      "stdin": "[{\"name\": \"weather-lookup\", \"version\": \"1.4.0\", \"description\": \"Looks up the weather.\", \"path\": \"~/.agents/skills/weather-lookup\"}]",
+      "stdoutContains": "已保存 1 个技能"
+    },
+    {
+      "kind": "cli",
+      "args": ["skills", "list"],
+      "stdoutContains": "weather-lookup"
+    },
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval mac-skills",
+        "--text",
+        "这台机器上的技能怎么用？",
+        "--wait",
+        "--timeout",
+        "60",
+        "--json"
+      ],
+      "stdoutContains": "技能说"
+    }
+  ],
+  "expect": {
+    "toolsCalled": ["skill_read"],
+    "messages": [
+      {
+        "role": "tool",
+        "contains": "eval-skill-sentence-9f2c"
+      },
+      {
+        "role": "assistant",
+        "contains": "技能说"
+      }
+    ]
+  }
+}

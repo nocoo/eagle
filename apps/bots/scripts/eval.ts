@@ -878,6 +878,7 @@ const runCase = async (
     if (created.status !== 201) failure(`could not create a bot: ${created.status}`);
     botId = ((await created.json()) as { bot: { id: string } }).bot.id;
     captured.set("bot", { id: botId, title: `eval ${study.id}` });
+    captured.set("root", { path: root });
 
     if (study.superagent === true) {
       superagent = await startSuperagent(root, handle.port, home, options.verbose);

@@ -1,0 +1,61 @@
+{
+  "id": "mac-file",
+  "title": "CLI 附带托管文件发送：声明、上传、消息带文件",
+  "kind": "file",
+  "notes": "A file travels as declared metadata plus raw bytes before the message: an upload the daemon never accepted cannot ride along.",
+  "toolGroups": ["core"],
+  "timeoutMs": 120000,
+  "workspace": {
+    "notes/report.txt": "file payload marker 7c1d\n"
+  },
+  "model": {
+    "script": [
+      {
+        "text": "收到文件：report.txt。"
+      }
+    ],
+    "repeatLast": true
+  },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "send",
+        "eval mac-file",
+        "--text",
+        "这是附件",
+        "--file",
+        "{{root.path}}/bots/{{bot.id}}/workspace/notes/report.txt",
+        "--wait",
+        "--timeout",
+        "60",
+        "--json"
+      ],
+      "stdoutContains": "收到文件",
+      "capture": "reply"
+    },
+    {
+      "kind": "cli",
+      "args": [
+        "chat",
+        "history",
+        "eval mac-file",
+        "--before",
+        "{{reply.answerEntryId}}",
+        "--limit",
+        "5",
+        "--json"
+      ],
+      "stdoutContains": "report.txt"
+    }
+  ],
+  "expect": {
+    "messages": [
+      {
+        "role": "assistant",
+        "contains": "收到文件"
+      }
+    ]
+  }
+}

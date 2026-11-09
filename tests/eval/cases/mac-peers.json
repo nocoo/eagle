@@ -1,0 +1,23 @@
+{
+  "id": "mac-peers",
+  "title": "CLI 读取 Bot 互通交换：没有交换时是一个空列表",
+  "kind": "peers",
+  "notes": "Read-only: the CLI lists what two Bots said, and starting an exchange stays each Bot's own tool call.",
+  "toolGroups": ["core"],
+  "timeoutMs": 60000,
+  "model": { "script": [{ "text": "好。" }], "repeatLast": true },
+  "steps": [
+    {
+      "kind": "cli",
+      "args": ["peers", "list", "eval mac-peers", "--json"],
+      "json": { "exchanges": [] }
+    },
+    {
+      "kind": "cli",
+      "args": ["peers", "show", "eval mac-peers", "x_000000000000", "--json"],
+      "expectExit": 1,
+      "stderrContains": "no such exchange"
+    }
+  ],
+  "expect": { "messages": [] }
+}
