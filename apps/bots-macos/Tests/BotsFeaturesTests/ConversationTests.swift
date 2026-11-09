@@ -465,9 +465,11 @@ final class ConversationTests: XCTestCase {
     XCTAssertEqual(fake.sent.count, 1, "a later snapshot must not replay it again")
   }
 
+  /// Ten seconds, not two: the gate runs this suite beside the other Swift packages, and a
+  /// loaded machine made a two-second poll report a failure the code never had.
   private func waitUntil(
     _ condition: () -> Bool,
-    timeout: TimeInterval = 2
+    timeout: TimeInterval = 10
   ) async throws {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
