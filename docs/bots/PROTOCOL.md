@@ -142,7 +142,7 @@ version, the instance id, the pid and a bot count, never bot content.
 // GatewaySettings: the key is never returned, only whether one is stored.
 { "configured": true, "provider": "magpie", "baseUrl": "http://127.0.0.1:3425/v1",
   "model": "auto/gpt-6-luna", "hasApiKey": true, "thinkingLevel": "medium",
-  "toolGroups": ["persona", "machine", "core", "core-ui", "coding", "agents", "trigger"],
+  "toolGroups": ["persona", "machine", "core", "core-ui", "coding", "hc", "agents", "trigger"],
   "corePrompt": "你是一个务实、友好的 agent：先说结论，再给依据。",
   "hc": { "steering": { "model": "group/steering", "thinkingLevel": "high" },
     "coding": { "model": "group/coding", "thinkingLevel": "high" },
@@ -195,21 +195,26 @@ Gateway rules:
 - **Tool groups are chosen per daemon.** `toolGroups` lists the groups every bot is given:
   `persona` and `machine` (the two core prompts, see below), `core` (the `list` tool),
   `core-ui` (the person-facing `ask_user` card and `note_set` sidebar line), `coding`
-  (pi-durable's `read`, `write`, `edit`, `bash`), `hc` (the herdr-core coding agents, off by
+  (pi-durable's `read`, `write`, `edit`, `bash`), `hc` (the herdr-core coding agents, on by
   default) and `agents` (child conversations), plus the optional `memory`, `secrets`,
   `search`, `decision`, `trigger` and `peers`. `core`, `core-ui` and `coding` are mandatory:
   an empty array selects exactly those three. A child agent (`agent_spawn`) selects
   `persona`, `machine`, `core` and `coding` and never `core-ui`. An unknown name is a `400`
   and nothing is written. Saving records the selection on every bot and changes what a live
   conversation offers in place. There are no aliases for the old tool names.
+- **The `herdr` group name is gone, and a stored file migrates itself.** File version 4 of the
+  gateway settings names the groups a file written earlier could not know, so a version-3 file
+  gains `hc` on the next read; a stored `herdr` is filtered out like any unknown name, because
+  the group it named no longer exists. A client that still sends `herdr` in `toolGroups` is
+  refused as an unknown name (`400`); the daemon and the App are one installation and travel
+  together, so there is no release that speaks the old name against the new daemon.
 - **The Herdr page's roles travel as one block.** `hc` carries `steering`, `coding` and
   `reviewing`, each `{ model, thinkingLevel }`; a save that names it replaces the whole block,
   and a role with an empty model, a model longer than 200 characters or an unknown thinking
   level is a `400` that writes nothing. The daemon hands the block to the `hc` tools, which
   read it on every call, so the next `hc_start` runs on the saved model. The `hc` group being
   off is not the same as the block being absent: the block always has three roles, and its
-  default is `group/steering` · high, `group/coding` · high, `group/reviewing` · xhigh.
-- **The two core prompts lead the system prompt.** `corePrompt` is one standing instruction
+  default is `group/steering` · high, `group/coding` · high, `group/reviewing` · xhigh.- **The two core prompts lead the system prompt.** `corePrompt` is one standing instruction
   for every bot, trimmed and bounded to 4 000 characters (a longer one is a `400`); an empty
   string stores no section. The machine prompt is never written by the daemon: it is the
   first file that exists with content among `~/.agents/AGENTS.md`, `~/.pi/agent/AGENTS.md`,

@@ -89,7 +89,7 @@ because extensions can capture Bot-specific services and directories.
 | `memory` | `bots-memory` | Optional, **on by default** | All five memory tools, eager: no loader |
 | `secrets` | `bots-secrets` | Optional, **on by default** | All four secret tools, eager: no loader (§6.5) |
 | `agents` | `bots-agents` | Optional | All three child-agent tools when selected |
-| `hc` | `bots-hc`, `tool-search` | Optional, **off by default** | `tool_search`; the seven Herdr tools are deferred |
+| `hc` | `bots-hc`, `tool-search` | Optional, **on by default** | `tool_search`; the seven Herdr tools are deferred |
 | `search` | `bots-search`, `tool-search` | Optional, **off by default** | `tool_search` is offered; `web_search` and `web_fetch` are deferred |
 | `decision` | `bots-decision`, `tool-search` | Optional, **off by default** | `tool_search` is offered; `decide`, `classify`, `assess`, `rate` and `judge` are deferred |
 | `trigger` | `bots-trigger`, `tool-search` | Optional, **on by default** | `tool_search` is offered; the five `trigger_*` tools are deferred |
@@ -114,7 +114,7 @@ a password asks for it in the conversation, where the value stays in the transcr
 replayed into every later prompt of that conversation.
 
 Current defaults select `persona`, `machine`, `core`, `core-ui`, `coding`, `memory`,
-`secrets`, `agents` and `trigger`; `hc`, `search`, `decision` and `peers` stay off until a
+`secrets`, `hc`, `agents` and `trigger`; `search`, `decision` and `peers` stay off until a
 person turns them on.
 `search` and `decision` are opt-in for the same reason: each call leaves the machine and spends
 money. `memory` is a default
@@ -122,7 +122,9 @@ because remembering is a habit rather than a discovered capability (§6.1), not 
 group-name list happened to widen. `secrets` is a default for the reason §6.5 records: the
 card is the only way a password is supposed to reach a Bot, so a Bot that does not have the
 group is a Bot that will ask for the password in the chat. `trigger` is on by default because a Bot that cannot
-create its own schedule or webhook cannot answer "every morning, check this". Settings are daemon-wide and applied to
+create its own schedule or webhook cannot answer "every morning, check this". `hc` is a
+default because it replaced `herdr` in the same slot: a Bot that can only edit files cannot
+dispatch its own coding and reviewing agents. Settings are daemon-wide and applied to
 existing/new Bots, not independently editable group policies for each sidebar
 Bot. `core` and `coding` are normalized back in even for an empty selection;
 their settings switches stay on and cannot be disabled. Herdr registrations

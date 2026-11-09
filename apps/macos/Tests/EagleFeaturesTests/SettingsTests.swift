@@ -565,16 +565,17 @@ struct SettingsGatewayTests {
     let model = SettingsViewModel(botsSettings: settings, urlSession: session)
     model.gatewayBaseURL = "http://typed/v1"
     model.gatewayModel = "typed-model"
-    model.setToolGroup("hc", isOn: false)
+    model.setToolGroup("search", isOn: true)
     await model.loadGateway()
     #expect(model.gatewayBaseURL == "http://typed/v1")
     #expect(model.gatewayModel == "typed-model")
     #expect(
       model.gatewayToolGroups
         == [
-          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "agents",
-          "trigger",
-        ])
+          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "hc",
+          "agents", "search", "trigger",
+        ],
+      "a typed field and a group draft both survive the load")
     GatewayHTTPStub.handler = nil
   }
 
@@ -663,13 +664,13 @@ struct SettingsGatewayTests {
     #expect(
       model.gateway?.toolGroups
         == [
-          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets",
+          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "hc",
           "agents", "trigger",
         ])
     #expect(
       model.gatewayToolGroups
         == [
-          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets",
+          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "hc",
           "agents", "trigger",
         ])
     GatewayHTTPStub.handler = nil
@@ -682,13 +683,13 @@ struct SettingsGatewayTests {
     #expect(model.isToolGroupEnabled("core"))
     model.setToolGroup("coding", isOn: false)
     #expect(model.isToolGroupEnabled("coding"))
-    #expect(model.isToolGroupEnabled("hc") == false, "the Herdr group is off by default")
-    model.setToolGroup("hc", isOn: true)
-    #expect(model.isToolGroupEnabled("hc"))
+    #expect(model.isToolGroupEnabled("hc"), "the Herdr group is a default, as herdr was")
+    model.setToolGroup("hc", isOn: false)
+    #expect(model.isToolGroupEnabled("hc") == false)
     #expect(
       model.gatewayToolGroups
         == [
-          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "hc",
+          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets",
           "agents", "trigger",
         ])
   }
@@ -840,7 +841,7 @@ struct SettingsGatewayTests {
       #expect(
         parsed?["toolGroups"] as? [String]
           == [
-            "persona", "machine", "core", "core-ui", "coding", "memory", "secrets",
+            "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "hc",
             "agents", "trigger",
           ])
       return (
@@ -911,7 +912,7 @@ struct SettingsGatewayTests {
     #expect(
       saved
         == [
-          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets",
+          "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "hc",
           "agents", "search", "trigger",
         ])
 
@@ -939,7 +940,8 @@ struct SettingsGatewayTests {
     #expect(
       model.gatewayToolGroups
         == [
-          "persona", "machine", "core", "core-ui", "coding", "secrets", "agents", "trigger",
+          "persona", "machine", "core", "core-ui", "coding", "secrets", "hc", "agents",
+          "trigger",
         ])
   }
 
@@ -1028,7 +1030,8 @@ struct SettingsGatewayTests {
     #expect(
       body?["toolGroups"] as? [String]
         == [
-          "persona", "core", "core-ui", "coding", "memory", "secrets", "agents", "search",
+          "persona", "core", "core-ui", "coding", "memory", "secrets", "hc", "agents",
+          "search",
         ],
       "only the two prompt groups changed, and the order is the daemon's")
     GatewayHTTPStub.handler = nil

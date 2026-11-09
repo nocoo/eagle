@@ -185,7 +185,7 @@ final class CatalogHTTPClientTests: XCTestCase {
     XCTAssertEqual(
       loaded.settings.toolGroups,
       [
-        "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "herdr", "agents",
+        "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "hc", "agents",
         "trigger",
       ])
     // An omitted key must not be sent, so the daemon keeps the stored one.
@@ -205,6 +205,66 @@ final class CatalogHTTPClientTests: XCTestCase {
     XCTAssertTrue(probe.ok)
     XCTAssertEqual(probe.models, 2)
     XCTAssertEqual(savedProviderBody["apiKey"] as? String, "k")
+  }
+
+  func testHerdrRolesDecodeSaveAndFallBack() async throws {
+    var savedBody: [String: Any] = [:]
+    StubProtocol.handler = { request in
+      switch (request.httpMethod, request.url?.path) {
+      case ("GET", "/v1/settings"):
+        return (
+          200,
+          Data(
+            #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://x/v1","model":"m","hasApiKey":true,"hc":{"steering":{"model":"group/steering","thinkingLevel":"high"},"coding":{"model":"custom/build","thinkingLevel":"max"},"reviewing":{"model":"group/reviewing","thinkingLevel":"xhigh"}}}}"#
+              .utf8)
+        )
+      case ("PUT", "/v1/settings"):
+        if let body = bodyData(request),
+          let parsed = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
+        {
+          savedBody = parsed
+        }
+        return (
+          200,
+          Data(
+            #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://x/v1","model":"m","hasApiKey":true}}"#
+              .utf8)
+        )
+      default:
+        return (404, Data())
+      }
+    }
+    let loaded = try await client.loadGateway()
+    XCTAssertEqual(
+      loaded.settings.hc.coding, HcRoleSettings(model: "custom/build", thinkingLevel: "max"))
+    XCTAssertEqual(loaded.settings.hc[.reviewing].model, "group/reviewing")
+
+    var roles = HcRoles.fallback
+    roles[.steering] = HcRoleSettings(model: "group/planning", thinkingLevel: "max")
+    _ = try await client.saveHerdrSettings(roles: roles, toolGroups: ["core", "hc"])
+    XCTAssertEqual(savedBody["toolGroups"] as? [String], ["core", "hc"])
+    let block = try XCTUnwrap(savedBody["hc"] as? [String: Any])
+    XCTAssertEqual(
+      block["steering"] as? [String: String],
+      ["model": "group/planning", "thinkingLevel": "max"])
+    XCTAssertEqual(
+      block["reviewing"] as? [String: String],
+      ["model": "group/reviewing", "thinkingLevel": "xhigh"])
+    XCTAssertNil(savedBody["model"], "the page writes only the block and the group set")
+    StubProtocol.handler = nil
+
+    StubProtocol.handler = { _ in
+      (
+        200,
+        Data(
+          #"{"settings":{"configured":true,"provider":"magpie","baseUrl":"http://x/v1","model":"m","hasApiKey":true}}"#
+            .utf8)
+      )
+    }
+    let older = try await client.loadGateway()
+    XCTAssertEqual(
+      older.settings.hc, .fallback, "a daemon that predates the block runs the defaults")
+    StubProtocol.handler = nil
   }
 
   func testSkillsDecodeFromSettingsAndSaveOnTheirOwn() async throws {

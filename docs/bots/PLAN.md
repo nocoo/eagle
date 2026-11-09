@@ -213,8 +213,11 @@ The `herdr` tool group became the `hc` group and moved off the 工具 page onto 
   `herdr` is the terminal multiplexer a person uses. The App's Herdr Teams inspector and the
   web realtime bridge keep reading `herdr` and are untouched; no Bot tool opens, writes or
   closes a person's `herdr` session.
-- **Off by default.** `hc` is no longer in the default group set, in the daemon or in the App,
-  so an untouched machine gives a Bot no terminal at all. The page switches it on.
+- **On by default, in `herdr`'s old slot.** `hc` sits where the removed `herdr` group sat in
+the default set, in the daemon and in the App: a Bot keeps the terminal collaborator it had,
+only now it is `hc` in terminals of its own. A stored `gateway.json` gains the group on its
+next read (file version 4) and the stale `herdr` name is filtered out. The page switches it
+off for a person who does not want a Bot with a terminal.
 - **Three roles, three models.** The page saves `steering`, `coding` and `reviewing` as one
   block in `gateway.json` (`group/steering` · high, `group/coding` · high,
   `group/reviewing` · xhigh by default). `hc_start` reads the block on every call and launches

@@ -22,9 +22,13 @@ test("core, core-ui and coding cannot be turned off and unknown names are droppe
     "coding",
     "memory",
     "secrets",
+    "hc",
     "agents",
     "trigger",
   ]);
+
+  // A Bot's terminal collaborator is a default, the way `herdr` used to be.
+  assert.equal(DEFAULT_TOOL_GROUPS.includes("hc"), true);
 
   // Memory is a default because remembering is a habit, and it is still just a group.
   assert.deepEqual(resolveToolGroups(["memory"]), [...mandatory, "memory"]);

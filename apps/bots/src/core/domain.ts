@@ -642,6 +642,7 @@ export const DEFAULT_TOOL_GROUPS: readonly ToolGroup[] = [
   "coding",
   "memory",
   "secrets",
+  "hc",
   "agents",
   "trigger",
 ];

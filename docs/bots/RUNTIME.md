@@ -357,7 +357,7 @@ Projection, which is also part of the mapping contract:
 | `progress.outputIntervalMs` | 100 | Reserved (tool output) |
 | `afterFailedRun` | `"continue"` | A failed run must not strand queued follow-ups |
 | `restartLimit` | 5 (default) | Parked tasks surface as `task_parked` and are cleared by `recover` |
-| `toolGroups` (per bot) | from stored config, default `["core", "core-ui", "coding", "agents", "trigger"]` | `core`, `core-ui` and `coding` are mandatory. `core` adds `list`, `core-ui` adds the person-facing `ask_user` and `note_set`, and `coding` is native `CodingTools`. The Herdr (`hc`), search, decision, peers, memory and secrets extensions are optional. See "Tool groups" below |
+| `toolGroups` (per bot) | from stored config, default `["persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "hc", "agents", "trigger"]` | `core`, `core-ui` and `coding` are mandatory. `core` adds `list`, `core-ui` adds the person-facing `ask_user` and `note_set`, and `coding` is native `CodingTools`. The Herdr (`hc`), search, decision, peers, memory and secrets extensions are optional. See "Tool groups" below |
 | `thinkingLevel` (per bot) | from the stored pair, migrated once to `medium` when a catalog has none | Every bot stores its own level: a catalog written before the field existed gets the daemon's current default written once at startup, so a later change of the default cannot move it. The settings name the level a new bot records; the inspector changes the level of one bot, in one commit (`root.configure`), and the change reaches the next prepared request — a running answer is never interrupted. An explicit metadata set can refuse a level; the ids-only gateway publishes none, so all seven are requests and an upstream refusal is the run's error, never a fallback |
 | Search provider | `<XDG_CONFIG_HOME or ~/.config>/eagle-bots/providers.json` (0600) | Independent DeepSeek/Tavily keys with one selected provider. The `search` tool group is off by default. Its deferred `web_search`/`web_fetch` use a stable routing client that resolves the selected provider/key at invocation, including existing conversations; missing configuration is an error result, and failures never trigger fallback. Successful calls each book one `search` call |
 | Usage statistics | `<root>/usage.sqlite`, 90 days | `usage_daily(bot_id, day, source, tokens, calls, cost_usd)` plus `last_seen(bot_id, total_tokens, cost_usd)` so a cumulative model report becomes a delta. A source is a string (`model`, `search`), so a new spender needs no schema change; the first token-only `daily` table is migrated into the `model` source on open. Kept outside a bot's session, so deleting a bot keeps its history; pruned on boot and on write |
@@ -462,7 +462,7 @@ selection before its baseline snapshot. No new wire command, loading UI, Harness
 watch or model request is needed. The refresh carries the subscription trace.
 
 Enabling a previously disabled group immediately makes its registered tools available;
-disabling Herdr also removes its loader and prompt section from the selected agent.
+disabling `hc` also removes its loader and prompt section from the selected agent.
 Already executing calls retain their SDK execution phase, while later requests use the
 new selection. Existing child conversations keep their own stored agent choices; this is
 configuration, not a permission-revocation or sandbox system.
@@ -515,8 +515,9 @@ calls `hc_list`, and the call runs.
 The `hc` group gives a bot its own coding agents in herdr-core, the CLI whose command is
 `hc`. It is not `herdr`, the terminal multiplexer the person uses: the bot drives `hc` in
 terminals it owns, never the person's `herdr` sessions, and the App's own Herdr surfaces keep
-reading `herdr`. The group is **off by default**; the Herdr settings page switches it on and
-holds the three role models.
+reading `herdr`. The group is **on by default**, in the slot the removed `herdr` group held,
+because a Bot that cannot start its own coding agent is not the Bot this product is for; the
+Herdr settings page switches it off and holds the three role models.
 
 | Tool | Behaviour |
 | --- | --- |

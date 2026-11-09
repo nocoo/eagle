@@ -133,7 +133,7 @@ export const DEFAULT_CORE_PROMPT =
 /** The protocol's own bound for a standing instruction. */
 export const MAX_CORE_PROMPT = 4_000;
 /** Each version names the groups a stored list could not have known yet. */
-const FILE_VERSION = 3;
+const FILE_VERSION = 4;
 /** Groups that a file written before this version could not name, in the order they arrived. */
 const GAINED_GROUPS: readonly {
   readonly version: number;
@@ -141,6 +141,7 @@ const GAINED_GROUPS: readonly {
 }[] = [
   { version: 2, groups: ["persona", "machine"] },
   { version: 3, groups: ["memory"] },
+  { version: 4, groups: ["hc"] },
 ];
 const TEST_TIMEOUT_MS = 8_000;
 

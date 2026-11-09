@@ -103,6 +103,7 @@ test("dotenv values are the fallback, and a broken file is not configured", asyn
         "coding",
         "memory",
         "secrets",
+        "hc",
         "agents",
         "trigger",
       ],
@@ -253,7 +254,7 @@ test("a version-1 file gains every later group once, a saved choice keeps them o
     const stored = await readGateway(bench_.root);
     assert.deepEqual(stored?.toolGroups, ["core", "core-ui", "coding", "hc"]);
     const raw = JSON.parse(await readFile(gatewayPath(bench_.root), "utf8")) as { version: number };
-    assert.equal(raw.version, 3);
+    assert.equal(raw.version, 4);
 
     // A version-2 file gains memory the same way, and only once.
     const earlier = { ...legacy, version: 2, toolGroups: ["core", "core-ui", "coding"] };
@@ -263,6 +264,22 @@ test("a version-1 file gains every later group once, a saved choice keeps them o
       "core-ui",
       "coding",
       "memory",
+      "hc",
+    ]);
+
+    // A version-3 file named the removed `herdr` group: it gains `hc` and the stale name drops.
+    const withHerdr = {
+      ...legacy,
+      version: 3,
+      toolGroups: ["core", "core-ui", "coding", "memory", "herdr"],
+    };
+    await writeFile(gatewayPath(bench_.root), JSON.stringify(withHerdr), "utf8");
+    assert.deepEqual((await readGateway(bench_.root))?.toolGroups, [
+      "core",
+      "core-ui",
+      "coding",
+      "memory",
+      "hc",
     ]);
   } finally {
     await bench_.cleanup();

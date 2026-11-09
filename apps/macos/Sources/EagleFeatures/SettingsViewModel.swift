@@ -93,9 +93,10 @@ public final class SettingsViewModel: ObservableObject {
     "search", "decision", "trigger", "peers",
   ]
   /// What a daemon that predates a new group is assumed to run: both core prompts are on,
-  /// memory is on because remembering is a habit, and the rest is opt-in.
+  /// memory is on because remembering is a habit, and the rest is opt-in but for the Bot's
+  /// own terminal collaborator, which `herdr` used to be.
   public static let defaultToolGroups = [
-    "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "agents",
+    "persona", "machine", "core", "core-ui", "coding", "memory", "secrets", "hc", "agents",
     "trigger",
   ]
   public static let mandatoryToolGroups: Set<String> = ["core", "core-ui", "coding"]

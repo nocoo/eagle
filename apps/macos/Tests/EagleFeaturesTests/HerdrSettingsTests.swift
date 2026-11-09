@@ -69,10 +69,12 @@ struct HerdrSettingsTests {
        "reviewing":{"model":"group/reviewing","thinkingLevel":"xhigh"}}}}
     """#
 
-  @Test("the Herdr group is off by default and is not a tool-page row")
+  @Test("the Herdr group is a default and is not a tool-page row")
   func herdrDefaults() {
     #expect(SettingsViewModel.toolGroups.contains(SettingsViewModel.hcToolGroup))
-    #expect(SettingsViewModel.defaultToolGroups.contains(SettingsViewModel.hcToolGroup) == false)
+    #expect(
+      SettingsViewModel.defaultToolGroups.contains(SettingsViewModel.hcToolGroup),
+      "hc took the slot herdr held: a Bot keeps its own terminal collaborator")
     #expect(SettingsViewModel.hcToolGroup == "hc")
   }
 

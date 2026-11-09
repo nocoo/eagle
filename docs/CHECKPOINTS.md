@@ -1,11 +1,30 @@
 # 用户视角检查点
 
+## 2026-11-09 — hc 接替 herdr 进入默认组，Herdr 页成为独立页面
+
+- 合并 #137 后，Bot 的终端协作不再叫 `herdr`：它是 `hc`（herdr-core），在自己的终端
+  里开活；人自己的 `herdr` 只被 App 读取，Bot 的工具不开、不写、不关。设置里多了一页
+  **Herdr**，两张卡：`Bot 的 hc`（版本/未安装、开关、三个角色的模型）和 `你的 herdr`（只读）。
+- 默认组回到 `herdr` 原来的位置：`persona, machine, core, core-ui, coding, memory,
+  secrets, hc, agents, trigger`。老机器上存过的 `gateway.json`（版本 3 及更早）在下次读取时
+  自动获得 `hc`，旧的 `herdr` 名字被当作未知名字过滤掉；这一条由 `gateway.test.ts` 的
+  版本 3 用例守着。
+- `hc` 未安装时开关仍是禁用状态，文案改成"已开启，但没安装 hc"，不再显示一个说不清楚的 on。
+- 本机验证：`apps/bots` `npm run check` 绿（1 163 测试，覆盖 95.42 / 87.91 / 90.99）；
+  `apps/bots-macos` 三个 target 55 / 57 / 58 全绿（新增 `HcRoles` 的收发断言）；
+  `apps/macos` 453 + 52 + 85 + 41 全绿；`check:design`、`test:design`、`test:devices`
+  11 项、`test:browser` 191 项全绿。根 `npm run test` 用官方 Node 26.13.0 是 311/311，
+  Homebrew 的 Node 仍如文档所述被 `device-runtime-package.test.ts` 拒绝。
+- 仍未做人工验证：两个安装按钮没有真点（会覆盖已装好的二进制），以及打包 App 的整轮验收。
+
 ## 2026-11-09 — Herdr page: the Bot drives hc, not herdr
 
 - A person now sees a **Herdr** settings page with two cards: `hc · herdr-core` (the Bot's
-  hand: install state, the off-by-default switch, and the three role models) and `herdr` (the
+  hand: install state, the switch, and the three role models) and `herdr` (the
   person's own terminal, read-only for the App). A missing tool says 未安装 and offers one
-  install button; the `hc` switch stays disabled until `hc` exists.
+  install button; the `hc` switch stays disabled until `hc` exists. The switch arrived off in
+  that slice and the 2026-11-09 entry above records the owner's later decision to put `hc`,
+  not `herdr`, in the default group set.
 - Working end to end on this machine: `hc 0.1.18` is installed, and the new `hc_start` started
   `pi` on `group/steering` in a terminal named `bots-bprobe99-steering`, `hc_wait` ended on
   `done`, `hc_read` contained the model's `pong`, and `hc_close` killed and removed it. The
