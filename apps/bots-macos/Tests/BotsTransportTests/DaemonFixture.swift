@@ -158,9 +158,12 @@ actor EventCollector {
     events.append(event)
   }
 
+  /// Sixty seconds, not fifteen: these tests start a real Node daemon, and the first socket of a
+  /// cold CI runner has taken longer than fifteen to say `ready` while the rest of the package
+  /// compiles and runs beside it. The bound still fails a daemon that never answers.
   func waitFor(
     _ predicate: @Sendable (ConversationEvent) -> Bool,
-    timeout: TimeInterval = 15
+    timeout: TimeInterval = 60
   ) async throws -> ConversationEvent {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
