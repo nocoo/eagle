@@ -1,6 +1,6 @@
 {
   "name": "eagle",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "config": {
     "publishedAgentVersion": "1.0.0",
     "publishedMacosVersion": "0.25.0",
