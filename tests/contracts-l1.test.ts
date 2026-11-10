@@ -88,7 +88,7 @@ test("resource points insert offline gaps for stale cadence", () => {
 });
 
 test("resourceSample maps telemetry and refuses missing resources", () => {
-  const full = telemetry("2026-01-01T00:00:00.000Z");
+  const full = { ...telemetry("2026-01-01T00:00:00.000Z"), sampleIntervalSeconds: 30 };
   full.resources!.cpuUsagePercent = 12.5;
   full.resources!.memory = { totalBytes: 1000, freeBytes: 250 };
   full.resources!.loadAverage = [1, 2, 3];
