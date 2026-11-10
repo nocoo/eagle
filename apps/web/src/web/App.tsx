@@ -853,13 +853,7 @@ export function App() {
               </NavItem>
             </div>
           </SidebarNav>
-          <SidebarFooter
-            className={
-              collapsed && !mobile
-                ? "flex flex-col items-center gap-2 px-0"
-                : undefined
-            }
-          >
+          <SidebarFooter>
             <SidebarAccount collapsed={collapsed && !mobile} />
           </SidebarFooter>
         </Sidebar>
