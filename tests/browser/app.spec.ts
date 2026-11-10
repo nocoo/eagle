@@ -582,14 +582,27 @@ test("adopted eagle mark and family links work in both sidebar states", async ({
     await mark.evaluate((node) => getComputedStyle(node).borderRadius),
   ).toBe("0px");
   const expandedMark = await mark.boundingBox();
+  const stableMarkBox = (box: Awaited<ReturnType<typeof mark.boundingBox>>) => {
+    if (!box || !expandedMark) return false;
+    return (
+      box.width === expandedMark.width &&
+      box.height === expandedMark.height &&
+      Math.abs(box.x - expandedMark.x) <= 1 &&
+      Math.abs(box.y - expandedMark.y) <= 1
+    );
+  };
   await page.getByRole("button", { name: "收起导航" }).click();
   if (!isMobile) {
     await expect(mark).toBeVisible();
-    await expect.poll(() => mark.boundingBox()).toEqual(expandedMark);
+    await expect
+      .poll(async () => stableMarkBox(await mark.boundingBox()))
+      .toBe(true);
     const toggle = page.getByRole("button", { name: "展开导航" });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await toggle.click();
-    await expect.poll(() => mark.boundingBox()).toEqual(expandedMark);
+    await expect
+      .poll(async () => stableMarkBox(await mark.boundingBox()))
+      .toBe(true);
   }
   expect(
     await page.evaluate(

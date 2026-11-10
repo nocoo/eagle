@@ -738,22 +738,22 @@ export function App() {
             </>
           )}
           <SidebarHeader>
-            {sidebarCollapsed ? (
-              <Mark size={20} className="h-5 w-5 shrink-0" />
-            ) : (
-              <div className="flex w-full min-w-0 items-center justify-between gap-basalt-space-lg">
-                <div className="flex min-w-0 items-center gap-basalt-space-lg">
-                  <Mark size={20} className="h-5 w-5 shrink-0" />
-                  <span className="truncate text-basalt-xl font-semibold text-basalt-foreground">
-                    Eagle
-                  </span>
-                  <Badge variant="secondary" className="shrink-0 font-mono">
-                    v{__APP_VERSION__}
-                  </Badge>
-                </div>
-                {sidebarToggle("header")}
+            <div className="flex w-full min-w-0 items-center justify-between gap-basalt-space-lg">
+              <div className="flex min-w-0 items-center gap-basalt-space-lg">
+                <Mark size={20} className="h-5 w-5 shrink-0" />
+                {(!sidebarCollapsed || mobile) && (
+                  <>
+                    <span className="truncate text-basalt-xl font-semibold text-basalt-foreground">
+                      Eagle
+                    </span>
+                    <Badge variant="secondary" className="shrink-0 font-mono">
+                      v{__APP_VERSION__}
+                    </Badge>
+                  </>
+                )}
               </div>
-            )}
+              {!sidebarCollapsed && sidebarToggle("header")}
+            </div>
           </SidebarHeader>
           {sidebarCollapsed && sidebarToggle("rail")}
           <SidebarNav aria-label="工作台导航">
