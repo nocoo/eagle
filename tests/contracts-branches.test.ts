@@ -3,13 +3,13 @@ import { test } from "node:test";
 import { summarize } from "../packages/contracts/src/assessment.ts";
 import { parseDailyReport } from "../packages/contracts/src/daily.ts";
 import { projectHour } from "../packages/contracts/src/report-input.ts";
-import { compactRenderedFrame } from "../packages/contracts/src/terminal-display.ts";
-import { terminalLinkParts } from "../packages/contracts/src/terminal-links.ts";
 import {
   parseTerminalScreen,
   restyleRedactedText,
   terminalColor,
 } from "../packages/contracts/src/terminal.ts";
+import { compactRenderedFrame } from "../packages/contracts/src/terminal-display.ts";
+import { terminalLinkParts } from "../packages/contracts/src/terminal-links.ts";
 import { report } from "./fixtures.ts";
 
 const dailyHours = () =>
@@ -47,7 +47,11 @@ test("parseDailyReport separates missing-data and stale-state failures", () => {
           overview: "上午缺失引用需要足够长度的概述文本。",
           hours: dailyHours().map((hour) =>
             hour.hour === 5
-              ? { hour: 5, summary: "仅见旧状态，尚无新进展证据。", evidenceIds: [] }
+              ? {
+                  hour: 5,
+                  summary: "仅见旧状态，尚无新进展证据。",
+                  evidenceIds: [],
+                }
               : hour,
           ),
           nextSteps: [],
@@ -146,10 +150,16 @@ test("terminal rendering preserves unmatched edited lines and styled redaction",
   });
   assert.equal(rebuilt.text, "rebuilt\nbody");
   const restyled = restyleRedactedText(
-    [{ text: "prefix ", fg: 2 }, { text: "suffix", fg: 3 }],
+    [
+      { text: "prefix ", fg: 2 },
+      { text: "suffix", fg: 3 },
+    ],
     "prefix [REDACTED] suffix",
   );
-  assert.equal(restyled.map((run) => run.text).join(""), "prefix [REDACTED] suffix");
+  assert.equal(
+    restyled.map((run) => run.text).join(""),
+    "prefix [REDACTED] suffix",
+  );
   for (const color of [0, 8, 15, 200, 232, 255] as const)
     assert.match(terminalColor(color) ?? "", /^(var\(|rgb\()/);
   for (const value of [
@@ -169,5 +179,8 @@ test("terminal rendering preserves unmatched edited lines and styled redaction",
 test("terminal links trim unmatched trailing braces", () => {
   const text = "see https://example.test/foo}";
   const parts = terminalLinkParts(text);
-  assert.equal(parts.find((part) => part.href)?.href, "https://example.test/foo");
+  assert.equal(
+    parts.find((part) => part.href)?.href,
+    "https://example.test/foo",
+  );
 });

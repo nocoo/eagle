@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { changesBetween, summarize } from "../packages/contracts/src/assessment.ts";
+import {
+  changesBetween,
+  summarize,
+} from "../packages/contracts/src/assessment.ts";
 import { canonical, digest } from "../packages/contracts/src/canonical.ts";
-import { onboardingPrompt, type Registration } from "../packages/contracts/src/connect.ts";
+import {
+  onboardingPrompt,
+  type Registration,
+} from "../packages/contracts/src/connect.ts";
 import {
   DailySettingsSchema,
   dailyPrompt,
-  sampleHour,
   validDate,
 } from "../packages/contracts/src/daily.ts";
 import {
@@ -22,9 +27,15 @@ import {
   projectHour,
   utcHour,
 } from "../packages/contracts/src/report-input.ts";
-import { resourcePoints, resourceSample } from "../packages/contracts/src/resources.ts";
+import {
+  resourcePoints,
+  resourceSample,
+} from "../packages/contracts/src/resources.ts";
+import {
+  parseTerminalScreen,
+  terminalColor,
+} from "../packages/contracts/src/terminal.ts";
 import { compactRenderedFrame } from "../packages/contracts/src/terminal-display.ts";
-import { parseTerminalScreen, terminalColor } from "../packages/contracts/src/terminal.ts";
 import { evidence, report, telemetry } from "./fixtures.ts";
 
 test("canonical JSON and digest stay deterministic", async () => {
@@ -37,7 +48,10 @@ test("canonical JSON and digest stay deterministic", async () => {
 
 test("daily settings reject invalid providers and impossible calendar dates", () => {
   assert.equal(validDate("2026-02-30"), false);
-  assert.equal(DailySettingsSchema.safeParse({ provider: "bogus" }).success, false);
+  assert.equal(
+    DailySettingsSchema.safeParse({ provider: "bogus" }).success,
+    false,
+  );
   assert.equal(
     DailySettingsSchema.safeParse({ intervalHours: 12 } as never).success,
     false,
@@ -88,30 +102,46 @@ test("resource points insert offline gaps for stale cadence", () => {
 });
 
 test("resourceSample maps telemetry and refuses missing resources", () => {
-  const full = { ...telemetry("2026-01-01T00:00:00.000Z"), sampleIntervalSeconds: 30 };
-  full.resources!.cpuUsagePercent = 12.5;
-  full.resources!.memory = { totalBytes: 1000, freeBytes: 250 };
-  full.resources!.loadAverage = [1, 2, 3];
-  assert.deepEqual(resourceSample(full as Parameters<typeof resourceSample>[0]), {
-    observedAt: full.observedAt,
-    intervalSeconds: 30,
-    cpu: 12.5,
-    memory: 75,
-    load: [1, 2, 3],
-  });
+  const base = telemetry("2026-01-01T00:00:00.000Z");
+  const full = {
+    ...base,
+    sampleIntervalSeconds: 30,
+    resources: {
+      ...base.resources,
+      cpuUsagePercent: 12.5,
+      memory: { totalBytes: 1000, freeBytes: 250 },
+      loadAverage: [1, 2, 3],
+    },
+  };
+  assert.deepEqual(
+    resourceSample(full as Parameters<typeof resourceSample>[0]),
+    {
+      observedAt: full.observedAt,
+      intervalSeconds: 30,
+      cpu: 12.5,
+      memory: 75,
+      load: [1, 2, 3],
+    },
+  );
   const sparse = { observedAt: "2026-01-01T01:00:00.000Z" };
-  assert.deepEqual(resourceSample(sparse as Parameters<typeof resourceSample>[0]), {
-    observedAt: sparse.observedAt,
-    intervalSeconds: null,
-    cpu: null,
-    memory: null,
-    load: null,
-  });
+  assert.deepEqual(
+    resourceSample(sparse as Parameters<typeof resourceSample>[0]),
+    {
+      observedAt: sparse.observedAt,
+      intervalSeconds: null,
+      cpu: null,
+      memory: null,
+      load: null,
+    },
+  );
 });
 
 test("utcHour buckets observations to whole hours", () => {
   assert.equal(utcHour("2026-03-01T12:34:56.789Z"), "2026-03-01T12:00:00.000Z");
-  assert.equal(utcHour(Date.parse("2026-03-01T12:59:59.999Z")), "2026-03-01T12:00:00.000Z");
+  assert.equal(
+    utcHour(Date.parse("2026-03-01T12:59:59.999Z")),
+    "2026-03-01T12:00:00.000Z",
+  );
 });
 
 test("terminal styling covers reset codes and color tables", () => {
@@ -119,7 +149,10 @@ test("terminal styling covers reset codes and color tables", () => {
     "\u001b[1;31mA\u001b[22mB\u001b[3mC\u001b[23mD\u001b[4mE\u001b[24mF\u001b[7mG\u001b[27mH\u001b[39mI\u001b[49mJ\u001b[38;5;196mK\u001b[48;2;1;2;3mL\u001b[0m",
   );
   assert.equal(screen.runs.map((run) => run.text).join(""), screen.text);
-  assert.equal(parseTerminalScreen("\u001b[=bad\u001b[38;5m\u001b[0m").text, "ad");
+  assert.equal(
+    parseTerminalScreen("\u001b[=bad\u001b[38;5m\u001b[0m").text,
+    "ad",
+  );
   for (const color of [0, 8, 15, 196, 231, 255] as const)
     assert.match(terminalColor(color) ?? "", /^(var\(|rgb\()/);
   assert.equal(terminalColor([10, 20, 30]), "rgb(10, 20, 30)");
@@ -139,7 +172,10 @@ test("compactRenderedFrame falls back when edited text no longer aligns", () => 
   };
   const compact = compactRenderedFrame(frame);
   assert.notEqual(compact.text, frame.text);
-  assert.equal(compact.runs?.some((run) => run.text.includes("line1")), true);
+  assert.equal(
+    compact.runs?.some((run) => run.text.includes("line1")),
+    true,
+  );
 });
 
 test("device helpers round-trip and validation stays strict", async () => {
@@ -159,7 +195,11 @@ test("device helpers round-trip and validation stays strict", async () => {
   );
   const badKey = deviceBase64(new Uint8Array(8));
   assert.equal(
-    await verifyDeviceSignature(badKey, "payload", deviceBase64(new Uint8Array(64))),
+    await verifyDeviceSignature(
+      badKey,
+      "payload",
+      deviceBase64(new Uint8Array(64)),
+    ),
     false,
   );
   assert.match(
@@ -180,10 +220,7 @@ test("assessment history captures topology and availability transitions", () => 
   assert.match(changesBetween(null, base).join(" "), /首次接入/);
   const unavailable = report("report-2");
   unavailable.spaces[0].availability = "unavailable";
-  assert.match(
-    changesBetween(base, unavailable).join(" "),
-    /Session 已停止/,
-  );
+  assert.match(changesBetween(base, unavailable).join(" "), /Session 已停止/);
   const restored = report("report-3");
   restored.spaces[0].objective = "新目标";
   restored.spaces[0].tabs[0].panes[0].task = {
@@ -278,14 +315,19 @@ test("assessment history captures topology and availability transitions", () => 
 
 test("compactHour keeps resource telemetry and coalesces duplicate inventory", () => {
   const first = report("a", "2026-09-19T10:00:00.000Z");
-  first.machine.telemetry = telemetry(first.capturedAt) as typeof first.machine.telemetry;
+  first.machine.telemetry = telemetry(
+    first.capturedAt,
+  ) as typeof first.machine.telemetry;
   const second = structuredClone(first);
   second.reportId = "b";
   second.capturedAt = "2026-09-19T10:30:00.000Z";
   const duplicate = structuredClone(first);
   const input = compactHour([first, second, duplicate]);
   assert(input.records.some((record) => record.kind === "resources"));
-  assert.equal(input.records.filter((record) => record.kind === "inventory").length, 1);
+  assert.equal(
+    input.records.filter((record) => record.kind === "inventory").length,
+    1,
+  );
   assert.equal(input.snapshots, 3);
   assert.equal(input.firstObservedAt, first.capturedAt);
   assert.equal(input.lastObservedAt, second.capturedAt);

@@ -16,7 +16,9 @@ import { fileURLToPath } from "node:url";
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
-function fixture(run: (root: string, git: (...args: string[]) => string) => void): void {
+function fixture(
+  run: (root: string, git: (...args: string[]) => string) => void,
+): void {
   const root = mkdtempSync(join(tmpdir(), "eagle-l1-gate-"));
   const environment = { ...process.env };
   for (const key of [
@@ -69,7 +71,9 @@ function fixture(run: (root: string, git: (...args: string[]) => string) => void
       mkdirSync(dirname(join(root, file)), { recursive: true });
       copyFileSync(join(repository, file), join(root, file));
     }
-    mkdirSync(join(root, "apps/macos/Sources/EagleDesign"), { recursive: true });
+    mkdirSync(join(root, "apps/macos/Sources/EagleDesign"), {
+      recursive: true,
+    });
     writeFileSync(
       join(root, "apps/macos/Sources/EagleDesign/Theme.swift"),
       "enum Theme {}\n",
@@ -112,7 +116,14 @@ test("mean handles values and empty input", () => {
     );
     const format = spawnSync(
       "npx",
-      ["--no-install", "biome", "format", "--write", "tsconfig.json", ".c8rc.json"],
+      [
+        "--no-install",
+        "biome",
+        "format",
+        "--write",
+        "tsconfig.json",
+        ".c8rc.json",
+      ],
       { cwd: root, encoding: "utf8" },
     );
     assert.equal(format.status, 0, format.stderr);
@@ -150,12 +161,17 @@ function commit(root: string): ReturnType<typeof spawnSync> {
   return spawnSync(
     "git",
     ["-C", root, "commit", "-m", "test: exercise l1 gate"],
-    { env: environment, encoding: "utf8", timeout: 120_000, maxBuffer: 8 * 1024 * 1024 },
+    {
+      env: environment,
+      encoding: "utf8",
+      timeout: 120_000,
+      maxBuffer: 8 * 1024 * 1024,
+    },
   );
 }
 
 test("healthy staged sources pass the index-snapshot L1 gate", () => {
-  fixture((_root, git) => {
+  fixture((_root, _git) => {
     const result = commit(_root);
     assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
     assert.match(`${result.stderr}${result.stdout}`, /L1 index snapshot/);

@@ -38,10 +38,11 @@ test("projectHour ignores non-evidence and non-visible records", () => {
     terminalEvidence("E2", "t", "task", "keep"),
   ];
   const projected = projectHour(records);
-  assert.deepEqual(
-    projected.records.map((record) => record.id).sort(),
-    ["E1", "E2", "P1"],
-  );
+  assert.deepEqual(projected.records.map((record) => record.id).sort(), [
+    "E1",
+    "E2",
+    "P1",
+  ]);
 });
 
 test("projectHour keeps first and latest duplicates ordered by observation time", () => {
@@ -81,12 +82,19 @@ test("projectHour tolerates missing observation timestamps in a group", () => {
 
 test("compactHour records pane and evidence facts with stable canonical keys", () => {
   const value = report("input-l1", "2026-09-19T11:00:00.000Z");
-  value.machine.telemetry = telemetry(value.capturedAt) as typeof value.machine.telemetry;
+  value.machine.telemetry = telemetry(
+    value.capturedAt,
+  ) as typeof value.machine.telemetry;
   const pane = value.spaces[0].tabs[0].panes[0];
-  pane.evidence = [evidence("goal", "running", { observedAt: value.capturedAt })];
+  pane.evidence = [
+    evidence("goal", "running", { observedAt: value.capturedAt }),
+  ];
   const first = compactHour([value]);
   const second = compactHour([value, value]);
-  assert.equal(first.records.filter((record) => record.kind === "evidence").length, 1);
+  assert.equal(
+    first.records.filter((record) => record.kind === "evidence").length,
+    1,
+  );
   assert.equal(second.snapshots, 2);
   assert.equal(
     first.records.find((record) => record.kind === "pane")?.observations.length,
