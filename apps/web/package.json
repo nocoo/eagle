@@ -14,7 +14,7 @@
     "@nocoo/next-ai": "^0.4.0",
     "ai": "7.0.162",
     "jose": "6.2.15",
-    "lucide-react": "1.61.0",
+    "lucide-react": "^1.70.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "recharts": "^3.10.1",
