@@ -36,6 +36,8 @@
     "verify": "npm run check && npm run test:browser"
   },
   "overrides": {
+    "@ai-sdk/provider": "4.0.37",
+    "@ai-sdk/provider-utils": "5.0.76",
     "undici": "^7.30.1",
     "sharp": "0.35.5",
     "source-map-js": "1.2.2"
