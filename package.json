@@ -41,7 +41,7 @@
     "source-map-js": "1.2.2"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.4",
+    "@biomejs/biome": "^2.6.6",
     "@playwright/test": "^1.64.1",
     "@types/node": "^26.6.6",
     "miniflare": "5.20260918.0-alpha",
