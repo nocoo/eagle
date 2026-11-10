@@ -41,13 +41,13 @@ export function SidebarAccount({ collapsed }: { collapsed: boolean }) {
   }, []);
   const name = viewer?.name || (failed ? "身份暂不可用" : "正在读取身份…");
   const avatar = (
-    <Avatar className="h-9 w-9 shrink-0">
+    <Avatar>
       <AvatarImage
         src={viewer?.avatar || undefined}
         alt={`${name} 的头像`}
         referrerPolicy="no-referrer"
       />
-      <AvatarFallback className="text-basalt-sm">
+      <AvatarFallback>
         {viewer?.name?.slice(0, 1).toUpperCase() || "E"}
       </AvatarFallback>
     </Avatar>
@@ -60,7 +60,6 @@ export function SidebarAccount({ collapsed }: { collapsed: boolean }) {
           variant="ghost"
           aria-label="退出登录"
           aria-disabled={!viewer || viewer.local || localFrontend}
-          className="shrink-0 aria-disabled:opacity-50"
           onClick={() => {
             if (viewer && !viewer.local && !localFrontend)
               window.location.assign("/cdn-cgi/access/logout");
