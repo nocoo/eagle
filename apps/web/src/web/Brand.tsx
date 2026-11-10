@@ -14,7 +14,13 @@ import { useEffect, useState } from "react";
 import type { Viewer } from "../../../../packages/contracts/src/schema.ts";
 import { api } from "./api.ts";
 import { localFrontend, localProduction } from "./environment.ts";
-export function Mark({ size = 24 }: { size?: number }) {
+export function Mark({
+  size = 24,
+  className = "shrink-0 object-contain",
+}: {
+  size?: number;
+  className?: string;
+}) {
   return (
     <img
       data-eagle-mark
@@ -23,7 +29,7 @@ export function Mark({ size = 24 }: { size?: number }) {
       aria-hidden="true"
       width={size}
       height={size}
-      className="shrink-0 object-contain"
+      className={className}
     />
   );
 }
