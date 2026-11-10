@@ -132,9 +132,7 @@ export function FamilyActions() {
             </a>
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-basalt-sm">
-          GitHub 仓库
-        </TooltipContent>
+        <TooltipContent side="bottom">GitHub 仓库</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -167,9 +165,7 @@ export function FamilyActions() {
             </a>
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-basalt-sm">
-          在 hexly.ai 查看 Eagle
-        </TooltipContent>
+        <TooltipContent side="bottom">在 hexly.ai 查看 Eagle</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -182,7 +178,7 @@ export function FamilyActions() {
             <ThemeIcon size={16} strokeWidth={1.5} aria-hidden="true" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-basalt-sm">
+        <TooltipContent side="bottom">
           {next === "light"
             ? "切换到浅色"
             : next === "dark"
