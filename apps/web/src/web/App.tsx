@@ -669,22 +669,27 @@ export function App() {
     );
     if (mobile) setCollapsed(true);
   };
-  const sidebarToggle = (
+  const sidebarCollapsed = collapsed && !mobile;
+  const toggleCollapsed = () => setCollapsed((value) => !value);
+  const sidebarToggle = (placement: "header" | "rail") => (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
           size="icon"
           variant="ghost"
-          aria-label={collapsed && !mobile ? "展开导航" : "收起导航"}
+          className={
+            placement === "rail" ? "mb-basalt-space-sm self-center" : undefined
+          }
+          aria-label={sidebarCollapsed ? "展开导航" : "收起导航"}
           aria-expanded={!collapsed}
           aria-controls="eagle-navigation"
-          onClick={() => setCollapsed((value) => !value)}
+          onClick={toggleCollapsed}
         >
-          <PanelLeft size={18} strokeWidth={1.5} aria-hidden="true" />
+          <PanelLeft strokeWidth={1.5} aria-hidden="true" />
         </Button>
       </TooltipTrigger>
-      <TooltipContent side={collapsed && !mobile ? "right" : "bottom"}>
-        {collapsed && !mobile ? "展开侧栏" : "收起侧栏"}
+      <TooltipContent side={sidebarCollapsed ? "right" : "bottom"}>
+        {sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
       </TooltipContent>
     </Tooltip>
   );
@@ -732,23 +737,25 @@ export function App() {
               </DialogDescription>
             </>
           )}
-          <SidebarHeader
-            className={collapsed && !mobile ? undefined : "pl-[22px]"}
-          >
-            <Mark />
-            {(!collapsed || mobile) && (
-              <>
-                <strong className="text-basalt-xl font-semibold">Eagle</strong>
-                <Badge variant="secondary" className="font-mono text-basalt-sm">
-                  v{__APP_VERSION__}
-                </Badge>
-                <div className="ml-auto">{sidebarToggle}</div>
-              </>
+          <SidebarHeader>
+            {sidebarCollapsed ? (
+              <Mark size={20} className="h-5 w-5 shrink-0" />
+            ) : (
+              <div className="flex w-full min-w-0 items-center justify-between gap-basalt-space-lg">
+                <div className="flex min-w-0 items-center gap-basalt-space-lg">
+                  <Mark size={20} className="h-5 w-5 shrink-0" />
+                  <span className="truncate text-basalt-xl font-semibold text-basalt-foreground">
+                    Eagle
+                  </span>
+                  <Badge variant="secondary" className="shrink-0 font-mono">
+                    v{__APP_VERSION__}
+                  </Badge>
+                </div>
+                {sidebarToggle("header")}
+              </div>
             )}
           </SidebarHeader>
-          {collapsed && !mobile && (
-            <div className="mb-1 self-center">{sidebarToggle}</div>
-          )}
+          {sidebarCollapsed && sidebarToggle("rail")}
           <SidebarNav aria-label="工作台导航">
             {machineSections.map((section) => (
               <div
