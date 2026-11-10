@@ -1,76 +1,108 @@
 #!/bin/sh
-# Fast gate on the staged snapshot: Biome for web/worker/contracts, the Bots
-# project's own Biome for apps/bots, swift-format for the macOS and bots-macos
-# packages. Keep it well under 30 seconds.
+# Fast gate on the Git index snapshot: L1 UT/coverage/types/lint, design, superagent,
+# and swift-format where applicable. Target under 30 seconds.
 set -eu
 cd "$(git rev-parse --show-toplevel)"
 
-if ! git diff --cached --quiet -- apps/macos tests/native/design-guard.test.ts \
-  tests/native/design-gate.test.ts .githooks/pre-commit .github/workflows/check.yml package.json; then
-  echo "pre-commit: staged design ownership"
-  (
-    snapshot=$(mktemp -d "${TMPDIR:-/tmp}/eagle-design-index.XXXXXX")
-    trap 'rm -rf "$snapshot"' EXIT
-    git checkout-index --all --prefix="$snapshot/"
-    for path in apps apps/macos apps/macos/Sources apps/macos/Scripts tests tests/native; do
-      if [ -L "$snapshot/$path" ] || [ ! -d "$snapshot/$path" ]; then
-        echo "design-guard: snapshot path refused: $path" >&2
-        exit 1
-      fi
-    done
-    for path in apps/macos/Scripts/check-design.ts apps/macos/Scripts/DesignGuard.swift \
-      tests/native/design-guard.test.ts; do
-      if [ -L "$snapshot/$path" ] || [ ! -f "$snapshot/$path" ]; then
-        echo "design-guard: snapshot path refused: $path" >&2
-        exit 1
-      fi
-    done
-    node "$snapshot/apps/macos/Scripts/check-design.ts"
-    node --test "$snapshot/tests/native/design-guard.test.ts"
-  )
-fi
-
-if ! git diff --cached --quiet -- apps/superagent fixtures/superagent-protocol; then
-  echo "pre-commit: superagent index snapshot"
-  (
-    snapshot=$(mktemp -d "${TMPDIR:-/tmp}/eagle-superagent-index.XXXXXX")
-    trap 'rm -rf "$snapshot"' EXIT
-    git checkout-index --all --prefix="$snapshot/"
-    for path in apps apps/superagent; do
-      if [ -L "$snapshot/$path" ] || [ ! -d "$snapshot/$path" ]; then
-        echo "superagent: snapshot path refused: $path" >&2
-        exit 1
-      fi
-    done
-    if [ ! -d apps/superagent/node_modules ] || [ -e "$snapshot/apps/superagent/node_modules" ] || [ -L "$snapshot/apps/superagent/node_modules" ]; then
-      echo "superagent: installed dependencies required; tracked dependency paths refused" >&2
-      exit 1
-    fi
-    ln -s "$PWD/apps/superagent/node_modules" "$snapshot/apps/superagent/node_modules"
-    (cd "$snapshot/apps/superagent" && npm run check)
-  )
-fi
+command -v git >/dev/null 2>&1 || {
+  echo "pre-commit: git is required" >&2
+  exit 1
+}
 
 staged=$(git diff --cached --name-only --diff-filter=ACM)
 [ -n "$staged" ] || exit 0
 
-code=$(printf '%s\n' "$staged" | grep -E '\.(ts|tsx|js|mjs|cjs|json|css|html)$' | grep -vE '^apps/(bots|superagent)/' || true)
-if [ -n "$code" ]; then
-  echo "pre-commit: biome"
-  # shellcheck disable=SC2086
-  npx --no-install biome check --error-on-warnings $code
+snapshot=
+repo=
+cleanup() {
+  status=$?
+  trap - EXIT INT TERM HUP
+  if [ -n "$snapshot" ]; then
+    rm -rf "$snapshot" || :
+    snapshot=
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
+trap "exit 130" INT
+trap "exit 143" TERM
+trap "exit 129" HUP
+
+link_modules() {
+  src=$1
+  dst=$2
+  mkdir -p "$dst"
+  for entry in "$src"/* "$src"/.[!.]*; do
+    [ -e "$entry" ] || continue
+    name=${entry##*/}
+    case $name in
+    .cache | .vite | .vitest | .vite-temp | .tmp | .mf)
+      mkdir -p "$dst/$name"
+      ;;
+    *)
+      ln -s "$entry" "$dst/$name"
+      ;;
+    esac
+  done
+}
+
+snapshot=$(mktemp -d "${TMPDIR:-/tmp}/eagle-index-XXXXXX")
+git checkout-index --all --prefix="$snapshot/"
+repo=$(pwd)
+
+if [ ! -d "$repo/node_modules" ]; then
+  echo "pre-commit: node_modules is required" >&2
+  exit 1
+fi
+for manifest in package.json package-lock.json; do
+  if [ ! -f "$snapshot/$manifest" ] || ! cmp -s "$snapshot/$manifest" "$repo/$manifest"; then
+    echo "pre-commit: staged $manifest must match the installed worktree copy" >&2
+    exit 1
+  fi
+done
+
+link_modules "$repo/node_modules" "$snapshot/node_modules"
+mkdir -p "$snapshot/.local"
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
+unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+export PATH="$snapshot/node_modules/.bin:$PATH"
+
+echo "pre-commit: L1 index snapshot"
+(cd "$snapshot" && sh scripts/l1-index-gate.sh)
+
+if printf '%s\n' "$staged" | grep -qE '^apps/macos/|^tests/native/design-'; then
+  echo "pre-commit: staged design ownership"
+  for path in apps apps/macos apps/macos/Sources apps/macos/Scripts tests tests/native; do
+    if [ -L "$snapshot/$path" ] || [ ! -d "$snapshot/$path" ]; then
+      echo "design-guard: snapshot path refused: $path" >&2
+      exit 1
+    fi
+  done
+  for path in apps/macos/Scripts/check-design.ts apps/macos/Scripts/DesignGuard.swift \
+    tests/native/design-guard.test.ts; do
+    if [ -L "$snapshot/$path" ] || [ ! -f "$snapshot/$path" ]; then
+      echo "design-guard: snapshot path refused: $path" >&2
+      exit 1
+    fi
+  done
+  node "$snapshot/apps/macos/Scripts/check-design.ts"
+  node --test "$snapshot/tests/native/design-guard.test.ts"
 fi
 
-bots=$(printf '%s\n' "$staged" | grep -E '^apps/bots/.*\.(ts|json)$' || true)
-if [ -n "$bots" ]; then
-  echo "pre-commit: bots lint"
-  if [ -d apps/bots/node_modules ]; then
-    # shellcheck disable=SC2046
-    (cd apps/bots && npx --no-install biome check --error-on-warnings \
-      $(printf '%s\n' "$bots" | sed 's|^apps/bots/||'))
-  else
-    echo "pre-commit: apps/bots dependencies missing, skipping bots lint" >&2
+if ! git diff --cached --quiet -- apps/superagent fixtures/superagent-protocol; then
+  echo "pre-commit: superagent index snapshot"
+  for path in apps apps/superagent; do
+    if [ -L "$snapshot/$path" ] || [ ! -d "$snapshot/$path" ]; then
+      echo "superagent: snapshot path refused: $path" >&2
+      exit 1
+    fi
+  done
+  if [ ! -d apps/superagent/node_modules ] || [ -e "$snapshot/apps/superagent/node_modules" ] || [ -L "$snapshot/apps/superagent/node_modules" ]; then
+    echo "superagent: installed dependencies required; tracked dependency paths refused" >&2
+    exit 1
   fi
+  ln -s "$PWD/apps/superagent/node_modules" "$snapshot/apps/superagent/node_modules"
+  (cd "$snapshot/apps/superagent" && npm run check)
 fi
 
 if printf '%s\n' "$staged" | grep -qE '^apps/(macos|bots-macos|superagent-macos)/.*\.swift$'; then
@@ -80,15 +112,16 @@ if printf '%s\n' "$staged" | grep -qE '^apps/(macos|bots-macos|superagent-macos)
   fi
   if command -v swift >/dev/null 2>&1; then
     if printf '%s\n' "$staged" | grep -q '^apps/macos/.*\.swift$'; then
-      (cd apps/macos && swift format lint --strict --recursive Sources Scripts Tests)
+      (cd "$snapshot/apps/macos" && swift format lint --strict --recursive Sources Scripts Tests)
     fi
     if printf '%s\n' "$staged" | grep -q '^apps/bots-macos/.*\.swift$'; then
-      (cd apps/bots-macos && swift format lint --strict --recursive Sources Tests)
+      (cd "$snapshot/apps/bots-macos" && swift format lint --strict --recursive Sources Tests)
     fi
     if printf '%s\n' "$staged" | grep -q '^apps/superagent-macos/.*\.swift$'; then
-      (cd apps/superagent-macos && swift format lint --strict --recursive Sources Tests)
+      (cd "$snapshot/apps/superagent-macos" && swift format lint --strict --recursive Sources Tests)
     fi
   else
     echo "pre-commit: swift not installed, skipping Swift lint" >&2
+    exit 1
   fi
 fi

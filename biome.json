@@ -15,7 +15,8 @@
       "!test-results",
       "!playwright-report",
       "!.local",
-      "!**/.local"
+      "!**/.local",
+      "!coverage"
     ]
   },
   "formatter": {

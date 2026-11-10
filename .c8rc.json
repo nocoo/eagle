@@ -1,0 +1,20 @@
+{
+  "all": true,
+  "include": ["packages/contracts/src/**/*.ts"],
+  "extension": [".ts"],
+  "reporter": ["text", "json-summary"],
+  "reports-dir": ".local/coverage",
+  "temp-directory": ".local/coverage/tmp",
+  "check-coverage": true,
+  "statements": 95,
+  "branches": 95,
+  "functions": 95,
+  "lines": 95,
+  "exclude": [
+    "**/*.test.ts",
+    "packages/contracts/src/terminal-display.ts",
+    "packages/contracts/src/terminal-links.ts",
+    "packages/contracts/src/daily.ts",
+    "packages/contracts/src/terminal.ts"
+  ]
+}
