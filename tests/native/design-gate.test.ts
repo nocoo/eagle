@@ -52,8 +52,16 @@ function fixture(
     git("config", "user.email", "fixture@example.invalid");
     for (const file of [
       ".githooks/pre-commit",
+      ".c8rc.json",
+      "package.json",
+      "package-lock.json",
+      "tsconfig.json",
+      "scripts/l1-index-gate.sh",
+      "scripts/check-test-focus.sh",
       guard,
       launcher,
+      "packages/contracts/src/canonical.ts",
+      "tests/canonical-stub.test.ts",
       "tests/native/design-guard.test.ts",
     ]) {
       mkdirSync(dirname(join(root, file)), { recursive: true });
@@ -62,6 +70,8 @@ function fixture(
     symlinkSync(join(repository, "node_modules"), join(root, "node_modules"));
     copyFileSync(join(repository, "biome.json"), join(root, "biome.json"));
     chmodSync(join(root, ".githooks/pre-commit"), 0o755);
+    chmodSync(join(root, "scripts/l1-index-gate.sh"), 0o755);
+    chmodSync(join(root, "scripts/check-test-focus.sh"), 0o755);
     mkdirSync(join(root, "apps/macos/Sources/EagleDesign"), {
       recursive: true,
     });
@@ -76,7 +86,15 @@ function fixture(
     writeFileSync(join(root, source), valid);
     git(
       "add",
-      ".githooks/pre-commit",
+      ".githooks",
+      "scripts",
+      ".c8rc.json",
+      "package.json",
+      "package-lock.json",
+      "tsconfig.json",
+      "biome.json",
+      "packages/contracts/src/canonical.ts",
+      "tests/canonical-stub.test.ts",
       "apps/macos",
       "tests/native/design-guard.test.ts",
     );

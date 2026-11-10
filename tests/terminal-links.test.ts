@@ -27,6 +27,10 @@ test("terminal links preserve every character and style across ANSI boundaries",
 });
 
 test("only complete visible HTTP(S) candidates are linked without joining lines", () => {
+  assert.deepEqual(hrefs("prefixhttps://example.test/nope"), []);
+  assert.deepEqual(hrefs("https://example.test/foo]."), [
+    "https://example.test/foo",
+  ]);
   assert.deepEqual(
     hrefs(
       "https://example.test/wiki/Foo_(bar) http://localhost:7053/ http://[::1]:80/",
