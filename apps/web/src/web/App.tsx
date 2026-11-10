@@ -860,11 +860,7 @@ export function App() {
         <AppMain className="relative" tabIndex={-1}>
           <AppHeader
             title={title}
-            breadcrumbs={
-              mobile
-                ? undefined
-                : [{ label: <span className="whitespace-nowrap">工作台</span> }]
-            }
+            breadcrumbs={mobile ? undefined : [{ label: "工作台" }]}
             leading={
               mobile ? (
                 <Button
