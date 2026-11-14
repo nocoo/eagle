@@ -32,6 +32,23 @@ without a device socket still gets them unguarded. `hc_list`, `hc_wait` and `hc_
 observation. The Herdr page's switch states the surface the daemon reports, so it no longer
 claims less, or more, than the Bot really has.
 
+## Agent v1.2.0 — 2026-11-14
+
+- Report without the removed server features: no credential scan needs an AI key,
+  and the agent no longer strips retired config keys — unknown keys in an existing
+  secure config are ignored instead, so an older configuration still starts.
+- Ping the realtime bridge every 60 seconds instead of every 10, and heartbeat the
+  device relay on the same cadence; the server accepts the older cadence, so an
+  unupgraded agent keeps working against the same Worker.
+- Renew a device session over the socket that authenticated it instead of opening a
+  new registration, and query an uncertain retry by its original operation ID rather
+  than running it twice.
+- Manage peer policies through the App's private device control, ask before a device
+  nobody decided about acts, and preserve the operation journal across identity
+  changes, relay changes and restarts.
+- Assemble the device service bindings from explicit configuration; the App bundles
+  this runtime.
+
 ## macOS v0.25.0 — 2026-11-09
 
 - Let a Bot in the App start, write into and close its own terminals. `hc` is the Bot's `bash`

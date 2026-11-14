@@ -11,32 +11,18 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import {
-  ReportSchema,
-  SlowIntervalSchema,
-  WatchPortsSchema,
-} from "../contracts/src/schema.ts";
+import { ReportSchema } from "../contracts/src/schema.ts";
 import {
   type AgentConfig,
   checkUrl,
   collect,
   sendReport,
 } from "./collector.ts";
+import { parseConfig } from "./config.ts";
 import { realtimeWatch } from "./realtime.ts";
 import { drainSpool } from "./spool.ts";
 import { AGENT_VERSION } from "./version.ts";
 
-const ConfigSchema = z.strictObject({
-  url: z.string().url(),
-  token: z.string().min(32),
-  machineId: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/),
-  machineName: z.string().min(1),
-  intervalSeconds: z.literal(30).default(30),
-  slowIntervalSeconds: SlowIntervalSchema,
-  codexDir: z.string().optional(),
-  spoolDir: z.string().optional(),
-  watchPorts: WatchPortsSchema.default([]),
-});
 const path =
   process.env.EAGLE_CONFIG || join(homedir(), ".config/eagle/agent.json");
 async function heartbeat(config: AgentConfig, warning?: string) {
@@ -129,7 +115,7 @@ async function main() {
     } catch {
       throw new Error("Invalid configuration JSON");
     }
-    const config = ConfigSchema.parse(value);
+    const config = parseConfig(value);
     checkUrl(config.url);
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     const file = await open(path, "wx", 0o600);
@@ -146,7 +132,7 @@ async function main() {
   const permissions = await stat(path);
   if (process.platform !== "win32" && (permissions.mode & 0o077) !== 0)
     throw new Error("Config must have mode 0600");
-  const config = ConfigSchema.parse(JSON.parse(await readFile(path, "utf8")));
+  const config = parseConfig(JSON.parse(await readFile(path, "utf8")));
   checkUrl(config.url);
   if (action === "collect") {
     const output = process.argv[3];
