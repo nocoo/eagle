@@ -193,3 +193,15 @@ the duration charge with it.
 The ~5 minute re-registration loop is a separate defect: a session that renews
 normally would register once and renew, so the client is most likely falling back to
 a fresh registration after a failed renewal.
+
+## Retired storage dropped (2026-11-14, version 49ae8bd7)
+
+`MachineState` now drops eleven retired tables and two keys when an object starts,
+and `MachineDirectory` drops `daily-settings`, `hourly-settings` and `ai-credential`.
+Both objects are left with the receipt ledger, the current snapshot and the machine
+index.
+
+Every machine object ran the cleanup within two minutes of the deploy because the
+agents keep reporting (63 reports in six minutes afterwards). `MachineDirectory` is
+only reached by authenticated viewer calls, so its three keys disappear the next time
+a dashboard or App loads the fleet overview; nothing reads them meanwhile.
