@@ -94,7 +94,7 @@ test("production proxy scopes HTTP writes and websocket traffic to authenticated
   const localAddress = vite.httpServer?.address();
   assert(localAddress && typeof localAddress !== "string");
   const origin = `http://127.0.0.1:${localAddress.port}`;
-  const endpoint = `${origin}/__local/prod/api/v1/settings`;
+  const endpoint = `${origin}/__local/prod/api/v1/overview`;
   const sent = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -109,7 +109,7 @@ test("production proxy scopes HTTP writes and websocket traffic to authenticated
   assert.equal(sent.status, 200);
   assert.equal(sent.headers.get("set-cookie"), null);
   assert.deepEqual(requests[0], {
-    path: "/api/v1/settings",
+    path: "/api/v1/overview",
     cookie: "CF_Authorization=synthetic-access-token",
     origin: target,
     authorization: undefined,

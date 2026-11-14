@@ -36,9 +36,6 @@ try {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const request = context.request;
-  const historyBefore = await (
-    await request.get(`${origin}/api/v1/history?limit=1`)
-  ).json();
   const listing = (await (
     await request.get(`${origin}/api/v1/machines`)
   ).json()) as { machines: Registration[] };
@@ -151,10 +148,6 @@ try {
     (await heartbeat(rotated.token)).status() === 401,
     "Disabled credential still authorized",
   );
-  const historyAfter = await (
-    await request.get(`${origin}/api/v1/history?limit=1`)
-  ).json();
-  assert.deepEqual(historyBefore, historyAfter);
   const storage = await page.evaluate(() =>
     JSON.stringify({ ...localStorage, ...sessionStorage }),
   );

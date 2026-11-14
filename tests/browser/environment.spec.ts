@@ -47,8 +47,6 @@ test("local environment switch isolates reads, writes, identity and onboarding",
         },
       });
     }
-    if (path === "/api/v1/resources")
-      return route.fulfill({ json: { retentionSeconds: 86400, samples: [] } });
     const now = new Date().toISOString();
     const value = report(`synthetic-${environment}`, now);
     return route.fulfill({

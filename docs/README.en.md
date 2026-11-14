@@ -21,7 +21,7 @@ Eagle is a private dashboard for Herdr users, bringing together each reporting m
 
 The dashboard refreshes every 5 seconds while visible and immediately on return. A heartbeat older than 90 seconds or a snapshot older than 5 minutes is marked stale. Failed refreshes retain the last data with a connection warning. The desktop sidebar collapses, loading placeholders preserve layout, and motion respects reduced-motion preferences.
 
-Each machine has an independent SQLite Durable Object that stores the complete current snapshot, resource samples and 48 hours of daily-report inputs. Heartbeats refresh liveness only, and late reports from old tasks cannot overwrite the current task. Whole-snapshot D1 writes remain paused; AI daily reports are archived in D1 and available in History. Settings reuses next-ai configuration and runs once daily at 23:59 Asia/Shanghai with 24 bounded hourly entries; missing AI configuration skips generation. See [daily reports](DAILY-REPORTS.md). The overview reads DOs directly without polling D1.
+Each machine has an independent SQLite Durable Object that stores the complete current snapshot and its upload receipts. Heartbeats refresh liveness only, and late reports from old tasks cannot overwrite the current task. There is no database, no scheduled job and no AI configuration: the overview reads DOs directly. See [docs/COST-CUT.md](COST-CUT.md) for what was removed and why.
 
 ### Authentication and privacy
 
@@ -69,7 +69,7 @@ The collector reports a complete snapshot every 30 seconds by default. The secur
 
 See the [agent contract](AGENT.md) for machine identity, credentials, retries, background services and upgrade order. Give the [eagle-report Skill](../skills/eagle-report/SKILL.md) to your management agent. The [report schema](../public/report-v1.schema.json) is generated from the TypeScript validator; the server also checks cross-object uniqueness.
 
-Website v0.14.1 and independent Agent v1.0.0 provide [environment resources](RESOURCES.md): six read-only CPU, GPU, memory, disk, network and fan cards retain numbers, equal-width meters and evidence timestamps. Apple Silicon can use separately installed macmon for unprivileged temperature, GPU, fan and memory readings; physical-interface traffic rates need no macmon. Fast samples run every 30 seconds; disk and Linux temperature default to 300 seconds. History defaults to six hours with 6h/12h/24h selection. The development frontend can switch between Local and Prod backends. Installation and Connect pin Agent 1.0.0; publication does not automatically upgrade or restart existing collectors. Historical data is never fabricated or backfilled.
+Six read-only CPU, GPU, memory, disk, network and fan cards show the latest reported sample with numbers, equal-width meters and evidence timestamps. Apple Silicon can use separately installed macmon for unprivileged temperature, GPU, fan and memory readings; physical-interface traffic rates need no macmon. Fast samples run every 30 seconds; disk and Linux temperature default to 300 seconds. Only the latest telemetry is kept; there is no history chart. The development frontend can switch between Local and Prod backends. Installation and Connect pin the published Agent; publication does not automatically upgrade or restart existing collectors. Historical data is never fabricated or backfilled.
 
 ## Development
 

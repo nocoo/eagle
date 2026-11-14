@@ -120,17 +120,6 @@ try {
   await currentCard.evaluate((node) =>
     node.setAttribute("data-continuity", "original"),
   );
-  const historyBefore = await (
-    await context.request.get(
-      `${origin}/api/v1/history?machine=${config.machineId}&limit=1`,
-    )
-  ).json();
-  assert(
-    historyBefore.entries.every(
-      (entry: { report: { reportId: string } }) =>
-        entry.report.reportId !== report.reportId,
-    ),
-  );
   const second = await collect(config);
   await sendReport(config.url, config.token, second);
   // The real daemon can upload again before the next browser poll.
@@ -153,16 +142,6 @@ try {
     (latest.machines.find((m) => m.id === config.machineId)?.revision ?? 0) >
       machine.revision,
   );
-  const historyAfter = await (
-    await context.request.get(
-      `${origin}/api/v1/history?machine=${config.machineId}&limit=1`,
-    )
-  ).json();
-  assert.deepEqual(
-    historyAfter,
-    historyBefore,
-    "Current uploads must not append D1 history",
-  );
   await currentCard.getByRole("button", { name: /^查看 / }).click();
   await page.getByRole("button", { name: "当前任务", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("Herdr 弱提示");
@@ -178,20 +157,6 @@ try {
     animations: "disabled",
     path: `.local/${prefix}-desktop.png`,
   });
-  await page.getByRole("button", { name: "查看最近历史" }).click();
-  await expect(
-    page.getByText("历史归档已暂停", { exact: false }),
-  ).toBeVisible();
-  if (historyAfter.entries.length) {
-    await expect(
-      page.getByText(`#${historyAfter.entries[0].seq}`, { exact: false }),
-    ).toBeVisible();
-  } else {
-    await expect(
-      page.getByText("暂无历史记录；当前状态可在总览查看。"),
-    ).toBeVisible();
-  }
-  await page.getByRole("button", { name: "返回总览", exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({
     animations: "disabled",

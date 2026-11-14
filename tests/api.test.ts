@@ -428,7 +428,7 @@ test("local viewing needs no token but a local hostname never bypasses productio
     DEV_HOSTS: "dev.example.com",
     INGEST_HOST: "ingest.example.com",
     LOCAL_DEV: "true",
-  } as Env;
+  } as unknown as Env;
   assert.equal(
     await viewerAuthorized(
       new Request("https://dev.example.com/api/v1/overview"),
@@ -509,7 +509,7 @@ test("the machine ingress exposes only Bearer-protected ingestion and public hea
     "/",
     "/assets/app.js",
     "/api/v1/overview",
-    "/api/v1/history",
+    "/api/v1/machines",
   ]) {
     const response = await mf.dispatchFetch(
       `https://ingest.example.com${path}`,

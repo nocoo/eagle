@@ -149,8 +149,6 @@ existing AI connection and encrypted credential are preserved. Set `AI_ENCRYPTIO
 
 Users save provider/model and API keys in `/settings`. The directory DO stores authenticated ciphertext in the separate `ai-credential` record; API responses never return the key. Blank input keeps the existing credential, explicit clearing removes it, and changing provider/endpoint/protocol/authentication requires a new key. Without a complete AI configuration the schedule is a no-op.
 
-Run `scripts/verify-daily.ts` with the same origin/Access settings as `verify-live.ts` to verify settings, no secret exposure, unconfigured skip, D1 query, report UI and mobile layout. The detailed generation/storage contract is in [DAILY-REPORTS.md](DAILY-REPORTS.md).
-
 ## Independent device service
 
 The independent `/api/devices/v1` contract is in [DEVICES.md](DEVICES.md).

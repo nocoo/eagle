@@ -11,6 +11,13 @@
   `MachineDirectory` is no longer touched on the ingestion path. See
   [docs/COST-CUT.md](docs/COST-CUT.md).
 
+- Finish the removal: drop the four AI dependencies and their lock entries, the D1
+  migration files, the generated D1/AI bindings, the `history` assertions in
+  `scripts/verify-connect.ts` and `scripts/verify-live.ts`, the leftover resource
+  mocks in browser tests, the dead resource-history CSS, and the production
+  `AI_ENCRYPTION_KEY` secret. `Env` now declares the deploy-time variables the
+  generated types cannot see.
+
 - Find `hc` where a person's shell finds it. A daemon the App spawns inherits launchd's PATH,
   which has no user bin, so every `hc_start` failed with `hc could not start: hc` on a machine
   where the Herdr page said it was installed. The client now looks in `~/.local/bin`, the

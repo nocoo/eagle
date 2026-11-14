@@ -64,6 +64,27 @@ Deletions, no behaviour change to the kept capabilities.
 
 After P0 one `ingest` reads about three indexed rows instead of scanning 2,800.
 
+### P0 cleanup pass (2026-11-14)
+
+After the first deploy a residue audit found leftovers that the plan did not list
+because they only surfaced once the endpoints were gone:
+
+- `@ai-sdk/anthropic`, `@ai-sdk/openai`, `@nocoo/next-ai` and `ai` were still in
+  `apps/web/package.json`; nothing imported them after `daily.ts` and `ai-secret.ts`
+  went away. The lockfile lost 166 lines.
+- `apps/web/migrations/` still carried `0001`, `0002`, `0003` and `0005`; the D1
+  binding was already gone, so the whole directory went.
+- `worker-configuration.d.ts` still declared `DB: D1Database` plus the AI bindings.
+  Regenerated with `wrangler types`; deploy-time variables (`AGENT_TOKENS`,
+  `LOCAL_USER_EMAIL`, `MACOS_VERSION`, `MACOS_RELEASE_URL`) move to a hand-written
+  `apps/web/src/worker/env.d.ts`.
+- `scripts/verify-connect.ts` and `scripts/verify-live.ts` still asserted against
+  `/api/v1/history`, so both would have failed on the next live run.
+- Browser tests still mocked `/api/v1/resources`; `tests/api.test.ts` still listed
+  `/api/v1/history` in the ingress allow-list check.
+- `.resource-history` and `.resource-note` CSS rules had no remaining consumer.
+- The production `AI_ENCRYPTION_KEY` secret was deleted from the Worker.
+
 ## P1 — realtime relay cost model (capability kept)
 
 - Agent ping 10 s → 60 s; server heartbeat timeout 35 s → 90 s.
