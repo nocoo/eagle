@@ -107,5 +107,41 @@ wire v1 contract; needs one App/bots client change.
 | --- | --- | --- | --- |
 | P0 | 30b66a67 | `npm test` 293/295 (2 known Homebrew-Node failures), `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:browser` 158 passed / 10 skipped | awaiting deploy |
 | P1 | 694eba5c | `npm run check` 295/295, `npm run test:browser` 158 passed | deployed 2026-11-14 00:04 UTC, Version `0c159b4c`. MachineState on 2026-11-14 (first 20 min): 476 requests, 3 errors, **6 s wall time** against 594,540 s on 2026-11-13; rows read 136k against 54.5M. Ingest healthy: 167 reports in 15 minutes, 2 WS devices connected, `/api/live` reports revision 694eba5c |
-| P2 | pending | pending | pending |
-| P3 | pending | pending | pending |
+| P2 | not started | - | - |
+| P3 | dropped | - | Agent contract change; see below |
+
+## Post-deploy observation (2026-11-14 00:04 UTC, version 0c159b4c)
+
+Twenty minutes after deploy, with the still-unupgraded 10 s agent pings:
+
+| Namespace | Requests | Wall time | Rows read |
+| --- | --- | --- | --- |
+| MachineState 2026-11-13 (all day) | 97,804 | 594,540 s | 54.5 M |
+| MachineState 2026-11-14 (20 min) | 1,138 | 1,808 s | 136 k |
+| DeviceExecution 2026-11-14 (20 min) | 1 | 901 s | - |
+
+MachineState duration fell by roughly 78% per day-equivalent, rows read by three
+orders of magnitude. What remains is the price of waking a Durable Object at all:
+about 1.6 s of billed time per invocation regardless of how much work it does, so
+the agent's 10 s ping still costs more than the upload it precedes.
+
+Ingestion stayed healthy throughout: 167 reports in 15 minutes on the ingest host,
+one websocket agent connected, `/api/live` reporting revision `694eba5c`.
+
+## P3 dropped
+
+Raising `intervalSeconds` from 30 to 60 would need `sampleIntervalSeconds` to move
+with it. `packages/contracts/src/schema.ts` pins that field to the literal `30`, so
+every installed agent would start failing report validation until it upgrades. The
+saving is about 0.4 M requests per month (under $0.10) against an install-wide
+outage window, so it stays undone until an agent release carries both changes.
+
+## P2 remains
+
+`DeviceExecution` keeps a plain `socket.accept()` agent connection, which prevents
+hibernation for as long as a device is online. Moving the agent side to
+`ctx.acceptWebSocket(socket, ["agent"])` would let the object sleep between
+operations; the request side and its in-memory waiters stay as they are, because a
+live request keeps the object awake by design. This is a rewrite of the agent frame
+path (authentication, heartbeat, renewal, policy result, result relay) across the
+638-line `device-execution.ts`, covered by 38 device tests.
