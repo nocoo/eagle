@@ -105,7 +105,7 @@ wire v1 contract; needs one App/bots client change.
 
 | Stage | Commit | Checks | Measured after deploy |
 | --- | --- | --- | --- |
-| P0 | this commit | `npm test` 293/295 (2 known Homebrew-Node failures), `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:browser` 158 passed / 10 skipped | awaiting deploy |
-| P1 | pending | pending | pending |
+| P0 | 30b66a67 | `npm test` 293/295 (2 known Homebrew-Node failures), `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:browser` 158 passed / 10 skipped | awaiting deploy |
+| P1 | 694eba5c | `npm run check` 295/295, `npm run test:browser` 158 passed | deployed 2026-11-14 00:04 UTC, Version `0c159b4c`. MachineState on 2026-11-14 (first 20 min): 476 requests, 3 errors, **6 s wall time** against 594,540 s on 2026-11-13; rows read 136k against 54.5M. Ingest healthy: 167 reports in 15 minutes, 2 WS devices connected, `/api/live` reports revision 694eba5c |
 | P2 | pending | pending | pending |
 | P3 | pending | pending | pending |
