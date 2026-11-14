@@ -145,3 +145,30 @@ operations; the request side and its in-memory waiters stay as they are, because
 live request keeps the object awake by design. This is a rewrite of the agent frame
 path (authentication, heartbeat, renewal, policy result, result relay) across the
 638-line `device-execution.ts`, covered by 38 device tests.
+
+## Device plane stopped (2026-11-14)
+
+`DeviceExecution` was the last cost centre: a device keeps one plain
+`socket.accept()` websocket open, so the object never hibernates while a machine is
+online. The usage came from the Mac's own background item, not from an active Bots
+conversation: `launchctl print gui/501/ai.hexly.eagle.devices` showed the App 0.25.0
+service running for three days, re-registering every ~5 minutes (25
+`register/challenge` calls in two hours) and holding one
+`/execution/{deviceId}/agent` connection.
+
+Both sides are now stopped by hand:
+
+- Local: `launchctl bootout gui/$(id -u)/ai.hexly.eagle.devices`.
+- Worker: deployed a maintenance entry instead of `device-service.ts` — the same
+  Durable Object bindings and custom domain, a handler that answers `503` without
+  touching a Durable Object. Version `314b585f`. The entry lives outside the
+  repository (`.local/maintenance/`) and re-exports `DeviceRegistry` and
+  `DeviceExecution` so wrangler keeps both classes.
+
+Restore the product with `npx wrangler deploy --config apps/web/wrangler.devices.jsonc`
+after the App registers its device service again. Restoring before P2 ships returns
+the duration charge with it.
+
+The ~5 minute re-registration loop is a separate defect: a session that renews
+normally would register once and renew, so the client is most likely falling back to
+a fresh registration after a failed renewal.
