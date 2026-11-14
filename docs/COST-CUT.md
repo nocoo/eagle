@@ -205,3 +205,18 @@ Every machine object ran the cleanup within two minutes of the deploy because th
 agents keep reporting (63 reports in six minutes afterwards). `MachineDirectory` is
 only reached by authenticated viewer calls, so its three keys disappear the next time
 a dashboard or App loads the fleet overview; nothing reads them meanwhile.
+
+## Agent 1.2.0 published (2026-11-14 10:27 UTC)
+
+`@nocoo/eagle-agent@1.2.0` is on the official registry as `latest`; shasum
+`0ffa4be0…` and `sha512-YAUz6S4R…` match the tarball built from `06ea7caf`, the
+Tencent mirror carries the same version, and a clean install in an empty cache
+reports `1.2.0`. The website deploy `1f3c620f` (Version `093bb54c`) pins onboarding
+to it.
+
+This machine's two launchd services were restarted on 1.2.0. The other machines still
+run 1.0.0 until they are upgraded; the server accepts both cadences, so the relay and
+ingestion keep working across a staged rollout.
+
+Per machine, the ping change removes about 7,200 requests a day (8,640 → 1,440). With
+all eight upgraded the fleet drops from ~80k to ~28k requests a day.
