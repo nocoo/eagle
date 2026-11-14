@@ -132,7 +132,7 @@ export class LiveRelay {
         s.close(4001, "Authorization revoked");
       else if (a.expires <= Date.now()) {
         s.close(4002, "Renew authorization");
-      } else if (Date.now() - a.seen >= 35000)
+      } else if (Date.now() - a.seen >= 90000)
         s.close(4000, "Heartbeat timeout");
     }
   }
@@ -140,7 +140,7 @@ export class LiveRelay {
     const next = Math.min(
       ...this.sockets().map((s) => {
         const a = this.meta(s);
-        return Math.min(a.expires, a.seen + 35000);
+        return Math.min(a.expires, a.seen + 90000);
       }),
     );
     await scheduleEarlier(this.ctx, next);

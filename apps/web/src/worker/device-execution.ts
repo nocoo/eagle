@@ -88,13 +88,13 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
       policy,
     };
     this.ctx.storage.kv.put("observation", value);
-    if (this.agent) this.agent.expires = Date.now() + 30000;
+    if (this.agent) this.agent.expires = Date.now() + 90000;
     clearTimeout(this.lease);
     this.lease = setTimeout(() => {
       this.agent?.socket.close(1008, "lease_expired");
       this.agent = undefined;
       this.failPending("target_offline");
-    }, 30000);
+    }, 90000);
   }
   private send(socket: WebSocket, value: unknown): void {
     try {
@@ -290,7 +290,7 @@ export class DeviceExecution extends DurableObject<DeviceServiceEnv> {
                 socket,
                 reference: checked.reference,
                 deviceId: targetId,
-                expires: Date.now() + 30000,
+                expires: Date.now() + 90000,
                 credentialVersion: checked.reference.credentialVersion,
               };
               authenticated = true;

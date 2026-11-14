@@ -526,12 +526,12 @@ export async function realtimeWatch(config: AgentConfig, signal: AbortSignal) {
       );
       let lastMessage = Date.now();
       const heartbeat = setInterval(() => {
-        if (Date.now() - lastMessage > 30000) {
+        if (Date.now() - lastMessage > 90000) {
           bridge.close();
           ws.terminate();
         } else if (ws.readyState === WebSocket.OPEN)
           ws.send(JSON.stringify({ type: "ping" }));
-      }, 10000);
+      }, 60000);
       const stop = () => {
         bridge.close();
         ws.terminate();

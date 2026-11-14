@@ -397,7 +397,7 @@ export class DeviceCloud {
                     policy: this.runtime.policy,
                   }),
                 );
-            }, 10000);
+            }, 60000);
             this.heartbeat = heartbeat;
             scheduleRenewal();
             resolve();
