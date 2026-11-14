@@ -55,6 +55,21 @@ export class MachineState extends DurableObject<Env> {
   }
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    // Retired storage from the AI report, resource-sample and semantic-manager
+    // features. Dropping empty tables costs microseconds and keeps objects clean.
+    ctx.storage.sql.exec(`DROP TABLE IF EXISTS hourly_facts;
+DROP TABLE IF EXISTS resource_samples;
+DROP TABLE IF EXISTS daily_jobs;
+DROP TABLE IF EXISTS semantic_records;
+DROP TABLE IF EXISTS semantic_current;
+DROP TABLE IF EXISTS fact_evidence;
+DROP TABLE IF EXISTS live_tasks;
+DROP TABLE IF EXISTS summary_receipts;
+DROP TABLE IF EXISTS summary_outbox;
+DROP TABLE IF EXISTS hourly_jobs;
+DROP TABLE IF EXISTS hourly_steps;`);
+    ctx.storage.kv.delete("fact-keys");
+    ctx.storage.kv.delete("manager");
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS receipts (
       seq INTEGER PRIMARY KEY AUTOINCREMENT,
       report_id TEXT NOT NULL UNIQUE,

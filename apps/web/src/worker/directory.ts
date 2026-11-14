@@ -7,6 +7,13 @@ import {
 
 /** Control-plane index only. Each machine owns its metadata and authentication. */
 export class MachineDirectory extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    // Retired AI configuration and its sealed credential; nothing reads them now.
+    ctx.storage.kv.delete("daily-settings");
+    ctx.storage.kv.delete("hourly-settings");
+    ctx.storage.kv.delete("ai-credential");
+  }
   ids(): string[] {
     return [...this.ctx.storage.kv.list({ prefix: "machine:" })].map(([key]) =>
       key.slice(8),
