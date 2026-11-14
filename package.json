@@ -32,8 +32,6 @@
     "check": "npm run test && npm run typecheck && npm run lint && npm run build",
     "deploy": "node scripts/deploy.ts",
     "agent": "node packages/agent/cli.ts",
-    "db:local": "wrangler d1 migrations apply eagle --local --config apps/web/wrangler.jsonc",
-    "db:remote": "wrangler d1 migrations apply eagle --remote --config apps/web/wrangler.jsonc",
     "prepare": "sh scripts/install-hooks.sh",
     "verify": "npm run check && npm run test:browser"
   },

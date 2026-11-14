@@ -1,30 +1,20 @@
 import { decodeJwt } from "jose";
 import pkg from "../../../../package.json" with { type: "json" };
-import { changesBetween } from "../../../../packages/contracts/src/assessment.ts";
 import {
   MachineInput,
   MachineName,
 } from "../../../../packages/contracts/src/connect.ts";
-import {
-  type DailySettings,
-  DailySettingsSchema,
-  dailyCutoff,
-  TEMPLATE_VERSION,
-  validDate,
-} from "../../../../packages/contracts/src/daily.ts";
 import {
   MachineGroupInput,
   type MachineGroupState,
 } from "../../../../packages/contracts/src/machine-groups.ts";
 import {
   HeartbeatSchema,
-  type Report,
   ReportSchema,
 } from "../../../../packages/contracts/src/schema.ts";
 import {
   agentIdentity,
   agentTokens,
-  containsCredential,
   issueToken,
   viewerIdentity,
 } from "./auth.ts";
@@ -32,8 +22,6 @@ import {
 export { MachineDirectory } from "./directory.ts";
 export { MachineState } from "./machine.ts";
 
-import { withAiKey } from "./ai-secret.ts";
-import { aiConfig, aiReady, runDaily, testAi } from "./daily.ts";
 import { withProfile } from "./profile.ts";
 
 class HttpError extends Error {
@@ -100,37 +88,6 @@ function timely(value: string) {
   if (Date.parse(value) > Date.now() + 300_000)
     throw new HttpError(400, "Timestamp too far in future");
 }
-async function noSecrets(value: string, env: Env) {
-  if (containsCredential(value, await withAiKey(env)))
-    throw new HttpError(400, "Credential found in report");
-}
-function settingsInput(input: unknown, previous: DailySettings) {
-  if (!input || typeof input !== "object" || Array.isArray(input))
-    throw new HttpError(400, "Invalid AI settings");
-  const { apiKey, ...fields } = input as Record<string, unknown>;
-  if (
-    apiKey !== undefined &&
-    apiKey !== null &&
-    (typeof apiKey !== "string" ||
-      apiKey.length > 4096 ||
-      /\s/.test(apiKey.trim()))
-  )
-    throw new HttpError(400, "Invalid API key");
-  const parsed = DailySettingsSchema.safeParse({ ...previous, ...fields });
-  if (!parsed.success) throw new HttpError(400, "Invalid AI settings");
-  try {
-    if (parsed.data.provider) aiConfig(parsed.data, "validation-placeholder");
-  } catch {
-    throw new HttpError(400, "Invalid AI configuration");
-  }
-  const key =
-    typeof apiKey === "string"
-      ? apiKey.trim() || undefined
-      : (apiKey as null | undefined);
-  if (key && !parsed.data.provider)
-    throw new HttpError(400, "Select an AI provider before saving its key");
-  return { settings: parsed.data, apiKey: key };
-}
 async function ingest(
   request: Request,
   env: Env,
@@ -168,7 +125,6 @@ async function ingest(
       throw new HttpError(400, "Resource timestamp exceeds sample time");
   }
   const payload = canonical(report);
-  await noSecrets(payload, env);
   const digest = Array.from(
     new Uint8Array(
       await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload)),
@@ -208,7 +164,7 @@ async function machineGroupState(
 ): Promise<MachineGroupState> {
   return env.DIRECTORY.getByName("fleet").machineGroups(ids);
 }
-function positive(
+function _positive(
   value: string | null,
   fallback: number,
   max = Number.MAX_SAFE_INTEGER,
@@ -301,8 +257,6 @@ async function route(request: Request, env: Env): Promise<Response> {
   )
     throw new HttpError(403, "Origin not allowed");
   if (path === "/api/live" && request.method === "GET") {
-    const [machine] = Object.keys(agentTokens(env)).sort();
-    if (machine) await env.MACHINES.getByName(machine).current();
     return json({
       status: "ok",
       service: "eagle",
@@ -311,12 +265,6 @@ async function route(request: Request, env: Env): Promise<Response> {
       revision: env.BUILD_REVISION,
       stateStore: "durable-objects",
       historyWrites: false,
-      dailyReports: {
-        available: true,
-        timezone: "Asia/Shanghai",
-        schedule: "23:59",
-        templateVersion: TEMPLATE_VERSION,
-      },
       // The macOS app ships on its own cadence, so it asks which app version is published.
       ...(env.MACOS_VERSION === undefined
         ? {}
@@ -342,7 +290,6 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (parsed.data.machineId !== identity.machineId)
       throw new HttpError(403, "Token does not authorize this machine");
     timely(parsed.data.sentAt);
-    await noSecrets(JSON.stringify(parsed.data), env);
     const alive = await env.MACHINES.getByName(identity.machineId).heartbeat(
       parsed.data.warning,
       identity.credentialId,
@@ -354,70 +301,6 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   const viewer = await viewerIdentity(request, env);
   if (!viewer) throw new HttpError(401, "Sign in required");
-  if (path === "/api/v1/settings") {
-    const directory = env.DIRECTORY.getByName("fleet");
-    let settings: DailySettings = await directory.settings();
-    if (request.method === "POST") {
-      const input = settingsInput(await body(request), settings);
-      await noSecrets(JSON.stringify(input.settings), env);
-      if (
-        input.apiKey &&
-        (containsCredential(input.apiKey, { ...env, AI_API_KEY: undefined }) ||
-          JSON.stringify(input.settings).includes(input.apiKey))
-      )
-        throw new HttpError(
-          400,
-          "Credential must only appear in the API key field",
-        );
-      settings = await directory.saveSettings(input.settings, input.apiKey);
-    } else if (request.method !== "GET")
-      throw new HttpError(405, "Method not allowed");
-    const configuredEnv = await withAiKey(env, settings);
-    return json({
-      ...settings,
-      hasApiKey: !!configuredEnv.AI_API_KEY,
-      configured: aiReady(settings, configuredEnv),
-      templateVersion: TEMPLATE_VERSION,
-      timezone: "Asia/Shanghai",
-      schedule: "23:59",
-    });
-  }
-  if (path === "/api/v1/settings/test" && request.method === "POST") {
-    const previous = await env.DIRECTORY.getByName("fleet").settings();
-    const input = settingsInput(await body(request), previous);
-    const configuredEnv = await withAiKey(env, input.settings);
-    if (input.apiKey !== undefined)
-      configuredEnv.AI_API_KEY = input.apiKey ?? "";
-    return json(await testAi(input.settings, configuredEnv));
-  }
-  if (path === "/api/v1/daily-reports/run") {
-    if (request.method !== "POST")
-      throw new HttpError(405, "Method not allowed");
-    const input = await body(request);
-    if (
-      !input ||
-      typeof input !== "object" ||
-      Array.isArray(input) ||
-      Object.keys(input).some((k) => !["machine", "date"].includes(k)) ||
-      (input.machine !== undefined &&
-        (typeof input.machine !== "string" ||
-          !/^[a-z0-9][a-z0-9_-]{0,79}$/.test(input.machine))) ||
-      (input.date !== undefined &&
-        (typeof input.date !== "string" ||
-          !validDate(input.date) ||
-          Date.parse(dailyCutoff(input.date)) > Date.now()))
-    )
-      throw new HttpError(
-        400,
-        "Expected a report date already due at 23:59 Asia/Shanghai",
-      );
-    const ids = (await registrations(env))
-      .filter((m) => m.enabled)
-      .map((m) => m.id);
-    if (input.machine && !ids.includes(input.machine))
-      throw new HttpError(404, "Machine not found");
-    return json(await runDaily(env, ids, Date.now(), input));
-  }
   if (path === "/api/v1/machines" && request.method === "GET") {
     const { ids } = await fleetIds(env);
     return json({
@@ -432,7 +315,6 @@ async function route(request: Request, env: Env): Promise<Response> {
     const parsed = MachineInput.safeParse(await body(request));
     if (!parsed.success) throw new HttpError(400, "Invalid machine name or ID");
     const { id, name, watchPorts } = parsed.data;
-    await noSecrets(JSON.stringify(parsed.data), env);
     if (!(await env.DIRECTORY.getByName("fleet").add(id)))
       throw new HttpError(409, "Machine limit reached");
     const machine = await env.MACHINES.getByName(id).configure(
@@ -470,7 +352,6 @@ async function route(request: Request, env: Env): Promise<Response> {
     const parsed = MachineName.safeParse(input);
     if (action === "rename" && !parsed.success)
       throw new HttpError(400, "Invalid machine name");
-    await noSecrets(JSON.stringify(input), env);
     if (!(await env.MACHINES.getByName(id).registration(id)))
       throw new HttpError(404, "Machine not found");
     // Index legacy machines before migrating, so removing their old secret is safe.
@@ -495,7 +376,6 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (request.method === "POST") {
       const parsed = MachineGroupInput.safeParse(await body(request));
       if (!parsed.success) throw new HttpError(400, "Invalid group name");
-      await noSecrets(JSON.stringify(parsed.data), env);
       return json(
         { group: await directory.createGroup(parsed.data.name) },
         201,
@@ -548,7 +428,6 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (request.method === "PATCH") {
       const parsed = MachineGroupInput.safeParse(await body(request));
       if (!parsed.success) throw new HttpError(400, "Invalid group name");
-      await noSecrets(JSON.stringify(parsed.data), env);
       const group = await directory.renameGroup(groupId, parsed.data.name);
       if (!group) throw new HttpError(404, "Group not found");
       return json({ group });
@@ -562,76 +441,6 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   if (request.method !== "GET") throw new HttpError(405, "Method not allowed");
   if (path === "/api/v1/me") return json(await withProfile(viewer));
-  if (path === "/api/v1/daily-reports") {
-    const machine = url.searchParams.get("machine");
-    const date = url.searchParams.get("date");
-    if (date && !validDate(date))
-      throw new HttpError(400, "Invalid report date");
-    const limit = positive(url.searchParams.get("limit"), 12, 100);
-    const before = url.searchParams.get("before");
-    const cursor = before?.split("|");
-    if (
-      cursor &&
-      (cursor.length !== 2 ||
-        !validDate(cursor[0]) ||
-        !/^[1-9]\d{0,15}$/.test(cursor[1]) ||
-        !Number.isSafeInteger(Number(cursor[1])))
-    )
-      throw new HttpError(400, "Invalid daily cursor");
-    const { results } = await env.DB.prepare(
-      "SELECT seq,date,payload FROM machine_daily_reports WHERE (date,seq)<(?,?) AND (? IS NULL OR machine_id=?) AND (? IS NULL OR date=?) ORDER BY date DESC,seq DESC LIMIT ?",
-    )
-      .bind(
-        cursor?.[0] ?? "9999-12-31",
-        cursor ? Number(cursor[1]) : Number.MAX_SAFE_INTEGER,
-        machine,
-        machine,
-        date,
-        date,
-        limit + 1,
-      )
-      .all<{ seq: number; date: string; payload: string }>();
-    const entries = results
-      .slice(0, limit)
-      .map((r) => ({ seq: r.seq, report: JSON.parse(r.payload) }));
-    const machines = (await registrations(env)).filter(
-      (entry) => entry.enabled && (!machine || entry.id === machine),
-    );
-    const jobs = (
-      await Promise.all(
-        machines.map(async (entry) =>
-          (
-            await env.MACHINES.getByName(entry.id).dailyJobs()
-          )
-            .filter((job) => !date || job.date === date)
-            .map((job) => ({
-              ...job,
-              machineId: entry.id,
-              machineName: entry.name,
-            })),
-        ),
-      )
-    ).flat();
-    return json({
-      entries,
-      jobs,
-      nextCursor:
-        results.length > limit
-          ? `${results[limit - 1].date}|${results[limit - 1].seq}`
-          : null,
-    });
-  }
-  if (path === "/api/v1/resources") {
-    if (request.method !== "GET")
-      throw new HttpError(405, "Method not allowed");
-    const machine = url.searchParams.get("machine");
-    if (!machine || !/^[a-z0-9][a-z0-9_-]{0,79}$/.test(machine))
-      throw new HttpError(400, "Machine required");
-    const object = env.MACHINES.getByName(machine);
-    if (!(await object.registration(machine))?.enabled)
-      throw new HttpError(404, "Machine not found");
-    return json(await object.resources());
-  }
   if (path === "/api/v1/overview") {
     const { ids } = await fleetIds(env);
     const enabled = (await registrations(env)).filter((m) => m.enabled);
@@ -646,68 +455,9 @@ async function route(request: Request, env: Env): Promise<Response> {
       machineGroups: await machineGroupState(env, ids),
     });
   }
-  if (path === "/api/v1/history") {
-    const machine = url.searchParams.get("machine");
-    const space = url.searchParams.get("space");
-    const limit = positive(url.searchParams.get("limit"), 20, 100);
-    const before = positive(
-      url.searchParams.get("before"),
-      Number.MAX_SAFE_INTEGER,
-    );
-    const { results } = await env.DB.prepare(
-      `SELECT seq, machine_id, captured_at, report_id, received_at, payload FROM reports WHERE seq < ? AND (? IS NULL OR machine_id = ?) AND (? IS NULL OR EXISTS (SELECT 1 FROM json_each(payload, '$.spaces') WHERE json_extract(value, '$.id') = ?)) ORDER BY seq DESC LIMIT ?`,
-    )
-      .bind(before, machine, machine, space, space, limit + 1)
-      .all<{
-        seq: number;
-        machine_id: string;
-        captured_at: string;
-        report_id: string;
-        received_at: string;
-        payload: string;
-      }>();
-    const entries = await Promise.all(
-      results.slice(0, limit).map(async (row) => {
-        const previous = await env.DB.prepare(
-          "SELECT payload FROM reports WHERE machine_id = ? AND (captured_at, report_id) < (?, ?) ORDER BY captured_at DESC, report_id DESC LIMIT 1",
-        )
-          .bind(row.machine_id, row.captured_at, row.report_id)
-          .first<{ payload: string }>();
-        const report = JSON.parse(row.payload) as Report;
-        return {
-          seq: row.seq,
-          receivedAt: row.received_at,
-          report,
-          changes: changesBetween(
-            previous ? JSON.parse(previous.payload) : null,
-            report,
-          ),
-        };
-      }),
-    );
-    return json({
-      entries,
-      nextCursor: results.length > limit ? entries.at(-1)?.seq : null,
-    });
-  }
   throw new HttpError(404, "Not found");
 }
 export default {
-  async scheduled(controller, env) {
-    const ids = (await registrations(env))
-      .filter((m) => m.enabled)
-      .map((m) => m.id);
-    const result = await runDaily(env, ids, controller.scheduledTime);
-    console.log(
-      JSON.stringify({
-        event: "daily_run",
-        generated: result.results.filter((entry) => "generated" in entry)
-          .length,
-        failed: result.results.filter((entry) => "error" in entry).length,
-        pending: "deferred" in result && result.deferred,
-      }),
-    );
-  },
   async fetch(request, env) {
     const url = new URL(request.url);
     if (

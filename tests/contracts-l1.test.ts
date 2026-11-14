@@ -10,11 +10,6 @@ import {
   type Registration,
 } from "../packages/contracts/src/connect.ts";
 import {
-  DailySettingsSchema,
-  dailyPrompt,
-  validDate,
-} from "../packages/contracts/src/daily.ts";
-import {
   approvalPayload,
   canonicalDeviceJSON,
   deviceBase64,
@@ -23,20 +18,11 @@ import {
   verifyDeviceSignature,
 } from "../packages/contracts/src/devices.ts";
 import {
-  compactHour,
-  projectHour,
-  utcHour,
-} from "../packages/contracts/src/report-input.ts";
-import {
-  resourcePoints,
-  resourceSample,
-} from "../packages/contracts/src/resources.ts";
-import {
   parseTerminalScreen,
   terminalColor,
 } from "../packages/contracts/src/terminal.ts";
 import { compactRenderedFrame } from "../packages/contracts/src/terminal-display.ts";
-import { evidence, report, telemetry } from "./fixtures.ts";
+import { evidence, report } from "./fixtures.ts";
 
 test("canonical JSON and digest stay deterministic", async () => {
   const value = { z: 1, a: [2, { b: 3 }] };
@@ -44,104 +30,6 @@ test("canonical JSON and digest stay deterministic", async () => {
   const hash = await digest(value);
   assert.match(hash, /^[a-f0-9]{64}$/);
   assert.equal(await digest(value), hash);
-});
-
-test("daily settings reject invalid providers and impossible calendar dates", () => {
-  assert.equal(validDate("2026-02-30"), false);
-  assert.equal(
-    DailySettingsSchema.safeParse({ provider: "bogus" }).success,
-    false,
-  );
-  assert.equal(
-    DailySettingsSchema.safeParse({ intervalHours: 12 } as never).success,
-    false,
-  );
-});
-
-test("dailyPrompt names hours with and without records", () => {
-  const hours = Array.from({ length: 24 }, (_, hour) => ({
-    hour,
-    records:
-      hour === 2 || hour === 5
-        ? [
-            {
-              id: `R${hour}`,
-              kind: "evidence",
-              observations: ["o"],
-              value: "{}",
-            },
-          ]
-        : [],
-  }));
-  const prompt = dailyPrompt("lab", "2026-03-01", hours);
-  assert.match(prompt, /2,5/);
-  assert.match(prompt, /无采集数据/);
-  assert.equal(prompt.includes("DATA_JSON:"), true);
-});
-
-test("resource points insert offline gaps for stale cadence", () => {
-  const samples = [
-    {
-      observedAt: "2026-01-01T00:00:00.000Z",
-      intervalSeconds: 60,
-      cpu: 1,
-      memory: 2,
-      load: null,
-    },
-    {
-      observedAt: "2026-01-01T00:10:00.000Z",
-      intervalSeconds: 60,
-      cpu: 3,
-      memory: 4,
-      load: [1, 2, 3] as [number, number, number],
-    },
-  ];
-  const points = resourcePoints(samples, "2026-01-01T01:00:00.000Z");
-  assert.ok(points.length >= 4);
-  assert.equal(points.at(-1)?.load1, null);
-});
-
-test("resourceSample maps telemetry and refuses missing resources", () => {
-  const base = telemetry("2026-01-01T00:00:00.000Z");
-  const full = {
-    ...base,
-    sampleIntervalSeconds: 30,
-    resources: {
-      ...base.resources,
-      cpuUsagePercent: 12.5,
-      memory: { totalBytes: 1000, freeBytes: 250 },
-      loadAverage: [1, 2, 3],
-    },
-  };
-  assert.deepEqual(
-    resourceSample(full as Parameters<typeof resourceSample>[0]),
-    {
-      observedAt: full.observedAt,
-      intervalSeconds: 30,
-      cpu: 12.5,
-      memory: 75,
-      load: [1, 2, 3],
-    },
-  );
-  const sparse = { observedAt: "2026-01-01T01:00:00.000Z" };
-  assert.deepEqual(
-    resourceSample(sparse as Parameters<typeof resourceSample>[0]),
-    {
-      observedAt: sparse.observedAt,
-      intervalSeconds: null,
-      cpu: null,
-      memory: null,
-      load: null,
-    },
-  );
-});
-
-test("utcHour buckets observations to whole hours", () => {
-  assert.equal(utcHour("2026-03-01T12:34:56.789Z"), "2026-03-01T12:00:00.000Z");
-  assert.equal(
-    utcHour(Date.parse("2026-03-01T12:59:59.999Z")),
-    "2026-03-01T12:00:00.000Z",
-  );
 });
 
 test("terminal styling covers reset codes and color tables", () => {
@@ -310,49 +198,6 @@ test("assessment history captures topology and availability transitions", () => 
   ];
   assert.equal(summarize(verified).spaces[0].state, "verified");
   assert.equal(summarize(restored).spaces[0].state, "unverified");
-  assert.equal(projectHour([]).terminalSampling.sourceRecords, 0);
-});
-
-test("compactHour keeps resource telemetry and coalesces duplicate inventory", () => {
-  const first = report("a", "2026-09-19T10:00:00.000Z");
-  first.machine.telemetry = telemetry(
-    first.capturedAt,
-  ) as typeof first.machine.telemetry;
-  const second = structuredClone(first);
-  second.reportId = "b";
-  second.capturedAt = "2026-09-19T10:30:00.000Z";
-  const duplicate = structuredClone(first);
-  const input = compactHour([first, second, duplicate]);
-  assert(input.records.some((record) => record.kind === "resources"));
-  assert.equal(
-    input.records.filter((record) => record.kind === "inventory").length,
-    1,
-  );
-  assert.equal(input.snapshots, 3);
-  assert.equal(input.firstObservedAt, first.capturedAt);
-  assert.equal(input.lastObservedAt, second.capturedAt);
-});
-
-test("projectHour retains a single on-screen sample when only one observation exists", () => {
-  const records = [
-    {
-      id: "T1",
-      kind: "evidence",
-      observations: ["2026-01-01T00:00:00.000Z"],
-      value: JSON.stringify({
-        source: "herdr:visible (current screen, not final)",
-        spaceId: "s",
-        tabId: "t",
-        paneId: "p",
-        taskId: "task",
-        status: "unknown",
-        summary: "screen",
-      }),
-    },
-  ];
-  const projected = projectHour(records);
-  assert.equal(projected.records.length, 1);
-  assert.equal(projected.terminalSampling.retainedRecords, 1);
 });
 
 test("onboarding notes dev hosts explicitly", () => {

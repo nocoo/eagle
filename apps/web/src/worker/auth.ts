@@ -26,17 +26,6 @@ export function agentTokens(env: Env): Record<string, string> {
     throw new Error("Invalid authentication configuration");
   return parsed as Record<string, string>;
 }
-export function containsCredential(value: string, env: Env): boolean {
-  return (
-    /eag1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/.test(value) ||
-    [
-      env.AGENT_SIGNING_KEY,
-      env.AI_API_KEY,
-      env.AI_ENCRYPTION_KEY,
-      ...Object.values(agentTokens(env)),
-    ].some((secret) => !!secret && value.includes(secret))
-  );
-}
 export async function agentIdentity(request: Request, env: Env) {
   const token = bearer(request);
   if (!token) return null;

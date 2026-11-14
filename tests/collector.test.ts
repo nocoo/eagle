@@ -217,29 +217,6 @@ test("a new native turn changes task identity, including a bounded tail with onl
   assert.equal(transcriptContext(`${one}\n${two}`)?.turnId, "turn-two");
 });
 
-test("retired agent config keys are dropped instead of failing startup", async () => {
-  const { stripRetiredConfig } = await import("../packages/agent/collector.ts");
-  const legacy = {
-    url: "http://127.0.0.1:37053",
-    token: "x".repeat(32),
-    machineId: "machine",
-    machineName: "Machine",
-    evidenceFile: "/tmp/evidence.json",
-    manager: { id: "manager", command: ["hermes"] },
-  };
-  const migrated = stripRetiredConfig(legacy);
-  assert.deepEqual(migrated.removed, ["manager", "evidenceFile"]);
-  assert.deepEqual(migrated.value, {
-    url: "http://127.0.0.1:37053",
-    token: "x".repeat(32),
-    machineId: "machine",
-    machineName: "Machine",
-  });
-  assert.deepEqual(legacy.manager, { id: "manager", command: ["hermes"] });
-  assert.deepEqual(stripRetiredConfig({ url: "http://localhost" }).removed, []);
-  assert.deepEqual(stripRetiredConfig(null).value, null);
-});
-
 test("stopped sessions retain last known topology and are explicitly unavailable", async () => {
   const { preserveStopped } = await import("../packages/agent/collector.ts");
   const prior = report();

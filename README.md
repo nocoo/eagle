@@ -18,23 +18,23 @@ Eagle 是面向 Herdr 用户的私有看板，汇总每台上报机器的 Space�
 - **机器接入**：Connect 页面添加和重命名机器，生成一次性接入提示词，轮换、停用与重新启用机器凭据。
 - **资源与端口**：上报 CPU、内存、主目录所在磁盘容量和运行时间，可检查指定本机 TCP 端口。端口监听只代表连通，不能证明业务健康。
 - **任务证据**：对照当前任务总结、Goal、Git revision 和测试凭证；涉及部署时还需要部署证据。运行中的 Goal 或实际工具执行优先于表面的完成提示。
-- **AI 日报**：每天北京时间 23:59 为每台机器生成一份日报，固定 24 个小时逐项汇报，严格限制格式与长度；失败可手动重试，缺少 AI 配置时自动跳过。侧栏以发光状态点显示机器在线、采集过期或心跳超时。
+- **在线状态**：侧栏以发光状态点显示机器在线、采集过期或心跳超时。
 
 看板可见时每 5 秒刷新，重新可见时立即刷新。心跳超过 90 秒或快照超过 5 分钟会明确标记过期；刷新失败保留最后数据并提示连接异常。桌面侧栏支持折叠，加载占位保持布局稳定，动画遵守减少动态效果偏好。
 
-每台机器有独立的 SQLite Durable Object，保存当前完整快照、资源样本和 48 小时日报输入；心跳只更新存活时间，迟到的旧任务报告不会覆盖当前任务。原始快照历史仍暂停写入 D1；AI 日报写入 D1 并在最近历史查询。总览直接读取 DO，不轮询 D1。详见 [AI 日报](docs/DAILY-REPORTS.md)。
+每台机器有独立的 SQLite Durable Object，只保存当前完整快照和上传收据；心跳只更新存活时间，迟到的旧任务报告不会覆盖当前任务。没有数据库、没有定时任务、没有 AI 配置：总览直接读取 DO，删掉的历史与日报见[成本治理记录](docs/COST-CUT.md)。
 
 ### 认证与隐私
 
 网站由 Cloudflare Access 保护，Worker 校验签名、签发者、应用 audience、有效期与必要声明。本地免登录仅对明确的开发域名或 loopback 且 `LOCAL_DEV="true"` 生效；生产关闭此开关。
 
-机器使用独立的签名 Bearer Token 向 `https://eagle-ingest.hexly.ai` 上报，避免浏览器 SSO 中断采集。该域名只提供机器上报、心跳、实时桥接和公开 `/api/live`，不提供看板与网站历史查询；私有 API 不开放 CORS。Token 仅在生成时可复制，保存在权限为 `0600` 的机器配置中；签名密钥留在 Worker secret，数据库和浏览器持久存储均不保存 Token。已有 `AGENT_TOKENS` 凭据可继续使用，直到轮换或停用。
+机器使用独立的签名 Bearer Token 向 `https://eagle-ingest.hexly.ai` 上报，避免浏览器 SSO 中断采集。该域名只提供机器上报、心跳、实时桥接和公开 `/api/live`，不提供看板；私有 API 不开放 CORS。Token 仅在生成时可复制，保存在权限为 `0600` 的机器配置中；签名密钥留在 Worker secret，DO 和浏览器持久存储均不保存 Token。已有 `AGENT_TOKENS` 凭据可继续使用，直到轮换或停用。
 
 侧栏显示已验证的 Access 账户与退出入口。头像服务只接收规范化邮箱的 SHA-256，查询失败时保留账户名和首字母头像。本地可配置 `LOCAL_USER_EMAIL` 预览，退出功能在本地禁用。
 
 Codex 适配器仅提取最终回复和生命周期事件，不采集推理与工具参数；其他 harness 使用有限的终端片段。文本在落盘和上传前脱敏，但启发式规则无法保证识别任意秘密；应提供简明总结与验证凭证，避免原始终端转储。
 
-实时模式另行传输脱敏后的当前终端画面；画面与已发送输入不写入 D1 或 DO 存储。未发送草稿按终端缓存在浏览器 localStorage，断线、退出或刷新后可恢复，发送后清除；可识别的凭据不缓存。
+实时模式另行传输脱敏后的当前终端画面；画面与已发送输入不写入 DO 存储。未发送草稿按终端缓存在浏览器 localStorage，断线、退出或刷新后可恢复，发送后清除；可识别的凭据不缓存。
 
 ## 使用
 
@@ -83,7 +83,6 @@ npm ci
 在忽略提交的 `.dev.vars` 中配置至少 32 个随机字符的 `AGENT_SIGNING_KEY`，文件权限设为 `0600`。本地浏览设置 `LOCAL_DEV="true"`；可选 `LOCAL_USER_EMAIL` 用于头像预览。已有机器凭据可通过可选的 `AGENT_TOKENS` 保留。修改 secret 后重启 Wrangler。
 
 ```sh
-npm run db:local
 npm run dev:api
 # 另开一个终端：
 npm run dev
@@ -109,7 +108,7 @@ npm run build
 npm run test:browser
 ```
 
-`npm test` 运行 Node 测试，API 用例使用独立 Miniflare / D1；Playwright 覆盖桌面与手机页面。`npm run check` 汇总 Node 测试、类型检查、静态检查和构建。
+`npm test` 运行 Node 测试，API 用例使用独立 Miniflare Durable Objects；Playwright 覆盖桌面与手机页面。`npm run check` 汇总 Node 测试、类型检查、静态检查和构建。
 
 真实机器到鉴权上报、DO 和 Chromium 的端到端核验使用 `scripts/verify-live.ts`，需要可用的本地或生产 Agent 配置；生产另需有效 Access JWT。凭据准备、实际验证范围与保存在 `.local/` 的脱敏凭证见[真实链路核验](docs/DEPLOYMENT.md#verify-the-live-path)。
 
@@ -119,7 +118,7 @@ npm run test:browser
 | --- | --- |
 | React、Vite、Basalt、Recharts | 私有看板、组件与可视化 |
 | TypeScript、Biome | 类型检查与源码规范 |
-| Cloudflare Workers、Durable Objects、D1 | 受认证 API、每机状态与日报归档 |
+| Cloudflare Workers、Durable Objects | 受认证 API 与每机当前状态 |
 | Cloudflare Access、jose | 查看者身份与 JWT 校验 |
 | Node.js、Herdr、Zod | 本地采集与报告校验 |
 | Node test runner、Miniflare、Playwright | 单元、API 与浏览器测试 |

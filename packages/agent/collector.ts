@@ -272,16 +272,6 @@ async function herdr(args: string[], session?: string) {
     ...args,
   ]);
 }
-const RETIRED_CONFIG_KEYS = ["manager", "evidenceFile"] as const;
-/** Drop settings removed in 1.0.0 so an older secure config still starts. */
-export function stripRetiredConfig(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    return { value, removed: [] as string[] };
-  const config = { ...(value as Record<string, unknown>) };
-  const removed = RETIRED_CONFIG_KEYS.filter((key) => key in config);
-  for (const key of removed) delete config[key];
-  return { value: config, removed };
-}
 export type AgentConfig = {
   url: string;
   token: string;

@@ -1,7 +1,7 @@
 # Eagle
 
 Herdr machine/Space overview with a Vite/React dashboard, Cloudflare Worker,
-Durable Objects/D1 and a standalone Node Agent. Human overview: [README.md](README.md).
+Durable Objects and a standalone Node Agent. Human overview: [README.md](README.md).
 
 ## Scope and sources
 
@@ -32,7 +32,7 @@ manifest, while website health/UI versions match the root manifest.
 ### Repository layout
 
 ```
-apps/web          Vite dashboard, Cloudflare Worker, D1 migrations, public assets
+apps/web          Vite dashboard, Cloudflare Worker, public assets
 apps/macos        Eagle SwiftUI app (SPM, macOS 15+); it also hosts the Bots client UI
 apps/bots-macos   Bots client logic (SPM package: BotsCore/BotsTransport/BotsFeatures); see its README
 packages/contracts  shared zod contracts and pure helpers (private, not published)
@@ -61,9 +61,9 @@ format` lint and the 90% logic-coverage gate need the Xcode toolchain, which
 published tarball stays self-contained and its `bin` path is unchanged.
 
 - [Bots plan](docs/bots/PLAN.md) owns what is built and what is next.
-- [Environment resources](docs/RESOURCES.md) defines cadence, OS evidence and resource history.
-- [Agent contract](docs/AGENT.md), [real-time protocol](docs/REALTIME.md),
-  [daily reports](docs/DAILY-REPORTS.md) describe product behavior.
+- [Agent contract](docs/AGENT.md) and [real-time protocol](docs/REALTIME.md)
+  describe product behavior.
+- [Durable Objects cost policy](docs/COST-CUT.md) owns what was deleted and why.
 - `.github/workflows/check.yml`, `package.json`, `tests/`, TypeScript/Biome and
   Playwright configs describe current enforcement, not guaranteed passing runs.
 - [Deployment](docs/DEPLOYMENT.md) owns operational setup and live verification.
@@ -80,13 +80,13 @@ published tarball stays self-contained and its `bin` path is unchanged.
   published `@nocoo/basalt`; consult its installed integration docs. Do not add a
   second component or color system.
 - Tokens live only in secure configuration. Never put them in report payloads,
-  D1, URLs, source, browser storage, screenshots or command arguments.
+  URLs, source, browser storage, screenshots or command arguments.
   Authentication errors fail closed.
-- Preserve versioned whole-machine snapshots, idempotency, capture ordering,
-  session-scoped identities, freshness and evidence provenance. Lifecycle badges
+- Preserve idempotency, capture ordering, session-scoped identities, freshness
+  and evidence provenance. Lifecycle badges
   never certify task completion; missing data remains unknown.
 - During long implementation work, record a user-view checkpoint every 15 minutes
-  in `docs/CHECKPOINTS.md`: actual Herdr collection, authentication, D1, rendering
+  in `docs/CHECKPOINTS.md`: actual Herdr collection, authentication, Durable Objects, rendering
   and the next broken hop. Do not invent successful verification.
 
 ## Setup and commands
@@ -103,7 +103,6 @@ Never copy production credentials into tests. Restart Wrangler after changes.
 
 ```sh
 npm ci
-npm run db:local
 npm run dev:api
 npm run dev
 npm test
@@ -193,11 +192,11 @@ requirements. Configuration evidence is separate from successful execution.
 
 | Dimension | Contract and current state |
 | --- | --- |
-| L1 | Enforced (index snapshot): `npm run test:coverage`, `npm run typecheck`, `npm run lint`, and `scripts/check-test-focus.sh` run inside a `git checkout-index` export on every commit (see `.githooks/pre-commit` and `scripts/l1-index-gate.sh`). c8 enforces four metrics >=95% on `packages/contracts/src/**` with documented presentation exclusions (`terminal-display.ts`, `terminal-links.ts`, `daily.ts`, `terminal.ts` — covered by sibling/integration tests). Measured gate on 2026-11-09: statements/lines/functions 100%, branches 96.98%, wall time for `npm run l1:gate` ~33s warm. Negative L1 proofs live in `tests/native/l1-gate.test.ts`. CI `npm run check` still runs plain UT without coverage floors. |
-| L2 | Planned: every owned endpoint/method over local HTTP plus real SQL/process integration. `tests/api.test.ts` uses real Miniflare/D1 and package/process tests exist; exhaustive endpoint/method coverage and a dedicated push gate are not established. |
+| L1 | Enforced (index snapshot): `npm run test:coverage`, `npm run typecheck`, `npm run lint`, and `scripts/check-test-focus.sh` run inside a `git checkout-index` export on every commit (see `.githooks/pre-commit` and `scripts/l1-index-gate.sh`). c8 enforces four metrics >=95% on `packages/contracts/src/**` with documented presentation exclusions (`terminal-display.ts`, `terminal-links.ts`, `terminal.ts` — covered by sibling/integration tests). Measured gate on 2026-11-09: statements/lines/functions 100%, branches 96.98%, wall time for `npm run l1:gate` ~33s warm. Negative L1 proofs live in `tests/native/l1-gate.test.ts`. CI `npm run check` still runs plain UT without coverage floors. |
+| L2 | Planned: every owned endpoint/method over local HTTP plus real SQL/process integration. `tests/api.test.ts` uses real Miniflare Durable Objects and package/process tests exist; exhaustive endpoint/method coverage and a dedicated push gate are not established. |
 | L3 | Configured in CI: Playwright desktop/mobile journeys through `test:browser`. Fresh browser contexts and `reuseExistingServer: false` are configured; this is not proof of every live Herdr/Access journey. |
 | G2 | Planned: dependency and secret scanning with missing required tools failing. No scanner step is configured in `check.yml` or a project push hook. |
-| D1 | Planned: isolated per-run test state, local targets and guards before fixture writes/cleanup. API tests allocate temporary storage; browser tests use a dedicated port/cache. Complete fixture/marker, daily-dev separation and cleanup proof remain unverified. |
+| D1 | N/A: the Worker no longer uses D1. The table, both migrations and the snapshot-history API were removed on 2026-11-13; history of the decision is in [docs/COST-CUT.md](docs/COST-CUT.md). |
 
 Hooks live in `.githooks/` and are installed by `npm ci` through the `prepare`
 script (`core.hooksPath`). Pre-commit lints the staged snapshot with Biome and
@@ -212,7 +211,7 @@ thresholds, skip/focus tests, bypass hooks or suppress failures.
 Local preview: `https://eagle.dev.hexly.ai` -> Vite 7053 -> Worker 37053
 (inspector 38053). Browser tests use 27053; 17053 is reserved for API E2E.
 Daily development and test state must remain separate. Use real local
-Miniflare/D1 for API checks; never create remote test resources or seed production.
+Miniflare for API checks; never create remote test resources or seed production.
 Browser tests build into `.local/browser-dist` and serve Vite preview on 27053
 with no API proxy. Each test owns its API/WebSocket fixtures and fresh context;
 time-sensitive assertions must pause the browser clock and advance it explicitly.

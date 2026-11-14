@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Reduce Durable Objects cost to the three kept capabilities: state reporting, a live
+  connection and sending input. Removed the AI daily reports (cron, settings page,
+  `daily_jobs`, `hourly_facts`), the resource-sample history stream, the
+  semantic-manager residue, credential leak scanning with its AI-key lookup, the
+  paused D1 snapshot history, and the paused machine-history API. One report upload
+  now reads about three indexed rows instead of scanning 2,800, and
+  `MachineDirectory` is no longer touched on the ingestion path. See
+  [docs/COST-CUT.md](docs/COST-CUT.md).
+
 - Find `hc` where a person's shell finds it. A daemon the App spawns inherits launchd's PATH,
   which has no user bin, so every `hc_start` failed with `hc could not start: hc` on a machine
   where the Herdr page said it was installed. The client now looks in `~/.local/bin`, the

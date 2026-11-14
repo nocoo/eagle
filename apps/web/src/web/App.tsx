@@ -29,16 +29,13 @@ import {
 } from "@nocoo/basalt/components/app-shell";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
-import { SkeletonLine } from "@nocoo/basalt/components/skeleton-line";
 import {
-  History as HistoryIcon,
   Layers3,
   LayoutDashboard,
   Monitor,
   PanelLeft,
   Plug,
   RefreshCw,
-  Settings as SettingsIcon,
   TerminalSquare,
 } from "lucide-react";
 import {
@@ -52,7 +49,6 @@ import {
 import { assessPane } from "../../../../packages/contracts/src/assessment.ts";
 import { machinesBySidebarGroup } from "../../../../packages/contracts/src/machine-groups.ts";
 import type {
-  HistoryEntry,
   MachineView,
   Overview,
   Space,
@@ -61,7 +57,6 @@ import { AuthError, api } from "./api.ts";
 import { FamilyActions, Mark, SidebarAccount } from "./Brand.tsx";
 import { Connect } from "./Connect.tsx";
 import { useCurrentTaskSnapshot } from "./CurrentTaskSnapshot.ts";
-import { DailyHistory } from "./DailyHistory.tsx";
 import {
   Dashboard,
   DashboardSkeleton,
@@ -77,7 +72,6 @@ import {
   localProduction,
 } from "./environment.ts";
 import { createRealtimeView, Realtime } from "./Realtime.tsx";
-import { Settings } from "./Settings.tsx";
 import { useTimezone } from "./Timezone.tsx";
 import { WorkspaceShell } from "./WorkspaceShell.tsx";
 
@@ -118,129 +112,6 @@ function AccessGate() {
         </Button>
       </LayerCard>
     </main>
-  );
-}
-
-function HistoryView({ machine, space }: { machine: string; space?: string }) {
-  const { time } = useTimezone();
-  const [entries, setEntries] = useState<HistoryEntry[]>([]);
-  const [cursor, setCursor] = useState<number | null>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const active = useRef<AbortController | null>(null);
-  const load = useCallback(
-    async (before?: number) => {
-      active.current?.abort();
-      const controller = new AbortController();
-      active.current = controller;
-      setLoading(true);
-      setError("");
-      const query = new URLSearchParams({ limit: "12" });
-      if (machine) query.set("machine", machine);
-      if (space) query.set("space", space);
-      if (before) query.set("before", String(before));
-      try {
-        const result = await api<{
-          entries: HistoryEntry[];
-          nextCursor: number | null;
-        }>(`/api/v1/history?${query}`, { signal: controller.signal });
-        if (controller.signal.aborted) return;
-        setEntries((old) =>
-          before ? [...old, ...(result.entries ?? [])] : (result.entries ?? []),
-        );
-        setCursor(result.nextCursor);
-      } catch (e) {
-        if (!controller.signal.aborted)
-          setError(e instanceof Error ? e.message : "历史加载失败");
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
-      }
-    },
-    [machine, space],
-  );
-  useEffect(() => {
-    setEntries([]);
-    void load();
-    return () => active.current?.abort();
-  }, [load]);
-  return (
-    <div className="space-y-4">
-      <DailyHistory machine={machine} />
-      <div className="flex items-center justify-between">
-        <p className="text-basalt-base text-basalt-muted-foreground">
-          历史归档已暂停（旧版原始快照）；新的 AI 日报显示在上方。
-        </p>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => void load()}
-          disabled={loading}
-        >
-          刷新历史
-        </Button>
-      </div>
-      {error && (
-        <p role="alert" className="text-basalt-base text-basalt-destructive">
-          {error}
-        </p>
-      )}
-      {!loading && !entries.length && !error && (
-        <LayerCard>暂无历史记录；当前状态可在总览查看。</LayerCard>
-      )}
-      {loading && !entries.length && (
-        <div role="status" aria-label="正在读取历史" className="space-y-3">
-          {[0, 1, 2].map((key) => (
-            <LayerCard key={key}>
-              <SkeletonLine />
-              <SkeletonLine minWidth={50} maxWidth={70} />
-            </LayerCard>
-          ))}
-        </div>
-      )}
-      {entries.map((entry) => (
-        <LayerCard key={entry.seq}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-basalt-base font-medium">
-              {entry.report.machine.name}
-            </span>
-            <span className="text-basalt-sm text-basalt-muted-foreground">
-              采集 {time(entry.report.capturedAt)}
-            </span>
-          </div>
-          <ul className="mt-3 space-y-2 text-basalt-base">
-            {(entry.changes.length
-              ? entry.changes
-              : ["任务与拓扑无变化，采集证据已刷新"]
-            ).map((change) => (
-              <li key={change} className="break-words">
-                {change}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-3 text-basalt-sm text-basalt-muted-foreground">
-            {entry.report.spaces.length} 个 Space · 接收{" "}
-            {time(entry.receivedAt)} · #{entry.seq}
-          </p>
-        </LayerCard>
-      ))}
-      {cursor && (
-        <Button
-          variant="outline"
-          loading={loading}
-          onClick={() => void load(cursor)}
-        >
-          更早记录
-        </Button>
-      )}
-      {loading && (
-        <p
-          role="status"
-          className="text-basalt-base text-basalt-muted-foreground"
-        >
-          读取历史…
-        </p>
-      )}
-    </div>
   );
 }
 
@@ -295,27 +166,23 @@ function SpaceDetail({
     setPaneId(id);
     paneSelectionHandler.current?.(id);
   }, []);
-  const [history, setHistory] = useState(false);
   const [realtime, setRealtime] = useState(true);
   const realtimeView = useRef(createRealtimeView());
   useEffect(() => {
     if (!selection?.pane) return;
     setPaneId(selection.pane);
     setRealtime(true);
-    setHistory(false);
   }, [selection]);
   const current = useCurrentTaskSnapshot(
     liveMachine,
     liveSpace,
-    !history && !realtime,
+    !realtime,
     onAuthError,
   );
-  const machine = realtime || history ? liveMachine : current.machine;
-  const space = realtime || history ? liveSpace : (current.space ?? liveSpace);
+  const machine = realtime ? liveMachine : current.machine;
+  const space = realtime ? liveSpace : (current.space ?? liveSpace);
   const panes =
-    !realtime && !history && !current.space
-      ? []
-      : space.tabs.flatMap((t) => t.panes);
+    !realtime && !current.space ? [] : space.tabs.flatMap((t) => t.panes);
   const pane =
     panes.find((p) => p.id === paneId) ?? (!paneId ? panes[0] : undefined);
   const assessment = pane ? assessPane(pane, machine.report.capturedAt) : null;
@@ -347,37 +214,19 @@ function SpaceDetail({
             size="sm"
             variant={realtime ? "default" : "outline"}
             aria-pressed={realtime}
-            onClick={() => {
-              setRealtime(true);
-              setHistory(false);
-            }}
+            onClick={() => setRealtime(true)}
           >
             <TerminalSquare size={14} />
             实时模式
           </Button>
           <Button
             size="sm"
-            variant={history || realtime ? "outline" : "default"}
-            aria-pressed={!history && !realtime}
-            onClick={() => {
-              setHistory(false);
-              setRealtime(false);
-            }}
+            variant={realtime ? "outline" : "default"}
+            aria-pressed={!realtime}
+            onClick={() => setRealtime(false)}
           >
             <Layers3 size={14} />
             当前任务
-          </Button>
-          <Button
-            size="sm"
-            variant={history ? "default" : "outline"}
-            aria-pressed={history}
-            onClick={() => {
-              setHistory(true);
-              setRealtime(false);
-            }}
-          >
-            <HistoryIcon size={14} />
-            Space 历史
           </Button>
         </fieldset>
         {actions}
@@ -387,9 +236,7 @@ function SpaceDetail({
         className={
           realtime
             ? "space-detail-body space-detail-live"
-            : history
-              ? "space-detail-body"
-              : "space-detail-body space-detail-current"
+            : "space-detail-body space-detail-current"
         }
       >
         {realtime ? (
@@ -403,8 +250,6 @@ function SpaceDetail({
             onPaneChange={selectLivePane}
             onObservedAt={observeRealtime}
           />
-        ) : history ? (
-          <HistoryView machine={machine.id} space={space.id} />
         ) : (
           <>
             <LayerCard
@@ -539,16 +384,8 @@ export function App() {
   const [boot, setBoot] = useState(true);
   const [error, setError] = useState("");
   const [machineId, setMachineId] = useState<string | null>(machineFromRoute);
-  const [page, setPage] = useState<
-    "overview" | "history" | "connect" | "settings"
-  >(() =>
-    location.pathname === "/settings"
-      ? "settings"
-      : location.pathname === "/connect"
-        ? "connect"
-        : location.pathname === "/history"
-          ? "history"
-          : "overview",
+  const [page, setPage] = useState<"overview" | "connect">(() =>
+    location.pathname === "/connect" ? "connect" : "overview",
   );
   const [search, setSearch] = useState("");
   const [selection, setSelection] = useState<{
@@ -601,15 +438,7 @@ export function App() {
   useEffect(() => {
     const back = () => {
       setSelection(null);
-      setPage(
-        location.pathname === "/settings"
-          ? "settings"
-          : location.pathname === "/connect"
-            ? "connect"
-            : location.pathname === "/history"
-              ? "history"
-              : "overview",
-      );
+      setPage(location.pathname === "/connect" ? "connect" : "overview");
       setMachineId(machineFromRoute());
       setSearch("");
     };
@@ -654,10 +483,7 @@ export function App() {
   const detailSpace = detailMachine?.report.spaces.find(
     (s) => s.id === selection?.space,
   );
-  const navigate = (
-    next: "overview" | "history" | "connect" | "settings",
-    id = activeMachineId,
-  ) => {
+  const navigate = (next: "overview" | "connect", id = activeMachineId) => {
     setSelection(null);
     setPage(next);
     setMachineId(id);
@@ -665,7 +491,7 @@ export function App() {
     history.pushState(
       null,
       "",
-      `${next === "overview" ? (id ? "/" : "/overview") : `/${next}`}${id && (next === "overview" || next === "history") ? `?machine=${encodeURIComponent(id)}` : ""}`,
+      `${next === "overview" ? (id ? "/" : "/overview") : `/${next}`}${id && next === "overview" ? `?machine=${encodeURIComponent(id)}` : ""}`,
     );
     if (mobile) setCollapsed(true);
   };
@@ -695,15 +521,8 @@ export function App() {
   );
   const NavItem = collapsed && !mobile ? SidebarIconItem : SidebarItem;
   const title =
-    page === "settings"
-      ? "设置"
-      : page === "connect"
-        ? "Connect"
-        : page === "history"
-          ? "最近历史"
-          : (selectedMachine?.name ?? "全局总览");
+    page === "connect" ? "Connect" : (selectedMachine?.name ?? "全局总览");
   const compactMachine = page === "overview" && !!selectedMachine;
-  const navigationLabel = page === "overview" ? "查看最近历史" : "返回总览";
   const syncCaption = (
     <span className="sync-caption" data-ready={!!data && !error}>
       <span
@@ -835,22 +654,6 @@ export function App() {
                 <Plug className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                 {(!collapsed || mobile) && "Connect"}
               </NavItem>
-              <NavItem
-                aria-label="最近历史"
-                active={page === "history"}
-                onClick={() => navigate("history")}
-              >
-                <HistoryIcon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-                {(!collapsed || mobile) && "最近历史"}
-              </NavItem>
-              <NavItem
-                aria-label="设置"
-                active={page === "settings"}
-                onClick={() => navigate("settings", "")}
-              >
-                <SettingsIcon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-                {(!collapsed || mobile) && "设置"}
-              </NavItem>
             </div>
           </SidebarNav>
           <SidebarFooter>
@@ -903,9 +706,7 @@ export function App() {
                 <PageHeader
                   title={title}
                   description={
-                    page === "settings" ? (
-                      "显示时区、AI 连接与日报。"
-                    ) : compactMachine && selectedMachine ? (
+                    compactMachine && selectedMachine ? (
                       <span className="machine-subtitle">
                         <MachineStatus machine={selectedMachine} now={now} />
                         {syncCaption}
@@ -919,51 +720,27 @@ export function App() {
                     )
                   }
                   actions={
-                    <>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size={mobile ? "lg" : "sm"}
-                            aria-label="刷新"
-                            disabled={syncing}
-                            onClick={() => void refresh()}
-                          >
-                            {!mobile && (
-                              <RefreshCw
-                                size={14}
-                                aria-hidden="true"
-                                className={syncing ? "eagle-spin" : ""}
-                              />
-                            )}
-                            刷新
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>刷新</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            size={mobile ? "lg" : "sm"}
-                            onClick={() =>
-                              navigate(
-                                page === "overview" ? "history" : "overview",
-                              )
-                            }
-                            aria-label={navigationLabel}
-                          >
-                            {page === "overview"
-                              ? mobile
-                                ? "历史"
-                                : "最近历史"
-                              : mobile
-                                ? "总览"
-                                : "返回总览"}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{navigationLabel}</TooltipContent>
-                      </Tooltip>
-                    </>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size={mobile ? "lg" : "sm"}
+                          aria-label="刷新"
+                          disabled={syncing}
+                          onClick={() => void refresh()}
+                        >
+                          {!mobile && (
+                            <RefreshCw
+                              size={14}
+                              aria-hidden="true"
+                              className={syncing ? "eagle-spin" : ""}
+                            />
+                          )}
+                          刷新
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>刷新</TooltipContent>
+                    </Tooltip>
                   }
                 />
                 {error && (
@@ -976,7 +753,7 @@ export function App() {
                     </p>
                   </LayerCard>
                 )}
-                {!compactMachine && page !== "settings" && syncCaption}
+                {!compactMachine && syncCaption}
                 {page === "overview" &&
                   !activeMachineId &&
                   !!data?.pendingMachines?.length && (
@@ -988,8 +765,6 @@ export function App() {
                   )}
                 {boot ? (
                   <DashboardSkeleton />
-                ) : page === "settings" ? (
-                  <Settings onAuthError={expire} />
                 ) : page === "connect" ? (
                   <Connect
                     live={machines}
@@ -997,8 +772,6 @@ export function App() {
                     onOpen={(id) => navigate("overview", id)}
                     onAuthError={expire}
                   />
-                ) : page === "history" ? (
-                  <HistoryView machine={activeMachineId} />
                 ) : (
                   <Dashboard
                     key={activeMachineId || "fleet"}

@@ -289,26 +289,12 @@ test("narrow desktop layouts keep three-pane topology controls readable", async 
   }
 });
 
-test("token-free overview, topology evidence, history and empty search", async ({
+test("token-free overview, topology evidence and empty search", async ({
   page,
 }) => {
   const value = report("browser-report", new Date().toISOString());
   await page.route("**/api/**", async (route) => {
-    const path = new URL(route.request().url()).pathname;
-    if (path.includes("history"))
-      return route.fulfill({
-        json: {
-          entries: [
-            {
-              seq: 1,
-              report: value,
-              receivedAt: value.capturedAt,
-              changes: ["首次接入：Eagle"],
-            },
-          ],
-          nextCursor: null,
-        },
-      });
+    const _path = new URL(route.request().url()).pathname;
     return route.fulfill({
       json: {
         now: new Date().toISOString(),
@@ -361,8 +347,6 @@ test("token-free overview, topology evidence, history and empty search", async (
   await page.getByLabel("搜索 Space").fill("no-such-space");
   await expect(page.getByText("没有匹配的 Space")).toBeVisible();
   await page.getByLabel("搜索 Space").clear();
-  await page.getByRole("button", { name: "查看最近历史" }).click();
-  await expect(page.getByText("首次接入：Eagle").first()).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,

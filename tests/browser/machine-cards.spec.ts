@@ -16,27 +16,25 @@ test("machine card explanations stay in accessible top-right help controls", asy
   });
   await page.route("**/api/**", (route) =>
     route.fulfill({
-      json: new URL(route.request().url()).pathname.endsWith("/resources")
-        ? { retentionSeconds: 86400, samples: [] }
-        : {
-            now,
-            machines: [
-              {
-                id: "mac-one",
-                name: "Synthetic machine",
-                report: snapshot,
-                lastSeen: now,
-                receivedAt: now,
-                warning: null,
-              },
-            ],
+      json: {
+        now,
+        machines: [
+          {
+            id: "mac-one",
+            name: "Synthetic machine",
+            report: snapshot,
+            lastSeen: now,
+            receivedAt: now,
+            warning: null,
           },
+        ],
+      },
     }),
   );
   await page.goto("/?machine=mac-one");
   for (const [card, label, explanation] of [
     [".environment-status", "环境状态说明", "网络表示系统路径"],
-    [".resource-history", "资源时间序列说明", "磁盘不入图"],
+    [".resource-current", "资源采样说明", "只显示最近一次上报的数值"],
     [".activity-card", "最近变化说明", "各机器最近一次任务或拓扑变化"],
     [".coverage-card", "证据覆盖说明", "覆盖表示存在记录"],
   ]) {
@@ -73,7 +71,7 @@ test("machine card explanations stay in accessible top-right help controls", asy
   await expect(
     page.getByRole("heading", { name: "03 运行脉搏", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("尚无资源历史 · 等待采样")).toBeVisible();
+  await expect(page.getByText("当前采样", { exact: true })).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

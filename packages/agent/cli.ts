@@ -21,7 +21,6 @@ import {
   checkUrl,
   collect,
   sendReport,
-  stripRetiredConfig,
 } from "./collector.ts";
 import { realtimeWatch } from "./realtime.ts";
 import { drainSpool } from "./spool.ts";
@@ -147,12 +146,7 @@ async function main() {
   const permissions = await stat(path);
   if (process.platform !== "win32" && (permissions.mode & 0o077) !== 0)
     throw new Error("Config must have mode 0600");
-  const retired = stripRetiredConfig(JSON.parse(await readFile(path, "utf8")));
-  if (retired.removed.length)
-    console.error(
-      JSON.stringify({ event: "retired_config_keys", keys: retired.removed }),
-    );
-  const config = ConfigSchema.parse(retired.value);
+  const config = ConfigSchema.parse(JSON.parse(await readFile(path, "utf8")));
   checkUrl(config.url);
   if (action === "collect") {
     const output = process.argv[3];

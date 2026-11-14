@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { DailySettingsSchema } from "../../packages/contracts/src/daily.ts";
 import { report } from "../fixtures.ts";
 
 test.use({ timezoneId: "America/Los_Angeles" });
@@ -26,44 +25,6 @@ async function mockOverview(page: import("@playwright/test").Page) {
     }),
   );
 }
-
-test("timezone defaults to UTC+8, persists and converts timestamps and report filters independently of browser timezone", async ({
-  page,
-}) => {
-  await page.clock.setFixedTime(new Date(now));
-  await mockOverview(page);
-  await page.route("**/api/v1/settings", (route) =>
-    route.fulfill({
-      json: {
-        ...DailySettingsSchema.parse({}),
-        hasApiKey: false,
-        configured: false,
-      },
-    }),
-  );
-  await page.goto("/overview");
-  await expect(page.locator(".sync-caption")).toContainText("09/21 04:05:06");
-  await page.goto("/settings");
-  const zone = page.getByRole("combobox", { name: "显示时区" });
-  await expect(zone).toContainText("UTC+08:00");
-  await zone.click();
-  await page.getByRole("option", { name: "UTC−05:00", exact: true }).click();
-  await page.reload();
-  await expect(zone).toContainText("UTC−05:00");
-  let date: string | null = null;
-  await page.route("**/api/v1/daily-reports?**", (route) => {
-    date = new URL(route.request().url()).searchParams.get("date");
-    return route.fulfill({ json: { entries: [], nextCursor: null } });
-  });
-  await page.goto("/history");
-  await expect(page.locator(".sync-caption")).toContainText("09/20 15:05:06");
-  await expect(
-    page.getByText("日期（北京时间）", { exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: /^报告日期/ }).click();
-  await page.getByRole("button", { name: "2026-09-20", exact: true }).click();
-  await expect.poll(() => date).toBe("2026-09-20");
-});
 
 for (const theme of ["dark", "light"] as const) {
   test(`${theme} workspace is an animated overlay; live terminals scroll internally and the composer stays visible`, async ({
@@ -234,26 +195,4 @@ test("malformed realtime frames close the browser socket without exceptions or r
   await expect.poll(() => closed, { timeout: 2000 }).toBe(1);
   expect(errors).toEqual([]);
   await expect(page.getByRole("button", { name: "接管输入" })).toBeDisabled();
-});
-
-test("daily calendar stays in Beijing when the display uses a half-hour timezone", async ({
-  page,
-}) => {
-  await page.clock.setFixedTime(new Date(now));
-  await page.addInitScript(() =>
-    localStorage.setItem("eagle-timezone-offset", "330"),
-  );
-  await mockOverview(page);
-  let date: string | null = null;
-  await page.route("**/api/v1/daily-reports?**", (route) => {
-    date = new URL(route.request().url()).searchParams.get("date");
-    return route.fulfill({ json: { entries: [], nextCursor: null } });
-  });
-  await page.goto("/history");
-  await page.getByRole("button", { name: /^报告日期/ }).click();
-  const today = page.getByRole("button", { name: "2026-09-21", exact: true });
-  await expect(today).toBeFocused();
-  await today.click();
-  await expect(page.getByRole("combobox", { name: "报告小时" })).toHaveCount(0);
-  await expect.poll(() => date).toBe("2026-09-21");
 });

@@ -30,7 +30,7 @@ type ApiBody = {
 };
 let mf: Miniflare;
 mkdirSync(".local", { recursive: true });
-const root = mkdtempSync(resolve(".local/device-api-"));
+const root = mkdtempSync(resolve(".local/devapi-"));
 const base = "https://devices.test/api/devices/v1";
 before(async () => {
   const entry = join(root, "entry.ts");
@@ -188,7 +188,7 @@ async function policyService(
   stateDirectory: string,
 ) {
   mkdirSync(stateDirectory, { recursive: true, mode: 0o700 });
-  const socketPath = join(stateDirectory, "port.sock");
+  const socketPath = join(stateDirectory, "s");
   const child = spawn(process.execPath, ["packages/agent/device-service.ts"], {
     stdio: ["pipe", "pipe", "pipe"],
   });

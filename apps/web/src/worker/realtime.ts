@@ -4,7 +4,6 @@ import {
   type Subscription,
   ViewerMessageSchema,
 } from "../../../../packages/contracts/src/realtime.ts";
-import { containsCredential } from "./auth.ts";
 
 type Attachment = {
   role: "agent" | "viewer";
@@ -38,7 +37,6 @@ export async function scheduleEarlier(ctx: DurableObjectState, when: number) {
 export class LiveRelay {
   constructor(
     private ctx: DurableObjectState,
-    private env: Env,
     private authorized: (id: string | null) => boolean,
   ) {}
   private sockets() {
@@ -208,11 +206,7 @@ export class LiveRelay {
       return;
     }
     const a = this.meta(socket);
-    if (
-      typeof message !== "string" ||
-      message.length > 262144 ||
-      containsCredential(message, this.env)
-    ) {
+    if (typeof message !== "string" || message.length > 262144) {
       socket.close(1008, "Invalid message");
       return;
     }

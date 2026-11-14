@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { summarize } from "../packages/contracts/src/assessment.ts";
-import { parseDailyReport } from "../packages/contracts/src/daily.ts";
-import { projectHour } from "../packages/contracts/src/report-input.ts";
 import {
   parseTerminalScreen,
   restyleRedactedText,
@@ -11,90 +9,6 @@ import {
 import { compactRenderedFrame } from "../packages/contracts/src/terminal-display.ts";
 import { terminalLinkParts } from "../packages/contracts/src/terminal-links.ts";
 import { report } from "./fixtures.ts";
-
-const dailyHours = () =>
-  Array.from({ length: 24 }, (_, hour) => ({
-    hour,
-    summary: "无采集数据。",
-    evidenceIds: [] as string[],
-  }));
-
-test("parseDailyReport separates missing-data and stale-state failures", () => {
-  const idsForStale = Array.from({ length: 24 }, () => new Set<string>());
-  idsForStale[3] = new Set(["H03-F1"]);
-  assert.throws(
-    () =>
-      parseDailyReport(
-        JSON.stringify({
-          overview: "夜间仅有旧状态，需要引用证据。",
-          hours: dailyHours().map((hour) =>
-            hour.hour === 3
-              ? { hour: 3, summary: "无采集数据。", evidenceIds: [] }
-              : hour,
-          ),
-          nextSteps: [],
-        }),
-        idsForStale,
-      ),
-    { name: "DailyEvidenceError" },
-  );
-  const idsForMissing = Array.from({ length: 24 }, () => new Set<string>());
-  idsForMissing[5] = new Set(["H05-F1"]);
-  assert.throws(
-    () =>
-      parseDailyReport(
-        JSON.stringify({
-          overview: "上午缺失引用需要足够长度的概述文本。",
-          hours: dailyHours().map((hour) =>
-            hour.hour === 5
-              ? {
-                  hour: 5,
-                  summary: "仅见旧状态，尚无新进展证据。",
-                  evidenceIds: [],
-                }
-              : hour,
-          ),
-          nextSteps: [],
-        }),
-        idsForMissing,
-      ),
-    { name: "DailyEvidenceError" },
-  );
-  assert.throws(
-    () =>
-      parseDailyReport(
-        JSON.stringify({
-          overview: "引用未知证据 [H08-F9] 的概述文本。",
-          hours: dailyHours(),
-          nextSteps: [],
-        }),
-        Array.from({ length: 24 }, () => new Set<string>()),
-      ),
-    /Invalid overview evidence/,
-  );
-});
-
-test("projectHour breaks ties when observations are missing", () => {
-  const evidence = (id: string, observations: string[]) => ({
-    id,
-    kind: "evidence",
-    observations,
-    value: JSON.stringify({
-      source: "herdr:visible (current screen, not final)",
-      spaceId: "s",
-      tabId: "t",
-      paneId: "p",
-      taskId: "task",
-      status: "unknown",
-      summary: id,
-    }),
-  });
-  const projected = projectHour([
-    evidence("A", []),
-    evidence("B", ["2026-01-01T00:00:00.000Z"]),
-  ]);
-  assert.equal(projected.records.length, 2);
-});
 
 test("summarize marks unavailable spaces as unverified", () => {
   const value = report();

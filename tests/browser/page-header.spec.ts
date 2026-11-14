@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { DailySettingsSchema } from "../../packages/contracts/src/daily.ts";
 import { report } from "../fixtures.ts";
 
 test.use({ reducedMotion: "reduce" });
@@ -9,8 +8,6 @@ const routes = [
   ["/?machine=mac-one", "Mac One"],
   ["/overview", "全局总览"],
   ["/connect", "Connect"],
-  ["/history", "最近历史"],
-  ["/settings", "设置"],
 ] as const;
 
 for (const [path, title] of routes) {
@@ -26,60 +23,43 @@ for (const [path, title] of routes) {
     let refreshes = 0;
     await page.route("**/api/**", (route) => {
       const pathname = new URL(route.request().url()).pathname;
-      if (pathname === "/api/v1/resources")
-        return route.fulfill({
-          json: { retentionSeconds: 86400, samples: [] },
-        });
       if (pathname === "/api/v1/overview") {
         refreshes++;
         if (failed)
           return route.fulfill({ status: 503, json: { error: "unavailable" } });
       }
       return route.fulfill({
-        json:
-          pathname === "/api/v1/settings"
-            ? {
-                ...DailySettingsSchema.parse({}),
-                hasApiKey: false,
-                configured: false,
-              }
-            : {
-                now,
-                machines:
-                  pathname === "/api/v1/machines"
-                    ? []
-                    : [
-                        {
-                          id: "mac-one",
-                          name: stale
-                            ? "Mac One With A Very Long Machine Name"
-                            : "Mac One",
-                          report: report(
-                            "header",
-                            stale ? "2026-09-20T19:05:06.000Z" : now,
-                          ),
-                          lastSeen: now,
-                          receivedAt: now,
-                          warning: null,
-                        },
-                      ],
-                canIssue: true,
-                machineGroups: { groups: [], assignments: {} },
-                pendingMachines: [],
-                entries: [],
-                hours: [],
-              },
+        json: {
+          now,
+          machines:
+            pathname === "/api/v1/machines"
+              ? []
+              : [
+                  {
+                    id: "mac-one",
+                    name: stale
+                      ? "Mac One With A Very Long Machine Name"
+                      : "Mac One",
+                    report: report(
+                      "header",
+                      stale ? "2026-09-20T19:05:06.000Z" : now,
+                    ),
+                    lastSeen: now,
+                    receivedAt: now,
+                    warning: null,
+                  },
+                ],
+          canIssue: true,
+          machineGroups: { groups: [], assignments: {} },
+          pendingMachines: [],
+          entries: [],
+          hours: [],
+        },
       });
     });
     await page.goto(path);
     const header = page.locator("#eagle-content header").first();
     const refresh = header.getByRole("button", { name: "刷新", exact: true });
-    const navigation = header.getByRole("button", {
-      name:
-        path.includes("machine") || path === "/overview"
-          ? "查看最近历史"
-          : "返回总览",
-    });
     await expect(header.getByRole("heading", { name: title })).toBeVisible();
     await expect(refresh).toBeEnabled();
     for (const width of isMobile ? [390, 320] : [1280]) {
@@ -92,7 +72,7 @@ for (const [path, title] of routes) {
       if (isMobile) {
         await expect(page.getByText("工作台", { exact: true })).toBeHidden();
         expect(box?.height).toBeLessThanOrEqual(40);
-        for (const button of [refresh, navigation]) {
+        for (const button of [refresh]) {
           const action = await button.boundingBox();
           expect(action?.y).toBeGreaterThanOrEqual(box?.y ?? 0);
           expect((action?.y ?? 0) + (action?.height ?? 0)).toBeLessThanOrEqual(
@@ -146,7 +126,7 @@ for (const [path, title] of routes) {
       await page.clock.runFor(32);
       if (isMobile) {
         expect((await header.boundingBox())?.height).toBeLessThanOrEqual(40);
-        await expect(navigation).toBeInViewport({ ratio: 1 });
+        await expect(refresh).toBeInViewport({ ratio: 1 });
         expect(
           await header.evaluate((node) => node.scrollWidth <= node.clientWidth),
         ).toBe(true);
@@ -160,12 +140,5 @@ for (const [path, title] of routes) {
     await refresh.click();
     await expect.poll(() => refreshes).toBeGreaterThan(previous);
     await expect(page.getByRole("alert")).toContainText("连接中断");
-    await navigation.focus();
-    await navigation.press("Enter");
-    await expect(page).toHaveURL(
-      path.includes("machine") || path === "/overview"
-        ? /\/history/
-        : /\/overview/,
-    );
   });
 }
