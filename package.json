@@ -2,7 +2,7 @@
   "name": "eagle",
   "version": "0.15.0",
   "config": {
-    "publishedAgentVersion": "1.0.0",
+    "publishedAgentVersion": "1.2.0",
     "publishedMacosVersion": "0.25.0",
     "macosReleaseUrl": "https://github.com/nocoo/eagle/releases/tag/macos-v0.25.0",
     "repositoryUrl": "https://github.com/nocoo/eagle"
