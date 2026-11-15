@@ -16,10 +16,15 @@ export default defineConfig({
     },
   },
   projects: [
-    { name: "desktop", use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "desktop",
+      use: { ...devices["Desktop Chrome"] },
+      testIgnore: /workspace-mobile\.spec\.ts/,
+    },
     {
       name: "mobile",
       use: { ...devices["iPhone 13"], defaultBrowserType: "chromium" },
+      testIgnore: /workspace-desktop\.spec\.ts/,
     },
   ],
 });

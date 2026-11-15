@@ -28,6 +28,8 @@ trap "exit 130" INT
 trap "exit 143" TERM
 trap "exit 129" HUP
 
+# The snapshot path stays short on purpose: the device API tests bind a Unix
+# socket under it, and macOS caps a socket path at 104 bytes.
 link_modules() {
   src=$1
   dst=$2
@@ -46,29 +48,31 @@ link_modules() {
   done
 }
 
-snapshot=$(mktemp -d "${TMPDIR:-/tmp}/eagle-index-XXXXXX")
+snapshot=$(mktemp -d "/tmp/eagle-index-XXXXXX")
 git checkout-index --all --prefix="$snapshot/"
 repo=$(pwd)
 
-if [ ! -d "$repo/node_modules" ]; then
-  echo "pre-commit: node_modules is required" >&2
-  exit 1
-fi
-for manifest in package.json package-lock.json; do
-  if [ ! -f "$snapshot/$manifest" ] || ! cmp -s "$snapshot/$manifest" "$repo/$manifest"; then
-    echo "pre-commit: staged $manifest must match the installed worktree copy" >&2
+if [ -f "$repo/package.json" ]; then
+  if [ ! -d "$repo/node_modules" ]; then
+    echo "pre-commit: node_modules is required" >&2
     exit 1
   fi
-done
+  for manifest in package.json package-lock.json; do
+    if [ ! -f "$snapshot/$manifest" ] || ! cmp -s "$snapshot/$manifest" "$repo/$manifest"; then
+      echo "pre-commit: staged $manifest must match the installed worktree copy" >&2
+      exit 1
+    fi
+  done
 
-link_modules "$repo/node_modules" "$snapshot/node_modules"
-mkdir -p "$snapshot/.local"
-unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
-unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
-export PATH="$snapshot/node_modules/.bin:$PATH"
+  link_modules "$repo/node_modules" "$snapshot/node_modules"
+  mkdir -p "$snapshot/.local"
+  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
+  unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+  export PATH="$snapshot/node_modules/.bin:$PATH"
 
-echo "pre-commit: L1 index snapshot"
-(cd "$snapshot" && sh scripts/l1-index-gate.sh)
+  echo "pre-commit: L1 index snapshot"
+  (cd "$snapshot" && sh scripts/l1-index-gate.sh)
+fi
 
 if printf '%s\n' "$staged" | grep -qE '^apps/macos/|^tests/native/design-'; then
   echo "pre-commit: staged design ownership"
