@@ -529,10 +529,10 @@ test("adopted eagle mark and family links work in both sidebar states", async ({
   await page.goto("/overview");
   await expect(page.getByText("等待第一台机器接入")).toBeVisible();
   const github = page.getByRole("link", {
-    name: "Eagle GitHub 仓库（新标签页）",
+    name: "Eagle GitHub 仓库 （新标签页）",
   });
   const hexly = page.getByRole("link", {
-    name: "在 hexly.ai 查看 Eagle（新标签页）",
+    name: "在 hexly.ai 查看 Eagle （新标签页）",
   });
   await expect(github).toHaveAttribute(
     "href",

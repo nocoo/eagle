@@ -2,14 +2,14 @@ import {
   Badge,
   Button,
   ContentIsland,
-  DialogDescription,
-  DialogTitle,
   LayerCard,
   Sheet,
   SheetContent,
   SheetDescription,
   SheetTitle,
   Sidebar,
+  SidebarBrand,
+  SidebarDrawer,
   SidebarFooter,
   SidebarHeader,
   SidebarIconItem,
@@ -17,11 +17,15 @@ import {
   SidebarNav,
   SidebarPartition,
   SidebarProvider,
+  SidebarToggle,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@nocoo/basalt";
-import { AppHeader } from "@nocoo/basalt/components/app-header";
+import {
+  AppHeader,
+  AppHeaderMenuButton,
+} from "@nocoo/basalt/components/app-header";
 import {
   AppMain,
   AppShell,
@@ -29,11 +33,11 @@ import {
 } from "@nocoo/basalt/components/app-shell";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
+import { useSidebar } from "@nocoo/basalt/components/sidebar";
 import {
   Layers3,
   LayoutDashboard,
   Monitor,
-  PanelLeft,
   Plug,
   RefreshCw,
   TerminalSquare,
@@ -42,6 +46,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -376,6 +381,120 @@ function SpaceDetail({
   );
 }
 
+function AppSidebar({
+  sections,
+  activeMachineId,
+  page,
+  now,
+  navigate,
+  onDismiss,
+}: {
+  sections: { name: string; machines: MachineView[] }[];
+  activeMachineId: string;
+  page: "overview" | "connect";
+  now: string;
+  navigate: (next: "overview" | "connect", id?: string) => void;
+  onDismiss?: () => void;
+}) {
+  const { collapsed, peeking } = useSidebar();
+  const compact = collapsed && !peeking;
+  const NavItem = compact ? SidebarIconItem : SidebarItem;
+  return (
+    <Sidebar id="eagle-navigation" aria-label="侧栏" resizable={!onDismiss}>
+      <SidebarHeader>
+        <SidebarBrand
+          logo={<Mark size={24} />}
+          name="Eagle"
+          version={`v${__APP_VERSION__}`}
+          action={
+            onDismiss ? (
+              <SidebarToggle
+                mode="dismiss"
+                onDismiss={onDismiss}
+                dismissLabel="收起导航"
+              />
+            ) : (
+              <SidebarToggle expandLabel="展开导航" collapseLabel="收起导航" />
+            )
+          }
+        />
+      </SidebarHeader>
+      <SidebarNav aria-label="工作台导航">
+        {sections.map((section) => (
+          <div key={section.name} className="flex flex-col gap-basalt-nav-gap">
+            {!compact && (
+              <SidebarPartition>
+                {section.name} · {section.machines.length}
+              </SidebarPartition>
+            )}
+            {section.machines.map((m) => {
+              const connection = machineConnection(m, now);
+              const label = {
+                online: "在线",
+                stale: "采集过期",
+                offline: "离线 · 心跳过期",
+              }[connection];
+              return (
+                <Tooltip key={m.id}>
+                  <TooltipTrigger asChild>
+                    <NavItem
+                      aria-label={m.name}
+                      aria-description={label}
+                      className="machine-nav-item"
+                      data-compact={compact}
+                      active={activeMachineId === m.id && page === "overview"}
+                      onClick={() => navigate("overview", m.id)}
+                    >
+                      <Monitor
+                        className="h-4 w-4 shrink-0"
+                        strokeWidth={1.5}
+                        aria-hidden="true"
+                      />
+                      {!compact && <span className="truncate">{m.name}</span>}
+                      <span
+                        className="machine-status-dot"
+                        data-status={connection}
+                        aria-hidden="true"
+                      />
+                    </NavItem>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    {m.name} · {label}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+        ))}
+        {!compact && <SidebarPartition>工作态势</SidebarPartition>}
+        <div
+          className={`flex flex-col gap-basalt-nav-gap ${compact ? "pt-basalt-layout" : ""}`}
+        >
+          <NavItem
+            aria-label="全局总览"
+            active={page === "overview" && !activeMachineId}
+            onClick={() => navigate("overview", "")}
+          >
+            <LayoutDashboard className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+            {!compact && "全局总览"}
+          </NavItem>
+          <NavItem
+            aria-label="Connect"
+            active={page === "connect"}
+            onClick={() => navigate("connect", "")}
+          >
+            <Plug className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+            {!compact && "Connect"}
+          </NavItem>
+        </div>
+      </SidebarNav>
+      <SidebarFooter>
+        <SidebarAccount collapsed={compact} />
+      </SidebarFooter>
+    </Sidebar>
+  );
+}
+
 export function App() {
   const { time, zone } = useTimezone();
   const [clock, setClock] = useState(new Date().toISOString());
@@ -397,7 +516,10 @@ export function App() {
   const [mobile, setMobile] = useState(
     () => matchMedia("(max-width: 767px)").matches,
   );
-  const [collapsed, setCollapsed] = useState(mobile);
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileNav, setMobileNav] = useState(false);
+  const mobileTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileSheetId = useId();
   const [syncing, setSyncing] = useState(false);
   const fetching = useRef(false);
   useEffect(() => {
@@ -441,6 +563,7 @@ export function App() {
       setPage(location.pathname === "/connect" ? "connect" : "overview");
       setMachineId(machineFromRoute());
       setSearch("");
+      setMobileNav(false);
     };
     window.addEventListener("popstate", back);
     return () => window.removeEventListener("popstate", back);
@@ -463,7 +586,7 @@ export function App() {
     const media = matchMedia("(max-width: 767px)");
     const change = () => {
       setMobile(media.matches);
-      setCollapsed(media.matches);
+      if (media.matches) setMobileNav(false);
     };
     media.addEventListener("change", change);
     return () => media.removeEventListener("change", change);
@@ -493,33 +616,9 @@ export function App() {
       "",
       `${next === "overview" ? (id ? "/" : "/overview") : `/${next}`}${id && next === "overview" ? `?machine=${encodeURIComponent(id)}` : ""}`,
     );
-    if (mobile) setCollapsed(true);
+    setMobileNav(false);
   };
-  const sidebarCollapsed = collapsed && !mobile;
-  const toggleCollapsed = () => setCollapsed((value) => !value);
-  const sidebarToggle = (placement: "header" | "rail") => (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          size="icon"
-          variant="ghost"
-          className={
-            placement === "rail" ? "mb-basalt-space-sm self-center" : undefined
-          }
-          aria-label={sidebarCollapsed ? "展开导航" : "收起导航"}
-          aria-expanded={!collapsed}
-          aria-controls="eagle-navigation"
-          onClick={toggleCollapsed}
-        >
-          <PanelLeft strokeWidth={1.5} aria-hidden="true" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side={sidebarCollapsed ? "right" : "bottom"}>
-        {sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
-      </TooltipContent>
-    </Tooltip>
-  );
-  const NavItem = collapsed && !mobile ? SidebarIconItem : SidebarItem;
+
   const title =
     page === "connect" ? "Connect" : (selectedMachine?.name ?? "全局总览");
   const compactMachine = page === "overview" && !!selectedMachine;
@@ -540,319 +639,228 @@ export function App() {
     </span>
   );
   return (
-    <SidebarProvider
-      collapsed={collapsed}
-      onCollapsedChange={setCollapsed}
-      overlay={mobile}
-    >
-      <AppShell>
-        <AppSkipLink>跳至内容</AppSkipLink>
-        <Sidebar id="eagle-navigation" aria-label="侧栏">
-          {mobile && (
-            <>
-              <DialogTitle className="sr-only">导航</DialogTitle>
-              <DialogDescription className="sr-only">
-                选择机器与历史
-              </DialogDescription>
-            </>
-          )}
-          <SidebarHeader>
-            <div className="flex w-full min-w-0 items-center justify-between gap-basalt-space-lg">
-              <div className="flex min-w-0 items-center gap-basalt-space-lg">
-                <Mark size={20} className="h-5 w-5 shrink-0" />
-                {(!sidebarCollapsed || mobile) && (
-                  <>
-                    <span className="truncate text-basalt-xl font-semibold text-basalt-foreground">
-                      Eagle
-                    </span>
-                    <Badge variant="secondary" className="shrink-0 font-mono">
-                      v{__APP_VERSION__}
-                    </Badge>
-                  </>
-                )}
-              </div>
-              {!sidebarCollapsed && sidebarToggle("header")}
-            </div>
-          </SidebarHeader>
-          {sidebarCollapsed && sidebarToggle("rail")}
-          <SidebarNav aria-label="工作台导航">
-            {machineSections.map((section) => (
-              <div
-                key={section.name}
-                className="flex flex-col gap-basalt-nav-gap"
-              >
-                {(!collapsed || mobile) && (
-                  <SidebarPartition>
-                    {section.name} · {section.machines.length}
-                  </SidebarPartition>
-                )}
-                {section.machines.map((m) => {
-                  const connection = machineConnection(m, now);
-                  const label = {
-                    online: "在线",
-                    stale: "采集过期",
-                    offline: "离线 · 心跳过期",
-                  }[connection];
-                  return (
-                    <Tooltip key={m.id}>
-                      <TooltipTrigger asChild>
-                        <NavItem
-                          aria-label={m.name}
-                          aria-description={label}
-                          className="machine-nav-item"
-                          data-compact={collapsed && !mobile}
-                          active={
-                            activeMachineId === m.id && page === "overview"
-                          }
-                          onClick={() => navigate("overview", m.id)}
-                        >
-                          <Monitor
-                            className="h-4 w-4 shrink-0"
-                            strokeWidth={1.5}
-                            aria-hidden="true"
-                          />
-                          {(!collapsed || mobile) && (
-                            <span className="truncate">{m.name}</span>
-                          )}
-                          <span
-                            className="machine-status-dot"
-                            data-status={connection}
-                            aria-hidden="true"
-                          />
-                        </NavItem>
-                      </TooltipTrigger>
-                      <TooltipContent side="right" sideOffset={8}>
-                        {m.name} · {label}
-                      </TooltipContent>
-                    </Tooltip>
-                  );
-                })}
-              </div>
-            ))}
-            {(!collapsed || mobile) && (
-              <SidebarPartition>工作态势</SidebarPartition>
-            )}
-            <div
-              className={`flex flex-col gap-basalt-nav-gap ${collapsed && !mobile ? "pt-basalt-layout" : ""}`}
-            >
-              <NavItem
-                aria-label="全局总览"
-                active={page === "overview" && !activeMachineId}
-                onClick={() => navigate("overview", "")}
-              >
-                <LayoutDashboard
-                  className="h-4 w-4 shrink-0"
-                  strokeWidth={1.5}
-                />
-                {(!collapsed || mobile) && "全局总览"}
-              </NavItem>
-              <NavItem
-                aria-label="Connect"
-                active={page === "connect"}
-                onClick={() => navigate("connect", "")}
-              >
-                <Plug className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-                {(!collapsed || mobile) && "Connect"}
-              </NavItem>
-            </div>
-          </SidebarNav>
-          <SidebarFooter>
-            <SidebarAccount collapsed={collapsed && !mobile} />
-          </SidebarFooter>
-        </Sidebar>
-        <AppMain className="relative" tabIndex={-1}>
-          <AppHeader
-            title={title}
-            breadcrumbs={mobile ? undefined : [{ label: "工作台" }]}
-            leading={
-              mobile ? (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  aria-label="展开导航"
-                  onClick={() => setCollapsed(false)}
-                >
-                  <PanelLeft size={18} strokeWidth={1.5} aria-hidden="true" />
-                </Button>
-              ) : undefined
-            }
-            actions={
-              <>
-                {localFrontend ? (
-                  <EnvironmentSwitch />
-                ) : (
-                  <Badge variant="blue" className="hidden sm:inline-flex">
-                    ACCESS
-                  </Badge>
-                )}
-                <FamilyActions />
-              </>
-            }
+    <AppShell>
+      <AppSkipLink>跳至内容</AppSkipLink>
+      {!mobile && (
+        <SidebarProvider collapsed={collapsed} onCollapsedChange={setCollapsed}>
+          <AppSidebar
+            sections={machineSections}
+            activeMachineId={activeMachineId}
+            page={page}
+            now={now}
+            navigate={navigate}
           />
-          <div className="flex min-h-0 flex-1 flex-col px-2 pb-2 md:px-3 md:pb-3">
-            <ContentIsland id="eagle-content" className="relative">
-              <div
-                className="sync-progress"
-                data-active={syncing}
-                aria-hidden="true"
+        </SidebarProvider>
+      )}
+      {mobile && (
+        <SidebarDrawer
+          id={mobileSheetId}
+          open={mobileNav}
+          onOpenChange={setMobileNav}
+          returnFocusRef={mobileTriggerRef}
+          title="导航"
+          description="选择机器与历史"
+        >
+          <AppSidebar
+            sections={machineSections}
+            activeMachineId={activeMachineId}
+            page={page}
+            now={now}
+            navigate={navigate}
+            onDismiss={() => setMobileNav(false)}
+          />
+        </SidebarDrawer>
+      )}
+      <AppMain className="relative" tabIndex={-1}>
+        <AppHeader
+          title={title}
+          breadcrumbs={mobile ? undefined : [{ label: "工作台" }]}
+          leading={
+            mobile ? (
+              <AppHeaderMenuButton
+                ref={mobileTriggerRef}
+                label="展开导航"
+                aria-controls={mobileSheetId}
+                onClick={() => setMobileNav(true)}
               />
-              <div
-                className={
-                  compactMachine
-                    ? "page-content machine-page space-y-3"
-                    : "page-content space-y-3 md:space-y-5"
+            ) : undefined
+          }
+          actions={
+            <>
+              {localFrontend ? (
+                <EnvironmentSwitch />
+              ) : (
+                <Badge variant="blue" className="hidden sm:inline-flex">
+                  ACCESS
+                </Badge>
+              )}
+              <FamilyActions />
+            </>
+          }
+        />
+        <div className="flex min-h-0 flex-1 flex-col px-2 pb-2 md:px-3 md:pb-3">
+          <ContentIsland id="eagle-content" className="relative">
+            <div
+              className="sync-progress"
+              data-active={syncing}
+              aria-hidden="true"
+            />
+            <div
+              className={
+                compactMachine
+                  ? "page-content machine-page space-y-3"
+                  : "page-content space-y-3 md:space-y-5"
+              }
+            >
+              <PageHeader
+                title={title}
+                description={
+                  compactMachine && selectedMachine ? (
+                    <span className="machine-subtitle">
+                      <MachineStatus machine={selectedMachine} now={now} />
+                      {syncCaption}
+                    </span>
+                  ) : page === "connect" ? (
+                    "连接机器，管理凭证，把接入交给 Agent。"
+                  ) : activeMachineId ? (
+                    "机器资源、工作空间与任务证据。"
+                  ) : (
+                    "全部机器的工作分布与资源概况。"
+                  )
                 }
-              >
-                <PageHeader
-                  title={title}
-                  description={
-                    compactMachine && selectedMachine ? (
-                      <span className="machine-subtitle">
-                        <MachineStatus machine={selectedMachine} now={now} />
-                        {syncCaption}
-                      </span>
-                    ) : page === "connect" ? (
-                      "连接机器，管理凭证，把接入交给 Agent。"
-                    ) : activeMachineId ? (
-                      "机器资源、工作空间与任务证据。"
-                    ) : (
-                      "全部机器的工作分布与资源概况。"
-                    )
-                  }
-                  actions={
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size={mobile ? "lg" : "sm"}
-                          aria-label="刷新"
-                          disabled={syncing}
-                          onClick={() => void refresh()}
-                        >
-                          {!mobile && (
-                            <RefreshCw
-                              size={14}
-                              aria-hidden="true"
-                              className={syncing ? "eagle-spin" : ""}
-                            />
-                          )}
-                          刷新
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>刷新</TooltipContent>
-                    </Tooltip>
-                  }
-                />
-                {error && (
+                actions={
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size={mobile ? "lg" : "sm"}
+                        aria-label="刷新"
+                        disabled={syncing}
+                        onClick={() => void refresh()}
+                      >
+                        {!mobile && (
+                          <RefreshCw
+                            size={14}
+                            aria-hidden="true"
+                            className={syncing ? "eagle-spin" : ""}
+                          />
+                        )}
+                        刷新
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>刷新</TooltipContent>
+                  </Tooltip>
+                }
+              />
+              {error && (
+                <LayerCard>
+                  <p
+                    role="alert"
+                    className="text-basalt-base text-basalt-destructive"
+                  >
+                    {error}
+                  </p>
+                </LayerCard>
+              )}
+              {!compactMachine && syncCaption}
+              {page === "overview" &&
+                !activeMachineId &&
+                !!data?.pendingMachines?.length && (
                   <LayerCard>
-                    <p
-                      role="alert"
-                      className="text-basalt-base text-basalt-destructive"
-                    >
-                      {error}
+                    <p className="text-basalt-base text-basalt-muted-foreground">
+                      等待首次上报：{data.pendingMachines.join("、")}
                     </p>
                   </LayerCard>
                 )}
-                {!compactMachine && syncCaption}
-                {page === "overview" &&
-                  !activeMachineId &&
-                  !!data?.pendingMachines?.length && (
-                    <LayerCard>
-                      <p className="text-basalt-base text-basalt-muted-foreground">
-                        等待首次上报：{data.pendingMachines.join("、")}
-                      </p>
-                    </LayerCard>
-                  )}
-                {boot ? (
-                  <DashboardSkeleton />
-                ) : page === "connect" ? (
-                  <Connect
-                    live={machines}
-                    onChange={() => void refresh()}
-                    onOpen={(id) => navigate("overview", id)}
-                    onAuthError={expire}
-                  />
-                ) : (
-                  <Dashboard
-                    key={activeMachineId || "fleet"}
-                    machines={shown}
-                    now={now}
-                    search={search}
-                    onSearch={setSearch}
-                    onMachine={
-                      !activeMachineId
-                        ? (id) => {
-                            setSearch("");
-                            navigate("overview", id);
-                          }
-                        : undefined
-                    }
-                    onOpen={(machine, space, pane) =>
-                      setSelection({ machine, space, pane })
-                    }
-                  />
-                )}
-              </div>
-            </ContentIsland>
-          </div>
-        </AppMain>
-        <Sheet
-          open={!!selection}
-          onOpenChange={(open) => {
-            if (!open) setSelection(null);
-          }}
-        >
-          {detailMachine && detailSpace ? (
-            <WorkspaceShell
-              machine={detailMachine}
-              space={detailSpace}
-              selectedPane={selection?.pane}
-              onPane={(pane) =>
-                setSelection((previous) =>
-                  previous &&
-                  previous.machine === detailMachine.id &&
-                  previous.space === detailSpace.id
-                    ? { ...previous, pane }
-                    : previous,
-                )
-              }
-              onWorkspace={(space) =>
-                setSelection({ machine: detailMachine.id, space })
-              }
-              onBack={() => navigate("overview", detailMachine.id)}
-              onAuthError={expire}
-            >
-              {(chrome) => (
-                <SpaceDetail
-                  {...chrome}
-                  key={`${detailMachine.id}:${detailSpace.id}`}
-                  machine={detailMachine}
-                  space={detailSpace}
-                  selection={selection}
+              {boot ? (
+                <DashboardSkeleton />
+              ) : page === "connect" ? (
+                <Connect
+                  live={machines}
+                  onChange={() => void refresh()}
+                  onOpen={(id) => navigate("overview", id)}
                   onAuthError={expire}
-                  onPaneSelection={(pane) =>
-                    setSelection((previous) =>
-                      previous &&
-                      previous.machine === detailMachine.id &&
-                      previous.space === detailSpace.id &&
-                      previous.pane !== pane
-                        ? { ...previous, pane }
-                        : previous,
-                    )
+                />
+              ) : (
+                <Dashboard
+                  key={activeMachineId || "fleet"}
+                  machines={shown}
+                  now={now}
+                  search={search}
+                  onSearch={setSearch}
+                  onMachine={
+                    !activeMachineId
+                      ? (id) => {
+                          setSearch("");
+                          navigate("overview", id);
+                        }
+                      : undefined
+                  }
+                  onOpen={(machine, space, pane) =>
+                    setSelection({ machine, space, pane })
                   }
                 />
               )}
-            </WorkspaceShell>
-          ) : (
-            <SheetContent side="right" className="space-sheet">
-              <SheetTitle>Space 已关闭</SheetTitle>
-              <SheetDescription>
-                可在最近历史查看之前的任务与证据。
-              </SheetDescription>
-            </SheetContent>
-          )}
-        </Sheet>
-      </AppShell>
-    </SidebarProvider>
+            </div>
+          </ContentIsland>
+        </div>
+      </AppMain>
+      <Sheet
+        open={!!selection}
+        onOpenChange={(open) => {
+          if (!open) setSelection(null);
+        }}
+      >
+        {detailMachine && detailSpace ? (
+          <WorkspaceShell
+            machine={detailMachine}
+            space={detailSpace}
+            selectedPane={selection?.pane}
+            onPane={(pane) =>
+              setSelection((previous) =>
+                previous &&
+                previous.machine === detailMachine.id &&
+                previous.space === detailSpace.id
+                  ? { ...previous, pane }
+                  : previous,
+              )
+            }
+            onWorkspace={(space) =>
+              setSelection({ machine: detailMachine.id, space })
+            }
+            onBack={() => navigate("overview", detailMachine.id)}
+            onAuthError={expire}
+          >
+            {(chrome) => (
+              <SpaceDetail
+                {...chrome}
+                key={`${detailMachine.id}:${detailSpace.id}`}
+                machine={detailMachine}
+                space={detailSpace}
+                selection={selection}
+                onAuthError={expire}
+                onPaneSelection={(pane) =>
+                  setSelection((previous) =>
+                    previous &&
+                    previous.machine === detailMachine.id &&
+                    previous.space === detailSpace.id &&
+                    previous.pane !== pane
+                      ? { ...previous, pane }
+                      : previous,
+                  )
+                }
+              />
+            )}
+          </WorkspaceShell>
+        ) : (
+          <SheetContent side="right" className="space-sheet">
+            <SheetTitle>Space 已关闭</SheetTitle>
+            <SheetDescription>
+              可在最近历史查看之前的任务与证据。
+            </SheetDescription>
+          </SheetContent>
+        )}
+      </Sheet>
+    </AppShell>
   );
 }
