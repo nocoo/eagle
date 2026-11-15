@@ -29,13 +29,14 @@ jobs:
         id: source
         uses: nocoo/base-ci/.github/actions/release-source@777bbe4f9bacab8a91d8c01974480a6ee23d28e0 # v2026.15
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           expected-workflow-path: ".github/workflows/ci.yml"
           expected-workflow-name: "CI"
           required-quality-check: "quality / Z1: Gate"
           source-run-id: ${{ github.event_name == 'workflow_run' && format('{0}', github.event.workflow_run.id) || '' }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.source.outputs.sha }}
+          ref: ${{ steps.source.outputs.target-sha }}
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -65,7 +66,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          expected="${{ steps.source.outputs.sha }}"
+          expected="${{ steps.source.outputs.target-sha }}"
           for attempt in 1 2 3 4 5 6; do
             live="$(curl -fsS "${{ vars.EAGLE_INGEST_ORIGIN }}/api/live" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).revision))')"
             echo "attempt $attempt live revision: $live"
