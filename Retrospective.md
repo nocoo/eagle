@@ -1,5 +1,31 @@
 # Retrospective
 
+## 2026-11-16 — The pre-commit gate was already red on main
+
+A dependency-upgrade branch could not commit anything: the L1 index gate failed on
+every change, for two reasons that had nothing to do with the upgrade.
+
+First, the hook exported the index snapshot into `$TMPDIR`. On macOS that is a long
+`/private/var/folders/...` path, and the device API tests bind a Unix socket below the
+snapshot, so the socket path passed the 104-byte limit and `listen` failed with
+`EINVAL`. The child service died before it answered, and the test reported it as a
+connection timeout with empty stderr — a symptom three layers away from the cause.
+The snapshot now lives in a short temp path.
+
+Second, `scripts/check-test-focus.sh` rejects any `test.skip` under `tests/`, and the
+Playwright workspace spec had selected desktop and mobile surfaces with project
+conditional skips since before the guard existed. The guard was therefore red on
+`main` from the day it was added, and the browser suite reported those ten cases as
+skipped. Surfaces are now selected by Playwright project (`testIgnore`), so every case
+runs in the project it belongs to and none is skipped.
+
+Two more environment facts belong with this: the gate needs an official Node build,
+because Homebrew's `node` links non-system libraries and the device runtime refuses
+to bundle it; and the gate must be exercised on a pristine tree before a change is
+blamed for it. Run the guard on `origin/main` first — a gate that was already failing
+is a repository defect to fix, not a blocker to route around, and routing around it
+means `--no-verify`.
+
 ## 2026-11-09 — Removing a stored group name broke every upgrade
 
 The `herdr` → `hc` slice removed a name from `TOOL_GROUP_NAMES` and shipped 0.24.0 after I
