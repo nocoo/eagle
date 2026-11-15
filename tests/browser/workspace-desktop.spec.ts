@@ -251,8 +251,8 @@ test("Basalt sidebar keeps one navigation inset and native section spacing", asy
     }));
   });
   for (const row of geometry) {
-    expect(row.inset).toBeCloseTo(8, 1);
-    expect(row.rightInset).toBeCloseTo(8, 1);
+    expect(row.inset).toBeCloseTo(16, 1);
+    expect(row.rightInset).toBeCloseTo(16, 1);
   }
   for (const label of await nav
     .locator('[data-slot="sidebar-partition"]')
