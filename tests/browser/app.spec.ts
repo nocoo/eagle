@@ -438,12 +438,20 @@ test("sidebar machine lights distinguish heartbeat and snapshot freshness across
     colors.push(
       await dot.evaluate((node) => getComputedStyle(node).backgroundColor),
     );
-    const itemBox = await item.boundingBox();
-    const dotBox = await dot.boundingBox();
-    if (!itemBox || !dotBox)
-      throw new Error("Machine item and light must be visible");
-    expect(dotBox.x).toBeGreaterThan(itemBox.x + itemBox.width / 2);
-    expect(dotBox.x + dotBox.width).toBeLessThan(itemBox.x + itemBox.width);
+    await expect
+      .poll(() =>
+        item.evaluate((node) => {
+          const dot = node.querySelector(".machine-status-dot");
+          if (!dot) return false;
+          const itemBox = node.getBoundingClientRect();
+          const dotBox = dot.getBoundingClientRect();
+          return (
+            dotBox.x > itemBox.x + itemBox.width / 2 &&
+            dotBox.x + dotBox.width < itemBox.x + itemBox.width
+          );
+        }),
+      )
+      .toBe(true);
   }
   expect(new Set(colors).size).toBe(3);
   await page.getByRole("button", { name: "收起导航" }).click();
