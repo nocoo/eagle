@@ -220,3 +220,36 @@ ingestion keep working across a staged rollout.
 
 Per machine, the ping change removes about 7,200 requests a day (8,640 → 1,440). With
 all eight upgraded the fleet drops from ~80k to ~28k requests a day.
+
+## Result after the Agent 1.2.0 rollout (2026-11-15)
+
+The hourly curve shows where the money actually was. Requests fell by half, but the
+billed time fell by more than two orders of magnitude:
+
+| Hour (UTC) | Requests | Wall time | Wall per request |
+| --- | --- | --- | --- |
+| 11-14 20:00 | 3,669 | 25,648 s | 6,990 ms |
+| 11-14 22:00 | 2,591 | 25,734 s | 9,932 ms |
+| 11-14 23:00 | 1,769 | 25,273 s | 14,286 ms |
+| 11-15 00:00 (11 min) | 323 | **12 s** | **39 ms** |
+
+Ten-second pings kept re-arming the relay alarm inside its own timeout window, so the
+object never reached hibernation and every wake-up was billed for seconds. At a
+60-second ping the object sleeps between messages and each wake-up costs tens of
+milliseconds.
+
+Daily rates with every agent on 1.2.0:
+
+| Metric | 11-13 | 11-14 (deployed) | 11-15 (upgraded) |
+| --- | --- | --- | --- |
+| MachineState requests | 97,804 | 80,393 | ~44,300 |
+| MachineState wall time | 594,540 s | 550,394 s | **~1,700 s** |
+| MachineState rows read | 54.5 M | 292 k | ~125 k |
+| MachineState rows written | 226 k | 78 k | ~82 k |
+| DeviceRegistry / DeviceExecution | active | stopping | **0** |
+
+Monthly projection: duration ~6.5k GB-s (inside the 400k included) and ~1.3M requests,
+of which 0.3M is billable. That is roughly **$0.05 a month** against the $38.70
+baseline, a 99.9% reduction, and no single remaining line item is worth another agent
+release. P3 (report cadence 30 s → 60 s) would only move the request line from $0.05
+to $0.
