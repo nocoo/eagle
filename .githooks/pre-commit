@@ -28,6 +28,8 @@ trap "exit 130" INT
 trap "exit 143" TERM
 trap "exit 129" HUP
 
+# The snapshot path stays short on purpose: the device API tests bind a Unix
+# socket under it, and macOS caps a socket path at 104 bytes.
 link_modules() {
   src=$1
   dst=$2
@@ -46,7 +48,7 @@ link_modules() {
   done
 }
 
-snapshot=$(mktemp -d "${TMPDIR:-/tmp}/eagle-index-XXXXXX")
+snapshot=$(mktemp -d "/tmp/eagle-index-XXXXXX")
 git checkout-index --all --prefix="$snapshot/"
 repo=$(pwd)
 
