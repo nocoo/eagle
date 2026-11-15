@@ -186,23 +186,29 @@ product that lives in this repository:
 
 ## Quality contract and current evidence
 
-6DQ retains its name; former G1 merged into L1 on 2026-09-21. Statuses are
-`enforced`, `planned`, `manual`, and justified `N/A`. Preserve stricter project
-requirements. Configuration evidence is separate from successful execution.
+System1 quality definitions come from `system1-quality` (v1.3.0); CI runs in native mode via `.github/workflows/ci.yml` → `./.github/workflows/quality-slots.yml` with `nocoo/base-ci` composite actions pinned to `v2026.15` (`777bbe4f9bacab8a91d8c01974480a6ee23d28e0`). Branch protection (`main quality gate`) requires `quality / Z1: Gate`.
 
-| Dimension | Contract and current state |
-| --- | --- |
-| L1 | Enforced (index snapshot): `npm run test:coverage`, `npm run typecheck`, `npm run lint`, and `scripts/check-test-focus.sh` run inside a `git checkout-index` export on every commit (see `.githooks/pre-commit` and `scripts/l1-index-gate.sh`). c8 enforces four metrics >=95% on `packages/contracts/src/**` with documented presentation exclusions (`terminal-display.ts`, `terminal-links.ts`, `terminal.ts` — covered by sibling/integration tests). Measured gate on 2026-11-09: statements/lines/functions 100%, branches 96.98%, wall time for `npm run l1:gate` ~33s warm. Negative L1 proofs live in `tests/native/l1-gate.test.ts`. CI `npm run check` still runs plain UT without coverage floors. |
-| L2 | Planned: every owned endpoint/method over local HTTP plus real SQL/process integration. `tests/api.test.ts` uses real Miniflare Durable Objects and package/process tests exist; exhaustive endpoint/method coverage and a dedicated push gate are not established. |
-| L3 | Configured in CI: Playwright desktop/mobile journeys through `test:browser`. Fresh browser contexts and `reuseExistingServer: false` are configured; this is not proof of every live Herdr/Access journey. |
-| G2 | Planned: dependency and secret scanning with missing required tools failing. No scanner step is configured in `check.yml` or a project push hook. |
-| D1 | N/A: the Worker no longer uses D1. The table, both migrations and the snapshot-history API were removed on 2026-11-13; history of the decision is in [docs/COST-CUT.md](docs/COST-CUT.md). |
+| Slot | Stage | Command and Scope | Status |
+| --- | --- | --- | --- |
+| S1 Types | pre-commit, pre-push, CI | `npm run typecheck` (`tsc --noEmit`) | enforced |
+| S2 Lint | pre-commit, pre-push, CI | `npm run lint` (`biome check . --error-on-warnings`) + `scripts/check-test-focus.sh` + Swift format lint in `macos-suite` | enforced |
+| S3 Workflow | CI | `actionlint` + 40-char SHA pin verification on `.github/workflows/*.yml` | enforced |
+| G1 Secrets | CI | `gitleaks` redacted checkout scan | enforced |
+| G2 Dependencies | CI | `osv-scanner` over `package-lock.json` and `apps/bots/package-lock.json` | enforced |
+| B1 Build | pre-push, CI | `npm run build` (`@eagle/web`) + `@nocoo/eagle-agent` build and Swift build in `macos-suite` | enforced |
+| L1 Unit | pre-commit, pre-push, CI | `npm run test:coverage` (`c8` >=95% on `packages/contracts/src/**` with documented presentation exclusions) + `bots-macos` Swift tests in `macos-suite` | enforced |
+| L2 Runtime | — | Miniflare Durable Object tests run inside L1 test suite | na |
+| L3 Integration | — | API/process tests run inside L1 and `macos-suite` (`test:devices`, `test:design`, `test:focus`) | na |
+| L4 E2E | pre-push, CI | `npm run test:browser` (Playwright Chromium journeys) | enforced |
+| P1 Package | — | Root package is private; agent packing is exercised inside L1 | na |
+| Z1 Gate | CI | `z1-gate` validator in `quality-slots.yml` aggregating all `impl` slots and `macos-suite` on matching `github.sha` | enforced |
 
 Hooks live in `.githooks/` and are installed by `npm ci` through the `prepare`
 script (`core.hooksPath`). Pre-commit lints the staged snapshot with Biome and
 swift-format; pre-push runs `npm run check`, the browser suite and both Swift
-package suites (`apps/macos`, `apps/bots-macos`). `.github/workflows/check.yml` runs the same gates in CI and
-`deploy.yml` deploys main after a green Check, skipping with a notice until
+package suites (`apps/macos`, `apps/bots-macos`). `.github/workflows/ci.yml` runs
+the slot gates and `macos-suite` in CI, and `deploy.yml` verifies `quality / Z1: Gate`
+via `release-source` before deploying `main`, skipping with a notice until
 `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets exist. Never lower
 thresholds, skip/focus tests, bypass hooks or suppress failures.
 
