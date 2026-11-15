@@ -1,0 +1,13 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlist synthetic test fixtures and type declarations"
+paths = [
+  '''^apps/bots/test/''',
+  '''^apps/web/worker-configuration\.d\.ts$''',
+  '''^apps/macos/Sources/EagleDevices/DeviceIdentity\.swift$''',
+  '''^tests/api\.test\.ts$''',
+  '''^tests/device-runtime\.test\.ts$''',
+  '''^tests/device-integration/native-capture\.test\.ts$''',
+]
