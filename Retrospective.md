@@ -1,5 +1,21 @@
 # Retrospective
 
+## 2026-11-18 — A pre-push fixture committed into the real repository
+
+The first direct push of the Basalt release reached the local pre-push hook, where a
+Superagent hook-isolation test executed `git` with Git environment variables inherited
+from `git push`. Its fixture commands targeted the real repository, committed
+`940e5800` (`test: accept healthy staged snapshot`) and rewrote the tracked Superagent
+manifest/fixture files. The commit was never sent to GitHub; it was identified and the
+branch was reset to the intended release commit `4eb59b1f`.
+
+Git hooks must resolve their repository first, then clear `GIT_DIR`, `GIT_WORK_TREE`,
+`GIT_INDEX_FILE`, `GIT_PREFIX`, `GIT_OBJECT_DIRECTORY` and
+`GIT_ALTERNATE_OBJECT_DIRECTORIES` before running child test suites. `pre-commit` already
+did this for its index snapshot; `pre-push` now does it for every gate. After a hook run,
+check `git status` and `git log` before retrying a push: a green child suite does not prove
+the real branch stayed unchanged. Never bypass the hook to work around this symptom.
+
 ## 2026-11-16 — The pre-commit gate was already red on main
 
 A dependency-upgrade branch could not commit anything: the L1 index gate failed on

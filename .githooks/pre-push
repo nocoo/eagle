@@ -8,6 +8,8 @@
 # same two. It stays a gate in CI (`.github/workflows/check.yml`, `macos` job).
 set -eu
 cd "$(git rev-parse --show-toplevel)"
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
+unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 
 echo "pre-push: npm run check"
 npm run check
