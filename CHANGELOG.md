@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## v0.15.1 — 2026-11-18
+
+- Upgrade the web dashboard to Basalt 3.5.1, use the package CSS contract, icons,
+  Sidebar chrome, card shadows and chart palette, and remove the redundant direct
+  UI dependencies while retaining Eagle's machine navigation, counters and live status.
+- Add a documented dev-only picomatch OSV waiver through 2026-12-18 and update the
+  isolated Superagent test-tool lock to fixed glob and minimatch versions.
 
 - Reduce Durable Objects cost to the three kept capabilities: state reporting, a live
   connection and sending input. Removed the AI daily reports (cron, settings page,
