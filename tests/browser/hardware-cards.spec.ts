@@ -84,16 +84,16 @@ for (const theme of ["light", "dark"]) {
     await expect(region).toContainText("↑ 2 KiB/s");
     await expect(region).toContainText("VPN 已连接");
     await expect(
-      region.getByRole("progressbar", { name: "风扇转速比例" }),
+      region.getByRole("meter", { name: "风扇转速比例" }),
     ).toHaveAttribute("aria-valuenow", "25");
     await expect(
-      region.getByRole("progressbar", { name: "GPU 占用", exact: true }),
+      region.getByRole("meter", { name: "GPU 占用", exact: true }),
     ).toHaveAttribute("aria-valuenow", "4");
     await expect(
       region.getByRole("button", { name: /强冷|降温|自动$/ }),
     ).toHaveCount(0);
     const bars = await region
-      .getByRole("progressbar")
+      .getByRole("meter")
       .evaluateAll((elements) =>
         elements.map((element) => element.getBoundingClientRect().width),
       );
@@ -109,10 +109,10 @@ for (const theme of ["light", "dark"]) {
     await page.getByRole("button", { name: "刷新", exact: true }).click();
     await expect(region.locator('[data-metric="fan"]')).toContainText("未知");
     await expect(
-      region.getByRole("progressbar", { name: "风扇转速比例" }),
+      region.getByRole("meter", { name: "风扇转速比例" }),
     ).toHaveCount(0);
     await expect(
-      region.getByRole("progressbar", { name: "GPU 占用", exact: true }),
+      region.getByRole("meter", { name: "GPU 占用", exact: true }),
     ).toHaveCount(0);
     for (const width of [390, 320, 1920]) {
       await page.setViewportSize({ width, height: 1000 });

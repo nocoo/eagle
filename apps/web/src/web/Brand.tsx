@@ -5,12 +5,9 @@ import {
   Button,
   SidebarUser,
   ThemeToggle,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
 } from "@nocoo/basalt";
 import { ProjectLinks } from "@nocoo/basalt/components/app-header";
-import { LogOut } from "lucide-react";
+import { LogOut } from "@nocoo/basalt/icons";
 import { useEffect, useState } from "react";
 import type { Viewer } from "../../../../packages/contracts/src/schema.ts";
 import { api } from "./api.ts";
@@ -34,7 +31,7 @@ export function Mark({
     />
   );
 }
-export function SidebarAccount({ collapsed }: { collapsed: boolean }) {
+export function SidebarAccount() {
   const [viewer, setViewer] = useState<Viewer | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -59,50 +56,26 @@ export function SidebarAccount({ collapsed }: { collapsed: boolean }) {
       </AvatarFallback>
     </Avatar>
   );
-  const logout = (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          size="icon"
-          variant="ghost"
-          aria-label="退出登录"
-          aria-disabled={!viewer || viewer.local || localFrontend}
-          onClick={() => {
-            if (viewer && !viewer.local && !localFrontend)
-              window.location.assign("/cdn-cgi/access/logout");
-          }}
-        >
-          <LogOut size={16} strokeWidth={1.5} aria-hidden="true" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side={collapsed ? "right" : "top"}>
-        {localProduction
-          ? "生产身份由本机 cloudflared 管理；可切回 Local"
-          : viewer?.local
-            ? "本地免登录，无须退出"
-            : "退出登录"}
-      </TooltipContent>
-    </Tooltip>
-  );
-  return collapsed ? (
-    <>
-      {logout}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex">{avatar}</span>
-        </TooltipTrigger>
-        <TooltipContent side="right">
-          {name}
-          {viewer?.email ? ` · ${viewer.email}` : ""}
-        </TooltipContent>
-      </Tooltip>
-    </>
-  ) : (
+  const canSignOut = !!viewer && !viewer.local && !localFrontend;
+  const signOutAction =
+    viewer && !canSignOut ? (
+      <Button size="icon-sm" variant="ghost" aria-label="退出登录" disabled>
+        <LogOut strokeWidth={1.5} aria-hidden="true" />
+      </Button>
+    ) : undefined;
+  return (
     <SidebarUser
       name={name}
       email={viewer?.local ? "本地免登录" : viewer?.email}
       avatar={avatar}
-      action={logout}
+      tooltip={viewer?.email ? `${name} · ${viewer.email}` : name}
+      action={signOutAction}
+      onSignOut={
+        canSignOut
+          ? () => window.location.assign("/cdn-cgi/access/logout")
+          : undefined
+      }
+      signOutLabel={localProduction ? "退出 Cloudflare Access" : "退出登录"}
     />
   );
 }

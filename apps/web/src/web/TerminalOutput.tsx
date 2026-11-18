@@ -1,5 +1,5 @@
 import { Button } from "@nocoo/basalt";
-import { ArrowDown } from "lucide-react";
+import { ArrowDown } from "@nocoo/basalt/icons";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { LiveFrame } from "../../../../packages/contracts/src/realtime.ts";
 import { compactRenderedFrame } from "../../../../packages/contracts/src/terminal-display.ts";

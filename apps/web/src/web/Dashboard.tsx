@@ -7,7 +7,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@nocoo/basalt";
-import { SlotBarChart } from "@nocoo/basalt/charts/slot-bar";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { SkeletonLine } from "@nocoo/basalt/components/skeleton-line";
 import {
@@ -28,7 +27,7 @@ import {
   Target,
   TriangleAlert,
   Workflow,
-} from "lucide-react";
+} from "@nocoo/basalt/icons";
 import { type CSSProperties, useState } from "react";
 import {
   assessPane,
@@ -45,6 +44,7 @@ import { age } from "./api.ts";
 import { CardHelp } from "./CardHelp.tsx";
 import { EnvironmentResources } from "./EnvironmentResources.tsx";
 import { MachineResources } from "./MachineResources.tsx";
+import { SlotBar } from "./SlotBar.tsx";
 
 import { useTimezone } from "./Timezone.tsx";
 
@@ -62,10 +62,10 @@ const stateIcons = {
   unverified: CircleHelp,
 };
 const stateColors = {
-  active: "hsl(var(--basalt-accent-1))",
-  attention: "hsl(var(--basalt-accent-7))",
-  verified: "hsl(var(--basalt-accent-4))",
-  unverified: "hsl(var(--basalt-accent-10))",
+  active: "hsl(var(--basalt-chart-1))",
+  attention: "hsl(var(--basalt-chart-4))",
+  verified: "hsl(var(--basalt-chart-3))",
+  unverified: "hsl(var(--basalt-chart-5))",
 };
 const evidenceKinds = [
   "summary",
@@ -100,7 +100,7 @@ const agentTone = (agent: string) =>
         ? "orange"
         : "teal";
 const agentColor = (agent: string) =>
-  `hsl(var(--basalt-accent-${agent === "codex" ? 1 : agent === "grok" ? 10 : agent === "pi" ? 7 : 3}))`;
+  `hsl(var(--basalt-chart-${agent === "codex" ? 1 : agent === "grok" ? 2 : agent === "pi" ? 4 : 3}))`;
 const accent = (color: string): CSSProperties =>
   ({ "--eagle-color": color }) as CSSProperties;
 export function Status({ state }: { state: State }) {
@@ -461,7 +461,7 @@ function EvidenceCoverage({ machines }: { machines: MachineView[] }) {
             <div key={kind} className="coverage-row">
               <Icon size={13} />
               <span>{evidenceNames[kind]}</span>
-              <SlotBarChart
+              <SlotBar
                 items={Array.from(
                   { length: Math.min(panes.length, 20) },
                   (_, n) => ({
@@ -613,7 +613,7 @@ export function Dashboard({
                   {counts[state].toString().padStart(2, "0")}
                   <span>SPACES</span>
                 </div>
-                <SlotBarChart
+                <SlotBar
                   items={spaces.map((s) => ({
                     color:
                       s.state === state
@@ -731,7 +731,7 @@ export function Dashboard({
                         {stale ? "历史快照" : "当前任务分布"}
                       </span>
                     </div>
-                    <SlotBarChart
+                    <SlotBar
                       items={group.map((s) => ({
                         color: stateColors[s.state],
                       }))}
@@ -759,7 +759,7 @@ export function Dashboard({
                                 : `${Math.round(value)}%`}
                             </strong>
                           </div>
-                          <SlotBarChart
+                          <SlotBar
                             items={Array.from({ length: 20 }, (_, i) => ({
                               color:
                                 value !== null && i < value / 5
@@ -949,7 +949,7 @@ export function Dashboard({
                       <Badge variant={agentTone(agent)} dot>
                         {agent}
                       </Badge>
-                      <SlotBarChart
+                      <SlotBar
                         items={Array.from(
                           { length: Math.min(paneCount, 20) },
                           (_, i) => ({

@@ -27,7 +27,7 @@ import {
   RefreshCw,
   ShieldAlert,
   TerminalSquare,
-} from "lucide-react";
+} from "@nocoo/basalt/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {

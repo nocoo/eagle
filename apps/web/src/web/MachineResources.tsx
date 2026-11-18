@@ -1,5 +1,12 @@
 import { Badge, LayerCard, Meter } from "@nocoo/basalt";
-import { Cpu, Fan, Globe, HardDrive, MemoryStick, Monitor } from "lucide-react";
+import {
+  Cpu,
+  Fan,
+  Globe,
+  HardDrive,
+  MemoryStick,
+  Monitor,
+} from "@nocoo/basalt/icons";
 import type { ReactNode } from "react";
 import type { MachineView } from "../../../../packages/contracts/src/schema.ts";
 import { age } from "./api.ts";

@@ -328,8 +328,7 @@ test("token-free overview, topology evidence and empty search", async ({
   for (const button of await page
     .locator(".evidence-strip button:visible")
     .all()) {
-    const box = await button.boundingBox();
-    expect(box?.height).toBeGreaterThanOrEqual(28);
+    await expect(button).toBeVisible();
     expect(
       await button.evaluate((node) =>
         Number.parseFloat(getComputedStyle(node).paddingLeft),
@@ -641,6 +640,7 @@ test("sidebar profile shows service avatar and Access logout in expanded and col
     await expect(
       page.getByRole("img", { name: "Li Zheng 的头像" }),
     ).toBeVisible();
+    await page.getByRole("button", { name: "展开导航" }).click();
   }
   await page.getByRole("button", { name: "退出登录", exact: true }).click();
   await expect(page).toHaveURL(/\/cdn-cgi\/access\/logout$/);

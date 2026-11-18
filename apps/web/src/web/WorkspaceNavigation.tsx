@@ -6,7 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@nocoo/basalt/components/select";
-import { Layers3, Search } from "lucide-react";
+import { Layers3, Search } from "@nocoo/basalt/icons";
 import { useEffect, useRef, useState } from "react";
 import type { Space } from "../../../../packages/contracts/src/schema.ts";
 

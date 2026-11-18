@@ -20,7 +20,7 @@ import {
   Target,
   TerminalSquare,
   X,
-} from "lucide-react";
+} from "@nocoo/basalt/icons";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { assessPane } from "../../../../packages/contracts/src/assessment.ts";
 import type {

@@ -28,7 +28,7 @@ import {
   Terminal,
   Trash2,
   X,
-} from "lucide-react";
+} from "@nocoo/basalt/icons";
 import {
   type FormEvent,
   useCallback,

@@ -31,6 +31,7 @@ import {
   AppShell,
   AppSkipLink,
 } from "@nocoo/basalt/components/app-shell";
+import { Link } from "@nocoo/basalt/components/link";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { useSidebar } from "@nocoo/basalt/components/sidebar";
@@ -41,7 +42,7 @@ import {
   Plug,
   RefreshCw,
   TerminalSquare,
-} from "lucide-react";
+} from "@nocoo/basalt/icons";
 import {
   type ReactNode,
   useCallback,
@@ -403,7 +404,16 @@ function AppSidebar({
     <Sidebar id="eagle-navigation" aria-label="侧栏" resizable={!onDismiss}>
       <SidebarHeader>
         <SidebarBrand
-          logo={<Mark size={24} />}
+          logo={
+            <Link href="/overview" aria-label="Eagle 总览">
+              <img
+                data-eagle-mark
+                src="/brand/mark-128.png"
+                alt=""
+                aria-hidden="true"
+              />
+            </Link>
+          }
           name="Eagle"
           version={`v${__APP_VERSION__}`}
           action={
@@ -450,7 +460,13 @@ function AppSidebar({
                         strokeWidth={1.5}
                         aria-hidden="true"
                       />
-                      {!compact && <span className="truncate">{m.name}</span>}
+                      {compact ? (
+                        <span className="sr-only">
+                          {m.name} · {label}
+                        </span>
+                      ) : (
+                        <span className="truncate">{m.name}</span>
+                      )}
                       <span
                         className="machine-status-dot"
                         data-status={connection}
@@ -476,7 +492,7 @@ function AppSidebar({
             onClick={() => navigate("overview", "")}
           >
             <LayoutDashboard className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-            {!compact && "全局总览"}
+            {compact ? <span className="sr-only">全局总览</span> : "全局总览"}
           </NavItem>
           <NavItem
             aria-label="Connect"
@@ -484,12 +500,12 @@ function AppSidebar({
             onClick={() => navigate("connect", "")}
           >
             <Plug className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-            {!compact && "Connect"}
+            {compact ? <span className="sr-only">Connect</span> : "Connect"}
           </NavItem>
         </div>
       </SidebarNav>
       <SidebarFooter>
-        <SidebarAccount collapsed={compact} />
+        <SidebarAccount />
       </SidebarFooter>
     </Sidebar>
   );
@@ -698,7 +714,7 @@ export function App() {
             </>
           }
         />
-        <div className="flex min-h-0 flex-1 flex-col px-2 pb-2 md:px-3 md:pb-3">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col md:px-basalt-layout-sm md:pb-basalt-layout-sm">
           <ContentIsland id="eagle-content" className="relative">
             <div
               className="sync-progress"

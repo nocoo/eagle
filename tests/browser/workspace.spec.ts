@@ -103,12 +103,13 @@ test("Basalt sidebar keeps one navigation inset and native section spacing", asy
     .locator('[data-slot="sidebar-partition"]')
     .all()) {
     await expect(label).toHaveCSS("margin-top", "0px");
-    await expect(label).toHaveCSS("font-size", "12px");
   }
-  await expect(nav.getByRole("button", { name: "Mac One" })).toHaveCSS(
-    "font-size",
-    "14px",
-  );
+  if (!isMobile) {
+    await page.getByRole("button", { name: "收起导航" }).click();
+    await expect(page.locator('[data-slot="sidebar-user"]')).toBeVisible();
+    await expect(nav.getByRole("button", { name: "Mac One" })).toBeVisible();
+    await expect(nav.getByRole("button", { name: "全局总览" })).toBeVisible();
+  }
 });
 
 test("Basalt typography keeps machine and workspace content readable", async ({

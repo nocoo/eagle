@@ -1,5 +1,5 @@
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@nocoo/basalt";
-import { Activity, CircleAlert, Radio } from "lucide-react";
+import { Activity, CircleAlert, Radio } from "@nocoo/basalt/icons";
 import { useEffect, useState } from "react";
 import type { LiveFrame } from "../../../../packages/contracts/src/realtime.ts";
 
