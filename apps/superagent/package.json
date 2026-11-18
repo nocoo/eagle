@@ -11,7 +11,7 @@
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check --error-on-warnings .",
-    "coverage": "c8 node --test test/*.test.ts",
+    "coverage": "c8 node --test --test-concurrency=1 test/*.test.ts",
     "check": "npm run coverage && npm run typecheck && npm run lint"
   },
   "dependencies": {

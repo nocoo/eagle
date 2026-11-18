@@ -16,6 +16,13 @@ did this for its index snapshot; `pre-push` now does it for every gate. After a 
 check `git status` and `git log` before retrying a push: a green child suite does not prove
 the real branch stayed unchanged. Never bypass the hook to work around this symptom.
 
+The same push then exposed nondeterministic Superagent V8 coverage: all 119 behavior tests
+passed, but parallel test files intermittently merged 94.66–94.99% branch coverage while an
+unmodified serial run consistently reached the unchanged 95% gate. The coverage entrypoint
+now runs test files with `--test-concurrency=1`; the threshold, cases and product code stay
+unchanged. When child-process coverage is release evidence, make collection deterministic
+instead of retrying around a sampled percentage or lowering the limit.
+
 ## 2026-11-16 — The pre-commit gate was already red on main
 
 A dependency-upgrade branch could not commit anything: the L1 index gate failed on
