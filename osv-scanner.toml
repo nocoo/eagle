@@ -1,0 +1,7 @@
+# Dev-only temporary waiver. Reviewed 2026-11-18; expires 2026-12-18.
+# picomatch is reached only through build and test tooling and is not shipped
+# in the Worker or browser bundle. No upstream fix is available.
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf"
+ignoreUntil = 2026-12-18
+reason = "picomatch <= 4.0.7 via dev tooling; no upstream fix; 30-day waiver"
