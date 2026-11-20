@@ -1,234 +1,87 @@
 # Eagle
 
-Herdr machine/Space overview with a Vite/React dashboard, Cloudflare Worker,
-Durable Objects and a standalone Node Agent. Human overview: [README.md](README.md).
+Herdr machine/Space overview (Vite/React dashboard, Cloudflare Worker, Durable Objects, Node Agent) plus the macOS SwiftUI app and isolated Bots/Superagent services.
+Docs: [README](README.md) · [Deployment](docs/DEPLOYMENT.md) · [Agent](docs/AGENT.md) · [Realtime](docs/REALTIME.md) · [Cost cut](docs/COST-CUT.md) · [Bots plan](docs/bots/PLAN.md) · [Retrospective](Retrospective.md)
 
-## Scope and sources
+## Layout
 
-Maintain project instructions only in this root AGENTS.md; do not create a
-CLAUDE.md alias or copy. Root `package.json` is the npm workspace root and owns
-the website/Worker release version; keep its lockfile synchronized. Releases are
-independent per surface: the website/Worker take the root version, the Agent takes
-`packages/agent/package.json`, and the macOS app takes
-`apps/macos/Support/Version.json` (a release bumps only the surface it ships).
-`packages/agent/package.json` owns the independent Agent version; CLI output and
-packed artifacts derive from it. Website onboarding uses root
-`config.publishedAgentVersion`, which must reference a verified published Agent
-version and can differ from an unpublished source candidate. The App may ship or be
-skipped at will: root `config.publishedMacosVersion` is `/api/live`'s `macos.latest`
-and changes only in a release that attaches an app to a GitHub release, never because
-`apps/macos/Support/Version.json` moved; only a release-profile app build asks that
-endpoint, and a newer answer is a link to the release page, never an automatic
-replacement. Published App builds are ad-hoc signed and not notarized, so the download
-instructions carry the quarantine removal and approvals by hand; `spctl
---master-disable` is never the fix.
-Website-only releases may keep the currently published Agent version and skip npm
-publication when Agent behavior, dependencies and protocol requirements are
-unchanged. Changes to those require an Agent version bump and publication before
-onboarding uses it.
-Package tests must verify the packed manifest and installed CLI match the Agent
-manifest, while website health/UI versions match the root manifest.
-
-### Repository layout
-
-```
-apps/web          Vite dashboard, Cloudflare Worker, public assets
-apps/macos        Eagle SwiftUI app (SPM, macOS 15+); it also hosts the Bots client UI
-apps/bots-macos   Bots client logic (SPM package: BotsCore/BotsTransport/BotsFeatures); see its README
-packages/contracts  shared zod contracts and pure helpers (private, not published)
-packages/agent    @nocoo/eagle-agent, published to npm
-apps/bots         Bots daemon: independent product, not a workspace member
-apps/superagent   independent Super Bot service; own lock and npm run check, no worker imports
-apps/superagent-macos  Super Bot client logic (Core/Transport/Features), own tests and 90% line gate
-docs/bots         Bots contracts; fixtures/bots-protocol holds the wire samples
-tests             one Node/Playwright suite at the root, spanning all packages
-scripts           live verification and deployment entry points
+```text
+apps/web              Vite dashboard, Cloudflare Worker, public assets
+apps/macos            Eagle SwiftUI app (SPM, macOS 15+); hosts Bots UI
+apps/bots-macos       Bots client logic (SPM: BotsCore/BotsTransport/BotsFeatures)
+apps/bots             Isolated Bots daemon (pi-durable); non-workspace, own lock
+apps/superagent       Isolated Super Bot service; non-workspace, own lock & check
+apps/superagent-macos Super Bot client logic (SPM); own tests & 90% coverage gate
+packages/contracts    Shared Zod contracts and pure helpers (private)
+packages/agent        @nocoo/eagle-agent (npm); compiles contracts into its dist
+docs/bots             Bots/Superagent contracts; fixtures/bots-protocol wire samples
+tests / scripts       Root Node/Playwright suite; live-verify and deploy scripts
 ```
 
-Workspace scripts at the root delegate to `@eagle/web`; run them from the root.
-`apps/macos` builds with Command Line Tools alone: no SwiftUI macros
-(`@State`, `@Observable`, `#Preview`), no XCTest and no Swift Testing, so it
-uses `ObservableObject` and the `LocalState` shim. Palette/type/control ownership
-and global visual-argument/presentation-value rules are checked by `npm run check:design`
-with Xcode's bundled SwiftParser/SwiftSyntax; exact geometry/data/native-builder
-boundaries are recorded in `docs/MACOS-STYLE-COVERAGE.md`. `npm run test:design`
-proves accepted/rejected syntax and real index-snapshot commit rejection. The precise
-scope and remaining style categories are in `apps/macos/DESIGN.md`. Tests, strict `swift
-format` lint and the 90% logic-coverage gate need the Xcode toolchain, which
-`apps/macos/Scripts/*.sh` selects through `DEVELOPER_DIR`.
-`swift run SnapshotRenderer` writes review PNGs under the ignored `.local/`.
-`packages/agent` compiles `packages/contracts/src` into its own `dist`, so the
-published tarball stays self-contained and its `bin` path is unchanged.
+## Commands
 
-- [Bots plan](docs/bots/PLAN.md) owns what is built and what is next.
-- [Agent contract](docs/AGENT.md) and [real-time protocol](docs/REALTIME.md)
-  describe product behavior.
-- [Durable Objects cost policy](docs/COST-CUT.md) owns what was deleted and why.
-- `.github/workflows/check.yml`, `package.json`, `tests/`, TypeScript/Biome and
-  Playwright configs describe current enforcement, not guaranteed passing runs.
-- [Deployment](docs/DEPLOYMENT.md) owns operational setup and live verification.
-- [Retrospective.md](Retrospective.md) owns incident narratives.
-
-## Project boundaries
-
-- Implement on `main` with coherent atomic commits. Preserve user changes. The
-  integrating agent owns writes; reviewers in the Herdr Space are read-only.
-- Strict TDD for behavior changes: demonstrate a failing behavior, implement the
-  smallest fix, then run affected checks. `npm run check` and
-  `npm run test:browser` remain release gates.
-- Fixed stack: Vite, Biome, TypeScript 7.0.2. All controls/application chrome use
-  published `@nocoo/basalt`; consult its installed integration docs. Do not add a
-  second component or color system.
-- Tokens live only in secure configuration. Never put them in report payloads,
-  URLs, source, browser storage, screenshots or command arguments.
-  Authentication errors fail closed.
-- Preserve idempotency, capture ordering, session-scoped identities, freshness
-  and evidence provenance. Lifecycle badges
-  never certify task completion; missing data remains unknown.
-- During long implementation work, record a user-view checkpoint every 15 minutes
-  in `docs/CHECKPOINTS.md`: actual Herdr collection, authentication, Durable Objects, rendering
-  and the next broken hop. Do not invent successful verification.
-
-## Setup and commands
-
-Run from the root with Node.js 24+ and npm; CI uses Node 26. Actual collection
-requires Herdr, but documentation checks do not run the installed live Agent. The
-device-runtime test bundles `process.execPath` and refuses a Node that links a
-non-system library, which Homebrew's build does, so run the gates (and the pre-push
-hook, which runs them) with an official Node build.
-Use the machine-approved registry. Ignored `apps/web/.dev.vars` holds `AGENT_SIGNING_KEY`
-(at least 32 random characters, file mode 0600), `LOCAL_DEV="true"` for local
-browsing, optional `LOCAL_USER_EMAIL`, and optional existing `AGENT_TOKENS`.
-Never copy production credentials into tests. Restart Wrangler after changes.
+Run root commands with Node 24+ (CI: Node 26) and npm; workspace scripts delegate to `@eagle/web`. Use an **official Node build** (no non-system dylibs like Homebrew) for gates/hooks because `device-runtime` tests bundle `process.execPath`. Live collection needs Herdr; doc checks do not run the live Agent. Run `dev:api` and `dev` in separate terminals. Ignored `apps/web/.dev.vars` (0600) holds `AGENT_SIGNING_KEY` (>=32 chars), `LOCAL_DEV="true"`, optional `LOCAL_USER_EMAIL`, and optional `AGENT_TOKENS`; restart Wrangler after edits.
 
 ```sh
-npm ci
-npm run dev:api
-npm run dev
-npm test
-npm run typecheck
-npm run lint
-npm run build
-npm run check
-npm run test:browser
+npm ci                                 # install root workspace & .githooks
+npm run dev:api                        # Wrangler Worker 37053 (inspector 38053)
+npm run dev                            # Vite 7053 -> https://eagle.dev.hexly.ai
+npm run typecheck                      # S1 (tsc --noEmit)
+npm run lint                           # S2 (biome check, 0 warnings; format edits only)
+npm run test:coverage                  # L1 (c8 >=95% on packages/contracts/src/**)
+npm run test:browser                   # L4 Playwright Chromium (install --with-deps chromium in CI)
+npm run build                          # B1 (@eagle/web)
+npm run check                          # test + typecheck + lint + build
+npm run check:design && npm run test:design  # macOS SwiftSyntax style ownership & gate tests
+npm run test:devices                   # cross-process device tests (after bots ci & agent build)
+npm --prefix apps/bots run check       # Bots daemon gate (eval: npm --prefix apps/bots run eval)
+npm --prefix apps/superagent run check # Superagent gate
 ```
 
-Run API and Vite development servers in separate terminals. CI installs Chromium
-with `npx playwright install --with-deps chromium` before browser tests. `format`
-is an editing command, not a check; checks must not run autofix.
+macOS Swift tests, strict `swift format` lint, and 90% coverage (`apps/{macos,bots-macos,superagent-macos}/Scripts/coverage.sh`) require Xcode (`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`). `swift run SnapshotRenderer` writes PNGs under ignored `.local/`.
 
-Every change under `apps/macos` ends with a dev App the owner can inspect by
-hand: `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run "Eagle Dev"`
-from `apps/macos`, in a pane split to the right of the main pane, never a new tab
-and never a background process. The product name is what a bundle-less run is
-labelled by in the Dock; `Eagle` is the packaged App's binary and stays a
-separate product. The Command Line Tools alone cannot build the
-SwiftUI macros, so the toolchain is explicit. The packaged App starts the Bots
-daemon itself against `~/.local/share/eagle-bots` on 43117; a `swift run` shell
-is the development build and owns `~/.local/share/eagle-bots-dev` on 43119 with
-its client state and secrets key under that root, so neither build can start,
-adopt or change the other's service. A second copy of either build exits
-instead of starting: one instance per build, enforced by a lock under
-`~/Library/Application Support/ai.hexly.eagle`.
+## Invariants
 
-Surface ownership (root, port, listener, state):
+- **Workflow & TDD**: Work on `main` (integrator writes; Herdr Space reviewers read-only). Use strict TDD; log 15-min checkpoints on long runs ([Deployment](docs/DEPLOYMENT.md#user-view-checkpoints)).
+- **Web stack & UI**: Fixed stack of Vite, Biome, and TypeScript 7.0.2. Build all web controls and chrome with published `@nocoo/basalt`; never add a second component or color system.
+- **Auth & secrets**: Tokens live only in secure config (never payloads, URLs, source, browser storage, screenshots, or CLI args); auth errors fail closed.
+- **Provenance & state**: Preserve idempotency, capture order, session-scoped identities, freshness, and provenance; lifecycle badges never certify completion and missing data stays unknown.
+- **Releases**: Bump only the shipped surface — root, `packages/agent` (self-contained `dist` + `bin`), or `apps/macos/Support/Version.json` ([rules](docs/DEPLOYMENT.md#release-surfaces-and-versioning)).
+- **macOS signing**: Published App builds are ad-hoc signed and un-notarized; follow manual quarantine/approval steps in [apps/macos/README.md](apps/macos/README.md) and never use `spctl --master-disable`.
+- **macOS toolchain**: `apps/macos` builds with CLT alone (no `@State`/`@Observable`/`#Preview`/XCTest/Swift Testing); use `ObservableObject` and `LocalState`. Tests, `swift format`, and coverage need Xcode.
+- **macOS design**: Enforce palette, type, control, and visual-argument ownership via `npm run check:design` ([DESIGN.md](apps/macos/DESIGN.md), [coverage](docs/MACOS-STYLE-COVERAGE.md)).
+- **macOS Dev App**: End `apps/macos` changes with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run "Eagle Dev"` in a right-split pane (never new tab/background); `Eagle` is the packaged product.
+- **Bots & Superagent isolation**: Decoupled from web/Worker/Agent/contracts and excluded from root workspaces and `biome.json`. Dependency direction is one-way: `apps/macos` -> `apps/bots-macos`, never back.
+- **Bots contracts**: Update docs with code; [PROTOCOL](docs/bots/PROTOCOL.md) v1 is additive and `fixtures/bots-protocol/` is normative. Keep unenabled features behind flags ([PRODUCT](docs/bots/PRODUCT.md)).
+- **Bots observability**: Every crossing logs its layer with shared `trace`; only the innermost failure logs `error`, asserted by tests ([OBSERVABILITY](docs/bots/OBSERVABILITY.md)).
+- **Bots acceptance**: Drive evals via `eagle-dev` (dev-only `~/.config/eagle-dev/token`) after trigger/tool/invocation edits; keep permission tests in `apps/bots/test` ([TESTING](docs/bots/TESTING.md)).
 
-| Surface | Bots root | Bots port | Superagent root | Superagent port | Client state | CLI defaults |
-| --- | --- | --- | --- | --- | --- | --- |
-| Packaged App | `~/.local/share/eagle-bots` | 43117 | `~/.local/share/eagle-superagent` | 43128 | `~/Library/Application Support/ai.hexly.bots` | `eagle` |
-| Source run (`Eagle Dev`) | `~/.local/share/eagle-bots-dev` | 43119 | `~/.local/share/eagle-superagent-dev` | 43127 | `<dev root>/client` | `eagle-dev` |
-| Candidate bundle | `<daily root>-device-candidate` | 43118 | as packaged | 43128 | `<candidate root>/client` | `eagle-dev` |
+## Quality & Local Gates
 
-`BOTS_ROOT` / `BOTS_PORT` / `SUPERAGENT_ROOT` / `SUPERAGENT_PORT` / `EAGLE_ROOT` /
-`EAGLE_PORT` still name an explicit service for a test, an acceptance run or a
-second worktree; an explicit value always wins over the profile default.
+Follows `system1-quality`; CI runs `.github/workflows/ci.yml` -> `.github/workflows/quality-slots.yml` (`quality / Z1: Gate` required on `main`, aggregating blocking slots plus `macos-suite`). Status vocabulary: `enforced`, `planned`, `manual`, `N/A`.
 
-## Bots (isolated product)
+- **Exceptions (`N/A`)**: `L2 Runtime` (Miniflare DO tests run in `L1`), `L3 Integration` (API/process tests run in `L1` and `macos-suite`), and `P1 Package` (private root; Agent packing tested in `L1`).
+- **Coverage & deploy**: `c8` enforces >=95% on `packages/contracts/src/**` (`.c8rc.json`); Swift logic suites enforce 90%. `deploy.yml` verifies `quality / Z1: Gate` before Worker deploy (skips if secrets unset).
+- **Local hooks (`pre-commit`)**: Installed via `npm ci` (`prepare` -> `.githooks/`). Validates staged index with `l1-index-gate.sh`, plus `check:design`, `superagent`, and `swift format` when touched.
+- **Local hooks (`pre-push`)**: Runs `npm run check`, `apps/superagent` `check` + `superagent-macos` coverage, `test:browser`, and `apps/macos` + `apps/bots-macos` `swift test` (`test:focus` is CI-only).
+- **Release gates**: `npm run check` and `npm run test:browser` remain release gates. Never lower thresholds, skip or focus tests, bypass hooks, or suppress failures.
 
-`apps/bots`, the `Bots*` Swift targets and `docs/bots/` implement a local
-multi-bot chat product backed by `@earendil-works/pi-durable`. It is a separate
-product that lives in this repository:
+## Resources & Isolation
 
-- No code, protocol or build coupling with the website, Worker, Agent or
-  contracts. `apps/bots` is not a root workspace member; root `check` and its Linux
-  CI job install only the root lock, and root `biome.json` must exclude it. The
-  macOS App integration job explicitly installs both independent locks and runs
-  `npm run test:devices` through process/port boundaries before the Swift checks;
-  Bots retains its own `npm run check`. The client logic is the
-  separate SPM package `apps/bots-macos` (BotsCore, BotsTransport, BotsFeatures),
-  which depends on nothing from Eagle; the Eagle app depends on it and hosts the
-  Bots group in the main window (`apps/macos/Sources/EagleFeatures/BotsWorkspace.swift`).
-  The dependency direction is one way: Eagle → Bots logic, never back.
-- Documentation is the contract and precedes code: `docs/bots/PRODUCT.md`,
-  `ARCHITECTURE.md`, `PROTOCOL.md`, `RUNTIME.md`, `OBSERVABILITY.md`,
-  `TESTING.md`, with [PLAN.md](docs/bots/PLAN.md) owning what is built and what is
-  next. A behaviour, protocol or log-event change lands with its document
-  in the same commit; [PROTOCOL.md](docs/bots/PROTOCOL.md) v1 is additive only and
-  `fixtures/bots-protocol/` is normative for both languages.
-- Strict TDD per `docs/bots/TESTING.md`: demonstrate the failing test, then the
-  smallest implementation, then `cd apps/bots && npm run check` (the client gate,
-  `cd apps/bots-macos && swift test`, starts in stage 5). Never skip or focus a test, never widen a limit
-  or silence a log to pass. End-to-end acceptance lives in `tests/eval`
-  (`npm --prefix apps/bots run eval`): real daemon, scripted model, real tools. It is
-  not part of `check`; run it after changing a trigger, a tool or the invocation path.
-- Acceptance drives the product through the `eagle-dev` CLI, not a bespoke
-  HTTP/WebSocket script: a real command proves the wire, the credential, the scope and
-  the exit code at once. The development daemon also accepts a credential an agent
-  mints itself at `~/.config/eagle-dev/token`, so a run needs no person at a switch; a
-  bundled build never accepts it. `apps/bots/test` keeps the deterministic gates, and a
-  permission rule still needs its own assertion there.
-- Layer attribution is part of correctness: every crossing logs its layer with
-  the shared `trace`, the innermost failure is the only error logged, and the
-  diagnosis recipes in `docs/bots/OBSERVABILITY.md` are asserted by tests.
-- Phase 1 is chat only. Tools, tasks, usage, raw entries, agent settings and
-  bot-to-bot conversation stay behind protocol capability flags and are not
-  rendered; they are not deleted or stubbed out.
+| Lane | Endpoint / State | Boundary |
+| --- | --- | --- |
+| Web dev | `https://eagle.dev.hexly.ai` -> Vite `7053` -> Worker `37053` (inspector `38053`) | Daily local state; never seed prod or copy prod secrets |
+| Web tests | Browser `27053` (`.local/browser-dist`, no API proxy); API E2E `17053` | Real local Miniflare; own fixtures; pause/advance browser clock |
+| Prod | `eagle.hexly.ai` (UI), `eagle-ingest.hexly.ai` (ingest) | Authorized ops only; live/read-only checks per [Deployment](docs/DEPLOYMENT.md) |
 
-## Quality contract and current evidence
+macOS surface ownership (single-instance lock per build under `~/Library/Application Support/ai.hexly.eagle`; explicit `BOTS_ROOT`/`BOTS_PORT`/`SUPERAGENT_ROOT`/`SUPERAGENT_PORT`/`EAGLE_ROOT`/`EAGLE_PORT` overrides always win):
 
-System1 quality definitions come from `system1-quality` (v1.3.0); CI runs in native mode via `.github/workflows/ci.yml` → `./.github/workflows/quality-slots.yml` with `nocoo/base-ci` composite actions pinned to `v2026.15` (`777bbe4f9bacab8a91d8c01974480a6ee23d28e0`). Branch protection (`main quality gate`) requires `quality / Z1: Gate`.
+| Surface | Bots root / port | Superagent root / port | Client state | CLI |
+| --- | --- | --- | --- | --- |
+| Packaged App (`Eagle`) | `~/.local/share/eagle-bots` / `43117` | `~/.local/share/eagle-superagent` / `43128` | `~/Library/Application Support/ai.hexly.bots` | `eagle` |
+| Source (`Eagle Dev`) | `~/.local/share/eagle-bots-dev` / `43119` | `~/.local/share/eagle-superagent-dev` / `43127` | `<dev root>/client` | `eagle-dev` |
+| Candidate bundle | `<daily root>-device-candidate` / `43118` | as packaged / `43128` | `<candidate root>/client` | `eagle-dev` |
 
-| Slot | Stage | Command and Scope | Status |
-| --- | --- | --- | --- |
-| S1 Types | pre-commit, pre-push, CI | `npm run typecheck` (`tsc --noEmit`) | enforced |
-| S2 Lint | pre-commit, pre-push, CI | `npm run lint` (`biome check . --error-on-warnings`) + `scripts/check-test-focus.sh` + Swift format lint in `macos-suite` | enforced |
-| S3 Workflow | CI | `actionlint` + 40-char SHA pin verification on `.github/workflows/*.yml` | enforced |
-| G1 Secrets | CI | `gitleaks` redacted checkout scan | enforced |
-| G2 Dependencies | CI | `osv-scanner` over `package-lock.json` and `apps/bots/package-lock.json` | enforced |
-| B1 Build | pre-push, CI | `npm run build` (`@eagle/web`) + `@nocoo/eagle-agent` build and Swift build in `macos-suite` | enforced |
-| L1 Unit | pre-commit, pre-push, CI | `npm run test:coverage` (`c8` >=95% on `packages/contracts/src/**` with documented presentation exclusions) + `bots-macos` Swift tests in `macos-suite` | enforced |
-| L2 Runtime | — | Miniflare Durable Object tests run inside L1 test suite | na |
-| L3 Integration | — | API/process tests run inside L1 and `macos-suite` (`test:devices`, `test:design`, `test:focus`) | na |
-| L4 E2E | pre-push, CI | `npm run test:browser` (Playwright Chromium journeys) | enforced |
-| P1 Package | — | Root package is private; agent packing is exercised inside L1 | na |
-| Z1 Gate | CI | `z1-gate` validator in `quality-slots.yml` aggregating all `impl` slots and `macos-suite` on matching `github.sha` | enforced |
+## Retrospective
 
-Hooks live in `.githooks/` and are installed by `npm ci` through the `prepare`
-script (`core.hooksPath`). Pre-commit lints the staged snapshot with Biome and
-swift-format; pre-push runs `npm run check`, the browser suite and both Swift
-package suites (`apps/macos`, `apps/bots-macos`). `.github/workflows/ci.yml` runs
-the slot gates and `macos-suite` in CI, and `deploy.yml` verifies `quality / Z1: Gate`
-via `release-source` before deploying `main`, skipping with a notice until
-`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets exist. Never lower
-thresholds, skip/focus tests, bypass hooks or suppress failures.
-
-## Resources and operations
-
-Local preview: `https://eagle.dev.hexly.ai` -> Vite 7053 -> Worker 37053
-(inspector 38053). Browser tests use 27053; 17053 is reserved for API E2E.
-Daily development and test state must remain separate. Use real local
-Miniflare for API checks; never create remote test resources or seed production.
-Browser tests build into `.local/browser-dist` and serve Vite preview on 27053
-with no API proxy. Each test owns its API/WebSocket fixtures and fresh context;
-time-sensitive assertions must pause the browser clock and advance it explicitly.
-
-Public dashboard: `eagle.hexly.ai`; machine ingestion: `eagle-ingest.hexly.ai`.
-Deployment and live checks require authorization for that operation. Releases
-require real local and public verification per `docs/DEPLOYMENT.md`. Use
-`scripts/verify-live.ts` for authorized collection changes; website-only releases
-that exclude collection use the documented read-only API/browser checks.
-Live checks are not routine documentation validation.
-
-Report actual checks and unresolved gaps with each change. Preserve accident
-narratives in the root retrospective; keep only brief recurring project rules
-here, cross-project lessons in global rules/nmem and deterministic guards in tests.
+Record incident narratives in [Retrospective.md](Retrospective.md); promote recurring project constraints to `Invariants` above and deterministic guards to tests or hooks.

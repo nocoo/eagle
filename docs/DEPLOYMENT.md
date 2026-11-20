@@ -46,6 +46,20 @@ NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem" node scripts/verify-live.ts
 
 `verify-live.ts` reads `.local/agent-dev.json` by default; local viewing needs no credentials. For production, set `EAGLE_VERIFY_ORIGIN=<your production origin>`, `EAGLE_CONFIG` to the production agent configuration and `EAGLE_ACCESS_JWT_FILE` to a mode-0600 file containing a genuine Access application JWT. Obtain it through `cloudflared access login --quiet <your production origin>`; never paste credentials into commands or logs. Screenshots and sanitized receipts remain in ignored `.local/`. The script checks anonymous Access redirection, authenticated viewing, idempotency, every real Space, automatic updates, history and mobile layout.
 
+## User-view checkpoints
+
+During long implementation work, record a user-view checkpoint every 15 minutes in [CHECKPOINTS.md](CHECKPOINTS.md): actual Herdr collection, authentication, Durable Objects, rendering, and the next broken hop. Do not invent successful verification; live checks are not routine documentation validation.
+
+## Release surfaces and versioning
+
+Releases are independent per surface, and a release bumps only the surface it ships:
+
+- **Website / Worker**: root `package.json` is the npm workspace root and owns the website/Worker release version; keep `package-lock.json` synchronized.
+- **Agent (`@nocoo/eagle-agent`)**: `packages/agent/package.json` owns the independent Agent version; CLI output and packed artifacts derive from it. Website onboarding pins root `config.publishedAgentVersion` to a verified published npm version, which can differ from an unpublished source candidate. Any change to Agent behavior, dependencies, or protocol requirements requires an Agent version bump and npm publication before onboarding uses it.
+- **macOS app**: `apps/macos/Support/Version.json` owns the app source version; see [macOS app releases](#macos-app-releases).
+
+Package tests must verify that the packed manifest and installed CLI match `packages/agent/package.json`, while website health and UI versions match root `package.json`.
+
 ## Website-only releases
 
 The root manifest owns the website/Worker version and
@@ -86,7 +100,9 @@ website release ships no app asset most of the time, and nothing here requires o
 `package.json`. That field is a claim about what a person can actually download, so it
 changes **only in the release that attaches an app to a GitHub release**, never because
 the app's source version moved. Without it the field is absent, and an installed App —
-which only asks when its own bundle is a release build — shows no update hint at all.
+which only asks when its own bundle is a release build — shows no update hint at all;
+when a newer version is returned, the App links to the release page rather than
+performing an automatic replacement.
 `tests/macos-release.test.ts` keeps the claim out of the deployment configuration and
 refuses a published version that runs ahead of the source.
 
@@ -133,9 +149,10 @@ npm run deploy
 ```
 
 `npm run deploy` stays the manual path; `.github/workflows/deploy.yml` also
-deploys every green `Check` on main through the `CLOUDFLARE_API_TOKEN` and
-`CLOUDFLARE_ACCOUNT_ID` secrets, then polls `/api/live` for the exact revision
-and skips with a notice when the secrets are absent.
+deploys every green `CI` (`quality / Z1: Gate`) run on main through the
+`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `EAGLE_WRANGLER_CONFIG` secrets,
+then polls `/api/live` for the exact revision and skips with a notice when the secrets
+are absent.
 
 The Worker owns `<your production origin>` as a custom domain. `<your ingest origin>/api/live` publicly probes the first configured machine DO and returns no inventory. The read-only reviewers are advisory; the integrator commits on `main`. See [checkpoints](CHECKPOINTS.md) for real data verification and [API](API.md) for ingestion/query semantics.
 
