@@ -67,7 +67,7 @@ The collector reports a complete snapshot every 30 seconds by default. The secur
 {"watchPorts":[{"name":"Raven","port":7024}]}
 ```
 
-See the [agent contract](AGENT.md) for machine identity, credentials, retries, background services and upgrade order. Give the [eagle-report Skill](../skills/eagle-report/SKILL.md) to your management agent. The [report schema](../public/report-v1.schema.json) is generated from the TypeScript validator; the server also checks cross-object uniqueness.
+See the [agent contract](AGENT.md) for machine identity, credentials, retries, background services and upgrade order. Give the [eagle-report Skill](../skills/eagle-report/SKILL.md) to your management agent. The [report schema](../apps/web/public/report-v1.schema.json) is generated from the TypeScript validator; the server also checks cross-object uniqueness.
 
 Six read-only CPU, GPU, memory, disk, network and fan cards show the latest reported sample with numbers, equal-width meters and evidence timestamps. Apple Silicon can use separately installed macmon for unprivileged temperature, GPU, fan and memory readings; physical-interface traffic rates need no macmon. Fast samples run every 30 seconds; disk and Linux temperature default to 300 seconds. Only the latest telemetry is kept; there is no history chart. The development frontend can switch between Local and Prod backends. Installation and Connect pin the published Agent; publication does not automatically upgrade or restart existing collectors. Historical data is never fabricated or backfilled.
 

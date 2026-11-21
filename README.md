@@ -68,7 +68,7 @@ eagle-agent realtime-watch
 {"watchPorts":[{"name":"Raven","port":7024}]}
 ```
 
-机器身份、凭据、重试、后台服务与升级顺序见 [Agent 契约](docs/AGENT.md)。[报告 Schema](public/report-v1.schema.json)由 TypeScript 校验器生成，服务端另行检查跨对象唯一性。
+机器身份、凭据、重试、后台服务与升级顺序见 [Agent 契约](docs/AGENT.md)。[报告 Schema](apps/web/public/report-v1.schema.json)由 TypeScript 校验器生成，服务端另行检查跨对象唯一性。
 
 CPU、GPU、内存、磁盘、网络与风扇六张只读卡片显示最近一次上报的数值、等宽占用条与原始证据时间。Apple Silicon 可通过单独安装的 macmon 无提权读取温度、GPU、风扇与内存；物理网卡上下行速率无需 macmon。快速采样每 30 秒，磁盘与 Linux 温度默认每 300 秒。只保留最近一次采样，不再提供历史曲线。开发页面支持 Local/Prod 后端切换。安装命令与 Connect 固定已发布的 Agent；发布不会自动升级或重启已有采集器，不回填或伪造历史。
 
