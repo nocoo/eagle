@@ -333,7 +333,7 @@ export function Connect({
           <div className="board-title">
             <div>
               <h2>机器分组</h2>
-              <Badge variant="secondary">{machineGroups.groups.length}</Badge>
+              <Badge tone="neutral">{machineGroups.groups.length}</Badge>
             </div>
           </div>
           <LayerCard>
@@ -437,7 +437,7 @@ export function Connect({
           <div className="board-title">
             <div>
               <h2>机器与凭证</h2>
-              <Badge variant="secondary">{machines?.length ?? "—"}</Badge>
+              <Badge tone="neutral">{machines?.length ?? "—"}</Badge>
             </div>
             <Button
               size="sm"
@@ -477,9 +477,9 @@ export function Connect({
                       </p>
                     </div>
                     <Badge
-                      variant={
+                      tone={
                         !machine.enabled
-                          ? "secondary"
+                          ? "neutral"
                           : fresh
                             ? "success"
                             : "warning"

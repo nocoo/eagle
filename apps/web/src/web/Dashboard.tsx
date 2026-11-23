@@ -8,7 +8,7 @@ import {
   TooltipTrigger,
 } from "@nocoo/basalt";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
-import { SkeletonLine } from "@nocoo/basalt/components/skeleton-line";
+import { Skeleton } from "@nocoo/basalt/components/skeleton";
 import {
   Activity,
   ArrowUpRight,
@@ -53,7 +53,7 @@ export const tones = {
   active: "info",
   attention: "warning",
   verified: "success",
-  unverified: "purple",
+  unverified: "neutral",
 } as const;
 const stateIcons = {
   active: Activity,
@@ -93,19 +93,19 @@ const evidenceIcons = {
 };
 const agentTone = (agent: string) =>
   agent === "codex"
-    ? "blue"
+    ? "info"
     : agent === "grok"
-      ? "purple"
+      ? "neutral"
       : agent === "pi"
-        ? "orange"
-        : "teal";
+        ? "warning"
+        : "success";
 const agentColor = (agent: string) =>
   `hsl(var(--basalt-chart-${agent === "codex" ? 1 : agent === "grok" ? 2 : agent === "pi" ? 4 : 3}))`;
 const accent = (color: string): CSSProperties =>
   ({ "--eagle-color": color }) as CSSProperties;
 export function Status({ state }: { state: State }) {
   return (
-    <Badge variant={tones[state]} dot>
+    <Badge tone={tones[state]} dot>
       {STATE_LABEL[state]}
     </Badge>
   );
@@ -130,7 +130,7 @@ export function MachineStatus({
   const connection = machineConnection(machine, now);
   return (
     <span className="machine-heading">
-      <Badge variant={connection === "online" ? "success" : "warning"} dot>
+      <Badge tone={connection === "online" ? "success" : "warning"} dot>
         {connection === "offline"
           ? "心跳过期"
           : connection === "stale"
@@ -396,7 +396,7 @@ function RecentActivity({ machines }: { machines: MachineView[] }) {
           <Sparkles size={16} />
         </span>
         <h2>最近变化</h2>
-        <Badge variant="purple">{changes.length}</Badge>
+        <Badge tone="neutral">{changes.length}</Badge>
         <CardHelp label="最近变化说明">
           各机器最近一次任务或拓扑变化 · 保留变化的采集时间
         </CardHelp>
@@ -500,9 +500,9 @@ export function DashboardSkeleton() {
       <div className="metric-grid">
         {[0, 1, 2, 3, 4].map((i) => (
           <LayerCard key={i}>
-            <SkeletonLine minWidth={40} maxWidth={60} />
-            <SkeletonLine height={36} />
-            <SkeletonLine />
+            <Skeleton width="50%" />
+            <Skeleton height={36} />
+            <Skeleton />
           </LayerCard>
         ))}
       </div>
@@ -510,8 +510,8 @@ export function DashboardSkeleton() {
         <div className="space-grid">
           {[0, 1, 2, 3, 4, 5].map((i) => (
             <LayerCard key={i} className="skeleton-space">
-              <SkeletonLine height={14} />
-              <SkeletonLine />
+              <Skeleton height={14} />
+              <Skeleton />
               <LayerCard.Loading label="同步 Space" />
             </LayerCard>
           ))}
@@ -644,7 +644,7 @@ export function Dashboard({
             <div>
               <span className="section-index">01</span>
               <h2>机器全景</h2>
-              <Badge variant="secondary">{machines.length} 台</Badge>
+              <Badge tone="neutral">{machines.length} 台</Badge>
             </div>
             <span className="text-basalt-sm text-basalt-muted-foreground">
               选择机器，展开工作现场
@@ -710,7 +710,7 @@ export function Dashboard({
                         {machine.report.machine.platform} · {machine.id}
                       </p>
                     </div>
-                    <Badge variant={stale ? "warning" : "success"} dot>
+                    <Badge tone={stale ? "warning" : "success"} dot>
                       {age(machine.lastSeen, now) > 90
                         ? "心跳过期"
                         : stale
@@ -825,7 +825,7 @@ export function Dashboard({
                     onChange={(e) => onSearch(e.target.value)}
                     placeholder="搜索空间、目标、任务…"
                   />
-                  <Badge variant="secondary">
+                  <Badge tone="neutral">
                     {filtered.length} / {spaces.length}
                   </Badge>
                 </>
@@ -946,7 +946,7 @@ export function Dashboard({
                   .sort((a, b) => b[1] - a[1])
                   .map(([agent, count]) => (
                     <div key={agent}>
-                      <Badge variant={agentTone(agent)} dot>
+                      <Badge tone={agentTone(agent)} dot>
                         {agent}
                       </Badge>
                       <SlotBar

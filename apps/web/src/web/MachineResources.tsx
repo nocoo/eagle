@@ -74,7 +74,7 @@ function ResourceCard({
       )}
       <div className="resource-metric-footer">{children}</div>
       {stale && (
-        <Badge variant="secondary" className="self-start">
+        <Badge tone="neutral" className="self-start">
           历史采样 · 等待更新
         </Badge>
       )}
@@ -150,15 +150,11 @@ export function MachineResources({
       <div className="resource-machine-meta">
         {resources && (
           <>
-            <Badge variant="secondary">
-              {resources.cpuModel || "CPU 未知"}
-            </Badge>
-            <Badge variant="secondary">
-              {gib(resources.memory.totalBytes)} GiB
-            </Badge>
+            <Badge tone="neutral">{resources.cpuModel || "CPU 未知"}</Badge>
+            <Badge tone="neutral">{gib(resources.memory.totalBytes)} GiB</Badge>
           </>
         )}
-        <Badge variant="secondary">
+        <Badge tone="neutral">
           {machine.report.machine.platform === "darwin"
             ? "macOS"
             : machine.report.machine.platform}
@@ -170,7 +166,7 @@ export function MachineResources({
           </span>
         )}
         {stale ? (
-          <Badge variant="secondary">历史快照 · 等待更新</Badge>
+          <Badge tone="neutral">历史快照 · 等待更新</Badge>
         ) : (
           !snapshot && <span>实时采样</span>
         )}
@@ -187,7 +183,7 @@ export function MachineResources({
             </>
           }
           detail={
-            <Badge variant="secondary">
+            <Badge tone="neutral">
               {temperature?.status === "available"
                 ? `${number(temperature.celsius)}°C`
                 : "温度不可用"}
@@ -235,7 +231,7 @@ export function MachineResources({
             </>
           }
           detail={
-            <Badge variant="secondary">
+            <Badge tone="neutral">
               {hardware?.gpuTemperatureCelsius != null
                 ? `${number(hardware.gpuTemperatureCelsius)}°C`
                 : "温度不可用"}
@@ -386,16 +382,16 @@ export function MachineResources({
           }
         >
           <Badge
-            variant={
+            tone={
               telemetry.network?.state === "connected" && !networkStale
                 ? "success"
-                : "secondary"
+                : "neutral"
             }
           >
             {networkStale ? "上次网络" : "网络"}{" "}
             {states[telemetry.network?.state ?? "unknown"]}
           </Badge>
-          <Badge variant="secondary">
+          <Badge tone="neutral">
             {vpnStale ? "上次VPN" : "VPN"}{" "}
             {states[telemetry.vpn?.state ?? "unknown"]}
           </Badge>
@@ -461,12 +457,8 @@ export function MachineResources({
           return (
             <Badge
               key={`${port.host}:${port.port}`}
-              variant={
-                old
-                  ? "secondary"
-                  : port.status === "open"
-                    ? "success"
-                    : "warning"
+              tone={
+                old ? "neutral" : port.status === "open" ? "success" : "warning"
               }
               title={`${port.host}:${port.port} · ${time(port.checkedAt)} · 仅 TCP 连通性`}
             >

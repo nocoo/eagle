@@ -104,7 +104,7 @@ function AccessGate() {
         <span className="access-mark">
           <Mark size={64} />
         </span>
-        <Badge variant="blue">CLOUDFLARE ACCESS</Badge>
+        <Badge tone="info">CLOUDFLARE ACCESS</Badge>
         <h1>安全连接到 Eagle</h1>
         <p>
           {localProduction
@@ -706,7 +706,7 @@ export function App() {
               {localFrontend ? (
                 <EnvironmentSwitch />
               ) : (
-                <Badge variant="blue" className="hidden sm:inline-flex">
+                <Badge tone="info" className="hidden sm:inline-flex">
                   ACCESS
                 </Badge>
               )}
