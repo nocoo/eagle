@@ -28,7 +28,7 @@ export function EnvironmentSwitch() {
         }}
       />
       {error && (
-        <span role="alert" className="text-basalt-sm text-basalt-destructive">
+        <span role="alert" className="text-basalt-sm text-basalt-danger">
           {error}
         </span>
       )}

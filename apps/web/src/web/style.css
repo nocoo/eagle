@@ -117,7 +117,7 @@
   --machine-status-color: var(--basalt-accent-7);
 }
 .machine-status-dot[data-status="offline"] {
-  --machine-status-color: var(--basalt-destructive);
+  --machine-status-color: var(--basalt-danger);
 }
 .machine-nav-item[data-compact="true"] .machine-status-dot {
   position: absolute;
@@ -767,7 +767,7 @@
   border-radius: 50%;
 }
 .sync-dot[data-offline="true"] {
-  background: hsl(var(--basalt-destructive));
+  background: hsl(var(--basalt-danger));
 }
 .syncing {
   animation: eagle-pulse 1s ease-in-out infinite;
@@ -2591,4 +2591,8 @@
   margin-top: 8px;
   font-size: var(--basalt-text-sm);
   color: hsl(var(--basalt-muted-foreground));
+}
+
+[data-slot="sidebar-drawer"] > [data-slot="sheet-close"] {
+  display: none;
 }

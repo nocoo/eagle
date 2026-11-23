@@ -772,7 +772,7 @@ export function App() {
                 <LayerCard>
                   <p
                     role="alert"
-                    className="text-basalt-base text-basalt-destructive"
+                    className="text-basalt-base text-basalt-danger"
                   >
                     {error}
                   </p>

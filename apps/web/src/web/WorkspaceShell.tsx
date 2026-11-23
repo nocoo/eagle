@@ -328,6 +328,7 @@ export function WorkspaceShell({
   return (
     <SheetContent
       side="right"
+      showCloseButton={false}
       className="space-sheet"
       onEscapeKeyDown={(event) => {
         if (event.isComposing) {

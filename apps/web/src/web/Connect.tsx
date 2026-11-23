@@ -310,7 +310,7 @@ export function Connect({
       </div>
       {error && (
         <LayerCard>
-          <p role="alert" className="text-basalt-base text-basalt-destructive">
+          <p role="alert" className="text-basalt-base text-basalt-danger">
             {error}
           </p>
           <Button
@@ -724,7 +724,7 @@ export function Connect({
               </Button>
             </form>
             {machines !== null && !canIssue && (
-              <p className="mt-3 text-basalt-sm text-basalt-destructive">
+              <p className="mt-3 text-basalt-sm text-basalt-danger">
                 尚未配置签名密钥，暂时无法生成 Token。
               </p>
             )}
