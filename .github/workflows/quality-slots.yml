@@ -224,6 +224,7 @@ jobs:
             package-lock.json
             apps/bots/package-lock.json
       - run: npm ci
+      - run: npm --prefix apps/bots ci
       - run: npm run test:design
       - run: cd apps/bots-macos && swift test
       - run: apps/macos/Scripts/coverage.sh
