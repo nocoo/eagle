@@ -1,6 +1,6 @@
 # System1 quality slots, native mode (system1-quality v1.3.0, base-ci v2026.15).
 # L2 Runtime, L3 Integration, and P1 Package are declared `na` and stay skipped.
-# `macos-suite` is an extra blocking job outside the 12 slots aggregated by Z1 Gate.
+# macOS checks are mapped into S2: Lint (Swift & Design), B1: Build (macOS), and L1: Unit (macOS).
 name: Quality slots
 
 on:
@@ -238,8 +238,62 @@ jobs:
     steps:
       - run: echo "N/A — root package is private; agent packing tested inside L1"
 
-  macos-suite:
-    name: "macOS native and device checks"
+  s2-lint-swift:
+    name: "S2: Lint (Swift & Design)"
+    runs-on: macos-26
+    timeout-minutes: 15
+    outputs:
+      tested-sha: ${{ steps.record-sha.outputs.sha }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/bots/package-lock.json
+      - run: npm run check:design
+      - run: cd apps/macos && swift format lint --strict --recursive Sources Scripts Tests
+      - run: cd apps/bots-macos && swift format lint --strict --recursive Sources Tests
+      - name: Record tested SHA
+        id: record-sha
+        if: always()
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  b1-build-macos:
+    name: "B1: Build (macOS)"
+    runs-on: macos-26
+    timeout-minutes: 20
+    outputs:
+      tested-sha: ${{ steps.record-sha.outputs.sha }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/bots/package-lock.json
+      - run: npm ci
+      - run: npm --workspace @nocoo/eagle-agent run build
+      - run: swift build --package-path apps/macos
+      - name: Record tested SHA
+        id: record-sha
+        if: always()
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  l1-unit-macos:
+    name: "L1: Unit (macOS)"
     runs-on: macos-26
     timeout-minutes: 30
     outputs:
@@ -261,14 +315,10 @@ jobs:
       - run: npm --prefix apps/bots ci
       - run: npm --workspace @nocoo/eagle-agent run build
       - run: npm run test:devices
-      - run: npm run check:design
       - run: npm run test:design
-      - run: swift build --package-path apps/macos
-      - run: npm run test:focus
-      - run: cd apps/macos && swift format lint --strict --recursive Sources Scripts Tests
-      - run: cd apps/bots-macos && swift format lint --strict --recursive Sources Tests
       - run: cd apps/bots-macos && swift test
       - run: apps/macos/Scripts/coverage.sh
+      - run: npm run test:focus
       - name: Record tested SHA
         id: record-sha
         if: always()
@@ -280,16 +330,18 @@ jobs:
     needs:
       - s1-types
       - s2-lint
+      - s2-lint-swift
       - s3-workflow
       - g1-secrets
       - g2-dependencies
       - b1-build
+      - b1-build-macos
       - l1-unit
+      - l1-unit-macos
       - l2-runtime
       - l3-integration
       - l4-e2e
       - p1-package
-      - macos-suite
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -305,9 +357,9 @@ jobs:
           const needs = JSON.parse(process.env.NEEDS_JSON);
           const expectedSha = process.env.EXPECTED_SHA;
           const implSlots = [
-            "s1-types", "s2-lint", "s3-workflow",
+            "s1-types", "s2-lint", "s2-lint-swift", "s3-workflow",
             "g1-secrets", "g2-dependencies",
-            "b1-build", "l1-unit", "l4-e2e", "macos-suite"
+            "b1-build", "b1-build-macos", "l1-unit", "l1-unit-macos", "l4-e2e"
           ];
           const naSlots = ["l2-runtime", "l3-integration", "p1-package"];
           const errors = [];
