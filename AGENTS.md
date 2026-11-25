@@ -29,7 +29,7 @@ npm run dev                            # Vite 7053 -> https://eagle.dev.hexly.ai
 npm run typecheck                      # S1 (tsc --noEmit)
 npm run lint                           # S2 (biome check, 0 warnings; format edits only)
 npm run test:coverage                  # L1 (c8 >=80% on packages/contracts/src/**)
-npm run test:browser                   # L4 Playwright Chromium (install --with-deps chromium in CI)
+npm run test:browser                   # L4 Playwright Desktop Chromium smoke suite (setup-playwright in CI)
 npm run build                          # B1 (@eagle/web)
 npm run check                          # test + typecheck + lint + build
 npm run check:design && npm run test:design  # macOS SwiftSyntax style ownership & gate tests
@@ -60,7 +60,7 @@ macOS Swift tests, strict `swift format` lint, and 90% coverage (`apps/{macos,bo
 
 Follows `system1-quality`; CI runs `.github/workflows/ci.yml` -> `.github/workflows/quality-slots.yml` (`quality / Z1: Gate` required on `main`, aggregating all blocking slots including `S2: Lint (Swift & Design)`, `B1: Build (macOS)`, `L1: Unit (macOS)`, and `L3: Integration (macOS)`). Status vocabulary: `enforced`, `planned`, `manual`, `N/A`.
 
-- **Exceptions (`N/A`)**: `L2 Runtime` (Miniflare DO tests run in `L1`) and `P1 Package` (private root; Agent packing tested in `L1`). `L3: Integration (macOS)` runs `npm run test:devices`.
+- **Exceptions (`N/A`)**: `L2 Runtime` (Miniflare DO tests run in `L1`) and `P1 Package` (private root; Agent packing tested in `L1`). `L3: Integration (macOS)` runs `npm run test:devices` using the prebuilt `B1: Build (macOS)` `eagle-cli` artifact (`EAGLE_CLI_BIN` in CI). `L4: E2E` serves the prebuilt `B1: Build` `apps/web/dist` artifact in CI without rebuilding.
 - **Coverage & deploy**: `c8` enforces >=80% on `packages/contracts/src/**` (`.c8rc.json`); Swift logic suites enforce 90%. `deploy.yml` verifies `quality / Z1: Gate` before Worker deploy (skips if secrets unset).
 - **Local hooks (`pre-commit`)**: Installed via `npm ci` (`prepare` -> `.githooks/`). Validates staged index with `l1-index-gate.sh`, plus `check:design`, `superagent`, and `swift format` when touched.
 - **Local hooks (`pre-push`)**: Runs `npm run check`, `apps/superagent` `check` + `superagent-macos` coverage, `test:browser`, and `apps/macos` + `apps/bots-macos` `swift test` (`test:focus` is CI-only).
@@ -71,7 +71,7 @@ Follows `system1-quality`; CI runs `.github/workflows/ci.yml` -> `.github/workfl
 | Lane | Endpoint / State | Boundary |
 | --- | --- | --- |
 | Web dev | `https://eagle.dev.hexly.ai` -> Vite `7053` -> Worker `37053` (inspector `38053`) | Daily local state; never seed prod or copy prod secrets |
-| Web tests | Browser `27053` (`.local/browser-dist`, no API proxy); API E2E `17053` | Real local Miniflare; own fixtures; pause/advance browser clock |
+| Web tests | Browser 27053 (`apps/web/dist`, no API proxy); API E2E 17053 | Real local Miniflare; own fixtures; pause/advance browser clock |
 | Prod | `eagle.hexly.ai` (UI), `eagle-ingest.hexly.ai` (ingest) | Authorized ops only; live/read-only checks per [Deployment](docs/DEPLOYMENT.md) |
 
 macOS surface ownership (single-instance lock per build under `~/Library/Application Support/ai.hexly.eagle`; explicit `BOTS_ROOT`/`BOTS_PORT`/`SUPERAGENT_ROOT`/`SUPERAGENT_PORT`/`EAGLE_ROOT`/`EAGLE_PORT` overrides always win):

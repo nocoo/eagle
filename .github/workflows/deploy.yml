@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: Resolve and verify CI-gated source revision
         id: source
-        uses: nocoo/base-ci/.github/actions/release-source@dc858360aa7812db61fd9d825943e4efd4dcd0e7 # v2026.17
+        uses: nocoo/base-ci/.github/actions/release-source@bfaac83b5a4d5c7ed26320bb5b09f3ca0a01932c # v2026.18
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           expected-workflow-path: ".github/workflows/ci.yml"
@@ -38,11 +38,11 @@ jobs:
         with:
           ref: ${{ steps.source.outputs.target-sha }}
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: nocoo/base-ci/.github/actions/setup-js@bfaac83b5a4d5c7ed26320bb5b09f3ca0a01932c # v2026.18
         with:
-          node-version: "26"
-          cache: npm
-      - run: npm ci
+          package-manager: npm
+          node-version: "26.12.1"
+          install-policy: blocked
       - name: Deploy the Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

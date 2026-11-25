@@ -696,27 +696,31 @@ async function runCli(
 test("CLI drives local Bot tools without a configured remote", {
   timeout: 90000,
 }, async () => {
-  const swiftEnv = {
-    ...process.env,
-    DEVELOPER_DIR:
-      process.env.DEVELOPER_DIR ?? "/Applications/Xcode.app/Contents/Developer",
-  };
-  const macos = resolve("apps/macos");
-  execFileSync("swift", ["build", "--product", "eagle-cli"], {
-    cwd: macos,
-    env: swiftEnv,
-    stdio: "pipe",
-    timeout: 60000,
-    killSignal: "SIGKILL",
-  });
-  const bin = execFileSync("swift", ["build", "--show-bin-path"], {
-    cwd: macos,
-    env: swiftEnv,
-    encoding: "utf8",
-    timeout: 10000,
-    killSignal: "SIGKILL",
-  }).trim();
-  const cli = join(bin, "eagle-cli");
+  let cli = process.env.EAGLE_CLI_BIN?.trim();
+  if (!cli) {
+    const swiftEnv = {
+      ...process.env,
+      DEVELOPER_DIR:
+        process.env.DEVELOPER_DIR ??
+        "/Applications/Xcode.app/Contents/Developer",
+    };
+    const macos = resolve("apps/macos");
+    execFileSync("swift", ["build", "--product", "eagle-cli"], {
+      cwd: macos,
+      env: swiftEnv,
+      stdio: "pipe",
+      timeout: 60000,
+      killSignal: "SIGKILL",
+    });
+    const bin = execFileSync("swift", ["build", "--show-bin-path"], {
+      cwd: macos,
+      env: swiftEnv,
+      encoding: "utf8",
+      timeout: 10000,
+      killSignal: "SIGKILL",
+    }).trim();
+    cli = join(bin, "eagle-cli");
+  }
   const root = mkdtempSync("/tmp/eagle-device-cli-");
   const key = randomBytes(32).toString("base64url");
   let model: Awaited<ReturnType<typeof modelFixture>> | undefined;
