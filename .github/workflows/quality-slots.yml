@@ -1,6 +1,6 @@
 # System1 quality slots, native mode (system1-quality v1.3.0, base-ci v2026.17).
-# L2 Runtime, L3 Integration, and P1 Package are declared `na` and stay skipped.
-# macOS checks are mapped into S2: Lint (Swift & Design), B1: Build (macOS), and L1: Unit (macOS).
+# L2 Runtime and P1 Package are declared `na` and stay skipped.
+# macOS checks are mapped into S2: Lint (Swift & Design), B1: Build (macOS), L1: Unit (macOS), and L3: Integration (macOS).
 name: Quality slots
 
 on:
@@ -224,9 +224,6 @@ jobs:
             package-lock.json
             apps/bots/package-lock.json
       - run: npm ci
-      - run: npm --prefix apps/bots ci
-      - run: npm --workspace @nocoo/eagle-agent run build
-      - run: npm run test:devices
       - run: npm run test:design
       - run: cd apps/bots-macos && swift test
       - run: apps/macos/Scripts/coverage.sh
@@ -244,11 +241,31 @@ jobs:
       - run: echo "N/A — Miniflare Durable Object tests run inside L1 test suite"
 
   l3-integration:
-    name: "L3: Integration"
-    if: ${{ vars.ENABLE_L3_INTEGRATION == 'true' }}
-    runs-on: ubuntu-latest
+    name: "L3: Integration (macOS)"
+    runs-on: macos-26
+    timeout-minutes: 30
+    outputs:
+      tested-sha: ${{ steps.record-sha.outputs.sha }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     steps:
-      - run: echo "N/A — API/process tests run inside L1 and macOS suite"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/bots/package-lock.json
+      - run: npm ci
+      - run: npm --prefix apps/bots ci
+      - run: npm run test:devices
+      - name: Record tested SHA
+        id: record-sha
+        if: always()
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   l4-e2e:
     name: "L4: E2E"
@@ -316,9 +333,9 @@ jobs:
           const implSlots = [
             "s1-types", "s2-lint", "s2-lint-swift", "s3-workflow",
             "g1-secrets", "g2-dependencies",
-            "b1-build", "b1-build-macos", "l1-unit", "l1-unit-macos", "l4-e2e"
+            "b1-build", "b1-build-macos", "l1-unit", "l1-unit-macos", "l3-integration", "l4-e2e"
           ];
-          const naSlots = ["l2-runtime", "l3-integration", "p1-package"];
+          const naSlots = ["l2-runtime", "p1-package"];
           const errors = [];
 
           for (const slot of implSlots) {
