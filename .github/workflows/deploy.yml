@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: Resolve and verify CI-gated source revision
         id: source
-        uses: nocoo/base-ci/.github/actions/release-source@6424d395d36a815d931f10e557762eb635d511c0 # v2026.16
+        uses: nocoo/base-ci/.github/actions/release-source@dc858360aa7812db61fd9d825943e4efd4dcd0e7 # v2026.17
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           expected-workflow-path: ".github/workflows/ci.yml"

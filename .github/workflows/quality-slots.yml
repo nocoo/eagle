@@ -1,4 +1,4 @@
-# System1 quality slots, native mode (system1-quality v1.3.0, base-ci v2026.15).
+# System1 quality slots, native mode (system1-quality v1.3.0, base-ci v2026.17).
 # L2 Runtime, L3 Integration, and P1 Package are declared `na` and stay skipped.
 # macOS checks are mapped into S2: Lint (Swift & Design), B1: Build (macOS), and L1: Unit (macOS).
 name: Quality slots
@@ -11,7 +11,7 @@ permissions:
   actions: read
 
 env:
-  NODE_VERSION: "26"
+  NODE_VERSION: "26.12.1"
   NO_COLOR: "1"
 
 jobs:
@@ -25,11 +25,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: nocoo/base-ci/.github/actions/setup-js@dc858360aa7812db61fd9d825943e4efd4dcd0e7 # v2026.17
         with:
+          package-manager: npm
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-      - run: npm ci
+          install-policy: blocked
       - name: TypeScript check
         run: npm run typecheck
       - name: Record tested SHA
@@ -47,13 +47,36 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: nocoo/base-ci/.github/actions/setup-js@dc858360aa7812db61fd9d825943e4efd4dcd0e7 # v2026.17
+        with:
+          package-manager: npm
+          node-version: ${{ env.NODE_VERSION }}
+          install-policy: blocked
+      - name: Biome lint
+        run: npm run lint
+      - name: Record tested SHA
+        id: record-sha
+        if: always()
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  s2-lint-swift:
+    name: "S2: Lint (Swift & Design)"
+    runs-on: macos-26
+    timeout-minutes: 15
+    outputs:
+      tested-sha: ${{ steps.record-sha.outputs.sha }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-      - run: npm ci
-      - name: Biome lint
-        run: npm run lint
+      - run: npm run check:design
+      - run: cd apps/macos && swift format lint --strict --recursive Sources Scripts Tests
+      - run: cd apps/bots-macos && swift format lint --strict --recursive Sources Tests
       - name: Record tested SHA
         id: record-sha
         if: always()
@@ -69,37 +92,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install verified actionlint
-        run: |
-          set -euo pipefail
-          curl --fail --silent --show-error --location --retry 3 \
-            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
-            -o "$RUNNER_TEMP/actionlint.tar.gz"
-          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check
-          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - name: Run actionlint and verify immutable SHA pins
-        run: |
-          set -euo pipefail
-          actionlint
-          node --input-type=module - <<'EOF'
-          import fs from "node:fs";
-          import path from "node:path";
-          const dir = ".github/workflows";
-          for (const file of fs.readdirSync(dir).filter(f => f.endsWith(".yml") || f.endsWith(".yaml"))) {
-            const content = fs.readFileSync(path.join(dir, file), "utf8");
-            for (const match of content.matchAll(/^\s*-?\s*uses:\s*([^\s#]+)/gm)) {
-              const ref = match[1];
-              if (ref.startsWith("./") || ref.startsWith("docker://")) continue;
-              const sha = ref.split("@")[1] ?? "";
-              if (!/^[0-9a-f]{40}$/.test(sha)) {
-                console.error(`Unpinned action reference in ${file}: ${ref}`);
-                process.exit(1);
-              }
-            }
-          }
-          console.log("All external action references are pinned to 40-char SHAs.");
-          EOF
+      - uses: nocoo/base-ci/.github/actions/lint-workflows@dc858360aa7812db61fd9d825943e4efd4dcd0e7 # v2026.17
       - name: Record tested SHA
         id: record-sha
         if: always()
@@ -115,12 +108,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: nocoo/base-ci/.github/actions/setup-security-scanners@6424d395d36a815d931f10e557762eb635d511c0 # v2026.16
-        with:
-          gitleaks: true
-          osv-scanner: false
-      - name: Scan checkout for secrets
-        run: gitleaks dir . --no-banner --redact --log-level error --config=.gitleaks.toml
+          fetch-depth: 1
+      - uses: nocoo/base-ci/.github/actions/scan-secrets@dc858360aa7812db61fd9d825943e4efd4dcd0e7 # v2026.17
       - name: Record tested SHA
         id: record-sha
         if: always()
@@ -136,14 +125,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: nocoo/base-ci/.github/actions/setup-security-scanners@6424d395d36a815d931f10e557762eb635d511c0 # v2026.16
+      - uses: nocoo/base-ci/.github/actions/scan-dependencies@dc858360aa7812db61fd9d825943e4efd4dcd0e7 # v2026.17
         with:
-          gitleaks: false
-          osv-scanner: true
-      - name: Scan lockfiles for vulnerabilities
-        run: |
-          osv-scanner scan --lockfile=package-lock.json
-          osv-scanner scan --lockfile=apps/bots/package-lock.json
+          lockfiles: "package-lock.json,apps/bots/package-lock.json"
       - name: Record tested SHA
         id: record-sha
         if: always()
@@ -171,6 +155,33 @@ jobs:
         if: always()
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+  b1-build-macos:
+    name: "B1: Build (macOS)"
+    runs-on: macos-26
+    timeout-minutes: 20
+    outputs:
+      tested-sha: ${{ steps.record-sha.outputs.sha }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/bots/package-lock.json
+      - run: npm ci
+      - run: npm --workspace @nocoo/eagle-agent run build
+      - run: swift build --package-path apps/macos
+      - name: Record tested SHA
+        id: record-sha
+        if: always()
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   l1-unit:
     name: "L1: Unit"
     runs-on: ubuntu-latest
@@ -188,6 +199,38 @@ jobs:
       - run: npm ci
       - name: Run root Node test suite with coverage
         run: npm run test:coverage
+      - name: Record tested SHA
+        id: record-sha
+        if: always()
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  l1-unit-macos:
+    name: "L1: Unit (macOS)"
+    runs-on: macos-26
+    timeout-minutes: 30
+    outputs:
+      tested-sha: ${{ steps.record-sha.outputs.sha }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/bots/package-lock.json
+      - run: npm ci
+      - run: npm --prefix apps/bots ci
+      - run: npm --workspace @nocoo/eagle-agent run build
+      - run: npm run test:devices
+      - run: npm run test:design
+      - run: cd apps/bots-macos && swift test
+      - run: apps/macos/Scripts/coverage.sh
+      - run: npm run test:focus
       - name: Record tested SHA
         id: record-sha
         if: always()
@@ -237,92 +280,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo "N/A — root package is private; agent packing tested inside L1"
-
-  s2-lint-swift:
-    name: "S2: Lint (Swift & Design)"
-    runs-on: macos-26
-    timeout-minutes: 15
-    outputs:
-      tested-sha: ${{ steps.record-sha.outputs.sha }}
-    env:
-      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            apps/bots/package-lock.json
-      - run: npm run check:design
-      - run: cd apps/macos && swift format lint --strict --recursive Sources Scripts Tests
-      - run: cd apps/bots-macos && swift format lint --strict --recursive Sources Tests
-      - name: Record tested SHA
-        id: record-sha
-        if: always()
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-  b1-build-macos:
-    name: "B1: Build (macOS)"
-    runs-on: macos-26
-    timeout-minutes: 20
-    outputs:
-      tested-sha: ${{ steps.record-sha.outputs.sha }}
-    env:
-      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            apps/bots/package-lock.json
-      - run: npm ci
-      - run: npm --workspace @nocoo/eagle-agent run build
-      - run: swift build --package-path apps/macos
-      - name: Record tested SHA
-        id: record-sha
-        if: always()
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-  l1-unit-macos:
-    name: "L1: Unit (macOS)"
-    runs-on: macos-26
-    timeout-minutes: 30
-    outputs:
-      tested-sha: ${{ steps.record-sha.outputs.sha }}
-    env:
-      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            apps/bots/package-lock.json
-      - run: npm ci
-      - run: npm --prefix apps/bots ci
-      - run: npm --workspace @nocoo/eagle-agent run build
-      - run: npm run test:devices
-      - run: npm run test:design
-      - run: cd apps/bots-macos && swift test
-      - run: apps/macos/Scripts/coverage.sh
-      - run: npm run test:focus
-      - name: Record tested SHA
-        id: record-sha
-        if: always()
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   z1-gate:
     name: "Z1: Gate"
