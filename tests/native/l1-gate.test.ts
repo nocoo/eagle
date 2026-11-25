@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
@@ -11,14 +11,17 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
-function fixture(
-  run: (root: string, git: (...args: string[]) => string) => void,
-): void {
+async function fixture(
+  run: (
+    root: string,
+    git: (...args: string[]) => string,
+  ) => void | Promise<void>,
+): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), "eagle-l1-gate-"));
   const environment = { ...process.env };
   for (const key of [
@@ -139,13 +142,15 @@ test("mean handles values and empty input", () => {
       "packages/contracts/src/mean.ts",
       "tests/mean.test.ts",
     );
-    run(root, git);
+    await run(root, git);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 }
 
-function commit(root: string): ReturnType<typeof spawnSync> {
+function commit(
+  root: string,
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
   const environment: NodeJS.ProcessEnv = {
     ...process.env,
     npm_config_offline: "true",
@@ -158,73 +163,99 @@ function commit(root: string): ReturnType<typeof spawnSync> {
     "GIT_COMMON_DIR",
   ])
     delete (environment as Record<string, string | undefined>)[key];
-  return spawnSync(
-    "git",
-    ["-C", root, "commit", "-m", "test: exercise l1 gate"],
-    {
-      env: environment,
-      encoding: "utf8",
-      timeout: 120_000,
-      maxBuffer: 8 * 1024 * 1024,
-    },
-  );
+
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(
+      "git",
+      ["-C", root, "commit", "-m", "test: exercise l1 gate"],
+      { env: environment, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    const maxBytes = 8 * 1024 * 1024;
+    child.stdout?.on("data", (chunk: Buffer) => {
+      if (stdout.length < maxBytes) stdout += chunk.toString("utf8");
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      if (stderr.length < maxBytes) stderr += chunk.toString("utf8");
+    });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, 120_000);
+    child.once("error", (err) => {
+      clearTimeout(timer);
+      rejectPromise(err);
+    });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        rejectPromise(new Error("git commit timed out"));
+        return;
+      }
+      resolvePromise({ status: code, stdout, stderr });
+    });
+  });
 }
 
-test("healthy staged sources pass the index-snapshot L1 gate", () => {
-  fixture((_root, _git) => {
-    const result = commit(_root);
-    assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
-    assert.match(`${result.stderr}${result.stdout}`, /L1 index snapshot/);
+describe("L1 gate probes", { concurrency: true }, () => {
+  test("healthy staged sources pass the index-snapshot L1 gate", async () => {
+    await fixture(async (root) => {
+      const result = await commit(root);
+      assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+      assert.match(`${result.stderr}${result.stdout}`, /L1 index snapshot/);
+    });
   });
-});
 
-test("a failing unit test blocks commit", () => {
-  fixture((root, git) => {
-    writeFileSync(
-      join(root, "tests/mean.test.ts"),
-      `import assert from "node:assert/strict";
+  test("a failing unit test blocks commit", async () => {
+    await fixture(async (root, git) => {
+      writeFileSync(
+        join(root, "tests/mean.test.ts"),
+        `import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mean } from "../packages/contracts/src/mean.ts";
 test("forced failure", () => {
   assert.equal(mean([1, 1]), 3);
 });
 `,
-    );
-    git("add", "tests/mean.test.ts");
-    const index = git("write-tree");
-    const result = commit(root);
-    assert.notEqual(result.status, 0, `${result.stdout}${result.stderr}`);
-    assert.equal(git("write-tree"), index);
+      );
+      git("add", "tests/mean.test.ts");
+      const index = git("write-tree");
+      const result = await commit(root);
+      assert.notEqual(result.status, 0, `${result.stdout}${result.stderr}`);
+      assert.equal(git("write-tree"), index);
+    });
   });
-});
 
-test("insufficient coverage blocks commit", () => {
-  fixture((root, git) => {
-    writeFileSync(
-      join(root, "packages/contracts/src/mean.ts"),
-      "export const mean = (values: number[]) =>\n  values.reduce((sum, value) => sum + value, 0) / values.length;\nexport const unused = () => 1;\n",
-    );
-    git("add", "packages/contracts/src/mean.ts");
-    const result = commit(root);
-    assert.notEqual(result.status, 0, `${result.stdout}${result.stderr}`);
-    assert.match(`${result.stderr}${result.stdout}`, /Coverage|threshold/i);
+  test("insufficient coverage blocks commit", async () => {
+    await fixture(async (root, git) => {
+      writeFileSync(
+        join(root, "packages/contracts/src/mean.ts"),
+        "export const mean = (values: number[]) =>\n  values.reduce((sum, value) => sum + value, 0) / values.length;\nexport const unused = () => 1;\n",
+      );
+      git("add", "packages/contracts/src/mean.ts");
+      const result = await commit(root);
+      assert.notEqual(result.status, 0, `${result.stdout}${result.stderr}`);
+      assert.match(`${result.stderr}${result.stdout}`, /Coverage|threshold/i);
+    });
   });
-});
 
-test("a staged regression fails even when the worktree is already fixed", () => {
-  fixture((root, git) => {
-    writeFileSync(
-      join(root, "packages/contracts/src/mean.ts"),
-      "export const mean = () => 0;\n",
-    );
-    git("add", "packages/contracts/src/mean.ts");
-    writeFileSync(
-      join(root, "packages/contracts/src/mean.ts"),
-      "export const mean = (values: number[]) =>\n  values.length\n    ? values.reduce((sum, value) => sum + value, 0) / values.length\n    : null;\n",
-    );
-    const index = git("write-tree");
-    const result = commit(root);
-    assert.notEqual(result.status, 0, `${result.stdout}${result.stderr}`);
-    assert.equal(git("write-tree"), index);
+  test("a staged regression fails even when the worktree is already fixed", async () => {
+    await fixture(async (root, git) => {
+      writeFileSync(
+        join(root, "packages/contracts/src/mean.ts"),
+        "export const mean = () => 0;\n",
+      );
+      git("add", "packages/contracts/src/mean.ts");
+      writeFileSync(
+        join(root, "packages/contracts/src/mean.ts"),
+        "export const mean = (values: number[]) =>\n  values.length\n    ? values.reduce((sum, value) => sum + value, 0) / values.length\n    : null;\n",
+      );
+      const index = git("write-tree");
+      const result = await commit(root);
+      assert.notEqual(result.status, 0, `${result.stdout}${result.stderr}`);
+      assert.equal(git("write-tree"), index);
+    });
   });
 });
