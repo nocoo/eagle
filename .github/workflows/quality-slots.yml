@@ -11,7 +11,7 @@ permissions:
   actions: read
 
 env:
-  NODE_VERSION: "26.12.1"
+  NODE_VERSION: "26"
   NO_COLOR: "1"
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
       - uses: nocoo/base-ci/.github/actions/setup-js@dc858360aa7812db61fd9d825943e4efd4dcd0e7 # v2026.17
         with:
           package-manager: npm
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: "26.12.1"
           install-policy: blocked
       - name: TypeScript check
         run: npm run typecheck
@@ -50,7 +50,7 @@ jobs:
       - uses: nocoo/base-ci/.github/actions/setup-js@dc858360aa7812db61fd9d825943e4efd4dcd0e7 # v2026.17
         with:
           package-manager: npm
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: "26.12.1"
           install-policy: blocked
       - name: Biome lint
         run: npm run lint
