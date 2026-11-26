@@ -23,7 +23,7 @@ test("the native Chat composer focuses on entry and whitespace while preserving 
   let cleanArguments: string[] = [];
   let cursor: { x: number; y: number } | undefined;
   const failures: unknown[] = [];
-  // CI already built EagleDesign for `swift build`; this links the fixture incrementally.
+  // Link the ComposerFocusFixture product directly (reusing cached EagleDesign in CI).
   const linkTimeout = process.env.CI ? 120_000 : 60_000;
   try {
     const build = spawnSync(
@@ -32,7 +32,7 @@ test("the native Chat composer focuses on entry and whitespace while preserving 
         "build",
         "--package-path",
         macosPackage,
-        "--target",
+        "--product",
         "ComposerFocusFixture",
         "-c",
         "debug",
@@ -46,7 +46,7 @@ test("the native Chat composer focuses on entry and whitespace while preserving 
         "build",
         "--package-path",
         macosPackage,
-        "--target",
+        "--product",
         "ComposerFocusFixture",
         "--show-bin-path",
         "-c",
