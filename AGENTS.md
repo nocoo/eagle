@@ -58,7 +58,7 @@ macOS Swift tests, strict `swift format` lint, and 90% coverage (`apps/{macos,bo
 
 ## Quality & Local Gates
 
-Follows `system1-quality`; CI runs `.github/workflows/ci.yml` -> `.github/workflows/quality-slots.yml` (`quality / Z1: Gate` required on `main`, aggregating all blocking slots including `S2: Lint (Swift & Design)`, `B1: Build (macOS)`, `L1: Unit (macOS)`, and `L3: Integration (macOS)`). Status vocabulary: `enforced`, `planned`, `manual`, `N/A`.
+Follows `system1-quality`; CI runs `.github/workflows/ci.yml` -> `.github/workflows/quality-slots.yml` (`quality / Z1: Gate` required on `main`, aggregating all blocking slots including `S2: Lint (Swift & Design)`, `B1: Build (macOS)`, `L1: Unit (macOS App)`, `L1: Unit (Bots Swift)`, `L1: Unit (Design & Focus)`, and `L3: Integration (macOS)`). Status vocabulary: `enforced`, `planned`, `manual`, `N/A`.
 
 - **Exceptions (`N/A`)**: `L2 Runtime` (Miniflare DO tests run in `L1`) and `P1 Package` (private root; Agent packing tested in `L1`). `L3: Integration (macOS)` runs `npm run test:devices` using the prebuilt `B1: Build (macOS)` `eagle-cli` artifact (`EAGLE_CLI_BIN` in CI). `L4: E2E` serves the prebuilt `B1: Build` `apps/web/dist` artifact in CI without rebuilding.
 - **Coverage & deploy**: `c8` enforces >=80% on `packages/contracts/src/**` (`.c8rc.json`); Swift logic suites enforce 90%. `release.yml` verifies `quality / Z1: Gate` before Worker deploy (skips if secrets unset).

@@ -1,6 +1,6 @@
 # System1 quality slots, native mode (system1-quality v1.3.0, base-ci v2026.20).
 # L2 Runtime and P1 Package are declared `na` and stay skipped.
-# macOS checks are mapped into S2: Lint (Swift & Design), B1: Build (macOS), L1: Unit (macOS), and L3: Integration (macOS).
+# macOS checks are mapped into S2: Lint (Swift & Design), B1: Build (macOS), L1: Unit (macOS App / Bots Swift / Design & Focus), and L3: Integration (macOS).
 name: Quality slots
 
 on:
@@ -150,11 +150,19 @@ jobs:
           install-policy: blocked
       - name: Build web bundle
         run: npm run build
+      - name: Build agent bundle
+        run: npm --workspace @nocoo/eagle-agent run build
       - name: Upload web dist artifact for L4 E2E
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: web-dist
           path: apps/web/dist/
+          retention-days: 1
+      - name: Upload agent dist artifact for L1 macOS
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: eagle-agent-dist
+          path: packages/agent/dist/
           retention-days: 1
       - name: Record tested SHA
         id: record-sha
@@ -173,22 +181,36 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: nocoo/base-ci/.github/actions/setup-js@e5876a604547b1ddb0916f16dd841a4f832609a0 # v2026.20
+          fetch-depth: 0
+      - name: Restore git commit mtimes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          files = {f for f in subprocess.run(["git", "ls-files", "-z"], capture_output=True, check=True).stdout.decode().split("\0") if f}
+          mtimes = {}
+          out = subprocess.run(["git", "log", "--format=COMMIT:%ct", "--name-only"], capture_output=True, text=True, check=True).stdout
+          cur_ts = None
+          for line in out.splitlines():
+              if line.startswith("COMMIT:"):
+                  cur_ts = int(line[7:])
+              elif line and line in files and line not in mtimes and cur_ts is not None:
+                  mtimes[line] = cur_ts
+                  if len(mtimes) == len(files):
+                      break
+          for f, ts in mtimes.items():
+              if os.path.exists(f):
+                  os.utime(f, (ts, ts))
+          PY
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          package-manager: npm
-          node-version: "26.12.1"
-          install-policy: blocked
-      - run: npm --workspace @nocoo/eagle-agent run build
+          path: apps/macos/.build
+          key: ${{ runner.os }}-macos-app-debug-v1-${{ hashFiles('apps/macos/Package.swift', 'apps/macos/Sources/**', 'apps/bots-macos/Package.swift', 'apps/bots-macos/Sources/**', 'apps/superagent-macos/Package.swift', 'apps/superagent-macos/Sources/**') }}
+          restore-keys: ${{ runner.os }}-macos-app-debug-v1-
       - run: swift build --package-path apps/macos
       - name: Locate built eagle-cli binary
         id: macos-bin
         run: echo "cli=$(swift build --package-path apps/macos --show-bin-path)/eagle-cli" >> "$GITHUB_OUTPUT"
-      - name: Upload agent dist artifact for L1 macOS
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: eagle-agent-dist
-          path: packages/agent/dist/
-          retention-days: 1
       - name: Upload eagle-cli artifact for L3 macOS
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -222,12 +244,12 @@ jobs:
         if: always()
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-  l1-unit-macos:
-    name: "L1: Unit (macOS)"
+  l1-unit-macos-app:
+    name: "L1: Unit (macOS App)"
     needs:
-      - b1-build-macos
+      - b1-build
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 25
     outputs:
       tested-sha: ${{ steps.record-sha.outputs.sha }}
     env:
@@ -236,6 +258,32 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Restore git commit mtimes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          files = {f for f in subprocess.run(["git", "ls-files", "-z"], capture_output=True, check=True).stdout.decode().split("\0") if f}
+          mtimes = {}
+          out = subprocess.run(["git", "log", "--format=COMMIT:%ct", "--name-only"], capture_output=True, text=True, check=True).stdout
+          cur_ts = None
+          for line in out.splitlines():
+              if line.startswith("COMMIT:"):
+                  cur_ts = int(line[7:])
+              elif line and line in files and line not in mtimes and cur_ts is not None:
+                  mtimes[line] = cur_ts
+                  if len(mtimes) == len(files):
+                      break
+          for f, ts in mtimes.items():
+              if os.path.exists(f):
+                  os.utime(f, (ts, ts))
+          PY
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/macos/.build
+          key: ${{ runner.os }}-macos-app-cov-v1-${{ hashFiles('apps/macos/Package.swift', 'apps/macos/Sources/**', 'apps/macos/Tests/**', 'apps/bots-macos/Package.swift', 'apps/bots-macos/Sources/**', 'apps/superagent-macos/Package.swift', 'apps/superagent-macos/Sources/**') }}
+          restore-keys: ${{ runner.os }}-macos-app-cov-v1-
       - uses: nocoo/base-ci/.github/actions/setup-js@e5876a604547b1ddb0916f16dd841a4f832609a0 # v2026.20
         with:
           package-manager: npm
@@ -247,9 +295,106 @@ jobs:
         with:
           name: eagle-agent-dist
           path: packages/agent/dist
-      - run: npm run test:design
-      - run: cd apps/bots-macos && swift test
       - run: apps/macos/Scripts/coverage.sh
+      - name: Record tested SHA
+        id: record-sha
+        if: always()
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  l1-unit-bots-swift:
+    name: "L1: Unit (Bots Swift)"
+    runs-on: macos-26
+    timeout-minutes: 15
+    outputs:
+      tested-sha: ${{ steps.record-sha.outputs.sha }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Restore git commit mtimes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          files = {f for f in subprocess.run(["git", "ls-files", "-z"], capture_output=True, check=True).stdout.decode().split("\0") if f}
+          mtimes = {}
+          out = subprocess.run(["git", "log", "--format=COMMIT:%ct", "--name-only"], capture_output=True, text=True, check=True).stdout
+          cur_ts = None
+          for line in out.splitlines():
+              if line.startswith("COMMIT:"):
+                  cur_ts = int(line[7:])
+              elif line and line in files and line not in mtimes and cur_ts is not None:
+                  mtimes[line] = cur_ts
+                  if len(mtimes) == len(files):
+                      break
+          for f, ts in mtimes.items():
+              if os.path.exists(f):
+                  os.utime(f, (ts, ts))
+          PY
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/bots-macos/.build
+          key: ${{ runner.os }}-bots-macos-test-v1-${{ hashFiles('apps/bots-macos/Package.swift', 'apps/bots-macos/Sources/**', 'apps/bots-macos/Tests/**') }}
+          restore-keys: ${{ runner.os }}-bots-macos-test-v1-
+      - uses: nocoo/base-ci/.github/actions/setup-js@e5876a604547b1ddb0916f16dd841a4f832609a0 # v2026.20
+        with:
+          package-manager: npm
+          node-version: "26.12.1"
+          install-policy: blocked
+          extra-install-dirs: apps/bots
+      - run: cd apps/bots-macos && swift test
+      - name: Record tested SHA
+        id: record-sha
+        if: always()
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  l1-unit-design-focus:
+    name: "L1: Unit (Design & Focus)"
+    runs-on: macos-26
+    timeout-minutes: 15
+    outputs:
+      tested-sha: ${{ steps.record-sha.outputs.sha }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Restore git commit mtimes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          files = {f for f in subprocess.run(["git", "ls-files", "-z"], capture_output=True, check=True).stdout.decode().split("\0") if f}
+          mtimes = {}
+          out = subprocess.run(["git", "log", "--format=COMMIT:%ct", "--name-only"], capture_output=True, text=True, check=True).stdout
+          cur_ts = None
+          for line in out.splitlines():
+              if line.startswith("COMMIT:"):
+                  cur_ts = int(line[7:])
+              elif line and line in files and line not in mtimes and cur_ts is not None:
+                  mtimes[line] = cur_ts
+                  if len(mtimes) == len(files):
+                      break
+          for f, ts in mtimes.items():
+              if os.path.exists(f):
+                  os.utime(f, (ts, ts))
+          PY
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/macos/.build
+          key: ${{ runner.os }}-macos-focus-debug-v1-${{ hashFiles('apps/macos/Package.swift', 'apps/macos/Sources/EagleDesign/**', 'apps/macos/Sources/ComposerFocusFixture/**', 'apps/bots-macos/Package.swift', 'apps/superagent-macos/Package.swift') }}
+          restore-keys: ${{ runner.os }}-macos-focus-debug-v1-
+      - uses: nocoo/base-ci/.github/actions/setup-js@e5876a604547b1ddb0916f16dd841a4f832609a0 # v2026.20
+        with:
+          package-manager: npm
+          node-version: "26.12.1"
+          install-policy: blocked
+      - run: npm run test:design
       - run: npm run test:focus
       - name: Record tested SHA
         id: record-sha
@@ -352,7 +497,9 @@ jobs:
       - b1-build
       - b1-build-macos
       - l1-unit
-      - l1-unit-macos
+      - l1-unit-macos-app
+      - l1-unit-bots-swift
+      - l1-unit-design-focus
       - l2-runtime
       - l3-integration
       - l4-e2e
@@ -378,7 +525,9 @@ jobs:
             b1-build=B1: Build
             b1-build-macos=B1: Build (macOS)
             l1-unit=L1: Unit
-            l1-unit-macos=L1: Unit (macOS)
+            l1-unit-macos-app=L1: Unit (macOS App)
+            l1-unit-bots-swift=L1: Unit (Bots Swift)
+            l1-unit-design-focus=L1: Unit (Design & Focus)
             l3-integration=L3: Integration (macOS)
             l4-e2e=L4: E2E
           skipped-jobs: |
