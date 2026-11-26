@@ -1,4 +1,4 @@
-name: Deploy
+name: Release
 
 on:
   workflow_run:
@@ -24,10 +24,11 @@ jobs:
        github.event.workflow_run.head_repository.full_name == github.repository &&
        github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - name: Resolve and verify CI-gated source revision
         id: source
-        uses: nocoo/base-ci/.github/actions/release-source@bfaac83b5a4d5c7ed26320bb5b09f3ca0a01932c # v2026.18
+        uses: nocoo/base-ci/.github/actions/release-source@98fc023423f82b010f17e0ebbc9dd580fe68736a # v2026.19
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           expected-workflow-path: ".github/workflows/ci.yml"
@@ -38,7 +39,7 @@ jobs:
         with:
           ref: ${{ steps.source.outputs.target-sha }}
           persist-credentials: false
-      - uses: nocoo/base-ci/.github/actions/setup-js@bfaac83b5a4d5c7ed26320bb5b09f3ca0a01932c # v2026.18
+      - uses: nocoo/base-ci/.github/actions/setup-js@98fc023423f82b010f17e0ebbc9dd580fe68736a # v2026.19
         with:
           package-manager: npm
           node-version: "26.12.1"
@@ -46,7 +47,7 @@ jobs:
       - name: Deploy the Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           EAGLE_WRANGLER_CONFIG: ${{ secrets.EAGLE_WRANGLER_CONFIG }}
           # The UI names its deployments at build time.
           VITE_PRODUCTION_ORIGIN: ${{ vars.EAGLE_PRODUCTION_ORIGIN }}

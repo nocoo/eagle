@@ -4,7 +4,7 @@ Commands run from the repository root. Deployment configuration is never tracked
 repository carries `apps/web/wrangler.example.jsonc` and
 `apps/web/wrangler.devices.example.jsonc`, and both real files are ignored. A new machine
 creates them from the examples, and CI supplies `EAGLE_WRANGLER_CONFIG` (the JSON config as a
-secret) with `EAGLE_INGEST_ORIGIN` (a repository variable) for the post-deploy check.
+`production` environment secret) with `EAGLE_INGEST_ORIGIN` and `EAGLE_PRODUCTION_ORIGIN` (`production` environment variables) for build and post-deploy checks.
 Website commands use `apps/web/wrangler.jsonc`.
 The independent device service uses `apps/web/wrangler.devices.jsonc` and the separate
 procedure below; `npm run deploy` is not its deployment command. See
@@ -148,9 +148,10 @@ npx wrangler secret bulk /secure/path/platform-secrets.json --config apps/web/wr
 npm run deploy
 ```
 
-`npm run deploy` stays the manual path; `.github/workflows/deploy.yml` also
-deploys every green `CI` (`quality / Z1: Gate`) run on main through the
-`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `EAGLE_WRANGLER_CONFIG` secrets,
+`npm run deploy` stays the manual path; `.github/workflows/release.yml` also
+deploys every green `CI` (`quality / Z1: Gate`) run on main using the `production`
+environment's `CLOUDFLARE_API_TOKEN` and `EAGLE_WRANGLER_CONFIG` secrets plus
+`CLOUDFLARE_ACCOUNT_ID`, `EAGLE_INGEST_ORIGIN`, and `EAGLE_PRODUCTION_ORIGIN` variables,
 then polls `/api/live` for the exact revision and skips with a notice when the secrets
 are absent.
 
