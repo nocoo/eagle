@@ -1,0 +1,48 @@
+name: Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy after quality gate passes
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  quality:
+    uses: ./.github/workflows/quality-slots.yml
+
+  deploy:
+    needs: [quality]
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.deploy == true)
+    uses: nocoo/base-ci/.github/workflows/deploy-worker.yml@3703a073693d598159e87f77f99587e586c14cfe # v2026.24
+    with:
+      package-manager: npm
+      node-version: "26.12.1"
+      install-policy: blocked
+      artifact-name: web-dist
+      artifact-path: apps/web/dist
+      deploy-secret-name: EAGLE_WRANGLER_CONFIG
+      deploy-script: node scripts/deploy.ts --prebuilt
+      environment: production
+      concurrency-group: deploy-eagle-production
+      timeout-minutes: 15
+      verify-command: |
+        INGEST_HOST=$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync("apps/web/wrangler.jsonc","utf8"));console.log(c.vars?.INGEST_HOST||"eagle-ingest.hexly.ai")')
+        LIVE_REV=$(curl -fsS "https://${INGEST_HOST}/api/live" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).revision||""))')
+        echo "live revision: $LIVE_REV (expected: $SOURCE_SHA)"
+        test "$LIVE_REV" = "$SOURCE_SHA"
+      verify-retries: 6
+      verify-retry-seconds: 10
+    secrets:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DEPLOY_SECRET: ${{ secrets.EAGLE_WRANGLER_CONFIG }}

@@ -30,9 +30,18 @@ if (!existsSync(configPath)) {
   mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(configPath, `${inline}\n`, { mode: 0o600 });
 }
-execFileSync("npm", ["--workspace", "@eagle/web", "run", "build"], {
-  stdio: "inherit",
-});
+const prebuilt = process.argv.includes("--prebuilt");
+if (prebuilt) {
+  if (!existsSync("apps/web/dist/index.html")) {
+    throw new Error(
+      "prebuilt web artifact missing: apps/web/dist/index.html not found",
+    );
+  }
+} else {
+  execFileSync("npm", ["--workspace", "@eagle/web", "run", "build"], {
+    stdio: "inherit",
+  });
+}
 execFileSync(
   "node_modules/.bin/wrangler",
   [
