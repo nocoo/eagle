@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -133,88 +133,92 @@ function commit(root: string, overrides: Record<string, string> = {}) {
   return result;
 }
 
-test("a staged style violation blocks a real commit despite an unstaged correction", () => {
-  fixture((root, git) => {
-    writeFileSync(join(root, source), invalid);
-    git("add", source);
-    writeFileSync(join(root, source), valid);
-    const index = git("write-tree");
-    const result = commit(root);
-    assert.notEqual(result.status, 0, result.stdout + result.stderr);
-    assert.match(result.stderr, /palette-ownership/);
-    assert.equal(git("write-tree"), index);
-  });
-});
-
-test("valid staged source is not rejected for an unstaged style violation", () => {
-  fixture((root) => {
-    writeFileSync(join(root, source), invalid);
-    const result = commit(root);
-    assert.equal(result.status, 0, result.stdout + result.stderr);
-  });
-});
-
-test("an unstaged disabled checker cannot replace the staged checker", () => {
-  fixture((root, git) => {
-    writeFileSync(join(root, source), invalid);
-    git("add", source);
-    writeFileSync(
-      join(root, launcher),
-      'console.log("not the staged checker");\n',
-    );
-    const result = commit(root);
-    assert.notEqual(result.status, 0, result.stdout + result.stderr);
-    assert.match(result.stderr, /palette-ownership/);
-  });
-});
-
-test("renamed new Swift source remains in the full scan", () => {
-  fixture((root, git) => {
-    writeFileSync(join(root, source), invalid);
-    git("add", source);
-    git("mv", source, "apps/macos/Sources/EagleFeatures/Renamed.swift");
-    const result = commit(root);
-    assert.notEqual(result.status, 0, result.stdout + result.stderr);
-    assert.match(result.stderr, /Renamed.swift:3: palette-ownership/);
-  });
-});
-
-for (const directory of ["Sources", "Scripts"]) {
-  test(`staged ${directory} directory cannot redirect the check outside its snapshot`, () => {
+describe("staged design gate", { concurrency: 4 }, () => {
+  test("a staged style violation blocks a real commit despite an unstaged correction", () => {
     fixture((root, git) => {
-      cpSync(join(root, "apps/macos"), join(root, "outside"), {
-        recursive: true,
+      writeFileSync(join(root, source), invalid);
+      git("add", source);
+      writeFileSync(join(root, source), valid);
+      const index = git("write-tree");
+      const result = commit(root);
+      assert.notEqual(result.status, 0, result.stdout + result.stderr);
+      assert.match(result.stderr, /palette-ownership/);
+      assert.equal(git("write-tree"), index);
+    });
+  });
+
+  test("valid staged source is not rejected for an unstaged style violation", () => {
+    fixture((root) => {
+      writeFileSync(join(root, source), invalid);
+      const result = commit(root);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+    });
+  });
+
+  test("an unstaged disabled checker cannot replace the staged checker", () => {
+    fixture((root, git) => {
+      writeFileSync(join(root, source), invalid);
+      git("add", source);
+      writeFileSync(
+        join(root, launcher),
+        'console.log("not the staged checker");\n',
+      );
+      const result = commit(root);
+      assert.notEqual(result.status, 0, result.stdout + result.stderr);
+      assert.match(result.stderr, /palette-ownership/);
+    });
+  });
+
+  test("renamed new Swift source remains in the full scan", () => {
+    fixture((root, git) => {
+      writeFileSync(join(root, source), invalid);
+      git("add", source);
+      git("mv", source, "apps/macos/Sources/EagleFeatures/Renamed.swift");
+      const result = commit(root);
+      assert.notEqual(result.status, 0, result.stdout + result.stderr);
+      assert.match(result.stderr, /Renamed.swift:3: palette-ownership/);
+    });
+  });
+
+  for (const directory of ["Sources", "Scripts"]) {
+    test(`staged ${directory} directory cannot redirect the check outside its snapshot`, () => {
+      fixture((root, git) => {
+        cpSync(join(root, "apps/macos"), join(root, "outside"), {
+          recursive: true,
+        });
+        const path = `apps/macos/${directory}`;
+        git("rm", "-r", "--cached", path);
+        rmSync(join(root, path), { recursive: true });
+        symlinkSync(join(root, "outside", directory), join(root, path));
+        git("add", path);
+        const result = commit(root);
+        assert.notEqual(result.status, 0, result.stdout + result.stderr);
+        assert.match(result.stderr, /snapshot path refused/);
       });
-      const path = `apps/macos/${directory}`;
-      git("rm", "-r", "--cached", path);
-      rmSync(join(root, path), { recursive: true });
-      symlinkSync(join(root, "outside", directory), join(root, path));
-      git("add", path);
-      const result = commit(root);
+    });
+  }
+
+  test("missing required Xcode tooling rejects the commit rather than skipping", () => {
+    fixture((root) => {
+      const result = commit(root, {
+        DEVELOPER_DIR: join(root, "missing-xcode"),
+      });
       assert.notEqual(result.status, 0, result.stdout + result.stderr);
-      assert.match(result.stderr, /snapshot path refused/);
+      assert.doesNotMatch(result.stdout + result.stderr, /skipping/);
     });
   });
-}
 
-test("missing required Xcode tooling rejects the commit rather than skipping", () => {
-  fixture((root) => {
-    const result = commit(root, { DEVELOPER_DIR: join(root, "missing-xcode") });
-    assert.notEqual(result.status, 0, result.stdout + result.stderr);
-    assert.doesNotMatch(result.stdout + result.stderr, /skipping/);
-  });
+  for (const missing of [
+    guard,
+    launcher,
+    "apps/macos/Sources/EagleDesign/Theme.swift",
+  ]) {
+    test(`missing staged design input fails closed: ${missing}`, () => {
+      fixture((root, git) => {
+        git("rm", "-f", missing);
+        const result = commit(root);
+        assert.notEqual(result.status, 0, result.stdout + result.stderr);
+      });
+    });
+  }
 });
-
-for (const missing of [
-  guard,
-  launcher,
-  "apps/macos/Sources/EagleDesign/Theme.swift",
-]) {
-  test(`missing staged design input fails closed: ${missing}`, () => {
-    fixture((root, git) => {
-      git("rm", "-f", missing);
-      const result = commit(root);
-      assert.notEqual(result.status, 0, result.stdout + result.stderr);
-    });
-  });
-}

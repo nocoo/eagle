@@ -3,9 +3,11 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -40,22 +42,28 @@ test("the native Chat composer focuses on entry and whitespace while preserving 
       { encoding: "utf8", timeout: linkTimeout, maxBuffer: 10 * 1024 * 1024 },
     );
     assert.equal(build.status, 0, build.stdout + build.stderr);
-    const binPath = spawnSync(
-      "swift",
-      [
-        "build",
-        "--package-path",
-        macosPackage,
-        "--product",
-        "ComposerFocusFixture",
-        "--show-bin-path",
-        "-c",
-        "debug",
-      ],
-      { encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 },
-    );
-    assert.equal(binPath.status, 0, binPath.stderr);
-    const fixtureBinDir = binPath.stdout.trim();
+    const defaultBinDir = join(macosPackage, ".build", "debug");
+    let fixtureBinDir: string;
+    if (existsSync(join(defaultBinDir, "ComposerFocusFixture"))) {
+      fixtureBinDir = realpathSync(defaultBinDir);
+    } else {
+      const binPath = spawnSync(
+        "swift",
+        [
+          "build",
+          "--package-path",
+          macosPackage,
+          "--product",
+          "ComposerFocusFixture",
+          "--show-bin-path",
+          "-c",
+          "debug",
+        ],
+        { encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 },
+      );
+      assert.equal(binPath.status, 0, binPath.stderr);
+      fixtureBinDir = binPath.stdout.trim();
+    }
     mkdirSync(macosDir, { recursive: true });
     writeFileSync(
       join(bundle, "Contents", "Info.plist"),
