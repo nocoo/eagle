@@ -1,6 +1,6 @@
 # System1 quality slots, native mode (system1-quality v1.3.0, base-ci v2026.20).
 # L2 Runtime and P1 Package are declared `na` and stay skipped.
-# macOS checks are mapped into S2: Lint (Swift & Design), B1: Build (macOS), L1: Unit (macOS App / Bots Swift / Design & Focus), and L3: Integration (macOS).
+# macOS checks are mapped into S2: Lint (Swift & Design), B1: Build (macOS), L1: Unit (macOS App / Bots Swift / Design / Focus), and L3: Integration (macOS).
 name: Quality slots
 
 on:
@@ -246,8 +246,6 @@ jobs:
 
   l1-unit-macos-app:
     name: "L1: Unit (macOS App)"
-    needs:
-      - b1-build
     runs-on: macos-26
     timeout-minutes: 25
     outputs:
@@ -290,11 +288,8 @@ jobs:
           node-version: "26.12.1"
           install-policy: blocked
           extra-install-dirs: apps/bots
-      - name: Download B1 agent dist artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: eagle-agent-dist
-          path: packages/agent/dist
+      - name: Build agent bundle
+        run: npm --workspace @nocoo/eagle-agent run build
       - run: apps/macos/Scripts/coverage.sh
       - name: Record tested SHA
         id: record-sha
@@ -351,8 +346,31 @@ jobs:
         if: always()
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-  l1-unit-design-focus:
-    name: "L1: Unit (Design & Focus)"
+  l1-unit-design:
+    name: "L1: Unit (Design)"
+    runs-on: macos-26
+    timeout-minutes: 15
+    outputs:
+      tested-sha: ${{ steps.record-sha.outputs.sha }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: nocoo/base-ci/.github/actions/setup-js@e5876a604547b1ddb0916f16dd841a4f832609a0 # v2026.20
+        with:
+          package-manager: npm
+          node-version: "26.12.1"
+          install-policy: blocked
+      - run: npm run test:design
+      - name: Record tested SHA
+        id: record-sha
+        if: always()
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  l1-unit-focus:
+    name: "L1: Unit (Focus)"
     runs-on: macos-26
     timeout-minutes: 15
     outputs:
@@ -389,12 +407,9 @@ jobs:
           path: apps/macos/.build
           key: ${{ runner.os }}-macos-focus-debug-v1-${{ hashFiles('apps/macos/Package.swift', 'apps/macos/Sources/EagleDesign/**', 'apps/macos/Sources/ComposerFocusFixture/**', 'apps/bots-macos/Package.swift', 'apps/superagent-macos/Package.swift') }}
           restore-keys: ${{ runner.os }}-macos-focus-debug-v1-
-      - uses: nocoo/base-ci/.github/actions/setup-js@e5876a604547b1ddb0916f16dd841a4f832609a0 # v2026.20
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          package-manager: npm
-          node-version: "26.12.1"
-          install-policy: blocked
-      - run: npm run test:design
+          node-version: ${{ env.NODE_VERSION }}
       - run: npm run test:focus
       - name: Record tested SHA
         id: record-sha
@@ -499,7 +514,8 @@ jobs:
       - l1-unit
       - l1-unit-macos-app
       - l1-unit-bots-swift
-      - l1-unit-design-focus
+      - l1-unit-design
+      - l1-unit-focus
       - l2-runtime
       - l3-integration
       - l4-e2e
@@ -527,7 +543,8 @@ jobs:
             l1-unit=L1: Unit
             l1-unit-macos-app=L1: Unit (macOS App)
             l1-unit-bots-swift=L1: Unit (Bots Swift)
-            l1-unit-design-focus=L1: Unit (Design & Focus)
+            l1-unit-design=L1: Unit (Design)
+            l1-unit-focus=L1: Unit (Focus)
             l3-integration=L3: Integration (macOS)
             l4-e2e=L4: E2E
           skipped-jobs: |
