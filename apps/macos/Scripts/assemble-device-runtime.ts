@@ -49,6 +49,7 @@ type Options = {
   agentCache: string;
   botsCache: string;
   superagentCache: string;
+  skipDarwinNodePortabilityCheck?: boolean;
 };
 const json = <T>(path: string): T => JSON.parse(readFileSync(path, "utf8"));
 const digest = (path: string, algorithm = "sha256") =>
@@ -271,7 +272,7 @@ export function verifyRuntimeLinks(root: string, directory = root): void {
     } else if (entry.isDirectory()) verifyRuntimeLinks(root, path);
   }
 }
-function verifyNode(path: string) {
+function verifyNode(path: string, skipDarwinPortabilityCheck = false) {
   const node = JSON.parse(
     execFileSync(
       path,
@@ -288,7 +289,7 @@ function verifyNode(path: string) {
     node.arch !== process.arch
   )
     throw new Error("bundled Node must match the build host and be Node 24+");
-  if (process.platform === "darwin") {
+  if (process.platform === "darwin" && !skipDarwinPortabilityCheck) {
     const libraries = execFileSync("/usr/bin/otool", ["-L", path], {
       encoding: "utf8",
     })
@@ -319,7 +320,10 @@ export function assembleRuntime(options: Options): void {
   )
     throw new Error("destination already exists or is not absolute");
   const nodeBinary = realpathSync(options.nodeBinary);
-  const node = verifyNode(nodeBinary);
+  const node = verifyNode(
+    nodeBinary,
+    options.skipDarwinNodePortabilityCheck ?? false,
+  );
   const rootLockPath = join(sourceRoot, "package-lock.json");
   const rootLock = json<Lock>(rootLockPath);
   const agentManifest = json<Manifest>(
@@ -367,7 +371,10 @@ export function assembleRuntime(options: Options): void {
   try {
     copyFileSync(nodeBinary, join(stage, "node"));
     chmodSync(join(stage, "node"), 0o755);
-    verifyNode(join(stage, "node"));
+    verifyNode(
+      join(stage, "node"),
+      options.skipDarwinNodePortabilityCheck ?? false,
+    );
     const agent = join(stage, "agent");
     mkdirSync(agent);
     const [packed] = JSON.parse(
@@ -513,6 +520,10 @@ if (
         "agent-cache": { type: "string" },
         "bots-cache": { type: "string" },
         "superagent-cache": { type: "string" },
+        "skip-darwin-node-portability-check": {
+          type: "boolean",
+          default: false,
+        },
       },
     });
     if (
@@ -532,6 +543,9 @@ if (
       agentCache: resolve(values["agent-cache"]),
       botsCache: resolve(values["bots-cache"]),
       superagentCache: resolve(values["superagent-cache"]),
+      skipDarwinNodePortabilityCheck: Boolean(
+        values["skip-darwin-node-portability-check"],
+      ),
     });
     process.stdout.write(`${values.destination}\n`);
   } catch (error) {

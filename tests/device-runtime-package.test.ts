@@ -16,10 +16,30 @@ import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 
 const script = resolve("apps/macos/Scripts/assemble-device-runtime.ts");
-const npmCli = resolve(
-  dirname(process.execPath),
-  "../lib/node_modules/npm/bin/npm-cli.js",
-);
+const npmCliCandidates = [
+  resolve(dirname(process.execPath), "../lib/node_modules/npm/bin/npm-cli.js"),
+  resolve(
+    dirname(process.execPath),
+    "../libexec/lib/node_modules/npm/bin/npm-cli.js",
+  ),
+];
+const npmCli =
+  npmCliCandidates.find((candidate) => existsSync(candidate)) ??
+  npmCliCandidates[0];
+const nodeUsesNonSystemDylibs =
+  process.platform === "darwin" &&
+  execFileSync("/usr/bin/otool", ["-L", process.execPath], {
+    encoding: "utf8",
+  })
+    .split("\n")
+    .slice(1)
+    .map((line) => line.trim().split(" ")[0])
+    .filter(Boolean)
+    .some(
+      (library) =>
+        !library.startsWith("/usr/lib/") &&
+        !library.startsWith("/System/Library/"),
+    );
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "eagle-runtime-package-"));
@@ -118,7 +138,26 @@ function fixture() {
     cache: join(root, "cache"),
   };
 }
-function assemble(f: ReturnType<typeof fixture>) {
+function createTestNodePath(root: string): string {
+  if (!nodeUsesNonSystemDylibs) return process.execPath;
+  const wrapper = join(root, "test-node");
+  writeFileSync(
+    wrapper,
+    `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} "$@"\n`,
+    { mode: 0o755 },
+  );
+  return wrapper;
+}
+
+function assemble(
+  f: ReturnType<typeof fixture>,
+  {
+    nodePath = createTestNodePath(f.root),
+    extraFlags = nodeUsesNonSystemDylibs
+      ? ["--skip-darwin-node-portability-check"]
+      : [],
+  }: { nodePath?: string; extraFlags?: string[] } = {},
+) {
   return spawnSync(
     process.execPath,
     [
@@ -128,7 +167,7 @@ function assemble(f: ReturnType<typeof fixture>) {
       "--destination",
       f.destination,
       "--node",
-      process.execPath,
+      nodePath,
       "--npm-cli",
       npmCli,
       "--agent-cache",
@@ -137,20 +176,42 @@ function assemble(f: ReturnType<typeof fixture>) {
       f.cache,
       "--superagent-cache",
       f.cache,
+      ...extraFlags,
     ],
     { encoding: "utf8", timeout: 30000 },
   );
 }
 
+if (nodeUsesNonSystemDylibs) {
+  test("assembly rejects a non-portable workstation Node unless explicitly skipped for tests", () => {
+    const f = fixture();
+    try {
+      const result = assemble(f, {
+        nodePath: process.execPath,
+        extraFlags: [],
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(
+        result.stderr,
+        /bundled Node depends on a non-system library/,
+      );
+      assert.equal(existsSync(f.destination), false);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+}
+
 test("runtime assembly installs a packed Agent and isolated Bots production files without runtime PATH", () => {
   const f = fixture();
   try {
-    const result = assemble(f);
+    const nodePath = createTestNodePath(f.root);
+    const result = assemble(f, { nodePath });
     assert.equal(result.status, 0, result.stderr);
     const bundledNode = join(f.destination, "node");
     assert.equal(
       createHash("sha256").update(readFileSync(bundledNode)).digest("hex"),
-      createHash("sha256").update(readFileSync(process.execPath)).digest("hex"),
+      createHash("sha256").update(readFileSync(nodePath)).digest("hex"),
       "preserve the verified Node executable/signature bytes",
     );
     assert.equal(existsSync(join(f.destination, "bots/.env")), false);
@@ -239,7 +300,12 @@ test("assembly refuses an existing output and leaves source locks unchanged on a
       "a failed assembly publishes no runtime",
     );
     assert.deepEqual(readFileSync(lockPath), before);
-    assert.deepEqual(readdirSync(f.root).sort(), ["source"]);
+    assert.deepEqual(
+      readdirSync(f.root)
+        .filter((x) => x !== "test-node")
+        .sort(),
+      ["source"],
+    );
     const corrupt = join(
       f.cache,
       "_cacache/content-v2/sha512",
